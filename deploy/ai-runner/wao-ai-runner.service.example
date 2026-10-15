@@ -22,7 +22,7 @@
 
 [Unit]
 Description=WAO AI Runner
-Documentation=https://github.com/wayuwacn/wao/blob/main/deploy/ai-runner/README.md
+Documentation=https://github.com/wayuwadi/wao/blob/main/deploy/ai-runner/README.md
 After=network-online.target
 Wants=network-online.target
 

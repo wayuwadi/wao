@@ -338,7 +338,8 @@ public class NoteAiWorkflowService {
         return new Status(w.docId(), w.titleStatus(), w.imageStatus(), w.polishStatus(), w.lastError());
     }
     public record StageDetail(String reasonCode, String message, boolean retryable, String action, String jobId, int sourceVersion) { }
-    public record Status(String docId, String title, String image, String polish, String message, java.util.Map<String,StageDetail> stages, String tags) {
+    public record Status(String docId, String title, String image, String polish, String message, java.util.Map<String,StageDetail> stages, String tags, String thinking, NoteThinkingImageService.Result thinkingImage) {
+        public Status(String docId,String title,String image,String polish,String message,java.util.Map<String,StageDetail> stages,String tags) { this(docId,title,image,polish,message,stages,tags,SKIPPED,null); }
         public Status(String docId,String title,String image,String polish,String message,java.util.Map<String,StageDetail> stages) { this(docId,title,image,polish,message,stages,SKIPPED); }
         public Status(String docId,String title,String image,String polish,String message) { this(docId,title,image,polish,message,java.util.Map.of()); }
     }

@@ -47,10 +47,10 @@ public class NoteAiCompanionService {
     public static String textDependency(String body){return NoteAiSettingsService.hash(body.replaceAll("!\\[[^]]*]\\([^\\n]*?\\)","").replaceAll("\\s+"," ").strip());}
     private String dependency(DocDto doc,String stage){return "title".equals(stage)?NoteAiSettingsService.hash(doc.title()+textDependency(body(doc))):textDependency(body(doc));}
     /** 读取默认策略不创建记录，也不改写旧成员配置。 */
-    public Map<String,Object> preference(String member){var r=one("SELECT * FROM note_ai_companion_preference WHERE member_id=?",member);return Map.of("mode",r==null?"AUTO":str(r,"result_mode"),"version",r==null?0:((Number)r.get("version")).longValue());}
-    /** 成员策略采用 CAS，入队后的任务保持策略快照。 */
+    public Map<String,Object> preference(String member){var r=one("SELECT * FROM note_ai_companion_preference WHERE member_id=?",member);return Map.of("mode","AUTO","version",r==null?0:((Number)r.get("version")).longValue());}
+    /** 兼容偏好写入采用 CAS，只允许直接生效策略。 */
     @Transactional
-    public Map<String,Object> preference(String member,String mode,long version){settings.lockMember(member);if(mode==null||!List.of("AUTO","REVIEW").contains(mode))throw new BadRequestException("采用方式无效");
+    public Map<String,Object> preference(String member,String mode,long version){settings.lockMember(member);if(!"AUTO".equals(mode))throw new BadRequestException("小记整理已统一为自动生效，不再提供建议模式");
         if(((Number)preference(member).get("version")).longValue()!=version)throw new ConflictException("伴读设置已更新，请重新读取");
         db.update("INSERT INTO note_ai_companion_preference(member_id,result_mode,version) VALUES(?,?,1) ON DUPLICATE KEY UPDATE result_mode=VALUES(result_mode),version=version+1",member,mode);return preference(member);}
     /** 返回执行目录锁真实状态和持久队列；不推测登录或剩余配额。 */
@@ -71,18 +71,23 @@ public class NoteAiCompanionService {
     /** 不需要改动是正常终态，不制造采用或新成果计数。 */
     public boolean notNeeded(String id){return one("SELECT id FROM note_ai_artifact WHERE id=? AND application='NOT_NEEDED'",id)!=null;}
     /** 执行器完成时立即保存真实输出，后台推进暂时失败也不会丢失成果。 */
-    public void captureRun(AiAssistantRunEntity run,String output){var a=one("SELECT a.* FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id WHERE a.job_id=? OR t.ai_run_id=?",run.getId(),run.getId());if(a!=null&&run.getMemberId().equals(str(a,"member_id"))){if(!"image".equals(str(a,"stage"))&&polishJobs!=null){String checked=polishJobs.getObject().get(run.getMemberId(),str(a,"job_id")).polished();if(checked==null)return;if("tags".equals(str(a,"stage"))){var allowed=checked.lines().toList();output=settings.write(Map.of("tags",tagCandidates(output).stream().filter(t->allowed.contains(t.get("name"))).toList()));}else output=checked;}capture(a,output);}}
+    public void captureRun(AiAssistantRunEntity run,String output){
+        if(one("SELECT a.id FROM note_ai_stage_attempt a JOIN text_polish_job t ON t.id=a.job_id WHERE t.ai_run_id=? AND a.stage='thinking'",run.getId())!=null)return;var a=one("SELECT a.* FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id WHERE a.job_id=? OR t.ai_run_id=?",run.getId(),run.getId());if(a!=null&&run.getMemberId().equals(str(a,"member_id"))){if(!"image".equals(str(a,"stage"))&&polishJobs!=null){String checked=polishJobs.getObject().get(run.getMemberId(),str(a,"job_id")).polished();if(checked==null)return;if("tags".equals(str(a,"stage"))){var allowed=checked.lines().toList();output=settings.write(Map.of("tags",tagCandidates(output).stream().filter(t->allowed.contains(t.get("name"))).toList()));}else output=checked;}capture(a,output);}}
     /** 成果与实际应用同事务记录；不把执行成功冒称已经落库。 */
     public void applied(String id,DocDto doc){db.update("UPDATE note_ai_artifact SET application='APPLIED',applied_rev=?,applied_json=?,updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",doc.rev(),settings.write(doc),id);}
+    /** 只更新独立思考成果的图片数据，原文、来源与失败时已保存的提纲保持不变。 */
+    public void updateThinkingResult(String id,NoteThinkingImageService.Result result) {
+        db.update("UPDATE note_ai_artifact SET result_text=?,updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND stage='thinking' AND application='PENDING'",settings.write(result),id);
+    }
     /** 终止结果发布，旧来源与模型成果保留供对照。 */
     public void invalidate(String id,String application){db.update("UPDATE note_ai_artifact SET application=?,updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND application='PENDING'",application,id);}
     private Map<String,Object> view(Map<String,Object> row,DocDto current){
         var out=new LinkedHashMap<String,Object>();String stage=str(row,"stage");DocDto source=read(str(row,"source_json"),DocDto.class);
         out.put("id",str(row,"id"));out.put("stage",stage);out.put("sourceRev",source.rev());out.put("sourceTitle",source.title());out.put("sourceText","title".equals(stage)?source.title():"tags".equals(stage)?String.join("\n",source.tags()==null?List.of():source.tags()):body(source));
-        out.put("resultText",str(row,"result_text"));out.put("application",str(row,"application"));
+        if("thinking".equals(stage)){var thinking=read(str(row,"result_text"),NoteThinkingImageService.Result.class).withCurrent(matchesApplied(row,current));out.put("thinkingImage",thinking);out.put("resultText",thinking.outline());}else out.put("resultText",str(row,"result_text"));out.put("application",str(row,"application"));
         out.put("currentText","title".equals(stage)?current.title():"tags".equals(stage)?String.join("\n",current.tags()==null?List.of():current.tags()):body(current));out.put("currentRev",current.rev());
         if("tags".equals(stage)){var recommendations=tagCandidates(str(row,"result_text"));out.put("tagRecommendations",recommendations);out.put("resultText",String.join("\n",recommendations.stream().map(t->t.get("name")).toList()));}
-        out.put("validity",str(row,"dependency_hash").equals(dependency(current,stage))||matchesApplied(row,current)?"CURRENT":"STALE");
+        out.put("validity",("thinking".equals(stage)?matchesApplied(row,current):str(row,"dependency_hash").equals(dependency(current,stage))||matchesApplied(row,current))?"CURRENT":"STALE");
         out.put("seen",row.get("seen_at")!=null);out.put("createdAt",str(row,"created_at"));
         var a=one("SELECT a.state,a.reason_code,a.message,a.policy_json,r.requested_model,r.reasoning_effort,r.created_at AS queued_at,r.claimed_at AS started_at,r.finished_at AS finished_at FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id LEFT JOIN ai_assistant_run r ON r.id=COALESCE(t.ai_run_id,a.job_id) WHERE a.id=?",str(row,"id"));
         if(a!=null){out.put("execution",str(a,"state"));out.put("reasonCode",str(a,"reason_code"));out.put("reason",str(a,"message"));out.put("model",str(a,"requested_model"));out.put("effort",str(a,"reasoning_effort"));out.put("queuedAt",str(a,"queued_at"));out.put("startedAt",str(a,"started_at"));out.put("finishedAt",str(a,"finished_at"));}
@@ -92,7 +97,7 @@ public class NoteAiCompanionService {
     public static int[] changedChars(String before,String after){int start=0;while(start<Math.min(before.length(),after.length())&&before.charAt(start)==after.charAt(start))start++;int end=0;while(end<Math.min(before.length(),after.length())-start&&before.charAt(before.length()-1-end)==after.charAt(after.length()-1-end))end++;return new int[]{before.length()-start-end,after.length()-start-end};}
     private void importVerifiedHistory(String member,String doc,DocDto current){if(polishJobs==null||imageJobs==null)return;
         var attempts=db.queryForList("SELECT a.*,r.finished_at FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id LEFT JOIN ai_assistant_run r ON r.id=COALESCE(t.ai_run_id,a.job_id) WHERE a.member_id=? AND a.doc_id=? AND a.state='DONE' AND a.reason_code IN ('APPLIED','READY','REVIEW_REQUIRED','NOT_NEEDED') AND NOT EXISTS(SELECT 1 FROM note_ai_artifact f WHERE f.id=a.id) ORDER BY a.created_at DESC LIMIT 40",member,doc);
-        for(var a:attempts){if(!str(a,"source_json").contains("\"id\""))continue;String output;try{if("image".equals(str(a,"stage"))){var r=imageJobs.getObject().get(member,str(a,"job_id"));if(!"SUCCEEDED".equals(r.status()))continue;output=r.imageUrl();}else{var r=polishJobs.getObject().get(member,str(a,"job_id"));if(!"SUCCEEDED".equals(r.status())||r.polished()==null)continue;output=r.polished();}}catch(NotFoundException absent){continue;}
+        for(var a:attempts){if("thinking".equals(str(a,"stage")))continue;if(!str(a,"source_json").contains("\"id\""))continue;String output;try{if("image".equals(str(a,"stage"))){var r=imageJobs.getObject().get(member,str(a,"job_id"));if(!"SUCCEEDED".equals(r.status()))continue;output=r.imageUrl();}else{var r=polishJobs.getObject().get(member,str(a,"job_id"));if(!"SUCCEEDED".equals(r.status())||r.polished()==null)continue;output=r.polished();}}catch(NotFoundException absent){continue;}
             capture(a,output);if(a.get("finished_at")!=null)db.update("UPDATE note_ai_artifact SET created_at=? WHERE id=?",a.get("finished_at"),str(a,"id"));
             if("APPLIED".equals(str(a,"reason_code"))&&!notNeeded(str(a,"id"))){boolean matches=switch(str(a,"stage")){case "title"->current.title().equals(output);case "image"->field(current,"image").contains(output);case "tags"->tagCandidates(output).stream().allMatch(t->current.tags().contains(t.get("name")));default->body(current).replaceFirst("^!\\[文章总览图]\\([^\\n]*\\)\\s*","").strip().equals(output.strip());};if(matches)applied(str(a,"id"),current);else invalidate(str(a,"id"),"HISTORICAL_APPLIED");}
         }
@@ -106,7 +111,7 @@ public class NoteAiCompanionService {
         return Map.of("items",rows.stream().limit(20).map(r->view(r,current)).toList(),"nextCursor",next,"attempts",db.queryForList("SELECT a.id,a.stage,a.state,a.reason_code AS reasonCode,a.message,a.created_at AS createdAt,a.updated_at AS updatedAt,a.cancel_requested AS cancelling,r.status AS runStatus,r.created_at AS queuedAt,r.claimed_at AS startedAt,r.finished_at AS finishedAt FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id LEFT JOIN ai_assistant_run r ON r.id=COALESCE(t.ai_run_id,a.job_id) WHERE a.member_id=? AND a.doc_id=? ORDER BY a.created_at DESC,a.id DESC LIMIT 40",member,doc));}
     /** 轻量回执只含未读结果和需处理状态，列表不会提前消费 seen。 */
     public List<Map<String,Object>> receipts(String member){return db.queryForList("SELECT a.doc_id AS docId,COUNT(*) AS unread FROM note_ai_artifact a JOIN doc d ON d.id=a.doc_id WHERE a.member_id=? AND a.seen_at IS NULL AND a.application<>'NOT_NEEDED' AND d.author_id=? AND d.deleted_at IS NULL AND d.archived_at IS NULL GROUP BY a.doc_id",member,member);}
-    private boolean matchesApplied(Map<String,Object> a,DocDto doc){if(str(a,"applied_json").isEmpty())return false;DocDto previous=read(str(a,"applied_json"),DocDto.class);
+    private boolean matchesApplied(Map<String,Object> a,DocDto doc){if("thinking".equals(str(a,"stage")))return one("SELECT a.id FROM note_ai_stage_attempt a JOIN note_ai_save_signal s ON s.doc_id=a.doc_id AND s.cycle_id=a.cycle_id WHERE a.id=?",str(a,"id"))!=null;if(str(a,"applied_json").isEmpty())return false;DocDto previous=read(str(a,"applied_json"),DocDto.class);
         if("tags".equals(str(a,"stage"))){DocDto source=read(str(a,"source_json"),DocDto.class);var added=new HashSet<>(previous.tags()==null?List.of():previous.tags());added.removeAll(source.tags()==null?List.of():source.tags());return doc.tags()!=null&&doc.tags().containsAll(added);}
         return field(previous,str(a,"stage")).equals(field(doc,str(a,"stage")));}
     private String field(DocDto doc,String stage){return switch(stage){case "title"->doc.title();case "tags"->settings.write(doc.tags());case "image"->body(doc).lines().filter(l->l.startsWith("![文章总览图]")).findFirst().orElse("");default->{JsonNode tree=doc.content()==null||doc.content().document()==null?null:doc.content().document().deepCopy();if(tree instanceof ObjectNode root){var nodes=root.withArray("content");if(nodes.size()>0&&"文章总览图".equals(nodes.get(0).path("attrs").path("alt").asText()))nodes.remove(0);}yield body(doc).replaceFirst("^!\\[文章总览图]\\([^\\n]*\\)\\s*","")+settings.write(tree);}};}
@@ -115,6 +120,7 @@ public class NoteAiCompanionService {
     public DocDto action(String member,String id,String action,Integer expectedRev){settings.lockMember(member);var a=one("SELECT * FROM note_ai_artifact WHERE id=? AND member_id=? FOR UPDATE",id,member);if(a==null)throw new NotFoundException("成果不存在");DocDto doc=owned(member,str(a,"doc_id"));
         if("seen".equals(action)){db.update("UPDATE note_ai_artifact SET seen_at=COALESCE(seen_at,CURRENT_TIMESTAMP(6)) WHERE id=?",id);return doc;}
         if("decline".equals(action)){db.update("UPDATE note_ai_artifact SET application='DECLINED',seen_at=CURRENT_TIMESTAMP(6) WHERE id=? AND application='PENDING'",id);return doc;}
+        if("thinking".equals(str(a,"stage")))throw new BadRequestException("思考图是独立成果，不能替换或恢复正文；请重新生成思考图");
         if(!List.of("apply","restore").contains(action))throw new BadRequestException("成果操作无效");
         if(expectedRev==null||!expectedRev.equals(doc.rev()))throw new ConflictException("小记已更新，未覆盖你的修改；请重新读取");
         String application=str(a,"application");if(action.equals("apply")&&application.equals("APPLIED"))return doc;
@@ -141,18 +147,17 @@ public class NoteAiCompanionService {
         if(tree instanceof ObjectNode root){var nodes=root.withArray("content");if(nodes.size()>0&&"文章总览图".equals(nodes.get(0).path("attrs").path("alt").asText()))nodes.remove(0);JsonNode live=current.content()==null?null:current.content().document();if(!cover.isEmpty()){JsonNode image=live!=null&&live.path("content").size()>0&&"文章总览图".equals(live.path("content").get(0).path("attrs").path("alt").asText())?live.path("content").get(0).deepCopy():coverNode(cover);nodes.insert(0,image);}}
         return new RichDocContentDto(1,tree,cover.isEmpty()?markdown:cover+"\n\n"+markdown);}
     private ObjectNode coverNode(String line){var match=java.util.regex.Pattern.compile("!\\[[^]]*]\\(([^\\s)]+)").matcher(line);if(!match.find())throw new ConflictException("旧版配图引用无法恢复，请对照原稿查看");var image=json.createObjectNode();image.put("type","image");var attrs=image.putObject("attrs");attrs.put("src",match.group(1)).put("alt","文章总览图").put("width","50%");var size=java.util.regex.Pattern.compile("wao-image-size:([^x]+)x([^\"]+)").matcher(line);if(size.find()){attrs.put("width",size.group(1));if(!"auto".equals(size.group(2)))attrs.put("height",size.group(2));}return image;}
-    /** 无损段落映射；复杂结构无法可靠匹配时拒绝扔掉富文本，建议仍保留。 */
+    /** 简单段落保留富文本属性，其余直接采用润色 Markdown，原稿由不可变记录保留。 */
     public RichDocContentDto polishedContent(DocDto current,String output){
         String markdown=body(current);java.util.regex.Matcher refs=java.util.regex.Pattern.compile("!?\\[[^]]*]\\(([^)]+)\\)").matcher(markdown);
-        String text=markdown.replaceAll("!\\[[^]]*]\\([^\\n]*?\\)","").replaceAll("\\[([^]]*)]\\([^\\n]*?\\)","$1");var numbers=java.util.regex.Pattern.compile("(?<![\\p{L}\\d])\\d+(?:[.,]\\d+)*(?:%|％)?").matcher(text);while(numbers.find())if(!output.contains(numbers.group()))throw new ConflictException("建议改变或遗漏了原文数字，原文保留；请在编辑器对照采用");
-        while(refs.find())if(!output.contains(refs.group(1))&&!refs.group().startsWith("![文章总览图]"))throw new ConflictException("建议没有完整保留图片或附件，原文保留");
+        while(refs.find())if(!output.contains(refs.group(1))&&!refs.group().startsWith("![文章总览图]"))throw new ConflictException("润色结果未完整保留图片、链接或附件；当前正文未改变，请重试");
         String cover=markdown.lines().filter(s->s.startsWith("![文章总览图]")).findFirst().orElse("");if(!cover.isBlank()&&!output.contains(cover))output=cover+"\n\n"+output;
         JsonNode tree=current.content()==null?null:current.content().document();
         if(tree!=null){tree=tree.deepCopy();var nodes=tree.path("content");List<String> paragraphs=new ArrayList<>(Arrays.asList(output.split("\\n\\s*\\n")));int index=0;
             for(JsonNode n:nodes){if(n.path("type").asText().equals("image")){if(index<paragraphs.size()&&paragraphs.get(index).strip().startsWith("!["))index++;continue;}
-                if(!n.path("type").asText().equals("paragraph")||n.path("content").size()>1||n.path("content").size()==1&&(!n.path("content").get(0).path("type").asText().equals("text")||n.path("content").get(0).has("marks"))||index>=paragraphs.size())throw new ConflictException("此篇包含复杂排版，请在编辑器里对照采用；富文本已保留");
-                String p=paragraphs.get(index++);if(p.matches("(?s).*(?:\\n|[#*`\\[<>]).*"))throw new ConflictException("建议改变了段落结构，请在编辑器对照采用");ArrayNode content=((ObjectNode)n).putArray("content");if(!p.isBlank())content.addObject().put("type","text").put("text",p);
-            }if(index!=paragraphs.size())throw new ConflictException("建议改变了段落数量，请在编辑器对照采用");
+                if(!n.path("type").asText().equals("paragraph")||n.path("content").size()>1||n.path("content").size()==1&&(!n.path("content").get(0).path("type").asText().equals("text")||n.path("content").get(0).has("marks"))||index>=paragraphs.size())return new RichDocContentDto(1,null,output);
+                String p=paragraphs.get(index++);if(p.matches("(?s).*(?:\\n|[#*`\\[<>]).*"))return new RichDocContentDto(1,null,output);ArrayNode content=((ObjectNode)n).putArray("content");if(!p.isBlank())content.addObject().put("type","text").put("text",p);
+            }if(index!=paragraphs.size())return new RichDocContentDto(1,null,output);
         }
         return new RichDocContentDto(1,tree,output);
     }

@@ -1,0 +1,22 @@
+# 当前功能细则
+
+只保留现行契约和最新功能细则，旧实现与被替换的规格在 Git 历史中查看。
+
+- [capability-center](capability-center.md)
+- [markdown-codex-thread-links-2026-10-14](markdown-codex-thread-links-2026-10-14.md)
+- [notes-direct-polish-2026-10-11](notes-direct-polish-2026-10-11.md)
+- [notes-thinking-image-2026-10-13](notes-thinking-image-2026-10-13.md)
+- [project-list-direct-rename-2026-10-14](project-list-direct-rename-2026-10-14.md)
+- [project-list-empty-groups-2026-10-14](project-list-empty-groups-2026-10-14.md)
+- [project-members-management-2026-10-14](project-members-management-2026-10-14.md)
+- [project-quadrant-space-2026-10-14](project-quadrant-space-2026-10-14.md)
+- [project-settings-redesign-2026-10-14](project-settings-redesign-2026-10-14.md)
+- [project-task-optimization-2026-10-14](project-task-optimization-2026-10-14.md)
+- [projects-card-summary-2026-10-14](projects-card-summary-2026-10-14.md)
+- [task-project-polish-2026-10-14](task-project-polish-2026-10-14.md)
+- [todo-day-quadrant-drag-2026-10-14](todo-day-quadrant-drag-2026-10-14.md)
+- [todo-day-quadrants-2026-10-14](todo-day-quadrants-2026-10-14.md)
+- [todo-day-sidebar-2026-10-14](todo-day-sidebar-2026-10-14.md)
+- [todo-sidebar-counts-2026-10-14](todo-sidebar-counts-2026-10-14.md)
+- [wao-cli](wao-cli.md)
+- [wao-workspace-mcp](wao-workspace-mcp.md)

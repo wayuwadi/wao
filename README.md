@@ -1,168 +1,81 @@
-# WAO Life OS
+# WAO
 
-WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven Development。当前已经完成 Phase 0 的工程骨架和 Hello World 纵向切片：浏览器请求经 Vue、Spring Cloud Gateway 到达 Spring Boot App，并返回统一 JSON。
+WAO 是一个用于工作和生活的浏览器系统，把任务、项目、小记、知识库、文件、日历和 AI 协作放在同一处。当前只维护浏览器产品。
 
-## 当前状态
+唯一主仓库：[wayuwadi/wao](https://github.com/wayuwadi/wao)。维护者与社区贡献者在这里修改同一份源码，生产部署使用独立私有配置。
 
-| 范围             | 状态   | 说明                                                             |
-| ---------------- | ------ | ---------------------------------------------------------------- |
-| 后端与网关       | 已完成 | Java 17、Spring Boot 3、Gateway、Nacos 2.x、统一响应和异常处理   |
-| 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
-| 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
-| 生产部署代码     | 已完成 | Linux2 单节点 Compose、云 Nginx、TLS、CI/CD 与异地加密备份      |
-| 单节点实机上线   | 已完成 | Linux2 应用与数据库、云端静态制品及公共入口已完成验收           |
-| Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
+## 在本地运行独立系统
 
-## 技术栈
-
-- Web：Vue 3、Vite、TypeScript、Ant Design Vue、Pinia、Vue Router 4
-- Server：Java 17、Spring Boot 3、MyBatis-Plus、Flyway
-- Gateway：Spring Cloud Gateway、Nacos 2.4.3
-- Data：MySQL 9.7、Redis 7
-- Delivery：Docker Compose、Nginx、Linux 自建 Jenkins、公网 DDNS
-
-## 五分钟启动 Demo（无需 Docker）
-
-要求：JDK 17+、Maven 3.9+、Node.js 24+。在仓库根目录分别打开三个终端。
-
-终端 1，启动 App：
-
-```powershell
-mvn -pl wao-server spring-boot:run "-Dspring-boot.run.profiles=local"
-```
-
-终端 2，启动 Gateway：
-
-```powershell
-mvn -pl wao-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
-```
-
-终端 3，启动 Web：
-
-```powershell
-Set-Location wao-web
-npm ci
-npm run dev
-```
-
-访问 [http://localhost:5173](http://localhost:5173)，点击“调用后端”。页面应显示 `Hello from WAO`，实际链路为：
-
-```text
-Browser -> Vite :5173 -> Gateway :9000 -> WAO Server :8080
-```
-
-也可以直接检查接口：
-
-```powershell
-Invoke-RestMethod http://localhost:9000/api/hello
-```
-
-当前 Demo 是 Phase 0 的系统状态页，用于验证真实前后端链路；它不是尚未导入的 `WAO Life OS v3` 设计稿成品。
-
-## 生产部署
-
-自 2026-09-27 起，Linux2 是 WAO 唯一 Linux 部署节点，也是 Jenkins 控制器；云端负责静态制品、HTTPS 与公共 Nginx 入口。Linux1 已退役，现行流水线不再连接或探测它。Linux2 原地发布可能短暂中断，异地加密恢复链见 [单节点备份手册](docs/runbooks/linux2-only-cloud-backup.md) 与 [ADR-291](docs/adr/291-linux2-only-deployment-and-wao-recovery.md)。Garage 的旧三节点配置仍待单独决定迁移方案，见 [对象存储说明](deploy/storage/README.md)；不要照旧示例调整在线布局。
-
-## 完整开发环境
-
-需要验证 MySQL、Redis、Nacos 和服务注册发现时，安装 Docker Compose 后执行：
+需要 JDK 17+、Maven 3.9+、Node.js 24.12+、Python 3.10+ 和 Docker Compose。以下命令创建独立数据库和随机密钥，不导入维护者的生产数据。
 
 ```bash
-docker compose -f docker-compose-dev.yml up -d
-mvn -pl wao-server spring-boot:run -Dspring-boot.run.profiles=dev
-mvn -pl wao-gateway spring-boot:run -Dspring-boot.run.profiles=dev
-cd wao-web && npm run dev
-```
-
-### 本机开发，连接服务器 MySQL
-
-[工程资产总入口](docs/runbooks/engineering-assets.md) 汇总开发体检、只读性能基准、一致性检查和草稿回归的使用时机、证据与接续方式。
-
-开发前可执行 `python3 deploy/scripts/dev-doctor.py --env-file .env.local-cloud --web-url http://127.0.0.1:5174`
-只读检查运行时、依赖和本地连接；失败时输出下一步处理建议。参数、输出含义和独立工作区用法见
-[本地开发体检](docs/runbooks/local-development-doctor.md)。体检不安装或启动服务，也不替代真实用户链路验收。
-
-需要记录首页聚合或文档读取的查询次数与耗时时，使用 [只读性能基准](docs/runbooks/read-only-performance-baseline.md)，可生成带版本和采样条件的报告并比较两次结果。
-
-提交前可运行 [工程一致性检查](docs/runbooks/engineering-consistency-check.md)，核对 ADR / migration 编号、已交付 migration 不可变性和本次文档的本地链接。
-
-修改文档编辑与草稿逻辑时，使用 [草稿防丢回归包](docs/runbooks/document-draft-regression.md)，覆盖保存失败、刷新恢复、两窗口冲突和本轮验收文档清理。
-
-前端和 Java 服务在本机运行时，后端使用 `local-cloud` Profile，网关使用 `local` Profile。
-通过运行进程的环境变量提供 `MYSQL_HOST`、`MYSQL_PORT`、`DB_NAME`、`DB_USER`、`DB_PASS`；
-优先通过 SSH 本地端口转发访问服务器数据库。凭据不要写入仓库、命令历史或日志。
-
-```bash
-mvn -pl wao-server spring-boot:run -Dspring-boot.run.profiles=local-cloud
-mvn -pl wao-gateway spring-boot:run -Dspring-boot.run.profiles=local
-cd wao-web && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
-```
-
-打开 `http://127.0.0.1:5174` 完成编辑、保存、刷新及失败恢复验收，再提交 PR 和发布。
-该配置关闭 Flyway、Nacos 注册、Redis 自动配置和全部 `@Scheduled` 任务；独立的本地会话 Cookie
-仍通过数据库持久化。文档、文件等业务数据直接落到指定服务器数据库，请使用专门的验收内容。
-依赖 Redis 的微信公众号登录和 Skill 限速不属于此配置的验收范围。生产节点的定时任务默认保持启用。
-
-连接完整业务数据时，若 Vue DevTools 注入影响开发页面响应，可在启动前设置
-`WAO_VUE_DEVTOOLS=false` 关闭调试面板，Vite 热更新仍保留；不设置时维持原有行为。
-
-## 工程结构
-
-```text
-wao/
-├── wao-web/       Vue 前端
-├── wao-server/    Spring Boot 应用服务
-├── wao-gateway/   Spring Cloud Gateway
-├── wao-cli/       连接工作区 MCP 的命令行工具
-├── agent-web/     同仓交付的自媒体 Agent 前端
-├── agent-server/  同仓交付、独立进程的 Agent 服务
-├── deploy/        Compose、Nginx、证书、备份和部署脚本
-├── docs/          原始方案、架构基线、ADR、API 与页面规格
-└── .github/       CI/CD 工作流
-```
-
-## 文档入口
-
-- [WAO CLI](wao-cli/README.md)：安装 `wao` 命令、连接工作区令牌和操作项目、任务、知识库。
-- [WAO Design System / UX 规范](docs/ux/wao-design-system.md)：当前视觉变量、组件复用前提、页面状态和用户旅程验收基线。
-
-- [原版技术方案](docs/WAO系统技术架构方案.md)：用户提供的原始方案，原样归档，作为项目愿景和实施范围来源。
-- [当前架构基线](docs/architecture.md)：结合兼容性与实机环境验证后的落地架构。
-- [多合一交付决策](docs/adr/049-unified-product-monorepo-delivery.md)：Agent、游戏与 Insight 的统一边界和迁移取舍。
-- [自媒体 Agent 技术架构](docs/architecture/media-automation-agent.md)：同仓交付、共享 Session、独立运行进程与平台安全边界。
-- [Phase 0 规格](docs/specs/phase-0.md)：当前纵向切片的验收标准。
-- [Hello API 契约](docs/api/hello.yaml)：OpenAPI 3.0 定义。
-- [Hello 页面规格](docs/pages/hello.md)：页面行为与状态说明。
-- [历史实机上线记录](docs/runbooks/phase-0-rollout.md)：保留退役前的部署证据，不是当前操作步骤。
-- [部署手册](deploy/README.md)：环境变量、证书、DDNS、备份和 CI/CD。
-- [公网直连决策](docs/adr/005-public-ddns-network.md)：不使用 Tailscale 后的网络与风险边界。
-- [贡献指南](CONTRIBUTING.md)：小伙伴拉取代码、提交业务架构/ER 图及发起 PR 的规则。
-- [业务架构资料入口](docs/business/README.md)：Phase 1 业务架构图的落位要求。
-
-原版方案与实际实现不一致时，以 `docs/adr/` 中已采纳的 ADR 和当前架构基线为准；原版方案除已确认的主机名勘误外保持归档形态，确保决策过程可追溯。
-
-## 团队协作
-
-```bash
-git clone https://github.com/wayuwacn/wao.git
+git clone https://github.com/wayuwadi/wao.git
 cd wao
-git switch main
+python scripts/local-dev.py init
+python scripts/local-dev.py services
+mvn -pl wao-server,wao-gateway -am install -DskipTests
+cd wao-web
+npm ci
+cd ..
+cd wao-game
+npm ci
+npm run build:dino
+npm run build:rift
+npm run build:starfield
+npm run build:beasts
+npm run build:camp
+cd ..
 ```
 
-小伙伴先从 `main` 创建 `docs/business-architecture` 分支，把业务架构图放入 `docs/business/`、ER 图和字段字典放入 `docs/database/`，再发起 Pull Request。日常开发禁止直接推送 `main`。
+分别在三个终端运行：
 
-## 质量验证
+```bash
+python scripts/local-dev.py server
+python scripts/local-dev.py gateway
+python scripts/local-dev.py web
+```
+
+打开终端显示的 Vite 本机地址，通常为 `http://127.0.0.1:5173`。首次使用通过注册入口创建自己的账号。需要管理安装时，先在本机用尚未绑定的示例管理员名“娃哥”或“娃弟”绑定自己的邮箱和密码，再在成员管理中改名；普通注册产生普通成员。完成管理员绑定并按需要关闭自主注册后，再开放公网。依赖和开发服务只监听本机，不要把此开发配置直接用于公网。
+
+`.env` 保存你的私有配置，脚本不会覆盖已有文件。妥善备份其中的密码和 `WAO_VAULT_KEY`，不要提交到 Git。飞书、AI、日历及其他外部服务需要配置自己的账号与授权。
+
+没有 Docker 时，参见 [开发指南](docs/development.md)，连接自己已有的 MySQL 9 和 Redis。仅查看页面的 `local` 演示模式不能代替持久化系统。
+
+## 源码结构
+
+| 目录 | 用途 |
+| --- | --- |
+| `wao-web` | Vue 3 浏览器界面 |
+| `wao-server` | Spring Boot 业务服务、MySQL 与 Flyway |
+| `wao-gateway` | API 网关 |
+| `wao-game` | 浏览器放松与练习内容 |
+| `wao-cli` | 工作区命令行工具 |
+| `agent-server` / `agent-web` | 可选内容工作台 |
+| `deploy` | 部署工具和兼容资源接口 |
+| `docs` | 当前有效的说明与规范 |
+
+历史 Windows、macOS、iOS、Android 客户端源码和版本标签保留用于追溯，当前不开发或发布新客户端。使用系统无需安装独立客户端。
+
+## 开发与部署
+
+从最新 `main` 创建分支，本地完成相称验证后提交 PR。公开 CI 不接触生产凭据；维护者 Jenkins 只从受信任 `main` 发布生产。
 
 ```bash
 mvn test
 cd wao-web
-npm run lint
 npm run test:unit -- --run
+npm run type-check
 npm run build
 ```
 
-当前基线：后端 4 个测试通过，前端单元测试、类型检查、Lint 和生产构建通过。
+完整说明见 [贡献指南](CONTRIBUTING.md)、[当前架构](docs/architecture.md)、[部署与数据保护](docs/deployment.md) 和 [安全说明](SECURITY.md)。
 
-## 安全约束
+## 版本和历史
 
-仓库只保存 `.env.example`。真实密码、Token、私钥、DNS 凭据和部署密钥必须保存在各节点私有 `deploy/.env`、系统凭据存储或 GitHub Secrets 中，禁止提交到 Git。
+原有 Git 提交、分支和版本标签经过脱敏后保留。历史 PR 提交归档为 `archive/pull/…` 标签，避免遗漏 Squash Merge 前的修改记录。作者姓名、提交时间和信息保留，私人邮箱改为匿名 noreply 地址；脱敏后 SHA 会变化，旧版本可通过 [SHA 映射](docs/history-map.tsv) 追溯。
+
+当前主分支只保留最新文档。旧说明和退役方案可从 Git 历史查看，不作为当前生产操作步骤。已有生产通过受保护的兼容资源保持已执行 Flyway 校验和，不重置数据库或运行 `repair` 绕过校验。
+
+## 许可证
+
+WAO 自有源码采用 [MIT](LICENSE)。第三方依赖和资产遵循各自许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。

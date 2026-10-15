@@ -1,0 +1,40 @@
+name: Source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan source and reachable history
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location --output gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          curl --fail --silent --show-error --location --output gitleaks-checksums.txt https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt
+          expected=$(awk '$2 == "gitleaks_8.30.1_linux_x64.tar.gz" {print $1}' gitleaks-checksums.txt)
+          test -n "$expected"
+          printf '%s  gitleaks.tar.gz\n' "$expected" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP/gitleaks" gitleaks
+          rm gitleaks.tar.gz gitleaks-checksums.txt
+          "$RUNNER_TEMP/gitleaks/gitleaks" git . --log-opts=--all --config .gitleaks.toml --redact=100 --no-banner
+          "$RUNNER_TEMP/gitleaks/gitleaks" dir . --config .gitleaks.toml --redact=100 --no-banner
+  local-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check independent local installation
+        run: python -m unittest discover -s tests/deployment -p 'test_*.py'
+      - name: Check production build isolation and history mapping
+        shell: pwsh
+        run: ./tests/deployment/WindowsBuildInputs.Tests.ps1

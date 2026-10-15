@@ -9,7 +9,6 @@ import {
   fetchAiResults,
   actOnArtifact,
   cancelNoteAi,
-  saveCompanionMode,
   fetchNoteChat,
   askNoteChat,
   companionError,
@@ -81,6 +80,7 @@ const labels: Record<CompanionStage, string> = {
   title: '标题',
   tags: '标签',
   image: '配图',
+  thinking: '思考图',
 }
 const overview = ref<CompanionOverview>(),
   results = ref<AiResults>(),
@@ -138,7 +138,6 @@ const resultSummary = computed(() => {
   const current = [...new Map(results.value.items.map(item => [item.id, item])).values()]
     .filter(item => item.validity === 'CURRENT')
   return {
-    pending: current.filter(item => item.application === 'PENDING').length,
     appliedUnread: current.filter(item => item.application === 'APPLIED' && !item.seen).length,
     partial: !!results.value.nextCursor,
   }
@@ -179,7 +178,7 @@ function applicationLabel(state: string) {
         HISTORICAL_APPLIED: '历史已采用 · 当前内容已更新',
         NOT_NEEDED: '本次无需修改',
         APPLIED: '已采用',
-        PENDING: '待你采用',
+        PENDING: '未写入的历史成果',
         RESTORED: '已恢复原稿',
         DECLINED: '已忽略',
         CANCELLED: '已取消',
@@ -404,45 +403,12 @@ watch(
   },
   { immediate: true },
 )
-async function action(value: 'apply' | 'restore' | 'decline') {
-  if (!artifact.value || !note.value || busy.value || (props.blocked && value !== 'decline')) return
-  const mine = generation
-  busy.value = true
-  error.value = ''
-  try {
-    const doc = await actOnArtifact(artifact.value.id, value, note.value.rev ?? 1)
-    if (mine === generation) {
-      emit('updated', doc)
-      await refresh()
-    }
-  } catch (e) {
-    if (mine === generation) error.value = companionError(e)
-  } finally {
-    if (mine === generation) busy.value = false
-  }
-}
-function editSelectedNote() {
-  closePanel()
-  emit('editNote', props.activeId)
-}
 async function cancel() {
   if (!note.value || busy.value) return
   busy.value = true
   try {
     await cancelNoteAi(note.value.id, note.value.rev ?? 1)
     await refresh()
-  } catch (e) {
-    error.value = companionError(e)
-  } finally {
-    busy.value = false
-  }
-}
-async function changeMode(mode: CompanionOverview['mode']) {
-  if (!overview.value || busy.value) return
-  busy.value = true
-  try {
-    const p = await saveCompanionMode(mode, overview.value.version)
-    Object.assign(overview.value, p)
   } catch (e) {
     error.value = companionError(e)
   } finally {
@@ -553,7 +519,12 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   window.removeEventListener('resize', resizePanel)
 })
-defineExpose({ refresh })
+async function seedThinkingQuestion(text: string) {
+  if (question.value.trim()) { error.value = '伴读里还有未发送的问题，已保留；请先处理后再带入新问题'; return }
+  question.value = text; tab.value = 'chat'
+  await nextTick(); panel.value?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+}
+defineExpose({ refresh, seedThinkingQuestion })
 </script>
 
 <template>
@@ -603,23 +574,6 @@ defineExpose({ refresh })
       </header>
       <div v-show="!desktopCollapsed && (!mobile || mobileOpen || overlayOpen)" class="companion-body">
         <div v-if="settingsOpen" class="companion-settings">
-          <strong>成果采用方式</strong>
-          <div class="mode-choice">
-            <button
-              :aria-pressed="overview?.mode === 'AUTO'"
-              :disabled="busy || !overview"
-              @click="changeMode('AUTO')"
-            >
-              自动采用</button
-            ><button
-              :aria-pressed="overview?.mode === 'REVIEW'"
-              :disabled="busy || !overview"
-              @click="changeMode('REVIEW')"
-            >
-              先看建议
-            </button>
-          </div>
-          <p>仅影响之后发起的整理，已排队的任务保留原策略。</p>
           <button @click="emit('settings')">
             模型、提示词与自动开关 <i class="ri-arrow-right-up-line" /></button
           ><NoteDiscoveryPreference />
@@ -661,7 +615,6 @@ defineExpose({ refresh })
           <template v-if="tab === 'results'">
             <div v-if="resultSummary" class="result-summary" role="status" aria-label="本篇 AI 结果概况">
               <small>{{ resultSummary.partial ? '已加载结果' : '这篇小记' }}</small>
-              <span><b>{{ resultSummary.pending }}</b> 项待你采用</span>
               <span><b>{{ resultSummary.appliedUnread }}</b> 项已采用但未读</span>
             </div>
             <div v-if="note" class="stage-tabs">
@@ -680,7 +633,7 @@ defineExpose({ refresh })
             </div>
             <template v-if="artifact">
               <div class="artifact-status">
-                <b>{{ applicationLabel(artifact.application) }}</b
+                <b>{{ stage === 'thinking' ? artifact.thinkingImage?.imageUrl ? '思考图已保存' : '思考提纲已保存' : applicationLabel(artifact.application) }}</b
                 ><span v-if="artifact.validity === 'STALE'">来源已更新 · 仅供对照</span
                 ><small>来源 v{{ artifact.sourceRev }}</small>
               </div>
@@ -701,6 +654,12 @@ defineExpose({ refresh })
                   <pre>{{ artifact.sourceText }}</pre>
                 </details></template
               >
+              <template v-else-if="stage === 'thinking' && artifact.thinkingImage">
+                <img v-if="artifact.thinkingImage.imageUrl" class="result-image" :src="artifact.thinkingImage.imageUrl" alt="思考图：原文观察、AI 推测与待验证问题" />
+                <p v-else>图片未生成，思考提纲已保留；可以重试或带着问题继续聊。</p>
+                <details><summary>查看可复制提纲</summary><pre>{{ artifact.thinkingImage.outline }}</pre></details>
+                <button v-for="item in artifact.thinkingImage.questions" :key="item" :disabled="blocked" @click="seedThinkingQuestion(item)">继续聊：{{ item }}</button>
+              </template>
               <template v-else
                 ><div class="diff-summary">
                   变更范围：移除 {{ artifact.removedChars }} · 新增 {{ artifact.addedChars }} 个字符
@@ -717,27 +676,8 @@ defineExpose({ refresh })
                 </div></template
               >
               <div class="artifact-actions">
-                <button
-                  v-if="artifact.application === 'PENDING'"
-                  class="primary"
-                  :disabled="busy || blocked || artifact.validity !== 'CURRENT'"
-                  @click="action('apply')"
-                >
-                  采用{{ labels[stage] }}</button
-                ><button
-                  v-if="artifact.application === 'APPLIED'"
-                  :disabled="busy || blocked || artifact.validity !== 'CURRENT'"
-                  @click="action('restore')"
-                >
-                  恢复加工前</button
-                ><button
-                  v-if="artifact.application === 'PENDING'"
-                  :disabled="busy"
-                  @click="action('decline')"
-                >
-                  忽略</button
-                ><button :disabled="busy || blocked" @click="emit('run', stage)">重新整理</button
-                ><button @click="copyText(artifact.resultText, '成果已复制')">复制成果</button>
+                <button :disabled="busy || blocked" @click="emit('run', stage)">{{ stage === 'thinking' ? '换个角度 / 重新生成' : '重新整理' }}</button>
+                <button @click="copyText(artifact.resultText, '成果已复制')">复制成果</button>
               </div>
               <ul
                 v-if="stage === 'tags' && artifact.tagRecommendations?.length"
@@ -758,10 +698,6 @@ defineExpose({ refresh })
                 <summary>当前已保存 · v{{ artifact.currentRev }}</summary>
                 <pre>{{ artifact.currentText || '（空）' }}</pre>
               </details>
-              <p v-if="artifact.reasonCode === 'REVIEW_REQUIRED'" class="draft-warning">
-                {{ artifact.reason }}
-                <button @click="editSelectedNote">打开编辑器对照采用</button>
-              </p>
               <small class="model-info"
                 >{{ artifact.model || '历史模型未记录'
                 }}{{ artifact.effort ? ` · ${artifact.effort}` : '' }} ·
@@ -1102,7 +1038,7 @@ select {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.result-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; background: var(--wao-bg-subtle, #f7f8fc); border-radius: 8px; font-size: 12px; }
+.result-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; background: var(--wao-bg-sub); border-radius: var(--wao-radius-control); font-size: 12px; }
 .result-summary small { color: var(--wao-text-secondary); }
 .result-summary b { color: var(--wao-primary); }
 .stage-tabs {
@@ -1234,11 +1170,6 @@ pre,
   padding: 12px 16px;
   border-bottom: 1px solid var(--wao-line);
   background: var(--wao-bg-sub);
-}
-.mode-choice {
-  display: flex;
-  gap: 5px;
-  margin-top: 8px;
 }
 .companion-settings p {
   color: var(--wao-text-faint);

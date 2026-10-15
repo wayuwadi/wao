@@ -1,0 +1,97 @@
+title = "WAO source and history checks"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "feishu-robot-webhook"
+description = "Real Feishu or Lark robot webhook credential"
+regex = '''https://(?:open\.)?(?:feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'''
+
+[[allowlists]]
+description = "UTC deployment timestamp format, not curl authentication"
+targetRules = ["curl-auth-user"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^\.github/workflows/ci\-cd\.yml$''', '''^deploy/jenkins/ci\-deploy\.sh$''']
+regexes = ['''^'\+%Y\-%m\-%dT%H:%M:%SZ\ public\ /api/hello\ unavailable'$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^deploy/jumpserver/test_custom_sso\.py$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/auth/JumpServerSsoServiceTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/FeishuLinkPreviewServiceTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/TianrenVisualServiceTest\.java$''', '''^wao\-web/src/__tests__/TianrenShareView\.spec\.ts$''']
+regexes = ['''^0123456789abcdef0123456789abcdef$''']
+
+[[allowlists]]
+description = "Jenkins plugin version, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^deploy/jenkins/plugins\.txt$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/DeploymentRoutingConfigTest\.java$''']
+regexes = ['''^257\.v7dc0e405b_624$''']
+
+[[allowlists]]
+description = "Jenkins plugin version, not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^deploy/jenkins/plugins\.txt$''']
+regexes = ['''^372\.va_250881b_08cd$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^wao\-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/AiAccountServiceTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/FeishuWebhookConfigServiceTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/NeteaseMusicServiceTest\.java$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/SettingServiceTest\.java$''', '''^wao\-server/src/test/resources/application\.yml$''']
+regexes = ['''^ZKp9ywcbuZOrQCrxx2kd\+0N9VJfnzRNSQQZXMP/vXVw=$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^deploy/ai\-runner/test_wao_ai_runner\.py$''', '''^wao\-server/src/test/java/cn/wayuwa/wao/service/UnifiedMemoryServiceIntegrationTest\.java$''']
+regexes = ['''^abcdefghijk12345$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^agent\-server/src/main/java/cn/wayuwa/wao/agent/platform/CredentialCipher\.java$''', '''^agent\-server/src/test/java/cn/wayuwa/wao/agent/platform/CredentialCipherTest\.java$''']
+regexes = ['''^d2FvLWFnZW50LWxvY2FsLWRldi1vbmx5LWtleS0zMmI=$''']
+
+[[allowlists]]
+description = "Public notification image resource identifier, not an API credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^wao\-server/src/main/java/cn/wayuwa/wao/service/TianrenNotificationService\.java$''']
+regexes = ['''^img_v3_02157_7be3ce53\-692e\-4549\-b0f9\-c3d9872c0cdg$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^wao\-server/src/test/java/cn/wayuwa/wao/service/ProjectMemoryServiceTest\.java$''']
+regexes = ['''^sk\-123456789012345678901234567890$''']
+
+[[allowlists]]
+description = "Reviewed deterministic test or local development fixture"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^wao\-server/src/test/java/cn/wayuwa/wao/service/NeteaseMusicSignerTest\.java$''']
+regexes = ['''^\-\-\-\-\-BEGIN\ PRIVATE\ KEY\-\-\-\-\-\\n"\
+\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \+\ Base64\.getEncoder\(\)\.encodeToString\(pair\.getPrivate\(\)\.getEncoded\(\)\)\
+\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \+\ "\\n\-\-\-\-\-END\ PRIVATE\ KEY\-\-\-\-\-$''']
+
+[[allowlists]]
+description = "Historical incomplete PEM test fixture; immutable imported commits only"
+targetRules = ["private-key"]
+condition = "AND"
+paths = ['''^wao-server/src/test/java/cn/wayuwa/wao/service/NeteaseMusicSignerTest\.java$''']
+commits = ["5e3e57b9e1a0b4a7d40942f8c262244f90012d36", "c1cf5e76c1a3676a42c73ae079c498f36ebd9e5c"]

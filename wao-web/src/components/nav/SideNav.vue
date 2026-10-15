@@ -31,7 +31,27 @@ const nav = useNavStore()
 const isCollapsed = computed(() => !isMobile.value && nav.collapsed)
 const session = useSessionStore()
 const favorites = useFavoritesStore()
-const favoriteProjects = computed(() => favorites.items.filter((item) => item.type === 'project'))
+const favoriteProjects = computed(() => favorites.orderedProjects)
+const draggedFavorite = ref<string | null>(null)
+const favoriteDropTarget = ref<string | null>(null)
+function startFavoriteDrag(project: Favorite, event: DragEvent) {
+  draggedFavorite.value = project.targetId
+  shortcuts.start(favoriteShortcut(project), event)
+}
+function finishFavoriteDrag() { draggedFavorite.value = null; favoriteDropTarget.value = null; shortcuts.end() }
+function dropFavorite(event: DragEvent, targetId: string) {
+  if (!draggedFavorite.value) return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  favorites.reorderProject(draggedFavorite.value, targetId, event.clientY > bounds.top + bounds.height / 2)
+  finishFavoriteDrag()
+}
+function moveFavoriteByKey(event: KeyboardEvent, projectId: string) {
+  if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+  event.preventDefault(); event.stopPropagation()
+  const index = favoriteProjects.value.findIndex(item => item.targetId === projectId)
+  const target = favoriteProjects.value[index + (event.key === 'ArrowUp' ? -1 : 1)]
+  if (target) favorites.reorderProject(projectId, target.targetId, event.key === 'ArrowDown')
+}
 const otherFavorites = computed(() => favorites.items.filter((item) => item.type === 'module'))
 const route = useRoute()
 const shortcuts = useTopShortcutsStore()
@@ -370,15 +390,22 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             </div>
           </div>
           <div v-if="id === 'projects' && favoriteProjects.length && !isCollapsed" class="favorite-children project-children">
-            <div v-for="project in favoriteProjects" :key="project.targetId" class="favorite-child">
+            <div v-for="project in favoriteProjects" :key="project.targetId" class="favorite-child"
+              :class="{ 'favorite-drop-target': favoriteDropTarget === project.targetId }"
+              @dragover.stop.prevent="draggedFavorite && (favoriteDropTarget = project.targetId)"
+              @drop.stop.prevent="dropFavorite($event, project.targetId)">
               <button class="item" :class="{ active: route.path === `/projects/${project.targetId}` }" :title="project.label"
                 :draggable="!isMobile && !!favoriteShortcut(project)"
-                @dragstart="shortcuts.start(favoriteShortcut(project), $event)" @dragend="shortcuts.end"
+                aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                @keydown="moveFavoriteByKey($event, project.targetId)"
+                @dragstart.stop="startFavoriteDrag(project, $event)" @dragend="finishFavoriteDrag"
                 @click="openFavorite(project)">
                 <span class="item-label">{{ project.label }}</span>
               </button>
               <button class="favorite-unfavorite" title="取消收藏" :aria-label="`取消收藏：${project.label}`" @click="removeFavorite(project, $event)"><i class="ri-star-fill" aria-hidden="true"></i></button>
             </div>
+            <p v-if="favorites.projectOrderError" class="nav-save-error" role="alert">{{ favorites.projectOrderError }}<button type="button" @click="favorites.retryProjectOrder">重试保存顺序</button></p>
+            <span v-else-if="favorites.projectOrderState === 'saving'" class="favorite-order-status" role="status">正在保存收藏顺序…</span>
           </div>
           </template>
         </div>
@@ -561,6 +588,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
+.favorite-drop-target { outline: 1px solid var(--wao-primary); background: var(--wao-primary-soft); }
+.favorite-order-status { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .favorite-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
 .favorite-child { display: flex; align-items: center; gap: 2px; }
 .favorite-child > .item { flex: 1; min-width: 0; width: auto; }

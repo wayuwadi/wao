@@ -28,6 +28,33 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** 真实状态表与调度批次验证队列继续推进，模型与文档出口隔离，不连接共享库。 */
 class NoteAiWorkflowQueueTest {
+    @org.junit.jupiter.api.Test
+    void onlyCurrentLatestRetainedResultsJoinTheRecoveryQueue() throws Exception {
+        var ds = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var db = new JdbcTemplate(ds);
+        db.execute("CREATE TABLE note_ai_workflow(doc_id VARCHAR(64),title_status VARCHAR(16),image_status VARCHAR(16),polish_status VARCHAR(16),updated_at TIMESTAMP)");
+        db.execute("CREATE TABLE note_ai_stage_attempt(doc_id VARCHAR(64),state VARCHAR(16),reason_code VARCHAR(32),cycle_id VARCHAR(32),attempt_no INT,stage VARCHAR(16))");
+        db.execute("CREATE TABLE note_ai_save_signal(doc_id VARCHAR(64),cycle_id VARCHAR(32))");
+        db.execute("CREATE TABLE doc(id VARCHAR(64),deleted_at TIMESTAMP,archived_at TIMESTAMP)");
+        for (String id : List.of("current", "review", "old-cycle", "old-attempt", "deleted", "archived", "applied")) {
+            db.update("INSERT INTO note_ai_workflow VALUES(?,'DONE','SKIPPED','DONE',CURRENT_TIMESTAMP)", id);
+            db.update("INSERT INTO doc VALUES(?,NULL,NULL)", id);
+            db.update("INSERT INTO note_ai_save_signal VALUES(?,?)", id, id);
+            db.update("INSERT INTO note_ai_stage_attempt VALUES(?,'DONE',?,?,1,'polish')", id,
+                    id.equals("review") ? "REVIEW_REQUIRED" : id.equals("applied") ? "APPLIED" : "READY",
+                    id.equals("old-cycle") ? "previous" : id);
+        }
+        db.update("INSERT INTO note_ai_stage_attempt VALUES('old-attempt','FAILED','EXECUTION_FAILED','old-attempt',2,'polish')");
+        db.update("UPDATE doc SET deleted_at=CURRENT_TIMESTAMP WHERE id='deleted'");
+        db.update("UPDATE doc SET archived_at=CURRENT_TIMESTAMP WHERE id='archived'");
+        var configuration = new org.apache.ibatis.session.Configuration();
+        configuration.addMapper(NoteAiWorkflowMapper.class);
+        var factory = new SqlSessionFactoryBean(); factory.setDataSource(ds); factory.setConfiguration(configuration);
+        var mapper = new SqlSessionTemplate(factory.getObject()).getMapper(NoteAiWorkflowMapper.class);
+        try { assertThat(mapper.pendingDocIds(30)).containsExactlyInAnyOrder("current", "review"); }
+        finally { db.execute("SHUTDOWN"); }
+    }
+
     @ParameterizedTest @ValueSource(ints = {1, 3})
     void waitingNotesAllStartDespiteLegacyMemberCapacity(int capacity) throws Exception {
         var ds = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
@@ -43,8 +70,11 @@ class NoteAiWorkflowQueueTest {
                 """);
         jdbc.execute("""
                 CREATE TABLE note_ai_stage_attempt (
-                  doc_id VARCHAR(64), state VARCHAR(16))
+                  doc_id VARCHAR(64), state VARCHAR(16), reason_code VARCHAR(32), cycle_id VARCHAR(32),
+                  attempt_no INT, stage VARCHAR(16))
                 """);
+        jdbc.execute("CREATE TABLE note_ai_save_signal(doc_id VARCHAR(64),cycle_id VARCHAR(32))");
+        jdbc.execute("CREATE TABLE doc(id VARCHAR(64),deleted_at TIMESTAMP,archived_at TIMESTAMP)");
         var configuration = new org.apache.ibatis.session.Configuration();
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(NoteAiWorkflowMapper.class);

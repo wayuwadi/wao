@@ -1511,6 +1511,51 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('Codex 聊天链接可编辑并以 Markdown 与 JSON 往返，编辑态只打开一次且阅读态保留原生链接', async () => {
+    const href = 'codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d'
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const w = await mountEditor({ modelValue: '[聊天](https://example.com)', linkControls: true })
+    const instance = w.vm as unknown as { editor: Editor; openLinkEditor: () => void }
+    instance.editor.commands.setTextSelection({ from: 1, to: 3 })
+    instance.openLinkEditor()
+    await nextTick()
+    await w.findAll('.link-dialog input')[1]!.setValue(href)
+    await w.get('.link-dialog').trigger('submit')
+    await nextTick()
+    expect(w.find('.link-dialog').exists()).toBe(false)
+    const markdown = instance.editor.getMarkdown()
+    const saved = instance.editor.getJSON()
+    expect(markdown).toBe(`[聊天](${href})`)
+    await w.get('.md-body a').trigger('click')
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer')
+    w.unmount()
+    for (const document of [null, saved]) {
+      const reader = await mountEditor({ modelValue: markdown, document, readonly: true })
+      expect(reader.get('.md-body a').attributes('href')).toBe(href)
+      expect(reader.get('.md-body a').attributes('target')).toBe('_blank')
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+      reader.get('.md-body a').element.dispatchEvent(click)
+      expect(click.defaultPrevented).toBe(false)
+      reader.unmount()
+    }
+    expect(open).toHaveBeenCalledTimes(1)
+    open.mockRestore()
+  })
+
+  it('从富文本粘贴 Codex 链接并保存时地址完整，非法 Codex 链接不成为可点击地址', async () => {
+    const href = 'codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d'
+    const w = await mountEditor({ modelValue: '' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.view.pasteHTML(`<p><a href="${href}">聊天</a><a href="codex://settings">非法</a></p>`, new Event('paste') as ClipboardEvent)
+    await nextTick()
+    expect(e.getMarkdown()).toContain(`[聊天](${href})`)
+    expect(w.findAll('.md-body a')).toHaveLength(1)
+    expect(w.get('.md-body a').attributes('href')).toBe(href)
+    expect(e.getText()).toContain('非法')
+    w.unmount()
+  })
+
   it('历史 Markdown 含危险链接协议时，链接工具条不会执行或打开它', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     const w = await mountEditor({

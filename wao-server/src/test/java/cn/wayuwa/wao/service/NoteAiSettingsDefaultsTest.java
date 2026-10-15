@@ -11,6 +11,22 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class NoteAiSettingsDefaultsTest {
+    @Test void thinkingDefaultsOnButOlderSettingsCannotReenableItAfterMemberTurnsItOff() throws Exception {
+        var values=new java.util.LinkedHashMap<String,String>();var prefs=mock(MemberPreferenceMapper.class);var db=mock(JdbcTemplate.class);
+        when(db.queryForList(anyString(),eq("m"))).thenReturn(java.util.List.of(Map.of("id","m")));
+        when(prefs.find(eq("m"),anyString())).thenAnswer(c->values.get(c.getArgument(1)));
+        doAnswer(c->{values.put(c.getArgument(1),c.getArgument(2));return null;}).when(prefs).upsert(eq("m"),anyString(),anyString());
+        var json=new ObjectMapper();var service=new NoteAiSettingsService(db,prefs,json);
+        assertThat(service.get("m").settings().enabled("thinking")).isTrue();
+        var off=service.parse(Map.of(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false}")).settings();
+        var saved=service.save("m",new NoteAiSettingsService.Save(off,service.get("m").version()));
+        assertThat(saved.settings().thinkingEpoch()).isEqualTo(1);
+        com.fasterxml.jackson.databind.node.ObjectNode oldClient=json.valueToTree(saved.settings());oldClient.remove(java.util.List.of("thinking","thinkingEpoch"));
+        service.save("m",new NoteAiSettingsService.Save(json.treeToValue(oldClient,NoteAiSettingsService.Settings.class),saved.version()));
+        assertThat(service.get("m").settings().enabled("thinking")).isFalse();
+        assertThat(service.get("m").settings().thinkingEpoch()).isEqualTo(1);
+        assertThatThrownBy(()->service.parse(Map.of(NoteAiSettingsService.DEFAULTS,"{\"thinking\":\"false\"}"))).hasMessageContaining("开关格式");
+    }
     @Test void lightweightPolishDefaultsDoNotChangeImageChoiceOrStoredConfigurationVersion() {
         var service = new NoteAiSettingsService(mock(JdbcTemplate.class), mock(MemberPreferenceMapper.class), new ObjectMapper());
         var values = Map.of(NoteAiSettingsService.DEFAULTS, "{\"reasoningEffort\":\"high\"}", "note-ai-model-v1", "gpt-6-astra");

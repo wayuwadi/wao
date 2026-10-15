@@ -22,6 +22,8 @@ import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
+import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
+const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
@@ -114,6 +116,7 @@ onMounted(() => {
 const doc = computed(() => (docId.value && data.docById(docId.value)
   && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
+const editingPrivateNote = computed(() => kbId.value === 'kb-notes' || base.value?.kbId === 'kb-notes')
 // 同一知识库仍复用一个页签，标题和地址指向当前文档，避免与“小记”模块同名。
 watch([() => data.docs[docId.value ?? '']?.title, () => kb.value?.name, docId], () => {
   if (!kb.value) return
@@ -862,6 +865,7 @@ const moreMenuOpen = ref(false)
 watch(docId, () => { moreMenuOpen.value = false })
 async function copyDocShare(kind: 'page' | 'md') {
   if (!docId.value) return
+  if (data.docs[docId.value]?.kbId === 'kb-notes') { shareMenu.value = false; shareNoteId.value = docId.value; return }
   const url = kind === 'md' ? docShareMarkdownUrl(docId.value) : docShareUrl(docId.value)
   shareMenu.value = false
   toast(
@@ -883,7 +887,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   }
   const ref = await data.uploadImage(
     file,
-    `文档 · ${doc.value?.title || '未命名文档'}`,
+    `${editingPrivateNote.value ? '小记' : '文档'} · ${doc.value?.title || '未命名文档'}`,
     { requirePersisted: true },
   )
   if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
@@ -895,7 +899,7 @@ async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
     done(null)
     return
   }
-  const item = await data.uploadFile(file)
+  const item = await data.uploadFile(file, undefined, editingPrivateNote.value)
   if (!item) toast('文件上传失败，正文仍可继续编辑', 'ri-error-warning-line')
   done(item)
 }
@@ -1399,6 +1403,7 @@ async function saveKbSettings() {
       </section>
     </div>
   </div>
+  <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
 </template>
 
 <style scoped>

@@ -9,6 +9,7 @@ import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import AiPromptEditor from '@/components/ui/AiPromptEditor.vue'
@@ -58,6 +59,8 @@ async function readTokens() {
 watch(theme, readTokens)
 onMounted(readTokens)
 const sampleTitle = ref('给一个念头留个位置')
+const projectDemoTab = ref<ProjectSettingsTab>('basic')
+const projectDemoName = ref('阅读计划（演示）')
 const sampleError = ref('')
 const feedback = ref('')
 
@@ -177,7 +180,7 @@ onBeforeUnmount(() => {
   clearTimeout(timer.value)
   clearTimeout(saveTimer)
 })
-const repository = 'https://github.com/wayuwacn/wao/blob/main/'
+const repository = 'https://github.com/wayuwadi/wao/blob/main/'
 const detailDemoDescription = ref('先说明背景、目标与边界，再把具体执行拆成子任务。\n\n'+ '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16))
 const detailDemoSubtasks = ref([
   { title: '确认目标与验收标准', done: true },
@@ -258,6 +261,7 @@ const detailDemoComment = ref('')
               <h3 class="type-example">给一个念头留个位置</h3>
               <p class="body-example">随手写下来，稍后再慢慢整理。</p>
               <p>辅助信息不抢主内容，也不能淡到难读。</p>
+              <p>四象限任务标题与项目单行排列，长标题省略并提供完整提示；保存失败允许展开重试。项目拖拽的浅底表示移为子任务，行边缘插入线表示前后排序，更多菜单保留键盘入口。</p>
               <p class="measurements">标题 20–24 · 正文 14 · 辅助 12–13</p>
               <div class="spacing-examples">
                 <div v-for="(space, index) in [8, 16, 24, 32]" :key="space">
@@ -318,10 +322,11 @@ const detailDemoComment = ref('')
           </section>
           <section class="reference-section">
             <h2>主清单与日常区</h2>
-            <p>未完成子事项默认展开，仍在推进的任务直接可见，已完成内容按需回看。低频操作放进更多菜单；辅助区承载日常与记录，窄屏沿用页面滚动。以下为布局示例。</p>
-            <TodoDayLayout primary-label="主清单布局示例" secondary-label="日常区布局示例">
+            <p>未完成子事项默认展开，仍在推进的任务直接可见，已完成内容按需回看。每日固定和随手记收在侧边，默认不展开，按需打开；窄屏入口横排，沿用页面滚动。以下为布局示例。</p>
+            <TodoDayLayout primary-label="主清单布局示例" secondary-label="日常区布局示例" :routine-remaining="3" routine-count-state="ready" :note-count="2">
               <section aria-label="任务清单示例"><h3>今日安排 · 示例</h3><p>一件要做的事，清楚放在前面。</p><TodoTaskChecklist task-id="design-todo" :subs="todoExampleSubs" @toggle="toggleTodoExample" /><WaoButton variant="ghost" @click="feedback = '记进展与任务详情位于任务更多菜单；本示例没有修改真实任务。'">更多操作示例</WaoButton></section>
-              <template #secondary><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开。</p></WaoCard></template>
+              <template #routine><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard></template>
+              <template #notes><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开；收起保留正在写的内容。</p></WaoCard></template>
             </TodoDayLayout>
           </section>
           <section class="reference-section">
@@ -386,6 +391,18 @@ const detailDemoComment = ref('')
               >
             </div>
           </section>
+          <section class="reference-section">
+            <h2>项目设置分项</h2>
+            <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
+            <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
+              <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
+                <template #basic><WaoField v-slot="field" label="项目名称"><input :id="field.id" v-model="projectDemoName" /></WaoField></template>
+                <template #members><p>示例负责人 · 负责人</p><p>示例成员 · 项目成员</p></template>
+                <template #more><p>删除项目需要二次确认，失败时保留项目和输入。</p><WaoButton variant="danger" @click="feedback = '删除仅为演示，没有修改账号。'">删除示例</WaoButton></template>
+              </ProjectSettingsLayout>
+              <template #footer><div class="demo-save-footer"><span>演示输入留在本页</span><WaoButton variant="primary" @click="feedback = '项目设置演示，没有保存到账号。'">演示保存并关闭</WaoButton></div></template>
+            </SettingsDialogShell>
+          </section>
           <WaoCard variant="soft"
             ><h3>一套外壳，保留各自的业务语义。</h3>
             <p>
@@ -395,7 +412,7 @@ const detailDemoComment = ref('')
           <section class="reference-section">
             <h2>浮层的边界</h2>
             <p>图片菜单使用同一套 13px 字体，名称与常用操作直接展示；精确尺寸放入展开区。长名称省略显示，完整内容通过悬浮查看。下面为图片名称示例，不写入账号。</p>
-            <NoteReadingImages :images="[{ src: '/brand/wao-soft-loop-v4.svg', alt: 'image.png' }, { src: '/brand/wao-soft-loop-v4.svg', alt: '有意义的自定义图片名称，长名称也保持布局稳定' }]" :active="null" />
+            <NoteReadingImages :images="[{ src: '/brand/wao-soft-loop-v4.svg', alt: 'image.png' }, { src: '/brand/wao-soft-loop-v4.svg', alt: '思考图（合成演示）', derived: true, sourceRev: 1, current: false, outline: '原文观察：合成记录。AI推测：待验证的关系。下一步：补充一次观察。', questions: ['哪一个条件值得单独观察？'] }]" :active="null" @question="feedback = '合成问题示例，没有打开私人会话。'" />
             <div class="popover-sample" role="group" aria-label="浮层外观示例">
               <strong>当前内容的操作</strong><span>轻量菜单使用浮层阴影</span
               ><WaoButton variant="ghost" @click="feedback = '浮层示例操作已触发。'"
@@ -409,7 +426,7 @@ const detailDemoComment = ref('')
         <template v-else-if="active === 'task-detail'">
           <div class="section-heading">
             <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
-            <p>概览展示原文预览与子任务，描述独立阅读和编辑，属性与评论按需展开。</p>
+            <p>概览直接编辑描述并限制显示高度，子任务紧接其后；桌面默认展开属性与评论，描述页签用于阅读全文。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <div class="task-detail-demo">

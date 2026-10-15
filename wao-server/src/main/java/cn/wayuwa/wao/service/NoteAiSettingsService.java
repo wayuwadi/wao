@@ -29,9 +29,10 @@ public class NoteAiSettingsService {
     }
     public record Settings(boolean title, boolean polish, boolean image, String executionMode, int maxConcurrent,
             String model, String reasoningEffort, String titlePrompt, String imagePrompt, String polishPrompt,
-            long titleEpoch, long imageEpoch, long polishEpoch, String polishModel, String polishReasoningEffort) {
-        public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; default -> polish; }; }
-        public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; default -> polishEpoch; }; }
+            long titleEpoch, long imageEpoch, long polishEpoch, String polishModel, String polishReasoningEffort, Boolean thinking, long thinkingEpoch) {
+        public Settings(boolean title,boolean polish,boolean image,String executionMode,int maxConcurrent,String model,String reasoningEffort,String titlePrompt,String imagePrompt,String polishPrompt,long titleEpoch,long imageEpoch,long polishEpoch,String polishModel,String polishReasoningEffort) { this(title,polish,image,executionMode,maxConcurrent,model,reasoningEffort,titlePrompt,imagePrompt,polishPrompt,titleEpoch,imageEpoch,polishEpoch,polishModel,polishReasoningEffort,null,0); }
+        public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; case "thinking" -> thinking==null||thinking; default -> polish; }; }
+        public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; case "thinking" -> thinkingEpoch; default -> polishEpoch; }; }
     }
     public record PromptDefaults(String titlePrompt, String polishPrompt, String imagePrompt) { }
     public record View(Settings settings, String version, boolean configured, String availability,
@@ -58,7 +59,7 @@ public class NoteAiSettingsService {
         try { node = raw == null || raw.isBlank() ? json.createObjectNode() : json.readTree(raw); }
         catch (Exception error) { throw new BadRequestException("小记 AI 设置格式异常，请在设置中重新保存；正文可正常保存"); }
         if (!node.isObject()) throw new BadRequestException("小记 AI 设置格式异常");
-        for (String key : List.of("title","image","polish"))
+        for (String key : List.of("title","image","polish","thinking"))
             if (node.has(key) && !node.get(key).isBoolean()) throw new BadRequestException("小记 AI 开关格式异常");
         String canonical = values.get("text-polish.prompt.v1");
         Settings s = new Settings(node.path("title").asBoolean(true),node.path("polish").asBoolean(true),node.path("image").asBoolean(true),
@@ -67,7 +68,7 @@ public class NoteAiSettingsService {
             text(values.get("note-title-prompt-v1")),text(values.get("article-overview-image-prompt-v1")),
             text(canonical == null || canonical.isBlank() ? values.get("note-polish-prompt-v1") : canonical),
             node.path("titleEpoch").asLong(),node.path("imageEpoch").asLong(),node.path("polishEpoch").asLong(),
-            polishModel(node.path("polishModel").asText(null)), polishEffort(node.path("polishReasoningEffort").asText(null)));
+            polishModel(node.path("polishModel").asText(null)), polishEffort(node.path("polishReasoningEffort").asText(null)), node.path("thinking").asBoolean(true),node.path("thinkingEpoch").asLong());
         return new View(s,hash(write(values)), raw != null && !raw.isBlank(), "沿用服务主机已获准 AI 配置；实际任务失败会保留原因");
     }
     /** 锁定成员以保护多设备设置与工作流并发占用。 */
@@ -97,9 +98,10 @@ public class NoteAiSettingsService {
         try { String raw=preferences.find(member,DEFAULTS); defaults=raw==null||raw.isBlank()?json.createObjectNode():(ObjectNode)json.readTree(raw); }
         catch (Exception e) { throw new BadRequestException("已有设置格式异常"); }
         defaults.put("title",next.title()).put("polish",next.polish()).put("image",next.image())
+            .put("thinking",next.thinking()==null?old.settings().enabled("thinking"):next.thinking())
             .put("executionMode","parallel").put("maxConcurrent",0)
             .put("reasoningEffort",effort).put("polishModel",polishModel).put("polishReasoningEffort",polishEffort);
-        for(String stage:List.of("title","image","polish")) defaults.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!next.enabled(stage)?1:0));
+        for(String stage:List.of("title","image","polish","thinking")) defaults.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!next.enabled(stage)?1:0));
         preferences.upsert(member,DEFAULTS,write(defaults));
         preferences.upsert(member,"note-ai-model-v1",text(next.model()));
         preferences.upsert(member,"note-title-prompt-v1",text(next.titlePrompt()));
@@ -119,7 +121,7 @@ public class NoteAiSettingsService {
                 Settings parsed=parse(check).settings();
                 ObjectNode previous=(ObjectNode)json.valueToTree(json.readTree(Optional.ofNullable(preferences.find(member,key)).filter(v->!v.isBlank()).orElse("{}")));
                 previous.setAll(next);
-                for(String stage:List.of("title","image","polish"))previous.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!parsed.enabled(stage)?1:0));
+                for(String stage:List.of("title","image","polish","thinking"))previous.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!parsed.enabled(stage)?1:0));
                 value=write(previous);
             } catch(BadRequestException e){throw e;} catch(Exception e){throw new BadRequestException("小记 AI 设置格式异常");}
         }

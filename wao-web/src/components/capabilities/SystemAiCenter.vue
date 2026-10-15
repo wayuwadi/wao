@@ -25,7 +25,6 @@ import {
 import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialog.vue'
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
-import CompanionPreferenceForm from './CompanionPreferenceForm.vue'
 const TextPolishSettings = defineAsyncComponent(() => import('@/views/TextPolishView.vue'))
 const AiAccountPanel = defineAsyncComponent(
   () => import('@/components/settings/AiAccountPanel.vue'),
@@ -317,6 +316,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div v-if="pane === 'settings'" class="settings-content">
+            <p v-if="feature.group === 'companion'" class="scope-note">
+              小记润色完成后直接生效。模型、提示词与自动开关在小记整理设置中管理。
+            </p>
             <p v-if="feature.group === 'notes'" class="scope-note">
               这里保存同一组小记 AI 设置。配图提示词也用于文档配图；文档仍需手动生成。
             </p>
@@ -333,9 +335,7 @@ onBeforeUnmount(() => {
                 :key="`tianren:${owner}`"
                 embedded
                 :section="tianrenSection"
-                @saved="loadResources" /><CompanionPreferenceForm
-                v-else-if="feature.group === 'companion'"
-                :key="`companion:${owner}`" /><NoteDiscoveryPreference
+                @saved="loadResources" /><NoteDiscoveryPreference
                 v-else-if="feature.group === 'discovery'"
                 :key="`discovery:${owner}`"
             /></KeepAlive>

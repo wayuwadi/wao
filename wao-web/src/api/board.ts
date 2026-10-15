@@ -74,6 +74,11 @@ export const apiMergeNoteTag = (source: string, target: string) => post<void>('/
 export const fetchOrg = () => get<Org>('/api/org')
 export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
+/** 设置冲突恢复读取最新快照，不使用本机短缓存。 */
+export async function apiGetProject(id: string): Promise<Project> {
+  const res = await http.get<ApiResponse<Project>>(`/api/projects/${encodeURIComponent(id)}`)
+  return res.data.data
+}
 export const fetchTasks = () => get<Task[]>('/api/tasks')
 /** 单条任务最新快照；不走桌面短缓存，用于保存冲突后的合并。 */
 export const apiGetTask = (id: string) => get<Task>(`/api/tasks/${encodeURIComponent(id)}`)
@@ -95,9 +100,10 @@ export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)
 export const fetchFiles = (projectId?: string) =>
   get<FileItem[]>(`/api/files${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`)
-export async function apiUploadFile(file: File, projectId?: string): Promise<FileItem> {
+export async function apiUploadFile(file: File, projectId?: string, privateNote = false): Promise<FileItem> {
   const form = new FormData()
   form.append('file', file)
+  if (privateNote) form.append('privateNote', 'true')
   if (projectId) form.append('projectId', projectId)
   const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
   return res.data.data
@@ -293,6 +299,8 @@ export async function apiCreateProject(payload: CreateProjectPayload): Promise<P
 }
 
 export interface PatchProjectPayload {
+  members?: string[]
+  expectedMembers?: string[]
   /** 不传表示不改；空串清空截止日期。 */
   due?: string
   name?: string
@@ -528,6 +536,12 @@ export async function apiMoveSubtask(source: Task, subId: string, target: Task, 
     targetTaskId: target.id, parentId: parentId || null, expectedSourceSubs: source.subs, expectedTargetSubs: target.subs,
   })
 }
+
+/** 将内嵌子事项及后代提升为主任务，返回源与新任务。 */
+export const apiPromoteSubtask = (source: Task, subId: string) =>
+  post<Task[]>(`/api/tasks/${encodeURIComponent(source.id)}/subs/${encodeURIComponent(subId)}/promote`, {
+    expectedSourceSubs: source.subs,
+  })
 
 /** 调整完整任务的归属，保留原始任务全部内容与编号。 */
 export const apiMoveTask = (task: Task, parentTaskId: string | null) =>

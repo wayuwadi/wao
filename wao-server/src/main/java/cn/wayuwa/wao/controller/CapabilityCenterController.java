@@ -31,6 +31,7 @@ public class CapabilityCenterController {
             Map.entry("update_subtask_status", "wao subtasks status ID"),
             Map.entry("create_subtask", "wao subtasks create ID"), Map.entry("update_subtask", "wao subtasks update ID"),
             Map.entry("reorder_subtasks", "wao subtasks reorder ID"), Map.entry("move_subtask", "wao subtasks move ID"),
+            Map.entry("promote_subtask", "wao subtasks promote ID"),
             Map.entry("list_knowledge_bases", "wao knowledge list"), Map.entry("get_knowledge_base", "wao knowledge get ID"),
             Map.entry("create_knowledge_base", "wao knowledge create"), Map.entry("update_knowledge_base", "wao knowledge update ID"),
             Map.entry("create_folder", "wao folders create"), Map.entry("rename_folder", "wao folders rename"),

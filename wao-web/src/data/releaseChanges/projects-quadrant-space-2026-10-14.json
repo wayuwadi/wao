@@ -1,0 +1,17 @@
+{
+  "id": "projects-quadrant-space-2026-10-14",
+  "publishedOn": "2026-10-14",
+  "sourceSubject": "fix(projects): 移除四象限上方计数与空白占位",
+  "title": "项目四象限获得更多空间",
+  "intro": "删除四象限上方的项目计数筛选区和空工具栏，让任务区域向上展开。",
+  "attention": "feature",
+  "prominence": "minor",
+  "highlights": [{
+    "featureId": "projects",
+    "eyebrow": "项目任务",
+    "title": "四象限更宽敞",
+    "summary": "查找与人员筛选下方直接展示四象限，减少固定占位。",
+    "points": ["四象限隐藏项目计数快捷行，进入时清除该快捷条件。", "空工具栏不占高度，有内容的顺序提示和已完成操作仍可见。"],
+    "steps": ["打开项目的任务页签。", "切换到四象限，直接浏览四个任务区域。"]
+  }]
+}

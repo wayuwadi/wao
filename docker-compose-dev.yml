@@ -5,12 +5,12 @@ services:
     image: mysql:9.0
     restart: unless-stopped
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS:-dev-root-password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS:?Run python scripts/local-dev.py init first}
       MYSQL_DATABASE: ${DB_NAME:-wao}
       MYSQL_USER: ${DB_USER:-wao_app}
-      MYSQL_PASSWORD: ${DB_PASS:-dev-password}
+      MYSQL_PASSWORD: ${DB_PASS:?Run python scripts/local-dev.py init first}
       TZ: Asia/Shanghai
     volumes:
       - mysql-dev-data:/var/lib/mysql
@@ -29,12 +29,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASS:?Run python scripts/local-dev.py init first}"]
     volumes:
       - redis-dev-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASS}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -44,8 +44,8 @@ services:
     image: nacos/nacos-server:v2.4.3
     restart: unless-stopped
     ports:
-      - "8848:8848"
-      - "9848:9848"
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"

@@ -1,6 +1,8 @@
 import { http, type ApiResponse } from './http'
 import type { NoteAiDefaults } from '@/stores/preferences'
 export interface NoteAiSettings extends NoteAiDefaults {
+  thinking?: boolean
+  thinkingEpoch?: number
   model: string
   reasoningEffort: string
   polishModel?: string

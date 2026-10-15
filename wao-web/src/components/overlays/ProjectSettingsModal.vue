@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
-import { onMounted, ref } from 'vue'
+import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import WaoField from '@/components/ui/WaoField.vue'
+import { readProjectSettingsDraft, writeProjectSettingsDraft, type ProjectSettingsValues } from '@/utils/projectSettingsDraft'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
+import { fetchMembers, apiGetProject } from '@/api/board'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import {
@@ -15,12 +21,67 @@ import {
 } from '@/api/ai'
 import { AI_ENGINES, engineLabel } from '@/composables/aiEngines'
 import { AI_RUN_ENABLED } from '@/config/features'
-import type { AiEngine, AiRunner, AiSkillCapability, Project } from '@/types'
+import type { AiEngine, AiRunner, AiSkillCapability, Project, Member } from '@/types'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
 
 const data = useDataStore()
+const session = useSessionStore()
+const draftMember = session.userId
+const projectId = props.project.id
+const activeTab = ref<ProjectSettingsTab>('basic')
+const iconPicker = ref<HTMLDetailsElement>()
+const nameError = ref('')
+const draftWarning = ref('')
+const draftRestored = ref(false)
+const draftConflict = ref(false)
+const canManageMembers = computed(() => session.userId === props.project.owner)
+const originalMembers = ref([...props.project.members])
+const selectedMembers = ref([...new Set([props.project.owner, ...originalMembers.value])])
+const memberConflict = ref(false)
+const memberReview = ref('')
+const memberDirectory = ref<Member[]>([])
+const membersLoading = ref(false)
+const membersError = ref('')
+const memberToAdd = ref('')
+const membersChanged = computed(() => JSON.stringify([...selectedMembers.value].sort()) !== JSON.stringify([...new Set([props.project.owner, ...originalMembers.value])].sort()))
+const availableMembers = computed(() => memberDirectory.value.filter(member => !selectedMembers.value.includes(member.id)))
+async function loadMembers() {
+  membersLoading.value = true
+  membersError.value = ''
+  try { memberDirectory.value = await fetchMembers() }
+  catch { membersError.value = '成员列表读取失败，请重试；现有选择已保留。' }
+  finally { membersLoading.value = false }
+}
+function addMember() {
+  if (!canManageMembers.value || !availableMembers.value.some(member => member.id === memberToAdd.value)) return
+  selectedMembers.value.push(memberToAdd.value)
+  memberToAdd.value = ''
+}
+function removeMember(id: string) {
+  if (!canManageMembers.value || id === props.project.owner) return
+  selectedMembers.value = selectedMembers.value.filter(member => member !== id)
+}
+function memberName(id: string) {
+  return memberDirectory.value.find(member => member.id === id)?.name ?? session.memberById(id).name ?? id
+}
+async function refreshMemberSelection() {
+  if (saving.value) return
+  saving.value = true
+  try {
+    const latest = await apiGetProject(props.project.id)
+    const additions = selectedMembers.value.filter(id => !originalMembers.value.includes(id))
+    const removals = originalMembers.value.filter(id => !selectedMembers.value.includes(id))
+    selectedMembers.value = [...new Set([latest.owner, ...latest.members.filter(id => !removals.includes(id)), ...additions])]
+    originalMembers.value = [...latest.members]
+    memberConflict.value = false
+    saveError.value = ''
+    memberReview.value = `最新已保存成员：${latest.members.map(memberName).join('、')}。已保留本次添加和移除，请确认列表后保存。`
+    rememberDraft()
+  } catch (error) { saveError.value = error instanceof Error ? error.message : '读取最新成员失败，选择已保留，请重试。' }
+  finally { saving.value = false }
+}
 
 const name = ref(props.project.name)
 const area = ref(props.project.area)
@@ -28,8 +89,7 @@ const goal = ref(
   props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal,
 )
 const icon = ref(props.project.icon || 'ri-stack-line')
-const originalDue = props.project.due || ''
-const due = ref(originalDue)
+const due = ref(props.project.due || '')
 const confirming = ref(false)
 const aiLoading = ref(true)
 const aiEnabled = ref(false)
@@ -88,9 +148,61 @@ const ICONS = [
 
 const saving = ref(false),
   saveError = ref('')
-const basicSnapshot = () =>
-  JSON.stringify([name.value, area.value, goal.value, icon.value, due.value])
-const basicOriginal = basicSnapshot()
+const values = (): ProjectSettingsValues => ({ name: name.value, area: area.value, goal: goal.value, icon: icon.value, due: due.value, members: [...selectedMembers.value] })
+const original = ref<ProjectSettingsValues>(values())
+const fields = ['name', 'area', 'goal', 'icon', 'due'] as const
+const dirty = computed(() => fields.some(field => values()[field] !== original.value[field]) || (canManageMembers.value && membersChanged.value) || (AI_RUN_ENABLED && aiLoaded.value && aiSnapshot() !== aiOriginal.value))
+let draftRevision = ''
+let saved = false
+const restored = draftMember ? readProjectSettingsDraft(draftMember, projectId) : null
+if (restored) {
+  draftConflict.value = fields.some(field => restored.value[field] !== restored.base[field] && original.value[field] !== restored.base[field] && original.value[field] !== restored.value[field])
+  for (const field of fields) if (restored.value[field] === restored.base[field]) { restored.value[field] = original.value[field]; restored.base[field] = original.value[field] }
+  name.value = restored.value.name; area.value = restored.value.area; goal.value = restored.value.goal; icon.value = restored.value.icon; due.value = restored.value.due
+  original.value = restored.base
+  if (canManageMembers.value) { originalMembers.value = [...restored.base.members]; selectedMembers.value = [...new Set([props.project.owner, ...restored.value.members])] }
+  draftRevision = restored.revision
+  draftRestored.value = true
+}
+function rememberDraft() {
+  if (!draftMember || saved || session.userId !== draftMember) return
+  const previous = draftRevision
+  const next = crypto.randomUUID()
+  const ok = dirty.value
+    ? writeProjectSettingsDraft(draftMember, projectId, { base: { ...original.value, members: [...originalMembers.value] }, value: values(), revision: next })
+    : writeProjectSettingsDraft(draftMember, projectId, null, previous)
+  if (ok && dirty.value) draftRevision = next
+  draftWarning.value = ok ? '' : '本机草稿无法保存，请保持窗口打开并保存到账号。'
+}
+function clearDraft() {
+  saved = true
+  if (draftMember && !writeProjectSettingsDraft(draftMember, projectId, null, draftRevision)) draftWarning.value = '账号已保存，但本机草稿清理失败。'
+}
+function chooseIcon(value: string) {
+  icon.value = value
+  if (iconPicker.value) { iconPicker.value.open = false; iconPicker.value.querySelector('summary')?.focus() }
+}
+function dismissIcon(event: PointerEvent) {
+  if (iconPicker.value?.open && event.target instanceof Node && !iconPicker.value.contains(event.target)) iconPicker.value.open = false
+}
+function reviewDraft(keep: boolean) {
+  const previous = values()
+  const edited = new Set(fields.filter(field => previous[field] !== original.value[field]))
+  const latest = props.project
+  const current: ProjectSettingsValues = { name: latest.name, area: latest.area, goal: latest.goal === '尚未填写目标——打开项目后可补充。' ? '' : latest.goal, icon: latest.icon || 'ri-stack-line', due: latest.due || '', members: [...latest.members] }
+  const next = Object.fromEntries(fields.map(field => [field, keep && edited.has(field) ? previous[field] : current[field]])) as Pick<ProjectSettingsValues, typeof fields[number]>
+  name.value = next.name; area.value = next.area; goal.value = next.goal; icon.value = next.icon; due.value = next.due
+  if (!keep) { selectedMembers.value = [...new Set([latest.owner, ...latest.members])]; originalMembers.value = [...latest.members] }
+  original.value = current
+  draftConflict.value = false
+  rememberDraft()
+}
+watch(values, rememberDraft, { deep: true, flush: 'sync' })
+watch(() => session.userId, id => { if (id !== draftMember) emit('close') })
+watch(activeTab, tab => {
+  if (tab !== 'basic' && iconPicker.value) iconPicker.value.open = false
+  if (tab !== 'more') confirming.value = false
+})
 const aiSnapshot = () =>
   JSON.stringify([
     aiEnabled.value,
@@ -108,24 +220,23 @@ const aiOriginal = ref(''),
   aiLoaded = ref(!AI_RUN_ENABLED)
 async function requestClose() {
   if (saving.value) return
+  if (iconPicker.value?.open) { iconPicker.value.open = false; return }
   if (confirming.value) {
     confirming.value = false
     return
   }
-  if (
-    basicSnapshot() !== basicOriginal ||
-    (aiLoaded.value && AI_RUN_ENABLED && aiSnapshot() !== aiOriginal.value)
-  )
-    await save()
+  if (dirty.value) await save()
   else emit('close')
 }
 
 async function save() {
-  if (saving.value) return
+  if (saving.value || memberConflict.value || draftConflict.value || session.userId !== draftMember) return
   if (!name.value.trim()) {
-    saveError.value = '请填写项目名称，输入已保留。'
+    nameError.value = '请填写项目名称，输入已保留。'
+    activeTab.value = 'basic'
     return
   }
+  nameError.value = ''
   if (!aiLoaded.value) {
     saveError.value = '请先成功加载配置，避免覆盖已有设置。'
     return
@@ -134,17 +245,19 @@ async function save() {
   saveError.value = ''
   try {
     const projectSaved = await data.updateProject(props.project.id, {
-      name: name.value.trim(),
-      area: area.value,
-      goal: goal.value.trim(),
-      icon: icon.value,
-      ...(due.value !== originalDue ? { due: due.value } : {}),
+      ...(name.value !== original.value.name ? { name: name.value.trim() } : {}),
+      ...(area.value !== original.value.area ? { area: area.value } : {}),
+      ...(goal.value !== original.value.goal ? { goal: goal.value.trim() } : {}),
+      ...(icon.value !== original.value.icon ? { icon: icon.value } : {}),
+      ...(due.value !== original.value.due ? { due: due.value } : {}),
+      ...(canManageMembers.value && membersChanged.value ? { members: [...selectedMembers.value], expectedMembers: [...originalMembers.value] } : {}),
     })
     if (!projectSaved) throw new Error('项目设置保存失败，请重试')
     // AI Run 下线期间不展示、也不读取执行配置，保存时绝不能用空白默认值覆盖服务端已有配置。
     if (!AI_RUN_ENABLED) {
       toast('项目设置已保存', 'ri-check-line')
-      emit('close')
+      clearDraft()
+      if (session.userId === draftMember) emit('close')
       return
     }
     await saveAiProjectConfig(props.project.id, {
@@ -160,8 +273,11 @@ async function save() {
     })
     await saveAiProjectSkills(props.project.id, selectedSkillVersions.value)
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
-    emit('close')
+    clearDraft()
+    if (session.userId === draftMember) emit('close')
   } catch (error) {
+    memberConflict.value = membersChanged.value && typeof error === 'object' && error !== null && 'status' in error && error.status === 409
+    if (memberConflict.value) activeTab.value = 'members'
     saveError.value = error instanceof Error ? error.message : '项目设置保存失败'
     toast(saveError.value, 'ri-error-warning-line')
   } finally {
@@ -170,8 +286,12 @@ async function save() {
 }
 
 async function remove() {
-  await data.deleteProject(props.project.id)
-  emit('deleted')
+  if (saving.value) return
+  saving.value = true
+  saveError.value = ''
+  try { await data.deleteProject(projectId); clearDraft(); emit('deleted') }
+  catch { saveError.value = '删除失败，项目与输入已保留，请重试。' }
+  finally { saving.value = false }
 }
 
 async function loadAiConfig() {
@@ -222,73 +342,89 @@ async function generatePairCode() {
 }
 
 onMounted(() => {
+  document.addEventListener('pointerdown', dismissIcon)
+  void loadMembers()
   if (AI_RUN_ENABLED) void loadAiConfig()
 })
+onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 </script>
 
 <template>
-  <SettingsDialogShell
-    title="项目设置"
-    description="名称、日期与项目属性"
-    width="760px"
-    height="auto"
-    @close="requestClose"
-  >
+  <SettingsDialogShell title="项目设置" :description="project.name" width="760px" height="auto" @close="requestClose">
     <div class="project-settings-body" :inert="saving || undefined">
-      <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
-      <section class="basic-fields">
-        <div>
-          <div class="label">项目名称</div>
-          <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
+      <div v-if="saveError || draftWarning || draftRestored || draftConflict" class="settings-feedback">
+        <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
+        <p v-if="draftWarning" class="save-error" role="alert">{{ draftWarning }}</p>
+        <p v-if="draftRestored && !draftConflict" class="members-help" role="status">已恢复本机未保存的修改。</p>
+        <div v-if="draftConflict" class="draft-conflict" role="alert">
+          <p>项目已在其他窗口修改。本机输入已保留，请确认要使用的内容。</p>
+          <p>账号当前名称：{{ project.name }}</p>
+          <p>领域：{{ data.areaById(project.area)?.name || '当前领域已不可用' }} · 截止日期：{{ project.due || '无截止日期' }} · 图标：<i :class="project.icon || 'ri-stack-line'" role="img" aria-label="账号当前项目图标"></i></p>
+          <p>目标：{{ project.goal }}</p>
+          <WaoButton @click="reviewDraft(true)">保留我的修改</WaoButton>
+          <WaoButton variant="ghost" @click="reviewDraft(false)">使用账号当前设置</WaoButton>
         </div>
-        <div>
-          <label class="label" for="project-due">截止日期 · 可选</label>
-          <div class="due-editor">
-            <input id="project-due" v-model="due" type="date" aria-label="项目截止日期" />
-            <button type="button" class="btn-ghost" :disabled="!due" @click="due = ''">
-              清空日期
-            </button>
-            <span v-if="!due">未排期</span>
+        <WaoButton v-if="memberConflict" variant="secondary" @click="refreshMemberSelection">读取最新成员并保留我的修改</WaoButton>
+      </div>
+      <ProjectSettingsLayout v-model="activeTab" :member-count="selectedMembers.length">
+        <template #basic>
+          <div class="basic-form">
+            <WaoField v-slot="field" label="项目名称" :error="nameError" required>
+              <div class="name-editor">
+                <details ref="iconPicker" class="icon-picker" @keydown.esc.stop.prevent="iconPicker!.open = false">
+                  <summary aria-label="选择项目图标"><i :class="icon" aria-hidden="true"></i></summary>
+                  <div class="icon-grid" aria-label="项目图标">
+                    <button v-for="(ic, index) in ICONS" :key="ic" type="button" class="icon-cell" :class="{ on: icon === ic }"
+                      :aria-label="`项目图标 ${index + 1}`" :aria-pressed="icon === ic" @click="chooseIcon(ic)">
+                      <i :class="ic" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </details>
+                <input :id="field.id" v-model="name" class="title-input" :aria-invalid="field.invalid" :aria-describedby="field.describedBy" required @keydown.enter.prevent="requestClose" @input="nameError = ''" />
+              </div>
+            </WaoField>
+            <div class="basic-fields">
+              <WaoField v-slot="field" label="所属领域">
+                <select :id="field.id" v-model="area"><option v-if="!data.areaById(area)" :value="area">当前领域（已不可用）</option><option v-for="a in data.areas" :key="a.id" :value="a.id">{{ a.name }}</option></select>
+              </WaoField>
+              <WaoField v-slot="field" label="截止日期 · 可选">
+                <div class="due-editor">
+                  <input :id="field.id" v-model="due" type="date" aria-label="项目截止日期" />
+                  <WaoButton v-if="due" variant="ghost" @click="due = ''">清空日期</WaoButton>
+                </div>
+              </WaoField>
+            </div>
+            <WaoField v-slot="field" label="项目描述 / 目标">
+              <textarea :id="field.id" v-model="goal" class="goal" rows="4" placeholder="这个项目做成了，会是什么样？"></textarea>
+            </WaoField>
           </div>
-        </div>
-      </section>
-      <details class="optional-project">
-        <summary>更多项目属性 · 图标、领域与目标</summary>
-        <div class="label">项目图标</div>
-        <div class="icon-grid">
-          <button
-            v-for="ic in ICONS"
-            :key="ic"
-            class="icon-cell"
-            :class="{ on: icon === ic }"
-            :style="icon === ic ? { background: data.areaColor(area) } : {}"
-            @click="icon = ic"
-          >
-            <i :class="ic"></i>
-          </button>
-        </div>
-
-        <div class="label">所属领域</div>
-        <div class="pills">
-          <button
-            v-for="a in data.areas"
-            :key="a.id"
-            class="pill"
-            :class="{ on: area === a.id }"
-            @click="area = a.id"
-          >
-            <span class="dot" :style="{ background: a.color }"></span>{{ a.name }}
-          </button>
-        </div>
-
-        <div class="label">项目描述 / 目标</div>
-        <textarea
-          v-model="goal"
-          class="goal"
-          rows="3"
-          placeholder="这个项目做成了，会是什么样？"
-        ></textarea>
-      </details>
+        </template>
+        <template #members>
+          <section class="project-members" aria-label="项目成员">
+            <p class="members-help">{{ canManageMembers ? '负责人始终保留。成员调整保存后生效。' : '只有项目负责人可以添加或移除成员。' }}</p>
+            <p v-if="memberReview" class="members-help" role="status">{{ memberReview }}</p>
+            <p v-if="membersLoading" role="status">正在读取组织成员…</p>
+            <p v-if="membersError" class="save-error" role="alert">{{ membersError }} <WaoButton variant="ghost" @click="loadMembers">重新读取</WaoButton></p>
+            <ul class="member-list">
+              <li v-for="id in selectedMembers" :key="id">
+                <span class="member-avatar" aria-hidden="true">{{ memberName(id).slice(0, 1) }}</span>
+                <div class="member-info"><span>{{ memberName(id) }}</span><small>{{ id === project.owner ? '负责人' : '项目成员' }}</small></div>
+                <WaoButton v-if="canManageMembers && id !== project.owner" variant="ghost" :aria-label="`移除成员：${memberName(id)}`" @click="removeMember(id)">移除</WaoButton>
+              </li>
+            </ul>
+            <div v-if="canManageMembers" class="member-add">
+              <label for="project-member-add">添加成员</label>
+              <div class="member-add-controls">
+                <select id="project-member-add" v-model="memberToAdd" :disabled="membersLoading || !!membersError">
+                  <option value="">{{ availableMembers.length ? '选择组织成员' : '没有可添加的成员' }}</option>
+                  <option v-for="member in availableMembers" :key="member.id" :value="member.id">{{ member.name }}</option>
+                </select>
+                <WaoButton :disabled="!memberToAdd || membersLoading || !!membersError" @click="addMember">添加</WaoButton>
+              </div>
+            </div>
+          </section>
+        </template>
+        <template #more>
       <details v-if="AI_RUN_ENABLED" class="ai-section">
         <summary>AI 执行配置与 Skill</summary>
         <div class="ai-head">
@@ -438,190 +574,77 @@ onMounted(() => {
         </div>
       </details>
 
-      <div class="danger-zone">
-        <template v-if="!confirming">
-          <div class="dz-text">
-            <div class="dz-title">删除项目</div>
-            <div class="dz-sub">将同时移除该项目下的任务与关联知识库，不可恢复。</div>
+
+          <div class="danger-zone">
+            <div class="dz-text">
+              <h3>{{ confirming ? `确认删除「${project.name}」？` : '删除项目' }}</h3>
+              <p>{{ confirming ? '此操作不可撤销，请确认。' : '项目和项目下的任务将被删除；知识库与文档保留。' }}</p>
+            </div>
+            <div class="danger-actions">
+              <WaoButton v-if="confirming" @click="confirming = false">取消删除</WaoButton>
+              <WaoButton variant="danger" :loading="saving" @click="confirming ? remove() : confirming = true">{{ confirming ? '确认删除' : '删除项目' }}</WaoButton>
+            </div>
           </div>
-          <button class="btn-danger" @click="confirming = true">
-            <i class="ri-delete-bin-line"></i>删除
-          </button>
         </template>
-        <template v-else>
-          <div class="dz-text">
-            <div class="dz-title">确认删除「{{ project.name }}」？</div>
-            <div class="dz-sub">此操作不可撤销。</div>
-          </div>
-          <button class="btn-ghost sm" @click="confirming = false">完成并关闭</button>
-          <button class="btn-danger" @click="remove">
-            <i class="ri-delete-bin-line"></i>确认删除
-          </button>
-        </template>
-      </div>
+      </ProjectSettingsLayout>
     </div>
     <template #footer>
       <div class="foot">
-        <span class="save-status">{{ saving ? '正在保存…' : '关闭时保存本次修改' }}</span>
-        <button class="btn-ghost" :disabled="saving" @click="requestClose">完成并关闭</button>
-        <button class="btn-primary" :disabled="saving || !name.trim()" @click="save">
-          {{ saving ? '保存中…' : '保存设置' }}
-        </button>
+        <span class="save-status" role="status">{{ saving ? '正在保存…' : saveError ? '保存失败，修改已保留' : dirty ? '有待保存的修改 · 关闭时保存' : '没有待保存的修改' }}</span>
+        <WaoButton variant="primary" class="btn-primary" :loading="saving" :disabled="memberConflict || draftConflict" @click="requestClose">{{ saving ? '保存中…' : saveError ? '重试保存' : dirty ? '保存并关闭' : '完成' }}</WaoButton>
       </div>
     </template>
   </SettingsDialogShell>
 </template>
-
 <style scoped>
-.due-editor {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-.due-editor input {
-  padding: 7px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-}
-summary {
-  cursor: pointer;
-  padding: 10px 0;
-  color: var(--wao-text-weak);
-  font-size: 13px;
-}
-.project-settings-body {
-  padding: 24px 26px;
-}
-.basic-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 22px;
-}
-.basic-fields .label {
-  margin-top: 0;
-  display: block;
-}
-.save-status {
-  margin-right: auto;
-  color: var(--wao-text-weak);
-  font-size: 12px;
-}
-.save-error {
-  padding: 10px;
-  color: var(--wao-danger-strong);
-  background: var(--wao-danger-bg);
-  border-radius: 8px;
-}
-.optional-project {
-  margin-top: 22px;
-  border-top: 1px solid var(--wao-divider);
-  padding-top: 12px;
-}
-.label {
-  margin-top: 14px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-.icon-grid {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 8px;
-}
-.icon-cell {
-  aspect-ratio: 1;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  border-radius: 9px;
-  color: var(--wao-text-3);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.icon-cell i {
-  font-size: 17px;
-}
-.icon-cell:hover {
-  border-color: #c7d0f1;
-}
-.icon-cell.on {
-  color: #fff;
-  border-color: transparent;
-}
-.title-input {
-  margin-top: 6px;
-  width: 100%;
-  height: 40px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  padding: 0 12px;
-  font-size: 14px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  outline: none;
-}
-.title-input:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
-}
-.pills {
-  margin-top: 6px;
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-.pill {
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
-  border-radius: 999px;
-  font-size: 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.pill.on {
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-  border-color: #c7d0f1;
-}
-.pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-}
-.goal {
-  margin-top: 6px;
-  width: 100%;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.7;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  outline: none;
-  resize: none;
-}
-.goal:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+.basic-form { display: grid; gap: 22px; }
+.basic-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+.name-editor { display: flex; gap: 10px; min-width: 0; }
+.icon-picker { position: relative; flex: 0 0 44px; }
+.icon-picker summary { list-style: none; display: flex; align-items: center; justify-content: center; height: 44px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
+.icon-picker summary::-webkit-details-marker { display: none; }
+.icon-picker summary i { font-size: 22px; }
+.icon-grid { position: absolute; left: 0; top: calc(100% + 6px); z-index: 1; width: 210px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-card); box-shadow: var(--wao-shadow-pop); background: var(--wao-bg-card); }
+.icon-cell { min-height: 44px; border: 1px solid transparent; border-radius: var(--wao-radius-control); color: var(--wao-text); background: transparent; cursor: pointer; font-size: 20px; }
+.icon-cell:hover, .icon-cell.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.name-editor input { flex: 1; }
+.due-editor { display: flex; align-items: center; gap: 4px; }
+.due-editor input { flex: 1; }
+.due-editor :deep(button) { padding: 8px; white-space: nowrap; }
+.goal { min-height: 112px; }
+.settings-feedback { padding: 16px 26px 0; }
+.settings-feedback p { margin: 0 0 10px; overflow-wrap: anywhere; }
+.save-error { color: var(--wao-danger-strong); font-size: 13px; }
+.members-help { margin: 0; color: var(--wao-text-3); font-size: 13px; line-height: 1.7; }
+.member-list { list-style: none; padding: 0; margin: 16px 0 24px; }
+.member-list li { display: flex; align-items: center; gap: 12px; min-height: 68px; border-bottom: 1px solid var(--wao-line); }
+.member-avatar { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; background: var(--wao-primary-soft); color: var(--wao-primary-text); border-radius: var(--wao-radius-control); }
+.member-info { flex: 1; min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }
+.member-info small { color: var(--wao-text-3); font-size: 12px; }
+.member-add { display: grid; gap: 8px; }
+.member-add-controls { display: flex; gap: 8px; }
+.member-add select { flex: 1; min-width: 0; padding: 8px 12px; font: inherit; color: var(--wao-text); background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); }
+.danger-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.dz-text { flex: 1; min-width: 180px; }
+.dz-text h3 { margin: 0 0 8px; font-size: 15px; color: var(--wao-danger-strong); overflow-wrap: anywhere; }
+.dz-text p { margin: 0; color: var(--wao-text-3); font-size: 13px; line-height: 1.7; }
+.danger-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.foot { display: flex; align-items: center; gap: 12px; }
+.save-status { margin-right: auto; font-size: 12px; color: var(--wao-text-3); overflow-wrap: anywhere; }
+.foot :deep(button) { flex-shrink: 0; }
+@media (max-width: 650px) {
+  .basic-fields { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .settings-feedback { padding: 16px 15px 0; }
+  .foot { flex-wrap: wrap; }
+  .save-status { flex-basis: 100%; }
+  .foot :deep(button) { margin-left: auto; }
+  .member-add select { font-size: 16px; }
 }
 .ai-section {
   margin-top: 18px;
   padding: 15px;
-  border: 1px solid #dce1f8;
-  border-radius: 12px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: var(--wao-radius-control);
   background: linear-gradient(145deg, var(--wao-primary-tint), var(--wao-bg-card));
 }
 .ai-head,
@@ -667,7 +690,7 @@ summary {
   align-items: flex-start;
   padding: 9px 10px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   cursor: pointer;
 }
@@ -707,7 +730,7 @@ summary {
 .application-skill-note {
   margin-top: 8px;
   padding: 8px 9px;
-  border-radius: 8px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-success-bg);
   color: var(--wao-success-strong);
   font-size: 11px;
@@ -745,8 +768,8 @@ summary {
   display: block;
   width: 40px;
   height: 22px;
-  border-radius: 999px;
-  background: #cfd3df;
+  border-radius: var(--wao-radius-pill);
+  background: var(--wao-line-control);
   cursor: pointer;
   transition: 0.2s;
 }
@@ -757,9 +780,9 @@ summary {
   left: 3px;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: var(--wao-radius-pill);
   background: var(--wao-bg-card);
-  box-shadow: 0 1px 3px #0002;
+  box-shadow: var(--wao-shadow-pop);
   transition: 0.2s;
 }
 .switch input:checked + span {
@@ -810,7 +833,7 @@ summary {
   height: 34px;
   padding: 0 9px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   font-size: 12px;
@@ -840,7 +863,7 @@ summary {
 .runner-box {
   margin-top: 13px;
   padding-top: 12px;
-  border-top: 1px solid #e5e8f5;
+  border-top: 1px solid var(--wao-line-control);
 }
 .runner-box b {
   font-size: 12.5px;
@@ -848,8 +871,8 @@ summary {
 .pair-btn {
   height: 32px;
   padding: 0 11px;
-  border: 1px solid #cbd2f3;
-  border-radius: 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-primary-text);
   font-size: 12px;
@@ -858,13 +881,13 @@ summary {
 .pair-code {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px dashed #aeb9ee;
-  border-radius: 9px;
+  border: 1px dashed var(--wao-line-control);
+  border-radius: var(--wao-radius-control);
   background: var(--wao-primary-tint);
 }
 .pair-code span {
   display: block;
-  color: #273ba3;
+  color: var(--wao-line-control);
   font:
     700 21px/1.2 ui-monospace,
     SFMono-Regular,
@@ -875,113 +898,5 @@ summary {
 .pair-code small {
   color: var(--wao-text-weak);
   font-size: 10.5px;
-}
-.danger-zone {
-  margin-top: 18px;
-  border: 1px solid #f0d9d9;
-  background: var(--wao-danger-bg);
-  border-radius: 10px;
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.dz-text {
-  flex: 1;
-  min-width: 0;
-}
-.dz-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--wao-danger-strong);
-}
-.dz-sub {
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
-}
-.btn-danger {
-  height: 32px;
-  padding: 0 12px;
-  border: none;
-  background: var(--wao-danger);
-  color: #fff;
-  border-radius: 8px;
-  font-size: 12.5px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.btn-danger:hover {
-  filter: brightness(0.95);
-}
-.btn-danger i {
-  font-size: 14px;
-}
-.foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.btn-ghost {
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--wao-line-strong);
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.btn-ghost.sm {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 12.5px;
-  flex-shrink: 0;
-}
-.btn-ghost:hover {
-  background: var(--wao-bg-hover);
-}
-.btn-primary {
-  height: 34px;
-  padding: 0 16px;
-  background: var(--wao-primary);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.btn-primary:hover:not(:disabled) {
-  background: var(--wao-primary-hover);
-}
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-@media (max-width: 650px) {
-  .project-settings-body {
-    padding: 20px 15px;
-  }
-  .basic-fields {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-  .icon-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 5px;
-  }
-  .foot {
-    flex-wrap: wrap;
-  }
-  .save-status {
-    flex-basis: 100%;
-  }
-  .danger-zone {
-    flex-wrap: wrap;
-  }
 }
 </style>

@@ -83,7 +83,7 @@ export async function fetchSystemAiActivity(feature: SystemAiFeature): Promise<S
             title: '本人小记处理队列',
             detail: `等待 ${value.queued} · 执行中 ${value.running} · 未读成果 ${value.unread}`,
           },
-          { title: '成果采用方式', detail: value.mode === 'AUTO' ? '自动采用' : '先看建议' },
+          { title: '生效方式', detail: '润色完成后直接更新正文' },
         ],
         note: '以上为小记整体队列，包含不同处理阶段；单条尝试与问答记录在对应小记的伴读中查看。',
       }

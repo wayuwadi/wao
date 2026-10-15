@@ -23,6 +23,41 @@ async function open() {
 }
 
 describe('项目显示设置与任务上下文', () => {
+  it('快速创建成功后的空框可回车收起，Esc 收起并保留未提交草稿', async () => {
+    const { wrapper } = await open()
+    const data = seedDataStore()
+    const add = vi.spyOn(data, 'addTask').mockResolvedValue({ task: data.tasks[0]!, persisted: true })
+    await wrapper.get('[aria-label="快速新建任务"]').trigger('click')
+    await wrapper.get('.table-quick-add input').setValue('快速新建验收')
+    await wrapper.get('.table-quick-add input').trigger('keydown', { key: 'Enter' }); await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('.table-quick-add input').element.value).toBe('')
+    await wrapper.get('.table-quick-add input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.find('.table-quick-add').exists()).toBe(false)
+    expect(add).toHaveBeenCalledTimes(1)
+    await wrapper.get('[aria-label="快速新建任务"]').trigger('click')
+    await wrapper.get('.table-quick-add input').setValue('尚未提交')
+    await wrapper.get('.table-quick-add input').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.table-quick-add').exists()).toBe(false)
+    await wrapper.get('[aria-label="快速新建任务"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('.table-quick-add input').element.value).toBe('尚未提交')
+    add.mockRestore()
+  })
+
+  it('列宽拖动只改宽度，失败保持本机宽度且可重试；键盘也可调整', async () => {
+    const { wrapper } = await open()
+    const handle = wrapper.get('[aria-label="调整标题列宽"]')
+    vi.mocked(savePreference).mockRejectedValueOnce(new Error('offline'))
+    handle.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 100 }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 220 }))
+    window.dispatchEvent(new Event('pointerup')); await flushPromises()
+    expect(wrapper.get('.project-task-table col').attributes('style')).toContain('400px')
+    expect(wrapper.text()).toContain('尚未同步到账号')
+    await wrapper.findAll('button').find(button => button.text() === '重试列宽')!.trigger('click'); await flushPromises()
+    expect(savePreference).toHaveBeenLastCalledWith('project-table-widths-v1:p1', expect.stringContaining('"title":400'))
+    await handle.trigger('keydown', { key: 'ArrowLeft' }); await flushPromises()
+    expect(wrapper.get('.project-task-table col').attributes('style')).toContain('384px')
+    expect(wrapper.get('th').attributes('aria-sort')).toBe('none')
+  })
   beforeEach(() => { localStorage.clear(); vi.mocked(savePreference).mockReset().mockResolvedValue(); setActivePinia(createPinia()); seedDataStore(); useSessionStore().accept({ accountId: 'a', member: { id: 'm', name: '验收', initial: '验', color: '', role: '' }, identities: [], createdAt: '' }) })
 
   it('默认常用字段，主任务与子项保持同列，完整字段和成员切换不影响标题输入', async () => {

@@ -1,0 +1,23 @@
+{
+  "id": "release-project-group-rename-2026-10-14",
+  "publishedOn": "2026-10-14",
+  "sourceSubject": "fix(projects): 支持直接点击修改分组名称",
+  "title": "直接修改项目分组名称",
+  "intro": "点击分组名称即可重命名，按分组菜单也可管理隐藏的空分组。",
+  "highlights": [
+    {
+      "featureId": "projects",
+      "eyebrow": "体验修复",
+      "title": "分组名称可直接点击编辑",
+      "summary": "保留个人布局草稿、失败重试与刷新恢复。",
+      "points": [
+        "分组名称不改变项目领域或其他成员布局。"
+      ],
+      "steps": [
+        "点击项目列表的分组名称。",
+        "输入新名称并点击保存名称。",
+        "空分组可从按分组菜单选择修改。"
+      ]
+    }
+  ]
+}

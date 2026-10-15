@@ -1,7 +1,7 @@
 import { marked } from 'marked'
 import type { RichDocContent, RichDocNode } from '@/types'
 
-export interface NotePreviewImage { src: string; alt: string }
+export interface NotePreviewImage { src: string; alt: string; derived?: boolean; sourceRev?: number; current?: boolean; outline?: string; questions?: string[] }
 
 /** Only WAO's immutable image URLs have a small list preview. */
 export function notePreviewSource(src: string): string {

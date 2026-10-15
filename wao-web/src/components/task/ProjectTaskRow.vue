@@ -27,11 +27,11 @@ const props = defineProps<{
   expanded: boolean
   depth?: number
   childTaskCount?: number
-  orderSide?: 'before' | 'after'
+  orderSide?: 'before' | 'inside' | 'after'
   dragging: boolean
 }>()
 const hasColumn = (key: string) => props.columns?.includes(key) ?? true
-const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': []; detach: [] }>()
+const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': []; detach: []; menu: [event: MouseEvent | KeyboardEvent] }>()
 const data = useDataStore()
 const session = useSessionStore()
 
@@ -118,7 +118,7 @@ function commitRename() {
 </script>
 
 <template>
-  <tr class="task-row" :class="{ done: task.status === '已完成', dragging, 'order-before': orderSide === 'before', 'order-after': orderSide === 'after' }" draggable="true" @click="emit('open')">
+  <tr class="task-row" tabindex="0" :aria-label="`任务：${task.title}`" :class="{ done: task.status === '已完成', dragging, 'order-before': orderSide === 'before', 'order-after': orderSide === 'after', 'drop-inside': orderSide === 'inside' }" :draggable="!data.movingTask && !data.movingSubtasks" @click="emit('open')" @contextmenu="emit('menu', $event)" @keydown="emit('menu', $event)" @keydown.enter.self.prevent="emit('open')">
     <td v-if="hasColumn('number')" class="table-number wao-tabular">{{ task.number ?? '…' }}</td>
     <td v-if="hasColumn('title')">
       <div class="title-cell" :style="{ paddingLeft: `${(depth ?? 0) * 20}px` }">
@@ -154,6 +154,7 @@ function commitRename() {
           <span v-if="childTaskCount" class="sub-count" title="独立任务实体，计入项目任务总数">{{ childTaskCount }} 个下级任务</span>
 
           <span class="row-tools">
+            <button class="row-tool" :aria-label="`更多任务操作：${task.title}`" title="更多操作" aria-haspopup="menu" @click.stop="emit('menu', $event)"><i class="ri-more-line"></i></button>
             <button v-if="task.parentTaskId" class="row-tool" title="移回顶层" aria-label="移回顶层" @click.stop="emit('detach')"><i class="ri-indent-decrease"></i></button>
             <button class="row-tool" title="修改标题" :aria-label="`修改 ${task.title} 的标题`" @click.stop="startRename"><i class="ri-pencil-line"></i></button>
             <button class="row-tool" title="添加子任务" :aria-label="`为 ${task.title} 添加子任务`" @click.stop="emit('add-sub')"><i class="ri-add-line"></i></button>
@@ -489,6 +490,9 @@ function commitRename() {
 }
 .task-row.order-before td { box-shadow: inset 0 2px var(--wao-primary); }
 .task-row.order-after td { box-shadow: inset 0 -2px var(--wao-primary); }
+.task-row.drop-inside td { background: var(--wao-primary-soft); }
+.task-row.drop-inside .title-cell::after { content: '移为子任务'; color: var(--wao-primary-text); font-size: 12px; }
+.task-row:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 
 .tree-toggle:focus-visible, .trow-title:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @media (max-width: 760px) { .tree-toggle { width: 28px; height: 32px; } .tree-spacer { width: 28px; } }

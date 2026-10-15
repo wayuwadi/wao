@@ -1,0 +1,17 @@
+{
+  "id": "readiness-monitor-silent-2026-10-12",
+  "publishedOn": "2026-10-12",
+  "sourceSubject": "fix(deploy): 取消就绪监控的飞书告警和恢复通知",
+  "attention": "feature",
+  "prominence": "minor",
+  "title": "取消基础设施就绪通知",
+  "intro": "按需停止云端就绪监控的飞书消息，检查结果仍记录在监控日志中。",
+  "highlights": [{
+    "featureId": "deploy",
+    "eyebrow": "通知调整",
+    "title": "不再发送基础设施告警及恢复消息",
+    "summary": "云端每分钟检查继续运行，失败和恢复均只记录状态。",
+    "points": ["移除就绪监控的飞书发送逻辑", "服务不再加载通知凭据"],
+    "steps": ["无需在飞书或浏览器中修改设置；云端监控已停止发送这类通知。"]
+  }]
+}

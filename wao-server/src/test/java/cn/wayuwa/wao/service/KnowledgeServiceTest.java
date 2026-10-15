@@ -551,6 +551,53 @@ class KnowledgeServiceTest {
         verify(docMapper, never()).updateIfRevision(any(), anyInt());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"k1", "kb-notes"})
+    void codexThreadLinksPersistInKnowledgeAndNoteRichContent(String kbId) throws Exception {
+        DocEntity existing = doc("codex-link", kbId, "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        String href = "codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d";
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"聊天",
+                  "marks":[{"type":"link","attrs":{"href":"%s","target":"_blank","rel":"noopener noreferrer"}}]}]}]}
+                """.formatted(href));
+        DocDto saved = service.updateDoc(existing.getId(), new PatchDocRequest(null, null,
+                new RichDocContentDto(1, document, "[聊天](" + href + ")"), null, null, 1));
+        assertThat(saved.content().document()).isEqualTo(document);
+        assertThat(saved.content().markdown()).contains(href);
+        verify(docMapper).updateIfRevision(existing, 1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"codex://settings", "codex://threads/not-a-uuid",
+            "codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d?command=run",
+            "codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d/extra",
+            "codex://threads@evil.example/01a13855-11d0-7e33-90d9-23496e743d0d",
+            "codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d\n", "file:///C:/secret"})
+    void codexThreadAllowanceRejectsOtherCommandsAndMalformedLinks(String href) throws Exception {
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"链接",
+                  "marks":[{"type":"link","attrs":{}}]}]}]}
+                """);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) document.at("/content/0/content/0/marks/0/attrs")).put("href", href);
+        assertThatThrownBy(() -> service.validateNoteSource(new RichDocContentDto(1, document, "链接")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不安全");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"href", "src", "url", "snapshot"})
+    void codexThreadAllowanceDoesNotApplyToResourceAttributes(String attribute) throws Exception {
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"image","attrs":{}}]}
+                """);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) document.at("/content/0/attrs"))
+                .put(attribute, "codex://threads/01a13855-11d0-7e33-90d9-23496e743d0d");
+        assertThatThrownBy(() -> service.validateNoteSource(new RichDocContentDto(1, document, "图片")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不安全");
+    }
+
     @Test
     void richDocumentRejectsExecutableUrlsAndStaleRevision() throws Exception {
         DocEntity existing = doc("d-rich", "k1", "f1");

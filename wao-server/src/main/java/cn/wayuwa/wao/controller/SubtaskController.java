@@ -22,4 +22,11 @@ public class SubtaskController {
             @Valid @RequestBody MoveSubtaskRequest request, HttpServletRequest http) {
         return ApiResponse.ok(service.move(id, subId, request, member.id(http)));
     }
+
+    /** 将内嵌子事项及其后代原子提升为同项目的主任务。 */
+    @PostMapping("/{id}/subs/{subId}/promote")
+    public ApiResponse<List<TaskDto>> promote(@PathVariable String id, @PathVariable String subId,
+            @Valid @RequestBody PromoteSubtaskRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(service.promote(id, subId, request, member.id(http)));
+    }
 }

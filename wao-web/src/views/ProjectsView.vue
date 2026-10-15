@@ -51,6 +51,12 @@ const groupDialogError = ref('')
 const notice = ref('')
 let suppressProjectClick = false
 
+watch(showGroupDialog, async (open) => {
+  if (!open) return
+  await nextTick()
+  document.getElementById('project-group-name')?.focus()
+})
+
 watch(contextMenu, async (menu) => {
   if (!menu) return
   await nextTick()
@@ -99,7 +105,7 @@ const projGroups = computed(() => {
   } else {
     groups = [{ id: 'all', label: '全部项目', dot: '#9A9DA9', items: list, hide: true }]
   }
-  return groups.map((g) => ({
+  return groups.filter((g) => g.hide || g.items.length > 0).map((g) => ({
     id: g.id, label: g.label, dot: g.dot,
     count: g.hide ? filteredProjects.value.length : projectGroups.value.find((group) => group.id === g.id)?.projectIds.filter((id) => filteredProjects.value.some((project) => project.id === id)).length ?? g.items.length,
     showHead: !g.hide,
@@ -319,6 +325,9 @@ onBeforeUnmount(() => {
             >
               <span>{{ o }}</span><i v-if="o === groupBy" class="ri-check-line"></i>
             </button>
+            <button class="drop-item" @click="startGroupDialog(); openDrop = null">新建分组</button>
+            <button v-for="group in projectGroups" :key="`rename-${group.id}`" class="drop-item"
+              @click="renameGroup(group.id); openDrop = null">修改「{{ group.label }}」</button>
           </div>
         </div>
         <div class="drop-wrap">
@@ -360,7 +369,11 @@ onBeforeUnmount(() => {
             <button class="collapse-group" type="button" :disabled="!layout.state.loaded" :aria-label="collapsedGroups.includes(g.id) ? `展开${g.label}` : `折叠${g.label}`" @click="toggleGroup(g.id)">
               <i :class="collapsedGroups.includes(g.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
             </button>
-            <span class="group-dot" :style="{ background: g.dot }"></span>{{ g.label }}
+            <span class="group-dot" :style="{ background: g.dot }"></span>
+            <button type="button" class="group-name-edit" :disabled="!layout.state.loaded"
+              :aria-label="`修改分组名称：${g.label}`" @click.stop="renameGroup(g.id)">
+              {{ g.label }}<i class="ri-edit-line" aria-hidden="true"></i>
+            </button>
             <span class="group-count wao-tabular">{{ g.count }}</span>
             <span class="group-reorder-hint"><i class="ri-drag-move-2-line"></i>拖动排序</span>
           </div>
@@ -384,15 +397,11 @@ onBeforeUnmount(() => {
               </div>
               <div class="pc-goal">{{ p.goalShort }}</div>
               <div class="pc-meta">
-                <span class="pc-m" :title="'任务实体各计一次；主任务已完成但内嵌子项未全部完成时仍未收尾。'"><i class="ri-checkbox-circle-line"></i>{{ data.taskLoadState === 'loaded' ? p.completionLabel : data.taskLoadState === 'error' ? '任务计数读取失败' : '任务计数加载中…' }}</span>
-                <span class="pc-m" :style="{ color: p.dueColor }"><i class="ri-calendar-line"></i>{{ p.dueStr }}</span>
+                <span v-if="p.due" class="pc-m" :style="{ color: p.dueColor }"><i class="ri-calendar-line"></i>{{ p.dueStr }}</span>
                 <span class="spacer"></span>
                 <span class="pc-avs">
                   <span v-for="(mv, i) in p.memberAvs" :key="i" class="pc-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
                 </span>
-              </div>
-              <div v-if="data.taskLoadState === 'loaded' && p.completion.subTotal" class="pc-m" title="内嵌清单子项单独计数，不加入任务总数；包括全部层级。">
-                内嵌子项未收尾 {{ p.completion.subOpen }}／共 {{ p.completion.subTotal }} 项
               </div>
             </div>
           </div>
@@ -444,6 +453,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.group-name-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.group-name-edit:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
+.group-name-edit i { color: var(--wao-text-3); }
+@media (pointer: coarse) { .group-name-edit { min-height: 44px; } }
 .projects {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);

@@ -1,13 +1,14 @@
 import { http, type ApiResponse } from './http'
+import type { NoteThinkingImage } from './noteAiWorkflows'
 import type { Doc, RichDocContent } from '@/types'
-export type CompanionStage = 'title' | 'image' | 'polish' | 'tags'
+export type CompanionStage = 'title' | 'image' | 'polish' | 'tags' | 'thinking'
 export interface CompanionOverview {
   available: boolean
   message: string
   queued: number
   running: number
   unread: number
-  mode: 'AUTO' | 'REVIEW'
+  mode: 'AUTO'
   version: number
   capabilityVersion: number
 }
@@ -19,6 +20,7 @@ export interface AiArtifact {
   sourceText: string
   currentText?: string
   currentRev?: number
+  thinkingImage?: NoteThinkingImage
   resultText: string
   tagRecommendations?: { name: string; reason: string }[]
   application: string
@@ -74,10 +76,6 @@ export interface NoteChat {
 const root = '/api/docs/notes'
 const unwrap = async <T>(p: Promise<{ data: ApiResponse<T> }>): Promise<T> => (await p).data.data
 export const fetchCompanion = () => unwrap<CompanionOverview>(http.get(`${root}/ai-companion`))
-export const saveCompanionMode = (mode: CompanionOverview['mode'], expectedVersion: number) =>
-  unwrap<{ mode: CompanionOverview['mode']; version: number }>(
-    http.put(`${root}/ai-companion/preference`, { mode, expectedVersion }),
-  )
 export const fetchAiResults = (docId: string, cursor?: string) =>
   unwrap<AiResults>(http.get(`${root}/${docId}/ai-results`, { params: { cursor } }))
 export const fetchAiReceipts = () =>

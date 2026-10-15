@@ -7,6 +7,7 @@ import WaoCard from '@/components/ui/WaoCard.vue'
 import { fetchRoutines, writeRoutine, writeOccurrence, type RoutineInput, type RoutineRange, type RoutineOccurrence, type RoutineStatus, type RoutineTemplate, type RoutineWrite, type OccurrenceWrite } from '@/api/routines'
 
 const props = defineProps<{date:string}>()
+const emit = defineEmits<{ summary: [date: string, member: string, remaining: number | null, state: 'loading' | 'ready' | 'error'] }>()
 const data = useDataStore(), session = useSessionStore()
 const identity = () => `${session.account?.accountId || ''}:${session.userId}`
 const range = ref<RoutineRange>(), error = ref(''), loading = ref(false), expanded = ref(true), managing = ref(false)
@@ -25,6 +26,10 @@ async function load() {
   finally { if (seq === sequence) loading.value = false }
 }
 watch(() => [props.date,identity()], () => { range.value = undefined; void load() }, {immediate:true})
+watch(() => [props.date, identity(), loading.value, error.value, occurrences.value] as const, () => {
+  const state = error.value ? 'error' : loading.value || !range.value ? 'loading' : 'ready'
+  emit('summary', props.date, identity(), state === 'ready' ? occurrences.value.filter(item => item.status === 'OPEN').length : null, state)
+}, { immediate: true })
 async function mark(item: RoutineOccurrence, status: RoutineStatus) {
   if (!writable.value || pending[item.templateId]) return
   const member = identity(), date = props.date

@@ -12,13 +12,17 @@ import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** 独立于旧 Runner 的本机只读采样；数据库只保存展示字段，跨机器同邮箱去重。 */
 @Service
 public class LocalCodexQuotaService {
+    private static final Logger log = LoggerFactory.getLogger(LocalCodexQuotaService.class);
     static final String PREFIX = "codex-local-quota-v1:";
     private final SystemSettingMapper settings;
     private final ObjectMapper json;
+    private final QuotaRefreshNotificationService notifications;
     private final boolean enabled;
     private final String executable;
     private final String source;
@@ -26,15 +30,16 @@ public class LocalCodexQuotaService {
     private final java.util.concurrent.locks.ReentrantLock sampling = new java.util.concurrent.locks.ReentrantLock();
     record Snapshot(String source, String observedAt, boolean failed, RunnerCodexQuotaReport report) { }
 
-    public LocalCodexQuotaService(SystemSettingMapper settings, ObjectMapper json,
+    public LocalCodexQuotaService(SystemSettingMapper settings, ObjectMapper json, QuotaRefreshNotificationService notifications,
             @Value("${wao.codex-quota.enabled:false}") boolean enabled,
             @Value("${wao.codex-quota.executable:codex}") String executable,
             @Value("${wao.codex-quota.source:local}") String source) {
         if (!source.matches("[a-zA-Z0-9_-]{1,40}")) throw new IllegalArgumentException("额度来源须为 1 到 40 位字母、数字或短横线");
-        this.settings = settings; this.json = json; this.enabled = enabled; this.executable = executable; this.source = source;
+        this.settings = settings; this.json = json; this.notifications = notifications;
+        this.enabled = enabled; this.executable = executable; this.source = source;
     }
 
-    /** 每分钟采样一次；查询也会补采，统一关闭调度时不会启动后台任务。 */
+    /** 显式启用后每分钟采样一次；全局调度关闭时由独立调度调用，查询也会节流补采。 */
     @Scheduled(fixedDelay = 60000, initialDelay = 10000)
     public void refresh() {
         if (!enabled || !sampling.tryLock()) return;
@@ -59,6 +64,13 @@ public class LocalCodexQuotaService {
             row.setCfgValue(json.writeValueAsString(snapshot)); row.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
             if (insert) settings.insert(row); else settings.updateById(row);
         } catch (Exception ignored) { throw new BadRequestException("额度快照保存失败，请稍后重试"); }
+        if (!snapshot.failed() && snapshot.report() != null) {
+            try { notifications.observeRunner("local:" + source, snapshot.report()); }
+            catch (RuntimeException error) {
+                // 通知错误不得让已保存的真实快照退回历史或中断首页读取。
+                log.warn("本机 Codex 额度通知处理失败，不影响额度采集：{}", error.getClass().getSimpleName());
+            }
+        }
     }
 
     RunnerCodexQuotaReport readLocal() throws Exception { return LocalCodexQuotaProcess.read(executable, Duration.ofSeconds(8)); }

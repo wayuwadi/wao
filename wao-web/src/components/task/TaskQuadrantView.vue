@@ -139,10 +139,10 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
               @click="emit('select', task.id)"><i :class="selectedIds.includes(task.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
-            <div class="quadrant-task-body">
+            <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(task.id) === 'error' }">
               <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
-              <span v-if="task.unfinishedSubCount" class="save-hint">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
-              <span v-if="task.executionLabel" class="quadrant-execution">{{ task.executionLabel }}</span>
+              <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
+              <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
@@ -175,7 +175,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 </template>
 
 <style scoped>
-.quadrant-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); }
+.quadrant-more { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); }
 .quadrant-more:hover, .quadrant-more:focus-visible { background: var(--wao-bg-hover); }
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
@@ -200,31 +200,36 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--wao-text-weak); font-size: 16px; }
 .quadrant-actions button:hover { background: var(--wao-bg-hover); color: var(--quadrant-color); }
 .quadrant-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 7px; scrollbar-width: thin; }
-.quadrant-task { display: flex; align-items: flex-start; gap: 6px; min-width: 0; padding: 6px 3px; border-bottom: 1px solid var(--wao-line); border-radius: 4px; }
+.quadrant-task { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 3px; border-bottom: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); }
 .quadrant-task:last-child { border-bottom-color: transparent; }
 .quadrant-task:hover { background: var(--wao-bg-hover); }
 .quadrant-task.selected { background: var(--wao-primary-soft); }
 .quadrant-task.dragging { opacity: .4; }
 .quadrant-complete, .quadrant-select { display: grid; place-items: center; flex: 0 0 26px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--quadrant-color); font-size: 19px; }
 .quadrant-select { color: var(--wao-primary-text); }
-.quadrant-task-body { flex: 1; min-width: 0; }
-.quadrant-title { display: block; width: 100%; padding: 3px 0; border: 0; background: none; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; font-size: 13px; }
+.quadrant-task-body { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.quadrant-task-body.has-error { flex-wrap: wrap; }
+.quadrant-title { display: block; flex: 1 1 80px; min-width: 0; padding: 3px 0; border: 0; background: none; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; font-size: 13px; }
 .quadrant-title:hover { color: var(--wao-primary-text); }
 .done .quadrant-title { text-decoration: line-through; color: var(--wao-text-weak); }
-.quadrant-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; line-height: 18px; color: var(--wao-text-weak); }
-.quadrant-execution { font-size: 11px; color: var(--wao-primary-text); overflow-wrap: anywhere; }
+.quadrant-meta { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 40%; font-size: 11px; line-height: 18px; color: var(--wao-text-3); }
+.quadrant-execution, .quadrant-task-body > .save-hint { max-width: 20%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--wao-primary-text); }
 .quadrant-due, .quadrant-status { flex-shrink: 0; }
 .quadrant-project { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-project i { margin-right: 3px; }
 .quadrant-move { position: relative; flex: 0 0 26px; height: 26px; display: grid; place-items: center; color: var(--wao-text-weak); border-radius: 5px; opacity: .4; }
 .quadrant-move select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .quadrant-task:hover .quadrant-move, .quadrant-move:focus-within { opacity: 1; background: var(--wao-bg-hover-2); }
-.quadrant-save { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.quadrant-save :deep(.hint) { white-space: normal; overflow-wrap: anywhere; }
+.quadrant-save { display: flex; align-items: center; gap: 6px; flex: none; }
+.quadrant-save :deep(.hint.ok) { font-size: 0; gap: 0; }
+.quadrant-save :deep(.hint.ok i) { font-size: 13px; }
+.has-error .quadrant-save { flex-basis: 100%; flex-wrap: wrap; }
+.has-error .quadrant-save :deep(.hint) { white-space: normal; overflow-wrap: anywhere; }
 .quadrant-save button { color: var(--wao-danger-strong); font-size: 12px; }
 .quadrant-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 12px 0; color: var(--wao-text-faint); font-size: 12px; }
 .quadrant-empty > i { color: color-mix(in srgb, var(--quadrant-color) 35%, var(--wao-bg-card)); font-size: 26px; }
 @media (max-width: 760px) {
+  .quadrant-view { min-height: 300px; }
   .quadrants { gap: 7px; }
   header { gap: 4px; padding: 5px 7px; flex-wrap: wrap; }
   h2 { font-size: 12px; }
@@ -234,8 +239,14 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
   .quadrant-task { gap: 2px; }
   .quadrant-complete, .quadrant-select { flex-basis: 24px; min-height: 32px; }
   .quadrant-title { font-size: 12px; line-height: 24px; }
-  .quadrant-meta { flex-wrap: wrap; gap: 0 5px; }
-  .quadrant-project { width: 100%; margin-left: 0; }
+  .quadrant-meta { max-width: 28%; }
+  .quadrant-project { margin-left: 0; }
+  .quadrant-due, .quadrant-status { display: none; }
+  .quadrants.expanded .quadrant-meta { max-width: 40%; }
+  .quadrants.expanded .quadrant-due, .quadrants.expanded .quadrant-status { display: inline; }
+  .quadrant-task-body { gap: 3px; }
+  .quadrant-task { min-height: 44px; }
+  .quadrant-more { width: 24px; min-height: 32px; }
   .quadrant-move { flex-basis: 22px; min-height: 32px; opacity: .7; }
   .quadrant-toolbar { font-size: 11px; }
   .quadrant-toolbar button { min-height: 34px; }

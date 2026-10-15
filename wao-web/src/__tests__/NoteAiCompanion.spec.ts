@@ -8,7 +8,6 @@ import {
   fetchNoteChat,
   askNoteChat,
   cancelNoteAi,
-  saveCompanionMode,
 } from '@/api/noteAiCompanion'
 import type { Doc } from '@/types'
 const ui = vi.hoisted(() => ({
@@ -25,7 +24,6 @@ vi.mock('@/api/noteAiCompanion', () => ({
   fetchNoteChat: vi.fn<(typeof import('@/api/noteAiCompanion'))['fetchNoteChat']>(),
   askNoteChat: vi.fn<(typeof import('@/api/noteAiCompanion'))['askNoteChat']>(),
   cancelNoteAi: vi.fn<(typeof import('@/api/noteAiCompanion'))['cancelNoteAi']>(),
-  saveCompanionMode: vi.fn<(typeof import('@/api/noteAiCompanion'))['saveCompanionMode']>(),
   companionError: () => '请求失败，输入保留',
 }))
 vi.mock('@/api/noteDiscoveries', () => ({
@@ -102,11 +100,34 @@ beforeEach(() => {
   })
   vi.mocked(actOnArtifact).mockResolvedValue(doc)
   vi.mocked(fetchNoteChat).mockResolvedValue({ messages: [], sources: [], runs: [] })
-  vi.mocked(saveCompanionMode).mockResolvedValue({ mode: 'REVIEW', version: 1 })
 })
 afterEach(() => {
   wrappers.forEach((w) => w.unmount())
   wrappers.length = 0
+})
+
+it('思考图展示独立图片和提纲，具体问题可带入对话但不会覆盖已有输入', async () => {
+  vi.mocked(fetchAiResults).mockResolvedValue({ items: [{ ...candidate, stage: 'thinking', application: 'APPLIED', resultText: '思考提纲', thinkingImage: { imageUrl: '/api/images/thought/raw', outline: '思考提纲', title: '核心发现', questions: ['哪些条件值得验证？'], sourceRev: 4, current: true } }] as never, attempts: [], nextCursor: '' })
+  const w = render(); await flushPromises()
+  await w.findAll('button').find(button => button.text() === '思考图')!.trigger('click'); await flushPromises()
+  expect(w.get('.result-image').attributes('src')).toBe('/api/images/thought/raw')
+  expect(w.text()).not.toContain('变更范围：')
+  await w.findAll('button').find(button => button.text().includes('继续聊：'))!.trigger('click'); await flushPromises()
+  expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('哪些条件值得验证？')
+  await w.get('textarea').setValue('我还在写的问题')
+  await (w.vm as unknown as { seedThinkingQuestion: (text: string) => Promise<void> }).seedThinkingQuestion('另一个问题')
+  expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('我还在写的问题')
+  expect(w.text()).toContain('还有未发送的问题')
+  expect(askNoteChat).not.toHaveBeenCalled()
+})
+
+it('图片失败时仍能查看和复制思考提纲，不显示空图片或伪造已生成', async () => {
+  vi.mocked(fetchAiResults).mockResolvedValue({ items: [{ ...candidate, stage: 'thinking', resultText: '已保存提纲', thinkingImage: { imageUrl: '', outline: '已保存提纲', title: '发现', questions: ['具体问题？'], sourceRev: 4, current: true } }] as never, attempts: [], nextCursor: '' })
+  const w=render();await flushPromises();await w.findAll('button').find(button=>button.text()==='思考图')!.trigger('click')
+  expect(w.find('.result-image').exists()).toBe(false)
+  expect(w.text()).toContain('图片未生成，思考提纲已保留')
+  expect(w.text()).toContain('思考提纲已保存')
+  expect(w.findAll('button').some(button=>button.text()==='复制成果')).toBe(true)
 })
 
 it('按需打开绑定本篇，不展示选篇框；关闭重开保留问题且没有后台闲置轮询', async () => {
@@ -178,22 +199,23 @@ describe('私人小记伴读', () => {
     expect(actOnArtifact).not.toHaveBeenCalled()
     expect(w.text()).toContain('从右侧选一篇')
   })
-  it('打开真实对照才标为已读，采用携带当前文档版本', async () => {
+  it('历史对照只供阅读，没有人工采用或恢复入口', async () => {
     const w = render()
+    await w.setProps({ explicitlySelected: true })
     await flushPromises()
     expect(w.text()).toContain('原稿')
     expect(w.text()).toContain('AI建议')
-    await button(w, '采用正文')
-    expect(actOnArtifact).toHaveBeenCalledWith('a', 'apply', 4)
-    expect(w.emitted('updated')?.[0]).toEqual([doc])
+    expect(actOnArtifact).toHaveBeenCalledWith('a', 'seen')
+    for (const label of ['采用正文', '恢复原稿', '不采用']) expect(w.findAll('button').map(b => b.text())).not.toContain(label)
+    expect(w.emitted('updated')).toBeUndefined()
   })
-  it('草稿阻止采用、重做与提问，不覆盖未保存内容', async () => {
+  it('草稿阻止重做与提问，不覆盖未保存内容', async () => {
     const w = render('n', true)
     await flushPromises()
     expect(
       w
         .findAll('button')
-        .find((b) => b.text() === '采用正文')
+        .find((b) => b.text() === '重新整理')
         ?.attributes('disabled'),
     ).toBeDefined()
     await button(w, '继续聊')
@@ -206,7 +228,7 @@ describe('私人小记伴读', () => {
     ).toBeDefined()
     expect(askNoteChat).not.toHaveBeenCalled()
   })
-  it('来源过期不能采用，仍能看到历史成果', async () => {
+  it('来源过期仍能阅读历史成果，没有采用入口', async () => {
     vi.mocked(fetchAiResults).mockResolvedValue({
       items: [{ ...candidate, validity: 'STALE' } as never],
       nextCursor: '',
@@ -215,12 +237,7 @@ describe('私人小记伴读', () => {
     const w = render()
     await flushPromises()
     expect(w.text()).toContain('来源已更新')
-    expect(
-      w
-        .findAll('button')
-        .find((b) => b.text() === '采用正文')
-        ?.attributes('disabled'),
-    ).toBeDefined()
+    expect(w.findAll('button').some(b => b.text() === '采用正文')).toBe(false)
   })
   it('取消正在运行的阶段不假装已完成', async () => {
     vi.mocked(fetchAiResults).mockResolvedValue({
@@ -260,12 +277,13 @@ describe('私人小记伴读', () => {
     expect(localStorage.getItem('wao-note-companion-question:m:n')).toBe('这个数字准确吗？')
     expect(w.get('textarea').element.value).toBe('这个数字准确吗？')
   })
-  it('先看建议需要显式点击并使用设置 CAS', async () => {
+  it('设置只保留整理配置，不再提供建议模式', async () => {
     const w = render()
     await flushPromises()
     await w.get('[aria-label="伴读设置"]').trigger('click')
-    await button(w, '先看建议')
-    expect(saveCompanionMode).toHaveBeenCalledWith('REVIEW', 0)
+    expect(w.text()).toContain('模型、提示词与自动开关')
+    expect(w.text()).not.toContain('先看建议')
+    expect(w.text()).not.toContain('成果采用方式')
   })
   it('提交结果不明时重开仍复用请求号与所选来源', async () => {
     vi.mocked(askNoteChat).mockRejectedValue(new Error('offline'))
@@ -323,7 +341,7 @@ describe('私人小记伴读', () => {
 
 
 describe('本篇 AI 结果概况', () => {
-  it('待采用与已采用未读独立计数，排除历史旧来源并按成果去重', async () => {
+  it('只统计已生效未读结果，不再提示待采用建议', async () => {
     vi.mocked(fetchAiResults).mockResolvedValue({ items: [
       { ...candidate, seen: true }, { ...candidate, seen: true },
       { ...candidate, id: 'applied', stage: 'title', application: 'APPLIED' },
@@ -336,7 +354,7 @@ describe('本篇 AI 结果概况', () => {
     await flushPromises()
     const summary = w.get('.result-summary').text()
     expect(summary).toContain('这篇小记')
-    expect(summary).toContain('1 项待你采用')
+    expect(summary).not.toContain('待你采用')
     expect(summary).toContain('1 项已采用但未读')
     expect(actOnArtifact).not.toHaveBeenCalled()
   })
@@ -344,7 +362,7 @@ describe('本篇 AI 结果概况', () => {
     vi.mocked(fetchAiResults).mockResolvedValue({ items: [], nextCursor: 'older', attempts: [] })
     const w = render(); await flushPromises()
     expect(w.get('.result-summary').text()).toContain('已加载结果')
-    expect(w.get('.result-summary').text()).toContain('0 项待你采用')
+    expect(w.get('.result-summary').text()).toContain('0 项已采用但未读')
   })
   it('读取失败不展示虚假的零结果', async () => {
     vi.mocked(fetchAiResults).mockRejectedValue(new Error('offline'))

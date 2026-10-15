@@ -4,7 +4,7 @@ import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
 import ProjectTaskSearch from '@/components/task/ProjectTaskSearch.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
-import { taskDropAfter } from '@/utils/taskDrop'
+import { taskHierarchyDrop } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
 import { isTaskFinished as isFinished, projectCompletion, projectCompletionLabel } from '@/utils/projectCompletion'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -33,9 +33,16 @@ import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import type { ContextAction } from '@/types/contextAction'
+import { copyText } from '@/utils/clipboard'
+import { shareUrl } from '@/utils/share'
 import { AI_RUN_ENABLED } from '@/config/features'
 import { useTaskPreferencesStore } from '@/stores/taskPreferences'
 import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, type ProjectTableColumn } from '@/utils/projectTableColumns'
+import { useMemberPreference } from '@/composables/memberPreference'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,6 +81,9 @@ const projTab = computed(() => {
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
   return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : 'list'
+})
+watch(pdTaskView, (view) => {
+  if (view === 'quadrant') actionFilter.value = 'all'
 })
 
 function setTab(t: string) {
@@ -137,7 +147,64 @@ const tableGrouped = columnPreference('table-grouped-v1')
 type TableSortColumn = ProjectTableColumn
 const visibleColumnKeys = computed(() => taskPreferences.columns)
 const visibleColumns = computed(() => PROJECT_TABLE_COLUMNS.filter(column => visibleColumnKeys.value.includes(column.key)))
-const tableMinWidth = computed(() => 280 + visibleColumns.value.reduce((total, column) => total + column.width, 0))
+type ColumnWidths = Partial<Record<ProjectTableColumn, number>>
+const columnWidths = useMemberPreference<ColumnWidths>(() => `project-table-widths-v1:${pid.value}`, raw => {
+  try {
+    const value: unknown = JSON.parse(raw ?? '{}')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return Object.fromEntries(PROJECT_TABLE_COLUMNS.flatMap(column => {
+      const width = (value as Record<string, unknown>)[column.key]
+      return typeof width === 'number' && Number.isFinite(width) ? [[column.key, Math.max(column.key === 'title' ? 160 : 48, Math.min(2000, Math.round(width)))]] : []
+    }))
+  } catch { return {} }
+}, widths => JSON.stringify(widths))
+const widthDraft = ref<ColumnWidths | null>(null)
+const activeWidths = computed(() => widthDraft.value ?? columnWidths.value.value)
+const customWidths = computed(() => Object.keys(activeWidths.value).length > 0)
+const defaultColumnWidth = (key: ProjectTableColumn) => PROJECT_TABLE_COLUMNS.find(column => column.key === key)!.width || 280
+const widthForColumn = (key: ProjectTableColumn) => activeWidths.value[key] ?? defaultColumnWidth(key)
+const tableMinWidth = computed(() => visibleColumns.value.reduce((total, column) => total + widthForColumn(column.key), 0))
+let resizingColumn: { key: ProjectTableColumn; x: number; widths: ColumnWidths } | null = null
+function snapshotWidths(element: HTMLElement): ColumnWidths {
+  const snapshot = { ...activeWidths.value }
+  element.closest('table')?.querySelectorAll<HTMLElement>('th[data-column-key]').forEach(header => {
+    const key = header.dataset.columnKey as ProjectTableColumn
+    snapshot[key] = Math.round(header.getBoundingClientRect().width) || widthForColumn(key)
+  })
+  return snapshot
+}
+function resizeColumn(event: PointerEvent) {
+  if (!resizingColumn) return
+  const { key, x, widths } = resizingColumn
+  widthDraft.value = { ...widths, [key]: Math.max(key === 'title' ? 160 : 48, Math.min(2000, (widths[key] ?? defaultColumnWidth(key)) + event.clientX - x)) }
+}
+function stopColumnResize(save = true) {
+  if (resizingColumn && widthDraft.value && save) void columnWidths.set(widthDraft.value)
+  resizingColumn = null; widthDraft.value = null
+  window.removeEventListener('pointermove', resizeColumn)
+  window.removeEventListener('pointerup', finishColumnResize)
+  window.removeEventListener('pointercancel', cancelColumnResize)
+}
+function finishColumnResize() { stopColumnResize() }
+function cancelColumnResize() { stopColumnResize(false) }
+function startColumnResize(event: PointerEvent, key: ProjectTableColumn) {
+  if (event.button !== 0) return
+  const widths = snapshotWidths(event.currentTarget as HTMLElement)
+  widthDraft.value = widths
+  resizingColumn = { key, x: event.clientX, widths }
+  window.addEventListener('pointermove', resizeColumn)
+  window.addEventListener('pointerup', finishColumnResize)
+  window.addEventListener('pointercancel', cancelColumnResize)
+}
+function resizeColumnByKey(event: KeyboardEvent, key: ProjectTableColumn) {
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+  event.preventDefault()
+  const widths = snapshotWidths(event.currentTarget as HTMLElement)
+  widths[key] = Math.max(key === 'title' ? 160 : 48, Math.min(2000, (widths[key] ?? defaultColumnWidth(key)) + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 64 : 16)))
+  void columnWidths.set(widths)
+}
+watch([pid, () => session.userId], cancelColumnResize)
+onBeforeUnmount(cancelColumnResize)
 function saveColumns(keys: ProjectTableColumn[]) { void taskPreferences.setColumns(keys) }
 function toggleColumn(key: ProjectTableColumn) {
   if (key === 'title') return
@@ -210,7 +277,17 @@ function onProjectDeleted() {
 
 // ---- 拖拽：看板改状态 / 列表排序 ----
 const dragId = ref<string | null>(null)
+const draggedSub = ref<{ taskId: string; subId: string } | null>(null)
+const hierarchyOver = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
+const rootDropOver = ref(false)
+const taskMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const operationError = ref('')
+const deletion = ref<{ id: string; subId?: string; title: string } | null>(null)
+const deleting = ref(false)
+const operationBusy = computed(() => data.movingTask || data.movingSubtasks)
+function endHierarchyDrag() { dragId.value = null; draggedSub.value = null; hierarchyOver.value = null; rootDropOver.value = false }
 function onDragStart(id: string, event: DragEvent) {
+  if (operationBusy.value) { event.preventDefault(); return }
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', id)
@@ -516,21 +593,30 @@ function toggleGroupDone(id: string) {
 /** 分组头上的「+」：就地展开一行输入框，回车即建，手机上不用再进弹窗。 */
 function startQuickAdd(groupId: string) {
   if (quickAddState.value === 'submitting') return
-  if (quickAddGroup.value !== null && (quickAddText.value.trim() || quickAddState.value === 'error')) {
+  if (quickAddDraftGroup.value !== groupId && (quickAddText.value.trim() || quickAddState.value === 'error')) {
     toast('请先完成当前输入，内容已保留', 'ri-information-line')
     return
   }
   if (collapsedGroups.value.includes(groupId)) toggleGroup(groupId)
   quickAddGroup.value = groupId
+  if (quickAddDraftGroup.value === groupId && (quickAddText.value.trim() || quickAddState.value === 'error')) {
+    nextTick(() => firstOf(quickAddInput.value)?.focus())
+    return
+  }
+  quickAddDraftGroup.value = groupId
   quickAddText.value = ''
   quickAddState.value = 'idle'
   quickAddPendingId.value = null
   nextTick(() => firstOf(quickAddInput.value)?.focus())
 }
+const quickAddDraftGroup = ref<string | null>(null)
+function closeQuickAdd() {
+  if (quickAddState.value !== 'submitting') quickAddGroup.value = null
+}
 async function submitQuickAdd(groupId: string) {
   if (quickAddState.value === 'submitting') return
   const title = quickAddText.value.trim()
-  if (!title) return
+  if (!title) { closeQuickAdd(); return }
   // 快速新建不替用户排期：截止日期留空，需要时再在表格里点选。
   const payload = {
     title, project: pid.value, pr: 'P2' as const, owner: session.currentUser.id,
@@ -580,29 +666,93 @@ const tableSections = computed(() => {
     ? sections.sort((a, b) => (tableSort.value!.direction === 'asc' ? 1 : -1) * a.name.localeCompare(b.name, 'zh-CN'))
     : sections
 })
-const orderingOver = ref<{ id: string; after: boolean } | null>(null)
-function onTableDragOver(id: string, event: DragEvent) {
-  orderingOver.value = dragId.value && dragId.value !== id ? { id, after: taskDropAfter(event) } : null
-}
 async function moveUnder(id: string, parentId: string | null) {
+  operationError.value = ''
   try {
     await data.moveTask(id, parentId)
     if (parentId) collapsedSubTasks.value = collapsedSubTasks.value.filter(value => value !== parentId)
     toast(parentId ? '已移为子任务，内容与编号保持不变' : '已移回顶层', 'ri-node-tree')
-  } catch (error) { toast(error instanceof Error ? error.message : '移动失败，请重试', 'ri-error-warning-line') }
+  } catch (error) { operationError.value = error instanceof Error ? error.message : '移动失败，请重试'; toast(operationError.value, 'ri-error-warning-line') }
 }
 async function onTableDrop(overId: string, _sectionId: string, event: DragEvent) {
-  orderingOver.value = null
-  if (readSubtaskDrag(event)) return
-  const id = dragId.value
-  dragId.value = null
+  const side = taskHierarchyDrop(event), payload = readSubtaskDrag(event), id = dragId.value
+  endHierarchyDrag()
+  if (operationBusy.value) return
+  if (payload) {
+    operationError.value = ''
+    try {
+      await data.moveSubtask(payload.taskId, payload.subId, overId, null)
+      collapsedSubTasks.value = collapsedSubTasks.value.filter(value => value !== overId)
+      toast('子任务已移动，内容与编号保持不变', 'ri-node-tree')
+    } catch (error) { operationError.value = error instanceof Error ? error.message : '移动失败，请重试' }
+    return
+  }
   const source = id ? data.taskById(id) : undefined, target = data.taskById(overId)
   if (!source || !target || source.id === target.id) return
+  if (side === 'inside') { await moveUnder(source.id, overId); return }
   if ((source.parentTaskId || null) !== (target.parentTaskId || null)) {
-    toast('只能在同一层级内排序，拖拽不会更改父子关系', 'ri-information-line'); return
+    await moveUnder(source.id, target.parentTaskId || null)
+    if (operationError.value) return
   }
-  await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.id, overId, taskDropAfter(event))
+  await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.id, overId, side === 'after')
 }
+function hierarchyDragOver(id: string, event: DragEvent) {
+  hierarchyOver.value = !operationBusy.value && (draggedSub.value || dragId.value && dragId.value !== id)
+    ? { id, side: draggedSub.value ? 'inside' : taskHierarchyDrop(event) } : null
+}
+async function promoteSub(taskId: string, subId: string) {
+  operationError.value = ''
+  try { await data.promoteSubtask(taskId, subId); toast('已提升为主任务，原编号与内容保持不变', 'ri-indent-decrease') }
+  catch (error) { operationError.value = error instanceof Error ? error.message : '提升失败，请重试' }
+}
+async function dropAtRoot(event: DragEvent) {
+  const payload = readSubtaskDrag(event), id = dragId.value
+  endHierarchyDrag()
+  if (operationBusy.value) return
+  if (payload) await promoteSub(payload.taskId, payload.subId)
+  else if (id) await moveUnder(id, null)
+}
+function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string, subId?: string) {
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else if (event.type === 'contextmenu') {
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, a, [contenteditable="true"]')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  const task = data.taskById(id), sub = subId ? data.subById(id, subId) : null
+  if (!task || subId && !sub) return
+  const title = sub?.text ?? task.title, disabled = operationBusy.value
+  const actions: ContextAction[] = [
+    { id: 'open', label: '打开任务', run: () => ui.openTask(id, subId) },
+    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id, subId), '分享链接已复制') },
+    { id: 'number', label: '复制任务编号', run: () => copyText(String(sub?.number ?? task.number ?? (subId || id)), '任务编号已复制') },
+  ]
+  if (subId) actions.push({ id: 'promote', label: '提升为主任务', disabled, separatorBefore: true, run: () => promoteSub(id, subId) })
+  else {
+    actions.push({ id: 'add', label: '添加子任务', disabled, run: () => startAddSub(id, null) })
+    if (task.parentTaskId) actions.push({ id: 'detach', label: '移回主任务', disabled, run: () => moveUnder(id, null) })
+  }
+  actions.push({ id: 'delete', label: subId ? '删除子任务' : '删除任务', danger: true, separatorBefore: true, disabled,
+    run: () => { deletion.value = { id, subId, title }; operationError.value = '' } })
+  void taskMenu.value?.openAt(event, `任务：${title}`, actions)
+}
+async function confirmDelete() {
+  const selected = deletion.value
+  if (!selected || deleting.value || operationBusy.value) return
+  deleting.value = true; operationError.value = ''
+  try {
+    if (selected.subId) {
+      data.removeSub(selected.id, selected.subId); await data.flushTask(selected.id)
+      if (data.taskSaveState(selected.id) === 'error') operationError.value = '删除尚未保存，本机草稿已保留，请打开任务处理保存'
+      else toast('子任务已删除', 'ri-delete-bin-line')
+      deletion.value = null
+    } else if (await data.deleteTask(selected.id)) { toast('任务已删除', 'ri-delete-bin-line'); deletion.value = null }
+    else operationError.value = '删除失败，任务已保留，请重试'
+  } finally { deleting.value = false }
+}
+watch([pid, () => session.userId], () => { if (!deleting.value) deletion.value = null; endHierarchyDrag() })
 function tableRows(section: typeof tableSections.value[number]) {
   const candidates = [...section.open, ...(section.doneOpen ? section.done : [])]
   // 未完成后代仍需展示已完成父任务作为上下文。
@@ -743,6 +893,7 @@ watch(visibleTaskIds, (ids) => {
             <div class="column-choices" role="group" aria-label="表格可见字段"><label v-for="column in PROJECT_TABLE_COLUMNS" :key="column.key"><input type="checkbox" :checked="visibleColumnKeys.includes(column.key)" :disabled="column.key === 'title'" @change="toggleColumn(column.key)" />{{ column.label }}</label></div>
             <p v-if="taskPreferences.columnsError" role="alert">{{ taskPreferences.columnsError }}<button type="button" @click="taskPreferences.retryColumns()">重试同步字段</button></p>
             <small v-else role="status">{{ taskPreferences.columnsState === 'loading' ? '正在读取账号偏好…' : taskPreferences.columnsState === 'saving' ? '正在同步字段…' : taskPreferences.columnsState === 'saved' ? '已同步到账号，其他设备打开时恢复' : '登录后可同步到其他设备' }}</small>
+            <button type="button" class="width-reset" @click="columnWidths.set({})">恢复默认列宽</button>
             <span class="display-settings-label">表格分组方式</span>
             <div class="table-seg" role="group" aria-label="表格分组方式">
               <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
@@ -760,7 +911,7 @@ watch(visibleTaskIds, (ids) => {
       </template>
     </div>
 
-    <div v-if="projTab === '任务'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
+    <div v-if="projTab === '任务' && pdTaskView !== 'quadrant'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
       <span class="action-count-scope">项目计数</span>
       <button :aria-pressed="actionFilter === 'all'" @click="actionFilter = 'all'">全部</button>
       <button v-for="filter in PROJECT_ACTION_FILTERS" :key="filter.id" :aria-pressed="actionFilter === filter.id"
@@ -829,17 +980,29 @@ watch(visibleTaskIds, (ids) => {
       <template v-if="pdTaskView === 'list'">
       <div class="task-list-card task-table-scroll">
         <TaskOrderStatus :scope="orderScope" />
-        <table :style="{ minWidth: `${tableMinWidth}px` }" class="project-task-table" aria-label="项目任务表格">
-          <colgroup><col v-for="column in visibleColumns" :key="column.key" :style="{ width: column.width ? `${column.width}px` : 'auto' }" /></colgroup>
+        <div v-if="dragId || draggedSub || operationBusy" class="task-root-drop" :class="{ on: rootDropOver }" role="status"
+          @dragover.prevent="rootDropOver = true" @dragleave="rootDropOver = false" @drop.prevent.stop="dropAtRoot">
+          <i :class="operationBusy ? 'ri-loader-4-line' : 'ri-indent-decrease'"></i>{{ operationBusy ? '正在保存任务层级…' : '拖到这里成为主任务' }}
+        </div>
+        <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}<button @click="operationError = ''">收起提示</button></p>
+        <div v-if="columnWidths.error.value || columnWidths.state.value === 'saving'" class="column-width-status" role="status">
+          {{ columnWidths.error.value || '正在保存列宽…' }}<button v-if="columnWidths.error.value" type="button" @click="columnWidths.retry">重试列宽</button>
+        </div>
+        <table :style="{ minWidth: `${tableMinWidth}px`, ...(customWidths ? { width: `${tableMinWidth}px` } : {}) }" class="project-task-table" aria-label="项目任务表格">
+          <colgroup><col v-for="column in visibleColumns" :key="column.key" :style="{ width: customWidths ? `${widthForColumn(column.key)}px` : column.width ? `${column.width}px` : 'auto' }" /></colgroup>
           <thead>
             <tr>
-              <th v-for="column in visibleColumns" :key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
+              <th v-for="column in visibleColumns" :key="column.key" :data-column-key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
                 <div class="table-title-heading">
                   <button class="table-sort" type="button" :aria-label="`按${column.label}${sortDirection(column.key) === 'ascending' ? '降序' : '升序'}排序`" @click="toggleTableSort(column.key)">
                     {{ column.label }}<i :class="sortDirection(column.key) === 'ascending' ? 'ri-arrow-up-line' : sortDirection(column.key) === 'descending' ? 'ri-arrow-down-line' : 'ri-expand-up-down-line'" aria-hidden="true"></i>
                   </button>
                   <button v-if="column.key === 'title'" class="group-op" aria-label="快速新建任务" title="只输入标题新建任务" @click="startQuickAdd(tableGrouped ? groups[0]!.id : '__all')"><i class="ri-add-line"></i></button>
                 </div>
+                <button type="button" class="column-resize-handle" role="separator" aria-orientation="vertical"
+                  :aria-label="`调整${column.label}列宽`" :aria-valuenow="widthForColumn(column.key)" :aria-valuemin="column.key === 'title' ? 160 : 48" :aria-valuemax="2000"
+                  @pointerdown.stop.prevent="startColumnResize($event, column.key)" @click.stop
+                  @keydown.stop="resizeColumnByKey($event, column.key)"></button>
               </th>
             </tr>
           </thead>
@@ -881,7 +1044,7 @@ watch(visibleTaskIds, (ids) => {
                       :disabled="quickAddState === 'submitting'"
                       placeholder="任务标题，回车创建，连着敲可以一次录好几条"
                       @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(section.id)"
-                      @keydown.esc="quickAddGroup = null"
+                      @keydown.esc.stop.prevent="!$event.isComposing && closeQuickAdd()"
                     />
                     <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(section.id) : (quickAddGroup = null)">
                       {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
@@ -898,7 +1061,8 @@ watch(visibleTaskIds, (ids) => {
                     :columns="visibleColumnKeys"
                     :depth="depth"
                     :child-task-count="childTaskCount(t.id)"
-                    :order-side="orderingOver?.id === t.id ? (orderingOver.after ? 'after' : 'before') : undefined"
+                    :order-side="hierarchyOver?.id === t.id ? hierarchyOver.side : undefined"
+                    @menu="openTaskMenu($event, t.id)"
                     @detach="moveUnder(t.id, null)"
                     :groups="groups"
                     :group-id="groupIdOf(t)"
@@ -909,9 +1073,9 @@ watch(visibleTaskIds, (ids) => {
                     @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
                     @dragstart="onDragStart(t.id, $event)"
-                    @dragend="dragId = null; orderingOver = null"
-                    @dragleave="orderingOver = null"
-                    @dragover.prevent="onTableDragOver(t.id, $event)"
+                    @dragend="endHierarchyDrag"
+                    @dragleave="hierarchyOver = null"
+                    @dragover.prevent="hierarchyDragOver(t.id, $event)"
                     @drop.prevent.stop="onTableDrop(t.id, section.id, $event)"
                   />
                 </tbody>
@@ -927,6 +1091,8 @@ watch(visibleTaskIds, (ids) => {
                   :columns="visibleColumnKeys"
                   @add-sub="(parentId) => startAddSub(t.id, parentId)"
                   @close-add="addingSub = null"
+                  @sub-drag="draggedSub = $event"
+                  @menu="(event, subId) => openTaskMenu(event, t.id, subId)"
                 />
               </template>
               <tbody v-if="section.header && !section.total && quickAddGroup !== section.id">
@@ -1005,8 +1171,8 @@ watch(visibleTaskIds, (ids) => {
                 v-model="quickAddText"
                 :disabled="quickAddState === 'submitting'"
                 placeholder="任务标题，回车创建，连着敲可以一次录好几条"
-                @keydown.enter.prevent="submitQuickAdd(g.id)"
-                @keydown.esc="quickAddGroup = null"
+                @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(g.id)"
+                @keydown.esc.stop.prevent="!$event.isComposing && closeQuickAdd()"
               />
               <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(g.id) : (quickAddGroup = null)">
                 {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
@@ -1180,9 +1346,33 @@ watch(visibleTaskIds, (ids) => {
       @deleted="onProjectDeleted"
     />
   </div>
+  <ContextActionMenu ref="taskMenu" />
+  <SettingsDialogShell v-if="deletion" :title="deletion.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" @close="!deleting && (deletion = null)">
+    <div class="task-delete-body">
+    <p class="task-delete-title">确定删除「{{ deletion.title }}」？</p>
+    <p>{{ deletion.subId ? '下级子事项保留并上移一级。' : '内嵌子事项一并删除，独立下级任务保留并移回顶层。' }}此操作不可恢复。</p>
+    <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}</p>
+    </div>
+    <template #footer><WaoButton :disabled="deleting" @click="deletion = null">取消</WaoButton><WaoButton variant="danger" :loading="deleting" :disabled="operationBusy" @click="confirmDelete">{{ operationError ? '重试删除' : '确认删除' }}</WaoButton></template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
+/* Drag target covers the sticky table header (z-index: 3), including resize controls. */
+.task-root-drop { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
+.task-root-drop.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
+.task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.task-delete-title { overflow-wrap: anywhere; color: var(--wao-text); }
+.task-delete-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
+.task-delete-body p { margin: 0; }
+.task-delete-body p + p { margin-top: var(--wao-space-2); }
+.project-task-table th { position: relative; }
+.column-resize-handle { position: absolute; inset: 0 -5px 0 auto; width: 10px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
+.column-resize-handle::after { content: ''; position: absolute; inset: 6px 4px; background: var(--wao-line-control); }
+.column-resize-handle:hover::after, .column-resize-handle:focus-visible::after { background: var(--wao-primary); }
+.width-reset { margin-top: var(--wao-space-1); padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; cursor: pointer; }
+.column-width-status { padding: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .column-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
 .column-choices label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .column-choices input { accent-color: var(--wao-primary); }
@@ -1215,8 +1405,10 @@ watch(visibleTaskIds, (ids) => {
 }
 .detail.detail-quadrant { display: flex; flex-direction: column; flex: 1; width: 100%; min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }
 .detail-quadrant > :not(.project-task-content) { flex-shrink: 0; }
+.detail-quadrant > .task-view-toolbar { flex-basis: auto; }
 .detail-quadrant .project-task-content { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .detail-quadrant .project-normal-tasks > :not(.quadrant-view) { flex-shrink: 0; }
+.detail-quadrant :deep(.quadrant-toolbar:empty) { display: none; }
 .detail-quadrant :deep(.copy-preview) { max-height: 25vh; overflow: auto; }
 .spacer {
   flex: 1;

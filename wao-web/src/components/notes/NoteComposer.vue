@@ -583,7 +583,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
   try {
     if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试上传')
     if (file.size > data.MAX_FILE_BYTES) throw new Error('文件超过 200MB，请选择较小的文件')
-    const item = await data.uploadFile(file)
+    const item = await data.uploadFile(file, undefined, true)
     if (!item) throw new Error('文件上传失败，请重试')
     done(item)
   } catch (cause) {
