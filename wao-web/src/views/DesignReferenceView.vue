@@ -150,7 +150,10 @@ const settingSection = ref('expression')
 const settingItems = [
   { id: 'expression', label: '表达偏好', icon: 'ri-quill-pen-line' },
   { id: 'automation', label: '自动处理', icon: 'ri-magic-line' },
+  { id: 'thinking', label: '思考洞察', icon: 'ri-lightbulb-line' },
+  { id: 'thinking-style', label: '思考图样式', icon: 'ri-palette-line' },
 ]
+const thinkingDemo = ref({ thinking: '', style: '' })
 const defaultPrompt = '保留我的语气和事实，让表达更清楚，不为我补写经历。'
 const prompt = ref(defaultPrompt)
 const automatic = ref(true)
@@ -574,7 +577,15 @@ const detailDemoComment = ref('')
               :default-value="defaultPrompt"
               label="演示提示词"
               editor-id="design-prompt" /></template
-          ><AiSettingsToggleRow
+          ><template v-else-if="settingSection === 'thinking' || settingSection === 'thinking-style'">
+            <h3>{{ settingSection === 'thinking' ? '思考洞察' : '思考图样式' }}</h3>
+            <p>演示：洞察决定发现什么，绘图决定怎样表达。保存后可重做第二张图，第一张总览图保留。本页不写入账号或调用模型。</p>
+            <AiPromptEditor
+              v-model="thinkingDemo[settingSection === 'thinking' ? 'thinking' : 'style']"
+              :default-value="settingSection === 'thinking' ? '演示：发现可继续推演的关系和具体问题，区分观察与推测。' : '演示：用关系图表达关键发现，减少空白，中文清晰。'"
+              :label="settingSection === 'thinking' ? '演示洞察提示词' : '演示思考图绘图提示词'"
+              :editor-id="`design-${settingSection}`" empty-uses-default />
+          </template><AiSettingsToggleRow
             v-else
             v-model="automatic"
             title="自动处理示例"

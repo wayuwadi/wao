@@ -21,6 +21,12 @@ class NoteThinkingImageServiceTest {
     final ImageService images=mock(ImageService.class);
     final NoteAssetPrivacyService privacy=mock(NoteAssetPrivacyService.class);
     final NoteThinkingImageService service=new NoteThinkingImageService(json,images,privacy);
+    @Test void customThinkingMethodReplacesDefaultButCannotRemoveSourceAndFormatBoundaries() {
+        String prompt=NoteThinkingImageService.prompt("从成本与反馈的关系找发现","上次切口");
+        assertThat(prompt).contains("从成本与反馈的关系找发现","只输出JSON","连续逐字引用","上次切口").doesNotContain("根据内容选择因果解释");
+        assertThat(NoteThinkingImageService.prompt(" ",null)).contains(NoteThinkingImageService.PROMPT);
+        assertThat(NoteThinkingImageService.imagePrompt("深色关系图")).isEqualTo("深色关系图");
+    }
 
     @Test void quotesMustBeContiguousOriginalTextAndRelationMustReferToRealObservation() {
         assertThat(service.validate(PLAN,SOURCE).path("title").asText()).contains("清醒");

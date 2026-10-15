@@ -9,6 +9,10 @@ import java.util.regex.Pattern;
 /** 小记素材的持久私有标记，移除引用不会重新公开。 */
 @Service
 public class NoteAssetPrivacyService {
+    /** 第二张图入库前识别持久阶段归属，避免产生短暂可匿名访问的图片。 */
+    public boolean thinkingImageRun(String runId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='thinking' AND job_id=?",Integer.class,runId)>0;
+    }
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
     private static final Pattern ASSET = Pattern.compile("/api/(images|files)/([A-Za-z0-9_-]{1,64})/");

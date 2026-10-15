@@ -24,7 +24,7 @@ const props = withDefaults(
   defineProps<{
     progressive?: boolean
     closable?: boolean
-    section?: 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
+    section?: 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'thinkingPrompt' | 'thinkingImagePrompt' | 'execution'
   }>(),
   {
     progressive: false,
@@ -37,7 +37,7 @@ const session = useSessionStore(),
 const imageMode = useNoteImageMode()
 const noteDisplay = useNoteDisplayPreferences()
 type Section =
-  'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
+  'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'thinkingPrompt' | 'thinkingImagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
 watch(
   () => props.section,
@@ -52,12 +52,16 @@ const items = [
   { id: 'titlePrompt', label: '标题提示词', icon: 'ri-heading' },
   { id: 'polishPrompt', label: '正文润色', icon: 'ri-text' },
   { id: 'imagePrompt', label: '配图提示词', icon: 'ri-image-line' },
+  { id: 'thinkingPrompt', label: '思考洞察', icon: 'ri-lightbulb-line' },
+  { id: 'thinkingImagePrompt', label: '思考图样式', icon: 'ri-palette-line' },
   { id: 'execution', label: '执行安排', icon: 'ri-list-check-2' },
 ]
 const promptLabels = {
   titlePrompt: '标题提示词',
   polishPrompt: '正文润色提示词',
   imagePrompt: '自动配图提示词',
+  thinkingPrompt: '思考洞察提示词',
+  thinkingImagePrompt: '思考图绘图提示词',
 }
 const promptField = computed(() =>
   active.value in promptLabels ? (active.value as keyof typeof promptLabels) : null,
@@ -123,6 +127,8 @@ function normalizeSettings(value: NoteAiSettings): NoteAiSettings {
   return {
     ...value,
     thinking: value.thinking ?? true,
+    thinkingPrompt: value.thinkingPrompt ?? '',
+    thinkingImagePrompt: value.thinkingImagePrompt ?? '',
     polishModel: value.polishModel ?? 'gpt-6-luna',
     polishReasoningEffort: value.polishReasoningEffort ?? 'low',
   }
@@ -326,7 +332,7 @@ onBeforeUnmount(() => {
           :error="catalogError || validationError"
           scope="小记"
           allow-default
-          description="用于小记标题、标签与配图；正文润色可在左侧独立设置，不影响卦象。"
+          description="用于小记标题、标签、总览图与思考图；正文润色可在左侧独立设置，不影响卦象。"
           @refresh="loadModels"
         />
         <p v-else-if="active !== 'display'" role="status">
@@ -447,6 +453,10 @@ onBeforeUnmount(() => {
                 {{
                   promptField === 'polishPrompt'
                     ? '轻量润色适合日常记录；需要复杂改写时可选择 Astra。提示词留空沿用默认。'
+                    : promptField === 'thinkingPrompt'
+                      ? '控制第二张图从小记里发现什么、怎样推进思考。保存后，在小记的思考图操作中选择重做即可调试；第一张总览图不受影响。'
+                      : promptField === 'thinkingImagePrompt'
+                        ? '控制第二张图的构图、配色、风格和信息密度。保存后重做思考图，或用于下次正文保存；历史图片不会自动重画。'
                     : '用于下一次生成；留空沿用默认提示词。'
                 }}
               </p>
@@ -456,7 +466,7 @@ onBeforeUnmount(() => {
             }}</span>
           </div>
           <AiPromptEditor
-            v-model="draft[promptField]"
+            :model-value="draft[promptField] ?? ''" @update:model-value="draft[promptField] = $event"
             :editor-id="`note-${promptField}`"
             :label="promptLabels[promptField]"
             :default-value="remote?.defaultPrompts?.[promptField]"

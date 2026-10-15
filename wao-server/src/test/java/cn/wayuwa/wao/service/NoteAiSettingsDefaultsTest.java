@@ -87,6 +87,29 @@ class NoteAiSettingsDefaultsTest {
         assertThat(empty.defaultPrompts().polishPrompt()).isEqualTo(TextPolishService.DEFAULT_PROMPT);
         assertThat(empty.defaultPrompts().imagePrompt()).isEqualTo(NoteAiManagedService.DEFAULT_IMAGE_PROMPT);
         assertThat(service.parse(Map.of()).version()).isEqualTo(empty.version());
-        assertThat(json.valueToTree(empty).path("defaultPrompts").size()).isEqualTo(3);
+        assertThat(empty.defaultPrompts().thinkingPrompt()).isEqualTo(NoteThinkingImageService.PROMPT);
+        assertThat(empty.defaultPrompts().thinkingImagePrompt()).isEqualTo(NoteThinkingImageService.IMAGE_PROMPT);
+        assertThat(json.valueToTree(empty).path("defaultPrompts").size()).isEqualTo(5);
+    }
+    @Test void thinkingPromptsAreSavedWithCasAndOldClientsCannotEraseThem() throws Exception {
+        var values=new java.util.LinkedHashMap<String,String>();var prefs=mock(MemberPreferenceMapper.class);var db=mock(JdbcTemplate.class);
+        when(db.queryForList(anyString(),eq("m"))).thenReturn(java.util.List.of(Map.of("id","m")));
+        when(prefs.find(eq("m"),anyString())).thenAnswer(c->values.get(c.getArgument(1)));
+        doAnswer(c->{values.put(c.getArgument(1),c.getArgument(2));return null;}).when(prefs).upsert(eq("m"),anyString(),anyString());
+        var json=new ObjectMapper();var service=new NoteAiSettingsService(db,prefs,json);var initial=service.get("m");
+        var custom=service.parse(Map.of("note-thinking-prompt-v1","只挖掘可迁移的方法","note-thinking-image-prompt-v1","深色手绘关系图")).settings();
+        var saved=service.save("m",new NoteAiSettingsService.Save(custom,initial.version()));
+        assertThat(saved.settings().thinkingPrompt()).isEqualTo("只挖掘可迁移的方法");
+        assertThat(saved.settings().thinkingImagePrompt()).isEqualTo("深色手绘关系图");
+        assertThat(saved.version()).isNotEqualTo(initial.version());
+        assertThat(saved.settings().imagePrompt()).isEmpty();
+        var old=(com.fasterxml.jackson.databind.node.ObjectNode)json.valueToTree(saved.settings());old.remove(java.util.List.of("thinkingPrompt","thinkingImagePrompt"));
+        var preserved=service.save("m",new NoteAiSettingsService.Save(json.treeToValue(old,NoteAiSettingsService.Settings.class),saved.version()));
+        assertThat(preserved.settings().thinkingImagePrompt()).isEqualTo("深色手绘关系图");
+        assertThatThrownBy(()->service.save("m",new NoteAiSettingsService.Save(custom,initial.version()))).hasMessageContaining("其他设备");
+        var tooLong=(com.fasterxml.jackson.databind.node.ObjectNode)json.valueToTree(custom);tooLong.put("thinkingPrompt","字".repeat(4001));
+        assertThatThrownBy(()->service.save("m",new NoteAiSettingsService.Save(json.treeToValue(tooLong,NoteAiSettingsService.Settings.class),preserved.version()))).hasMessageContaining("4000");
+        var reset=service.parse(Map.of()).settings();
+        assertThat(service.save("m",new NoteAiSettingsService.Save(reset,preserved.version())).settings().thinkingPrompt()).isEmpty();
     }
 }
