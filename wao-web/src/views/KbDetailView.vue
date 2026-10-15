@@ -52,7 +52,7 @@ const ui = useUiStore()
 const tabs = useTabsStore()
 const favorites = useFavoritesStore()
 const knowledgeFavorites = useKnowledgeFavoritesStore()
-const tocOpen = ref(false)
+const tocOpen = ref(true)
 
 const kbId = computed(() => String(route.params.id))
 const kb = computed(() => data.kbById(kbId.value))
@@ -62,6 +62,8 @@ const firstDocId = () => {
   return null
 }
 const docId = ref<string | null>((route.query.doc as string) || null)
+// 每次打开另一篇文档默认展开；同篇文档内仍尊重手动收起。
+watch(docId, () => { tocOpen.value = true })
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const toolbarHost = ref<HTMLElement | null>(null)
@@ -105,7 +107,6 @@ watch(
   () => {
     flushCurrentDoc()
     docId.value = typeof route.query.doc === 'string' ? route.query.doc : null
-    tocOpen.value = false
   },
 )
 onMounted(() => {

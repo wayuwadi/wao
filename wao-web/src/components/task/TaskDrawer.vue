@@ -1124,7 +1124,7 @@ async function uploadAttachment(event: Event) {
                   <WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><span>{{ WORK_ITEM_TYPES.find(kind => kind.id === currentWorkItemType)?.label }}</span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>
                 </button>
                 <CellMenu v-if="menu === 'type'" :anchor="typeAnchor" :min-width="160" @close="menu = null">
-                  <button v-for="kind in WORK_ITEM_TYPES" :key="kind.id" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span>{{ kind.label }}</span><i v-if="(task.workItemType || 'task') === kind.id" class="ri-check-line" aria-hidden="true"></i></button>
+                  <button v-for="kind in WORK_ITEM_TYPES" :key="kind.id" class="work-item-type-option" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span class="work-item-type-label">{{ kind.label }}</span></button>
                 </CellMenu>
               </div>
               <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
@@ -1662,6 +1662,8 @@ async function uploadAttachment(event: Event) {
 </template>
 
 <style scoped>
+.work-item-type-label { flex: 1; text-align: left; }
+.work-item-type-option[aria-checked="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .work-item-type { display: inline-flex; align-items: center; gap: var(--wao-space-1); min-height: 36px; padding: 6px 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text); font: inherit; cursor: pointer; }
 .work-item-type:hover, .work-item-type[aria-expanded='true'] { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
 .work-item-type:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }

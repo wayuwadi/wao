@@ -365,8 +365,7 @@ describe('知识库详情目录体验', () => {
     ]
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.toc').exists()).toBe(false)
-    await wrapper.get('[title="文档大纲"]').trigger('click')
+    expect(wrapper.get('[title="文档大纲"]').attributes('aria-expanded')).toBe('true')
     expect(wrapper.findAll('.toc-item').map((item) => item.text())).toEqual([
       '一级标题',
       '二级标题',
@@ -380,7 +379,18 @@ describe('知识库详情目录体验', () => {
     await wrapper.get('[title="文档大纲"]').trigger('click')
     await wrapper.get('.toc').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('.toc').exists()).toBe(false)
+    // 同一篇文档手动关闭后保持关闭，切换文档和刷新重开则默认展示。
+    const router = wrapper.vm.$router
+    await router.replace('/kb/k3?doc=d8')
+    await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(true)
+    await wrapper.get('[aria-label="关闭文档大纲"]').trigger('click')
+    await router.replace('/kb/k3?doc=d8&find=标题')
+    await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(false)
     wrapper.unmount()
+    const reopened = await mountView('/kb/k3?doc=d7')
+    expect(reopened.find('.toc').exists()).toBe(true)
   })
 
   it('模板管理展示真实正文，并把编辑后的正文块与名称说明一起保存', async () => {

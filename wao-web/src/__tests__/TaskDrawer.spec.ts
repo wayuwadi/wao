@@ -611,7 +611,11 @@ describe('TaskDrawer', () => {
     ui.openTask(taskId)
     const w = mountDrawer(); await flushPromises()
     await w.get('[aria-label="工作项类型"]').trigger('click')
-    const requirement = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.includes('需求'))!
+    const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+    expect(options.find(button => button.getAttribute('aria-checked') === 'true')?.textContent).toBe('任务')
+    expect(document.querySelector('[role="menuitemradio"] .ri-check-line')).toBeNull()
+    expect(options.every(button => button.querySelector('.work-item-type-label'))).toBe(true)
+    const requirement = options.find(button => button.textContent?.includes('需求'))!
     requirement.click(); await flushPromises()
     expect(data.taskById(taskId)!.workItemType).toBe('requirement')
     expect(w.get('[aria-label="工作项类型"]').text()).toContain('需求')
