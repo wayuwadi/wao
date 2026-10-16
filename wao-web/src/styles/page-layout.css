@@ -66,3 +66,10 @@
 @media (max-width: 360px) {
   :is(.shell, .tab-page-window.floating)[data-page-layout] { --wao-page-gutter: 12px; }
 }
+
+/* Knowledge is a split workspace: its own directory and toolbar define the frame. */
+.shell[data-page-layout] .page-body .wao-page-frame.kb-detail,
+.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame.kb-detail {
+  max-width: none;
+  padding: 0;
+}
