@@ -94,9 +94,9 @@ describe('项目显示设置与任务上下文', () => {
     await wrapper.get('[aria-label="表格分组方式"] button:last-child').trigger('click')
     expect(wrapper.find('.table-group').exists()).toBe(true)
     expect(JSON.parse(localStorage.getItem('wao-board-table-grouped-v1')!)).toMatchObject({ p1: true })
-    await wrapper.get('.done-switch').trigger('click')
-    expect(wrapper.get('.done-switch').attributes('aria-checked')).toBe('true')
-    await wrapper.get('.done-switch').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('.subtask-controls [role="switch"]:nth-child(2)').trigger('click')
+    expect(wrapper.get('.subtask-controls [role="switch"]:nth-child(2)').attributes('aria-checked')).toBe('true')
+    await trigger.trigger('keydown', { key: 'Escape' })
     expect(details.element.open).toBe(false)
     expect(document.activeElement).toBe(trigger.element)
     details.element.open = true

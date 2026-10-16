@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { subItemKey } from '@/utils/projectWorkItems'
 import TaskOrderStatus from './TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
@@ -23,6 +24,7 @@ import type { Priority, SubtaskState, TaskStep } from '@/types'
  * 有下级的子任务可以单独收起；`ownerFilter` 只保留该负责人的子任务及其上级。
  */
 const props = defineProps<{
+  collapsedKeys?: string[]
   columns?: readonly string[]
   taskId: string
   table?: boolean
@@ -34,7 +36,7 @@ const props = defineProps<{
   ownerFilter?: string | null
 }>()
 const hasColumn = (key: string) => props.columns?.includes(key) ?? true
-const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': []; 'sub-drag': [payload: { taskId: string; subId: string } | null]; menu: [event: MouseEvent | KeyboardEvent, subId: string] }>()
+const emit = defineEmits<{ 'toggle-collapse': [key: string]; 'add-sub': [parentId: string | null]; 'close-add': []; 'sub-drag': [payload: { taskId: string; subId: string } | null]; menu: [event: MouseEvent | KeyboardEvent, subId: string] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const orderScope = computed(() => `subs:${props.taskId}`)
@@ -66,9 +68,11 @@ const rows = computed(() => {
 /** 有下级的子任务 id，只有它们才显示收起箭头。 */
 const parentIds = computed(() => new Set(rows.value.map(row => row.sub.parentId).filter((id): id is string => !!id)))
 /** 表格里收起的子任务：只在本次页面内记住，展开主任务时默认全部展开。 */
-const collapsed = ref<string[]>([])
+const localCollapsed = ref<string[]>([])
+const collapsed = computed(() => props.collapsedKeys ? rows.value.filter(row => props.collapsedKeys!.includes(subItemKey(props.taskId, row.key))).map(row => row.key) : localCollapsed.value)
 function toggleCollapse(subId: string) {
-  collapsed.value = collapsed.value.includes(subId) ? collapsed.value.filter(id => id !== subId) : [...collapsed.value, subId]
+  if (props.collapsedKeys) emit('toggle-collapse', subItemKey(props.taskId, subId))
+  else localCollapsed.value = localCollapsed.value.includes(subId) ? localCollapsed.value.filter(id => id !== subId) : [...localCollapsed.value, subId]
 }
 /** 按负责人筛选时保留命中的子任务和它们的上级链，层级才看得懂。 */
 const ownerKeep = computed(() => {
@@ -86,12 +90,20 @@ const ownerKeep = computed(() => {
   }
   return keep
 })
+const unfinishedContext = computed(() => {
+  const keep = new Set<string>(), byId = new Map(rows.value.map(row => [row.key, row.sub]))
+  for (const row of rows.value.filter(row => !row.sub.done)) {
+    let id: string | null | undefined = row.key
+    while (id && !keep.has(id)) { keep.add(id); id = byId.get(id)?.parentId }
+  }
+  return keep
+})
 const visibleRows = computed(() => {
   const hiddenUnder: number[] = []
   return rows.value.filter(row => {
     while (hiddenUnder.length && hiddenUnder[hiddenUnder.length - 1]! >= row.depth) hiddenUnder.pop()
     if (props.table && hiddenUnder.length) return false
-    if (hidingDone.value && row.sub.done) return false
+    if (hidingDone.value && row.sub.done && !unfinishedContext.value.has(row.key)) return false
     if (ownerKeep.value && !ownerKeep.value.has(row.key)) return false
     if (props.table && collapsed.value.includes(row.key)) hiddenUnder.push(row.depth)
     return true
@@ -115,7 +127,7 @@ watch(() => [props.adding, props.addParentId], () => {
   const byId = new Map(rows.value.map(row => [row.key, row.sub]))
   while (id) {
     const current: string = id
-    collapsed.value = collapsed.value.filter(item => item !== current)
+    if (collapsed.value.includes(current)) toggleCollapse(current)
     id = byId.get(current)?.parentId
   }
 })
