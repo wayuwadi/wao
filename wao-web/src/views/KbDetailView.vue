@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
@@ -55,6 +56,7 @@ const knowledgeFavorites = useKnowledgeFavoritesStore()
 const tocOpen = ref(true)
 
 const kbId = computed(() => String(route.params.id))
+const directoryWidth = ref(262)
 const kb = computed(() => data.kbById(kbId.value))
 
 const firstDocId = () => {
@@ -1043,7 +1045,8 @@ async function saveKbSettings() {
   <div v-if="!kb" class="missing">知识库不存在。</div>
   <div v-else class="kb-detail wao-page-frame">
     <!-- 左栏 -->
-    <div class="side">
+    <div class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
+      <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
         <button class="back" @click="router.push('/knowledge')">
           <i class="ri-arrow-left-line"></i>全部知识库
@@ -1495,7 +1498,8 @@ async function saveKbSettings() {
 
 /* 左栏 */
 .side {
-  width: 262px;
+  position: relative;
+  width: min(var(--directory-width, 262px), 35vw);
   flex-shrink: 0;
   border-right: 1px solid var(--wao-line);
   background: var(--wao-bg-sub);
