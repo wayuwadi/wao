@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import { useTopShortcutsStore, favoriteShortcut } from '@/stores/topShortcuts'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -30,6 +31,7 @@ const nav = useNavStore()
 // 手机完整菜单不继承桌面侧栏的窄条偏好，也不改写该偏好。
 const isCollapsed = computed(() => !isMobile.value && nav.collapsed)
 const session = useSessionStore()
+const navigationWidth = ref(236)
 const favorites = useFavoritesStore()
 const favoriteProjects = computed(() => favorites.orderedProjects)
 const draggedFavorite = ref<string | null>(null)
@@ -298,7 +300,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </script>
 
 <template>
-  <aside class="side" :class="{ collapsed: isCollapsed }">
+  <aside class="side" :class="{ collapsed: isCollapsed }" :style="{ '--navigation-width': `${navigationWidth}px` }">
+    <PaneResizeHandle v-if="!isCollapsed && !isMobile" :storage-key="`wao:navigation-width:${session.currentUser.id}`" label="全局导航宽度" :default-width="236" :max="420" @resize="navigationWidth = $event" />
     <div class="side-heading">
       <RouterLink v-if="!desktopToolbar && !isCollapsed" class="side-brand" to="/" aria-label="WAO 首页" @click="emit('navigate')">
         <WaoLogo wordmark />
@@ -675,8 +678,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 }
 
 .side {
-  width: var(--wao-side-w);
-  transition: width 0.18s ease;
+  position: relative;
+  width: min(var(--navigation-width, var(--wao-side-w)), 30vw);
   background: var(--wao-bg-side);
   border-right: 1px solid var(--wao-line);
   display: flex;
