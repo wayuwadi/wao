@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
+const samplePaneWidth = ref(236)
 import WaoLogo from '@/components/WaoLogo.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -236,6 +238,13 @@ const detailDemoComment = ref('')
             <h1>轻盈，有秩序。</h1>
             <p>蓝紫强调 · 清楚的文字 · 细线分隔 · 克制的圆角</p>
           </div>
+          <section class="reference-section">
+            <h3>可调侧栏 · 演示</h3>
+            <div class="resize-example" :style="{ width: `${samplePaneWidth}px` }">
+              拖动右边缘调整宽度
+              <PaneResizeHandle label="演示侧栏宽度" storage-key="wao:design:resize-example" :default-width="236" @resize="samplePaneWidth = $event" />
+            </div>
+          </section>
           <section class="reference-section">
             <div class="section-title">
               <h2>颜色与层级</h2>
@@ -654,6 +663,7 @@ const detailDemoComment = ref('')
 </template>
 
 <style scoped>
+.resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
 .detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
 .detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0; border-bottom: 1px solid var(--wao-line); }
