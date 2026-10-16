@@ -20,6 +20,7 @@ type TaskRowView = ReturnType<ReturnType<typeof useDeco>['decoTask']>
  * 下拉菜单悬浮在表格之上（CellMenu），点整个单元格任意处都能打开。
  */
 const props = defineProps<{
+  showSubtasks?: boolean
   columns?: readonly string[]
   task: TaskRowView
   groups: TaskGroup[]
@@ -123,7 +124,7 @@ function commitRename() {
     <td v-if="hasColumn('title')">
       <div class="title-cell" :style="{ paddingLeft: `${(depth ?? 0) * 20}px` }">
         <button
-          v-if="task.subs.length || childTaskCount"
+          v-if="showSubtasks !== false && (task.subs.length || childTaskCount)"
           class="tree-toggle"
           :aria-label="`展开或收起 ${task.title} 的子任务`"
           :aria-expanded="expanded"

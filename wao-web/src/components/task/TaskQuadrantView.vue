@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useProjectItemActions } from '@/composables/projectItemActions'
+import type { ProjectItemRefs } from '@/utils/projectWorkItems'
 import TaskOrderStatus from './TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
@@ -15,13 +17,30 @@ import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string }>()
+const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const ui = useUiStore()
+const itemActions = useProjectItemActions(() => props.itemRefs)
+const sourceId = itemActions.sourceId
+function openItem(id: string) { itemActions.open(id) }
+function locateParent(id: string) {
+  const key = props.itemRefs?.[id]?.parentKey
+  if (!key) return
+  const parent = props.tasks.find(t => t.id === key)
+  if (parent) {
+    expanded.value = null
+    requestAnimationFrame(() => {
+      const element = document.getElementById(`quadrant-item-${key}`)
+      if (element) { element.scrollIntoView({ block: 'nearest' }); element.focus() }
+      else openItem(key)
+    })
+  }
+  else openItem(key)
+}
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 const { begin, cancel, isSettling } = useSettle()
@@ -32,32 +51,36 @@ const savingIds = ref<string[]>([])
 const touchedIds = ref<string[]>([])
 const finished = isTaskFinished
 const doneCount = computed(() => props.tasks.filter(finished).length)
-const busy = (id: string) => savingIds.value.includes(id) || data.taskSaveState(id) === 'saving'
+const busy = (id: string) => savingIds.value.includes(id) || itemActions.busy(id)
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
 const sections = computed(() => TASK_QUADRANTS.map((quadrant) => ({
   ...quadrant,
   tasks: order.sort(orderScope.value, props.tasks, t => t.id).filter((task) => task.pr === quadrant.priority && (props.showDone
-    || !finished(task) || isSettling(task.id) || busy(task.id) || data.taskSaveState(task.id) === 'error'))
+    || !finished(task) || isSettling(task.id) || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error'))
     .map(decoTask),
 })))
 async function save(id: string, change?: () => void) {
-  if (!data.taskById(id) || busy(id)) return
+  if (!data.taskById(sourceId(id)) || busy(id)) return
   savingIds.value.push(id)
   if (!touchedIds.value.includes(id)) touchedIds.value.push(id)
   try {
     change?.()
-    await data.flushTask(id)
+    await data.flushTask(sourceId(id))
   } finally { savingIds.value = savingIds.value.filter((value) => value !== id) }
 }
 async function setPriority(id: string, priority: Priority) {
   await save(id, () => {
-    if (data.taskById(id)?.pr !== priority) data.patchTask(id, { pr: priority }, `将优先级改为「${priority}」`)
+    const ref = itemActions.source(id)
+    if (ref.subId) data.updateSub(ref.taskId, ref.subId, { pr: priority })
+    else if (data.taskById(id)?.pr !== priority) data.patchTask(id, { pr: priority }, `将优先级改为「${priority}」`)
   })
 }
 async function toggleComplete(id: string) {
   await save(id, () => {
-    data.toggleComplete(id)
-    if (data.taskById(id)?.status === '已完成') begin(id)
+    const ref = itemActions.source(id)
+    if (ref.subId) data.setSubState(ref.taskId, ref.subId, data.subById(ref.taskId, ref.subId)?.done ? '未开始' : '已完成')
+    else data.toggleComplete(id)
+    if (ref.subId ? data.subById(ref.taskId, ref.subId)?.done : data.taskById(id)?.status === '已完成') begin(id)
     else cancel(id)
   })
 }
@@ -81,14 +104,16 @@ async function dropOnTask(event: DragEvent, target: Task) {
   const source = props.tasks.find(t => t.id === id)
   if (!source || source.id === target.id || busy(source.id)) return
   if (source.pr !== target.pr) await setPriority(source.id, target.pr)
-  await order.move(orderScope.value, props.tasks.map(t => t.id), source.id, target.id, after)
+  if (itemActions.isSub(source.id) || itemActions.isSub(target.id)) return
+  await order.move(orderScope.value, props.tasks.filter(t => !itemActions.isSub(t.id)).map(t => t.id), source.id, target.id, after)
 }
 function createTask(priority: Priority) {
   ui.openModal('task', props.projectId ?? '')
   ui.modalPriority = priority
 }
 function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
-  const task = data.taskById(id)
+  const ref = itemActions.source(id)
+  const task = props.tasks.find(t => t.id === id)
   if (!task) return
   if (event instanceof KeyboardEvent) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
@@ -99,9 +124,9 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
     if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
   }
   contextMenu.value?.openAt(event, `任务：${task.title}`, [
-    { id: 'open', label: '打开任务', run: () => ui.openTask(id) },
-    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id), '任务分享链接已复制') },
-    { id: 'id', label: '复制任务编号', run: () => copyText(id, '任务编号已复制') },
+    { id: 'open', label: '打开任务', run: () => openItem(id) },
+    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(ref.taskId, ref.subId), '任务分享链接已复制') },
+    { id: 'id', label: '复制任务编号', run: () => copyText(String(task.number ?? ref.subId ?? ref.taskId), '任务编号已复制') },
     { id: 'complete', label: task.status === '已完成' ? '重新打开任务' : '完成任务', separatorBefore: true, disabled: busy(id), run: () => toggleComplete(id) },
   ])
 }
@@ -111,7 +136,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
   <div class="quadrant-view">
     <div class="quadrant-toolbar">
       <TaskOrderStatus :scope="orderScope" />
-      <button v-if="doneCount" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
+      <button v-if="doneCount && !itemRefs" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
     </div>
     <div class="quadrants" :class="{ expanded }">
       <section v-for="section in sections" v-show="!expanded || expanded === section.priority" :key="section.priority"
@@ -129,28 +154,29 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           </div>
         </header>
         <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
-          <article v-for="task in section.tasks" :key="task.id" class="quadrant-task"
-            tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="ui.openTask(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
+          <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task"
+            tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
             :draggable="!busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
             @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
-            <button v-if="selectionMode" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
+            <button v-if="selectionMode && !itemActions.isSub(task.id)" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
               @click="emit('select', task.id)"><i :class="selectedIds.includes(task.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
-            <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(task.id) === 'error' }">
-              <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
+            <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
+              <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
               <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
-                <span class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
+                <button v-if="itemRefs?.[task.id]?.parentKey" class="quadrant-parent" :title="`定位父任务：${itemRefs[task.id]!.parentTitle}`" @click="locateParent(task.id)">↳ {{ itemRefs[task.id]!.parentTitle }}</button>
+                <span v-else class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
               </div>
-              <div v-if="busy(task.id) || data.taskSaveState(task.id) === 'error' || touchedIds.includes(task.id)" class="quadrant-save" aria-live="polite">
-                <SaveHint :saving="busy(task.id)" :failed="data.taskSaveState(task.id) === 'error'" :saved-at="data.taskSavedAt(task.id)" />
-                <button v-if="data.taskSaveState(task.id) === 'error'" :disabled="busy(task.id)" @click="save(task.id)">重试保存</button>
+              <div v-if="busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error' || touchedIds.includes(task.id)" class="quadrant-save" aria-live="polite">
+                <SaveHint :saving="busy(task.id)" :failed="data.taskSaveState(sourceId(task.id)) === 'error'" :saved-at="data.taskSavedAt(sourceId(task.id))" />
+                <button v-if="data.taskSaveState(sourceId(task.id)) === 'error'" :disabled="busy(task.id)" @click="save(task.id)">重试保存</button>
               </div>
             </div>
             <label class="quadrant-move" title="移动到其他象限">
@@ -175,6 +201,8 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 </template>
 
 <style scoped>
+.quadrant-parent { min-width: 0; max-width: 100%; border: 0; padding: 0; background: transparent; color: var(--wao-text-3); font-size: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quadrant-task:focus { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .quadrant-more { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); }
 .quadrant-more:hover, .quadrant-more:focus-visible { background: var(--wao-bg-hover); }
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }

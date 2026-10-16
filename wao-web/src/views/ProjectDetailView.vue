@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
+import SaveHint from '@/components/ui/SaveHint.vue'
+import { projectWorkItems, withProjectAncestors, decodeProjectSubtaskDisplay } from '@/utils/projectWorkItems'
+import { useProjectItemActions } from '@/composables/projectItemActions'
 import { PROJECT_ACTION_FILTERS, matchesProjectAction, type ProjectActionFilter } from '@/utils/projectActionFilters'
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
@@ -59,12 +63,6 @@ const { decoProj, decoTask } = useDeco()
 const now = useNow()
 const showTime = (t: string) => relativeTime(t, now.value)
 
-const collapsedSubTasks = ref<string[]>([])
-function toggleSubtasks(id: string) {
-  collapsedSubTasks.value = collapsedSubTasks.value.includes(id)
-    ? collapsedSubTasks.value.filter((value) => value !== id)
-    : [...collapsedSubTasks.value, id]
-}
 const pid = computed(() => String(route.params.id))
 const searchText = ref('')
 const actionFilter = ref<ProjectActionFilter>('all')
@@ -82,6 +80,19 @@ const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
   return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : 'list'
 })
+const subtaskDisplay = useMemberPreference(() => `project-layout-v1:subtasks:${pid.value}:${pdTaskView.value}`, decodeProjectSubtaskDisplay, JSON.stringify)
+const showSubtasks = computed(() => subtaskDisplay.value.value.show)
+const collapsedSubTasks = computed({
+  get: () => subtaskDisplay.value.value.collapsed,
+  set: (collapsed: string[]) => { void subtaskDisplay.set({ ...subtaskDisplay.value.value, collapsed }) },
+})
+function toggleSubtasks(id: string) {
+  collapsedSubTasks.value = collapsedSubTasks.value.includes(id)
+    ? collapsedSubTasks.value.filter(value => value !== id) : [...collapsedSubTasks.value, id]
+}
+function setShowSubtasks(show: boolean) { void subtaskDisplay.set({ ...subtaskDisplay.value.value, show }); finishSelection() }
+function expandAllSubtasks() { collapsedSubTasks.value = [] }
+function collapseAllSubtasks() { collapsedSubTasks.value = workProjection.value.items.map(t => t.id) }
 watch(pdTaskView, (view) => {
   if (view === 'quadrant') actionFilter.value = 'all'
 })
@@ -245,6 +256,7 @@ function compareTableTasks(a: Task, b: Task) {
 /** 表格里正在录入子任务的位置：点行尾「+」才出现输入行，并且紧跟在要挂的那一行下面。 */
 const addingSub = ref<{ taskId: string; parentId: string | null } | null>(null)
 function startAddSub(taskId: string, parentId: string | null) {
+  if (!showSubtasks.value) setShowSubtasks(true)
   collapsedSubTasks.value = collapsedSubTasks.value.filter((id) => id !== taskId)
   addingSub.value = { taskId, parentId }
 }
@@ -298,8 +310,7 @@ function onDropStatus(status: TaskStatus) {
   const id = dragId.value
   dragId.value = null
   if (!id) return
-  const t = data.taskById(id)
-  if (t && t.status !== status) data.patchTask(id, { status }, `将状态改为「${status}」`)
+  void itemActions.status(id, status)
 }
 function onDropReorder(overId: string, event?: DragEvent) {
   const payload = event && readSubtaskDrag(event)
@@ -311,6 +322,11 @@ function onDropReorder(overId: string, event?: DragEvent) {
   }
   const id = dragId.value
   dragId.value = null
+  if (id && (itemActions.isSub(id) || itemActions.isSub(overId))) {
+    const target = workProjection.value.items.find(t => t.id === overId)
+    if (pdTaskView.value === 'board' && target) void itemActions.status(id, target.status)
+    return
+  }
   if (id) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
 }
 
@@ -366,9 +382,40 @@ const activeOwnerName = computed(() =>
 const ownsTask = (task: { owner: string; subs: { owner?: string | null }[] }, owner: string) =>
   task.owner === owner || task.subs.some((sub) => sub.owner === owner)
 const allTasks = computed(() => creatorTasks.value
+  .filter(task => showSubtasks.value || !task.parentTaskId || !ptasks.value.some(t => t.id === task.parentTaskId))
   .filter((task) => !effectiveOwner.value || ownsTask(task, effectiveOwner.value))
   .filter(task => matchesProjectAction(task, actionFilter.value, data.today))
   .map(decoTask))
+const workProjection = computed(() => projectWorkItems(ptasks.value))
+const itemActions = useProjectItemActions(() => workProjection.value.refs)
+const decoratedItems = computed(() => workProjection.value.items.map(decoTask))
+const displayItems = computed(() => decoratedItems.value
+  .filter(t => showSubtasks.value || !workProjection.value.refs[t.id]?.parentKey)
+  .filter(t => !effectiveOwner.value || t.owner === effectiveOwner.value || (!itemActions.isSub(t.id) && ownsTask(t, effectiveOwner.value)))
+  .filter(t => !effectiveCreator.value || t.createdBy === effectiveCreator.value)
+  .filter(t => matchesProjectAction(t, actionFilter.value, data.today)))
+const matchedItemIds = computed(() => new Set(displayItems.value.map(t => t.id)))
+const searchableTasks = computed(() => showSubtasks.value ? ptasks.value : ptasks.value
+  .filter(t => !workProjection.value.refs[t.id]?.parentKey).map(t => ({ ...t, subs: [] })))
+function hasItemChildren(id: string) { return workProjection.value.items.some(t => t.parentTaskId === id) }
+function groupRows(groupId: string) {
+  const matches = displayItems.value.filter(t => groupIdOf(t) === groupId &&
+    (showDone.value || openedDoneGroups.value.includes(groupId) || !isFinished(t) || data.taskSaveState(itemActions.sourceId(t.id)) === 'error'))
+  const context = showSubtasks.value ? withProjectAncestors(matches, decoratedItems.value) : matches
+  return taskTreeRows(context, collapsedSubTasks.value)
+}
+const groupViewSections = computed(() => groups.value.map(g => ({ ...g,
+  open: displayItems.value.filter(t => groupIdOf(t) === g.id && !isFinished(t)),
+  total: displayItems.value.filter(t => groupIdOf(t) === g.id).length,
+  done: displayItems.value.filter(t => groupIdOf(t) === g.id && isFinished(t)),
+})))
+function locateItemParent(id: string) {
+  const key = workProjection.value.refs[id]?.parentKey
+  if (!key) return
+  const element = document.getElementById(`project-item-${key}`)
+  if (element) { element.scrollIntoView({ block: 'nearest' }); element.focus() }
+  else itemActions.open(key)
+}
 /**
  * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
  * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
@@ -394,7 +441,7 @@ const hiddenFinishedOnly = computed(() => !tasksUnavailable.value && !searchQuer
   && !openTasks.value.length && doneTasks.value.length > 0)
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const boardStatuses = computed(() => TASK_STATUSES.filter((status) => AI_RUN_ENABLED || status !== 'AI 进行中'
-  || allTasks.value.some((task) => task.status === status)))
+  || displayItems.value.some((task) => task.status === status)))
 const board = computed(() =>
   boardStatuses.value.map((st) => ({
     label: st,
@@ -403,10 +450,11 @@ const board = computed(() =>
     // 新任务一律落在「待办」，所以加号只出现在这一列——省掉一次把鼠标甩到右上角的来回。
     addable: st === '待办',
     items: st === '已完成'
-      ? allTasks.value.filter((t) => t.status === st).sort(doneDesc)
-      : allTasks.value.filter((t) => t.status === st),
+      ? displayItems.value.filter((t) => t.status === st).sort(doneDesc)
+      : displayItems.value.filter((t) => t.status === st),
   })),
 )
+const boardItemVisible = (task: Task) => showDone.value || !isFinished(task) || ['saving', 'error'].includes(data.taskSaveState(itemActions.sourceId(task.id)))
 const emptyBoardColumns = computed(() => board.value.filter((col) => !col.items.length && !col.collapsible && !col.addable))
 const visibleBoard = computed(() => board.value.filter((col) => showEmptyColumns.value || col.items.length || col.collapsible || col.addable))
 const pdTabs = computed(() => {
@@ -428,16 +476,9 @@ function toggleSelection(id: string) {
     : [...selectedTaskIds.value, id]
 }
 const visibleTaskIds = computed(() => {
-  if (pdTaskView.value === 'quadrant') return allTasks.value
-    .filter((task) => showDone.value || !isFinished(task) || data.taskSaveState(task.id) === 'saving' || data.taskSaveState(task.id) === 'error')
-    .map((task) => task.id)
-  if (pdTaskView.value === 'list') return tableSections.value.flatMap((section) => section.collapsed ? [] : [
-    ...section.open, ...(section.doneOpen ? section.done : []),
-  ]).map((task) => task.id)
-  if (pdTaskView.value === 'group') return groupSections.value.flatMap((group) => [
-    ...group.open, ...(openedDoneGroups.value.includes(group.id) ? group.done : []),
-  ]).map((task) => task.id)
-  return allTasks.value.filter((task) => !isFinished(task) || showDone.value).map((task) => task.id)
+  if (pdTaskView.value === 'list') return tableSections.value.flatMap(section => section.collapsed ? [] : tableRows(section).map(row => row.task.id))
+  if (pdTaskView.value === 'group') return groupViewSections.value.flatMap(group => collapsedGroups.value.includes(group.id) ? [] : groupRows(group.id).filter(row => !itemActions.isSub(row.task.id)).map(row => row.task.id))
+  return displayItems.value.filter(task => !itemActions.isSub(task.id) && (showDone.value || !isFinished(task) || ['saving', 'error'].includes(data.taskSaveState(task.id)))).map(task => task.id)
 })
 const selectedCopyTasks = computed(() => allTasks.value.filter((task) => selectedTaskIds.value.includes(task.id)))
 const selectedTaskScope = computed(() => selectedTaskIds.value
@@ -526,7 +567,7 @@ function groupIdOf(task: { id?: string; groupId?: string | null; parentTaskId?: 
   const seen = new Set<string>()
   while (task.parentTaskId && !seen.has(task.parentTaskId)) {
     seen.add(task.parentTaskId)
-    const parent = ptasks.value.find(t => t.id === task.parentTaskId)
+    const parent = workProjection.value.items.find(t => t.id === task.parentTaskId)
     if (!parent) break
     task = parent
   }
@@ -758,25 +799,25 @@ function tableRows(section: typeof tableSections.value[number]) {
   // 未完成后代仍需展示已完成父任务作为上下文。
   const ids = new Set(candidates.map(t => t.id))
   for (let i = 0; i < candidates.length; i++) {
-    const parent = allTasks.value.find(t => t.id === candidates[i]!.parentTaskId)
-    if (parent && !ids.has(parent.id)) { ids.add(parent.id); candidates.push(parent) }
+    const parent = ptasks.value.map(decoTask).find(t => t.id === candidates[i]!.parentTaskId)
+    if (showSubtasks.value && parent && !ids.has(parent.id)) { ids.add(parent.id); candidates.push(parent) }
   }
   return taskTreeRows(tableSort.value ? candidates.sort(compareTableTasks) : candidates, collapsedSubTasks.value)
 }
-function childTaskCount(id: string) { return ptasks.value.filter(task => task.parentTaskId === id).length }
+function childTaskCount(id: string) { if (!showSubtasks.value) return 0; return ptasks.value.filter(task => task.parentTaskId === id).length }
 async function onDropGroup(groupId: string, overId?: string) {
   const id = dragId.value
   dragId.value = null
   if (!id) return
   try {
-    if (data.taskById(id)?.parentTaskId) { toast('请先通过移回顶层操作更改层级', 'ri-information-line'); return }
+    if (itemActions.isSub(id) || data.taskById(id)?.parentTaskId) { toast('请先通过移回顶层操作更改层级', 'ri-information-line'); return }
   } catch (error) {
     toast(error instanceof Error ? error.message : '移动失败', 'ri-error-warning-line')
     return
   }
   data.moveTaskToGroup(id, groupId)
   // 同组内落到某条任务上就是排序；空白处只改变分组，保持该组已有顺序。
-  if (overId && overId !== id) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
+  if (overId && overId !== id && !itemActions.isSub(overId)) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
 }
 watch(visibleTaskIds, (ids) => {
   selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id))
@@ -836,6 +877,9 @@ watch(visibleTaskIds, (ids) => {
           <i :class="v[1]"></i>{{ v[0] }}
         </button>
       </div>
+      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :tree="pdTaskView === 'list' || pdTaskView === 'group'"
+        :saving="subtaskDisplay.state.value === 'saving'" :error="subtaskDisplay.error.value"
+        @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
       <div class="project-search-bar">
         <i class="ri-search-line" aria-hidden="true"></i>
         <input v-model="searchText" type="search" aria-label="项目内查找" placeholder="查找编号、标题、正文或子任务" autocomplete="off">
@@ -899,13 +943,7 @@ watch(visibleTaskIds, (ids) => {
               <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
               <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
             </div>
-            <button
-              class="done-switch"
-              role="switch"
-              :aria-checked="showFinished"
-              title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
-              @click="showDone = !showDone"
-            ><span class="track"><span class="thumb"></span></span>显示已完成<em v-if="doneTasks.length && !tasksUnavailable" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
+
           </div>
         </details>
       </template>
@@ -935,7 +973,7 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
+      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="searchableTasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
       <div v-if="hiddenFinishedOnly" class="task-scope" role="status">
         当前范围内 {{ doneTasks.length }} 项任务已收尾并收起；项目共 {{ ptasks.length }} 项任务。
         <button @click="showDone = true">查看已完成</button>
@@ -1058,6 +1096,7 @@ watch(visibleTaskIds, (ids) => {
                 <tbody>
                   <ProjectTaskRow
                     :task="t"
+                    :show-subtasks="showSubtasks"
                     :columns="visibleColumnKeys"
                     :depth="depth"
                     :child-task-count="childTaskCount(t.id)"
@@ -1080,7 +1119,10 @@ watch(visibleTaskIds, (ids) => {
                   />
                 </tbody>
                 <InlineSubtasks
-                  v-if="(t.subs.length && !collapsedSubTasks.includes(t.id)) || addingSub?.taskId === t.id"
+                  v-if="t.subs.length || addingSub?.taskId === t.id"
+                  v-show="showSubtasks && (!collapsedSubTasks.includes(t.id) || addingSub?.taskId === t.id)"
+                  :collapsed-keys="collapsedSubTasks"
+                  @toggle-collapse="toggleSubtasks"
                   :task-id="t.id"
                   :task-depth="depth"
                   :hide-done="!showFinished"
@@ -1122,7 +1164,7 @@ watch(visibleTaskIds, (ids) => {
       <!-- 分组：按自己定义的 domain 分堆，组内只看做没做完 -->
       <div v-else-if="pdTaskView === 'group'" class="groups">
         <div
-          v-for="g in groupSections"
+          v-for="g in groupViewSections"
           :key="g.id"
           class="group-card"
           :class="{ 'drop-hint': dragId }"
@@ -1181,41 +1223,26 @@ watch(visibleTaskIds, (ids) => {
             <span v-if="quickAddState === 'error'" class="group-add-error" role="alert">未保存到服务器，输入仍保留</span>
           </div>
 
-          <div
-            v-for="t in g.open"
-            :key="t.id"
-            class="grow"
-            :class="{ dragging: dragId === t.id }"
-            draggable="true"
-            @click="openTask(t.id)"
-            @dragstart="onDragStart(t.id, $event)"
-            @dragend="dragId = null"
-            @dragover.prevent.stop
-            @drop.stop="readSubtaskDrag($event) ? onDropReorder(t.id, $event) : onDropGroup(g.id, t.id)"
-          >
-            <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
-            <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
-              <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
-            </button>
-            <span class="grow-title">{{ t.title }}</span>
-            <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
-            <i class="ri-arrow-right-s-line grow-chev"></i>
+          <div v-for="{ task: t, depth } in groupRows(g.id)" :key="t.id" class="grow"
+            :id="`project-item-${t.id}`" tabindex="0" :aria-label="`任务：${t.title}`"
+            :class="{ dragging: dragId === t.id, 'item-context': !matchedItemIds.has(t.id), done: t.status === '已完成' }"
+            :style="{ paddingLeft: `${12 + Math.min(depth, 6) * 18}px` }"
+            :draggable="!itemActions.busy(t.id)" @click="itemActions.open(t.id)" @keydown.enter.self="itemActions.open(t.id)"
+            @dragstart="onDragStart(t.id, $event)" @dragend="dragId = null" @dragover.prevent.stop
+            @drop.stop="readSubtaskDrag($event) ? onDropReorder(t.id, $event) : onDropGroup(g.id, t.id)">
+            <button v-if="showSubtasks && hasItemChildren(t.id)" class="item-tree-toggle" :aria-label="`${collapsedSubTasks.includes(t.id) ? '展开' : '收起'}${t.title}`"
+              :aria-expanded="!collapsedSubTasks.includes(t.id)" @click.stop="toggleSubtasks(t.id)"><i :class="collapsedSubTasks.includes(t.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'" /></button>
+            <button v-if="!itemActions.isSub(t.id)" class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line" /></button>
+            <button class="check" :class="{ 'item-checked': t.status === '已完成' }" :disabled="itemActions.busy(t.id)" :aria-label="`${t.status === '已完成' ? '重新打开' : '完成'}${t.title}`" @click.stop="itemActions.toggle(t.id)"><i v-if="t.status === '已完成'" class="ri-check-line" /></button>
+            <span class="grow-title"><span v-if="depth" class="item-child-mark">↳ </span>{{ t.title }}</span>
+            <span v-if="!matchedItemIds.has(t.id)" class="item-context-label">上级任务</span>
+            <SaveHint v-if="data.taskSaveState(itemActions.sourceId(t.id)) === 'saving' || data.taskSaveState(itemActions.sourceId(t.id)) === 'error'"
+              :saving="itemActions.busy(t.id)" :failed="data.taskSaveState(itemActions.sourceId(t.id)) === 'error'" />
+            <button v-if="data.taskSaveState(itemActions.sourceId(t.id)) === 'error'" class="item-retry" @click.stop="itemActions.save(t.id)">重试保存</button>
           </div>
-
-          <button v-if="g.done.length" class="group-done-toggle" @click="toggleGroupDone(g.id)">
-            <i :class="openedDoneGroups.includes(g.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
-            已完成<span class="done-count wao-tabular">{{ g.done.length }}</span>
+          <button v-if="g.done.length && !showDone" class="group-done-toggle" @click="toggleGroupDone(g.id)">
+            <i :class="openedDoneGroups.includes(g.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" />已完成<span class="done-count wao-tabular">{{ g.done.length }}</span>
           </button>
-          <template v-if="openedDoneGroups.includes(g.id)">
-            <div v-for="t in g.done" :key="t.id" class="grow done" @click="openTask(t.id)">
-              <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
-              <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
-                <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
-              </button>
-              <span class="grow-title">{{ t.title }}</span>
-              <i class="ri-arrow-right-s-line grow-chev"></i>
-            </div>
-          </template>
 
           <div v-if="!g.total" class="group-empty">{{ tasksUnavailable ? '暂时无法确认这个分组是否为空' : effectiveOwner || effectiveCreator || actionFilter !== 'all' ? '当前筛选下这个分组没有任务，可在上方清除筛选' : '点右上角的「+」往这里加第一条任务' }}</div>
           </div>
@@ -1227,7 +1254,7 @@ watch(visibleTaskIds, (ids) => {
       </div>
 
       <TaskQuadrantView v-else-if="pdTaskView === 'quadrant'" :key="pid"
-        v-model:show-done="showDone" :tasks="allTasks" :project-id="pid"
+        v-model:show-done="showDone" :tasks="displayItems" :item-refs="workProjection.refs" :project-id="pid"
         :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0"
         @select="toggleSelection" />
       <div v-else class="board">
@@ -1235,7 +1262,7 @@ watch(visibleTaskIds, (ids) => {
           v-for="col in visibleBoard"
           :key="col.label"
           class="board-col"
-          :class="{ 'drop-hint': dragId, 'is-collapsed': col.collapsible && !showDone && col.items.every(isFinished) }"
+          :class="{ 'drop-hint': dragId, 'is-collapsed': col.collapsible && !showDone && col.items.every(t => !boardItemVisible(t)) }"
           @dragover.prevent
           @drop="onDropStatus(col.label)"
         >
@@ -1254,20 +1281,20 @@ watch(visibleTaskIds, (ids) => {
             </button>
             <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           </div>
-          <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.filter(isFinished).length }} 项已收尾任务 · 点标题展开</div>
-          <div v-if="!col.collapsible || showDone || col.items.some(t => !isFinished(t))" class="board-cards">
+          <div v-if="col.collapsible && !showDone && col.items.every(t => !boardItemVisible(t))" class="board-collapsed">已收起 {{ col.items.filter(isFinished).length }} 项已收尾任务 · 点标题展开</div>
+          <div v-if="!col.collapsible || showDone || col.items.some(boardItemVisible)" class="board-cards">
             <div
-              v-for="t in col.items.filter(t => !col.collapsible || showDone || !isFinished(t))"
+              v-for="t in col.items.filter(t => !col.collapsible || boardItemVisible(t))"
               :key="t.id"
-              class="board-card" @dragover.prevent @drop.stop="onDropReorder(t.id, $event)"
+              :id="`project-item-${t.id}`" tabindex="0" :aria-label="`任务：${t.title}`" class="board-card" @dragover.prevent @drop.stop="onDropReorder(t.id, $event)"
               :class="{ dragging: dragId === t.id }"
-              draggable="true"
-              @click="openTask(t.id)"
+              :draggable="!itemActions.busy(t.id)"
+              @keydown.enter.self="itemActions.open(t.id)" @click="itemActions.open(t.id)"
               @dragstart="onDragStart(t.id, $event)"
               @dragend="dragId = null"
             >
               <button
-                class="select-dot board-select"
+                v-if="!itemActions.isSub(t.id)" class="select-dot board-select"
                 :class="{ on: selectedTaskIds.includes(t.id) }"
                 :aria-label="`选择任务 ${t.title}`"
                 :aria-pressed="selectedTaskIds.includes(t.id)"
@@ -1276,10 +1303,13 @@ watch(visibleTaskIds, (ids) => {
               >
                 <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
               </button>
-              <div class="bc-title" :title="t.title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
+              <div class="bc-title" :title="t.title" :style="{ color: t.titleColor, textDecoration: t.deco }"><span v-if="workProjection.refs[t.id]?.parentKey">↳ </span>{{ t.title }}</div>
+              <button v-if="workProjection.refs[t.id]?.parentKey" class="item-parent" :title="`定位父任务：${workProjection.refs[t.id]!.parentTitle}`" @click.stop="locateItemParent(t.id)">↳ {{ workProjection.refs[t.id]!.parentTitle }}</button>
+              <SaveHint v-if="data.taskSaveState(itemActions.sourceId(t.id)) === 'saving' || data.taskSaveState(itemActions.sourceId(t.id)) === 'error'" :saving="itemActions.busy(t.id)" :failed="data.taskSaveState(itemActions.sourceId(t.id)) === 'error'" />
+              <button v-if="data.taskSaveState(itemActions.sourceId(t.id)) === 'error'" class="item-retry" @click.stop="itemActions.save(t.id)">重试保存</button>
               <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
               <div class="bc-foot">
-                <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
+                <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ workProjection.refs[t.id]?.priorityUnset ? '未设置' : t.pr }}</span>
                 <span class="bc-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
                 <span class="spacer"></span>
                 <span class="owner-av small" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
@@ -1358,6 +1388,14 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.item-parent { display: block; max-width: 100%; margin: 4px 0 8px; padding: 0; border: 0; background: transparent; color: var(--wao-text-3); text-align: left; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.item-tree-toggle { padding: 0; border: 0; background: transparent; color: var(--wao-text-3); min-width: 22px; min-height: 28px; cursor: pointer; }
+.item-child-mark, .item-context-label { color: var(--wao-text-3); font-size: 12px; }
+.item-context .grow-title { color: var(--wao-text-3); }
+.item-retry { border: 0; background: transparent; color: var(--wao-danger-strong); cursor: pointer; }
+.grow .check.item-checked { background: var(--wao-primary); border-color: var(--wao-primary); color: var(--wao-on-primary); }
+.board-card:focus, .grow:focus { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+
 /* Drag target covers the sticky table header (z-index: 3), including resize controls. */
 .task-root-drop { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
 .task-root-drop.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
