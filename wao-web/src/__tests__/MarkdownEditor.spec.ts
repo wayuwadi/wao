@@ -2355,3 +2355,45 @@ it('同一关键词再次定位时重新检查最新草稿，不把旧命中当�
   expect(e.getText()).toBe('尚未保存的松鼠草稿')
   w.unmount()
 })
+
+
+describe('拖入文档附件', () => {
+  it('混合文件拖入同时上传图片和附件，失败可以重试并保存卡片', async () => {
+    const w = await mountEditor({ modelValue: '正文', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'posAtCoords').mockReturnValue({ pos: 1, inside: 0 })
+    const file = new File(['sample'], '说明.pdf', { type: 'application/pdf' })
+    const picture = new File(['sample'], '图.png', { type: 'image/png' })
+    const event = { dataTransfer: { files: [file, picture] }, clientX: 0, clientY: 0 } as unknown as DragEvent
+    expect(e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, false))).toBe(true)
+    expect(w.emitted('upload-image')?.[0]?.[0]).toBe(picture)
+    const upload = w.emitted('upload-file')![0] as [File, (item: unknown) => void]
+    expect(upload[0]).toBe(file)
+    upload[1](null)
+    await nextTick()
+    expect(w.get('.upload-queue').text()).toContain('重试')
+    await w.get('.upload-queue button').trigger('click')
+    const retry = w.emitted('upload-file')![1] as [File, (item: unknown) => void]
+    retry[1]({ id: 'test-file', name: '说明.pdf', size: 6, contentType: 'application/pdf', link: '/api/files/test-file/download' })
+    await nextTick()
+    expect(JSON.stringify(e.getJSON())).toContain('fileCard')
+    expect(JSON.stringify(e.getJSON())).toContain('test-file')
+    expect(w.find('.upload-queue').exists()).toBe(false)
+    const saved = e.getJSON() as RichDocNode
+    w.unmount()
+    const restored = await mountEditor({ modelValue: '', document: saved, advanced: true })
+    expect(JSON.stringify((restored.vm as unknown as { editor: Editor }).editor.getJSON())).toContain('test-file')
+    restored.unmount()
+  })
+
+  it('内部拖动不重复上传，只读编辑器不接收文件', async () => {
+    for (const readonly of [false, true]) {
+      const w = await mountEditor({ modelValue: '正文', readonly, advanced: true })
+      const e = (w.vm as unknown as { editor: Editor }).editor
+      const event = { dataTransfer: { files: [new File(['x'], 'x.pdf')] } } as unknown as DragEvent
+      expect(e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, !readonly))).toBeFalsy()
+      expect(w.emitted('upload-file')).toBeUndefined()
+      w.unmount()
+    }
+  })
+})

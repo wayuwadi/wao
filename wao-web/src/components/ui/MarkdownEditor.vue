@@ -859,7 +859,17 @@ const editor = useEditor({
     },
     transformPastedHTML: sanitizePastedHtml,
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
-    handleDrop: (view, event, _slice, moved) => moved || view.dragging ? false : consumeImages((event as DragEvent).dataTransfer),
+    handleDrop: (view, event, _slice, moved) => {
+      if (moved || view.dragging || props.readonly) return false
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      if (!files.length) return false
+      const position = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
+      if (position != null) editor.value?.commands.setTextSelection(position)
+      // Images keep their inline rendering; other files use persistent attachment cards.
+      insertImages(files.filter(file => file.type.startsWith('image/')))
+      queueFiles(files.filter(file => !file.type.startsWith('image/')))
+      return true
+    },
     handleClick: (_view, pos, event) => {
       const target = event.target
       imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.imageContextControls && !props.readonly
@@ -1807,6 +1817,11 @@ function onFilePicked(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = ''
+  queueFiles(files)
+}
+
+function queueFiles(files: File[]) {
+  if (props.readonly) return
   for (const file of files) {
     const upload: PendingUpload = { id: crypto.randomUUID(), file, state: 'uploading' }
     pendingUploads.value.push(upload)
@@ -1818,7 +1833,9 @@ function runFileUpload(uploadId: string) {
   const upload = pendingUploads.value.find((item) => item.id === uploadId)
   if (!upload) return
   upload.state = 'uploading'
+  const target = editor.value
   emit('upload-file', upload.file, (item) => {
+    if (!target || target.isDestroyed || target !== editor.value) return
     if (!item) {
       upload.state = 'failed'
       return
