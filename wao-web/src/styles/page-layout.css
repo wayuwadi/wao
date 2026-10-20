@@ -43,7 +43,8 @@
 :is(.shell, .tab-page-window.floating)[data-page-layout] .reader-article { width: 100%; max-width: var(--wao-reading-max); }
 .notes-reader[data-page-layout].notes-reader .reader-article { width: 100%; max-width: var(--wao-reading-max); }
 .notes-reader[data-page-layout].reader-narrow .reader-article { max-width: 650px; }
-:is(.shell, .tab-page-window.floating)[data-page-layout] .doc-scroll:not(.library-home-scroll) .doc-col { max-width: var(--wao-reading-max); }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .document-pane:not(.editor-workspace) .doc-scroll:not(.library-home-scroll) .doc-col { max-width: var(--wao-reading-max); }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .editor-workspace .doc-scroll { scrollbar-gutter: auto; }
 /* This deliberate writing-mode choice remains narrower than the general reading style. */
 :is(.shell, .tab-page-window.floating)[data-page-layout] .document-pane.content-narrow .doc-scroll:not(.library-home-scroll) .doc-col { max-width: 650px; }
 :is(.shell, .tab-page-window.floating)[data-page-layout] .scontent { width: 100%; max-width: var(--wao-form-max); padding-inline: 24px; }

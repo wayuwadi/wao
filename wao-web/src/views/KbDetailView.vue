@@ -1143,12 +1143,12 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'spreadsheet-workspace': pageType === 'spreadsheet' }">
+    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
               <i class="ri-arrow-right-s-line b-sep"></i>
-              <input v-if="pageType === 'spreadsheet'" class="sheet-title" aria-label="表格名称" :value="doc.title" @input="editTitle" />
+              <input v-if="pageType !== 'document'" class="sheet-title" :aria-label="pageType === 'drawing' ? '画布名称' : '表格名称'" :value="doc.title" @input="editTitle" />
               <span v-else class="ellip document-name">{{ doc.title || '未命名文档' }}</span>
               <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
               <span v-if="currentArchived" class="tag-archived">已归档</span>
@@ -1245,7 +1245,7 @@ async function saveKbSettings() {
           </section>
           <template v-if="doc">
             <input
-              v-if="pageType !== 'spreadsheet'"
+              v-if="pageType === 'document'"
               ref="titleEl"
               class="doc-title"
               :value="doc.title"
@@ -1271,7 +1271,7 @@ async function saveKbSettings() {
                 <i class="ri-checkbox-circle-line"></i><span class="ellip">{{ task.title }}</span>
               </button>
             </div>
-            <div v-if="pageType !== 'spreadsheet'" class="doc-hr"></div>
+            <div v-if="pageType === 'document'" class="doc-hr"></div>
 
             <div v-if="docId && data.docConflicts[docId]" class="doc-conflict" role="alert">
               <i class="ri-git-merge-line"></i>
@@ -1435,9 +1435,9 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
-.spreadsheet-workspace .doc-scroll { display: flex; overflow: hidden; }
-.spreadsheet-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
-.spreadsheet-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.editor-workspace .doc-scroll { display: flex; overflow: hidden; }
+.editor-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
+.editor-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .sheet-title { width: 220px; min-width: 60px; max-width: 100%; padding: var(--wao-space-1); border: 0; color: var(--wao-text); background: transparent; font: inherit; }
 
 .document-save-status { flex: 0 1 150px; min-width: 0; overflow: hidden; white-space: nowrap; }
