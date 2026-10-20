@@ -1254,7 +1254,7 @@ watch(visibleTaskIds, (ids) => {
       </div>
 
       <TaskQuadrantView v-else-if="pdTaskView === 'quadrant'" :key="pid"
-        v-model:show-done="showDone" :tasks="displayItems" :item-refs="workProjection.refs" :project-id="pid"
+        v-model:show-done="showDone" :tasks="displayItems" :context-tasks="decoratedItems" :item-refs="workProjection.refs" :project-id="pid"
         :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0"
         @select="toggleSelection" />
       <div v-else class="board">
