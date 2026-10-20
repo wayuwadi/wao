@@ -422,7 +422,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </script>
 
 <template>
-  <section ref="page" class="drawings-page wao-page-frame" :class="{ 'sidebar-open': sidebarOpen, embedded }">
+  <section ref="page" class="drawings-page" :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }">
     <aside v-if="!embedded" class="file-sidebar">
       <div class="sidebar-head">
         <div>
@@ -607,7 +607,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </template>
 
 <style scoped>
-.drawings-page.embedded { height: 72vh; min-height: 440px; margin: 0; width: 100%; }
+.drawings-page.embedded { flex: 1; height: 100%; min-height: 0; margin: 0; padding: 0; width: 100%; }
 .drawings-page {
   height: 100%;
   min-height: 0;
