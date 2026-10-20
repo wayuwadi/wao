@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useProjectItemActions } from '@/composables/projectItemActions'
-import type { ProjectItemRefs } from '@/utils/projectWorkItems'
+import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
+import { taskTreeRows } from '@/utils/taskHierarchy'
 import TaskOrderStatus from './TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
@@ -17,7 +18,7 @@ import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs }>()
+const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -53,12 +54,24 @@ const finished = isTaskFinished
 const doneCount = computed(() => props.tasks.filter(finished).length)
 const busy = (id: string) => savingIds.value.includes(id) || itemActions.busy(id)
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
-const sections = computed(() => TASK_QUADRANTS.map((quadrant) => ({
+const treeRows = computed(() => {
+  const matches = props.tasks.filter(task => props.showDone || !finished(task) || isSettling(task.id)
+    || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error')
+  const visible = props.itemRefs ? withProjectAncestors(matches, props.contextTasks ?? props.tasks) : matches
+  const sorted = order.sort(orderScope.value, visible, t => t.id)
+  if (!props.itemRefs) return sorted.map(task => ({ ...decoTask(task), depth: 0, quadrantPriority: task.pr }))
+  let priority: Priority = 'P2'
+  return taskTreeRows(sorted, []).map(({ task, depth }) => {
+    if (!depth) priority = task.pr
+    return { ...decoTask(task), depth, quadrantPriority: priority }
+  })
+})
+const sections = computed(() => TASK_QUADRANTS.map(quadrant => ({
   ...quadrant,
-  tasks: order.sort(orderScope.value, props.tasks, t => t.id).filter((task) => task.pr === quadrant.priority && (props.showDone
-    || !finished(task) || isSettling(task.id) || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error'))
-    .map(decoTask),
+  tasks: treeRows.value.filter(task => task.quadrantPriority === quadrant.priority),
+  count: treeRows.value.filter(task => task.quadrantPriority === quadrant.priority && !task.depth).length,
 })))
+const isChild = (id: string) => !!props.itemRefs?.[id]?.parentKey
 async function save(id: string, change?: () => void) {
   if (!data.taskById(sourceId(id)) || busy(id)) return
   savingIds.value.push(id)
@@ -69,6 +82,7 @@ async function save(id: string, change?: () => void) {
   } finally { savingIds.value = savingIds.value.filter((value) => value !== id) }
 }
 async function setPriority(id: string, priority: Priority) {
+  if (isChild(id)) return
   await save(id, () => {
     const ref = itemActions.source(id)
     if (ref.subId) data.updateSub(ref.taskId, ref.subId, { pr: priority })
@@ -85,7 +99,7 @@ async function toggleComplete(id: string) {
   })
 }
 function startDrag(event: DragEvent, id: string) {
-  if (busy(id)) { event.preventDefault(); return }
+  if (busy(id) || isChild(id)) { event.preventDefault(); return }
   dragId.value = id
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
@@ -102,7 +116,7 @@ async function dropOnTask(event: DragEvent, target: Task) {
   const id = dragId.value, after = taskDropAfter(event)
   endDrag()
   const source = props.tasks.find(t => t.id === id)
-  if (!source || source.id === target.id || busy(source.id)) return
+  if (!source || source.id === target.id || busy(source.id) || isChild(source.id) || isChild(target.id)) return
   if (source.pr !== target.pr) await setPriority(source.id, target.pr)
   if (itemActions.isSub(source.id) || itemActions.isSub(target.id)) return
   await order.move(orderScope.value, props.tasks.filter(t => !itemActions.isSub(t.id)).map(t => t.id), source.id, target.id, after)
@@ -146,7 +160,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
         <header>
           <span class="quadrant-dot"></span>
           <h2 :title="`${section.priority} · ${section.hint}`">{{ section.label }}</h2>
-          <span class="quadrant-count">{{ section.tasks.length }}</span>
+          <span class="quadrant-count">{{ section.count }}</span>
           <div class="quadrant-actions">
             <button :aria-label="`在${section.label}新建任务`" title="新建任务" @click="createTask(section.priority)"><i class="ri-add-line"></i></button>
             <button :aria-label="`${expanded ? '还原' : '放大'}${section.label}`" :aria-expanded="expanded === section.priority"
@@ -154,10 +168,10 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           </div>
         </header>
         <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
-          <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task"
+          <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
-            :draggable="!busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
+            :draggable="!isChild(task.id) && !busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
             @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
             <button v-if="selectionMode && !itemActions.isSub(task.id)" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
@@ -165,7 +179,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
-              <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
+              <button class="quadrant-title" :title="task.title" :draggable="!isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
               <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
@@ -179,7 +193,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
                 <button v-if="data.taskSaveState(sourceId(task.id)) === 'error'" :disabled="busy(task.id)" @click="save(task.id)">重试保存</button>
               </div>
             </div>
-            <label class="quadrant-move" title="移动到其他象限">
+            <label v-if="!isChild(task.id)" class="quadrant-move" title="移动到其他象限">
               <i class="ri-arrow-left-right-line"></i>
               <select :value="task.pr" :aria-label="`调整象限 ${task.title}`" :disabled="busy(task.id)"
                 @change="setPriority(task.id, ($event.target as HTMLSelectElement).value as Priority)">

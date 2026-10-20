@@ -102,14 +102,35 @@ describe('子任务四视图', () => {
     const flush = vi.spyOn(data,'flushTask').mockImplementation(async () => { state.value = 'error' })
     const projection = computed(()=>projectWorkItems(data.tasks))
     const wrapper = mount({ components: { TaskQuadrantView }, setup:()=>({ projection }), template:'<TaskQuadrantView :tasks="projection.items" :item-refs="projection.refs" :selected-ids="[]" :show-done="false" project-id="p1" />' })
-    await wrapper.get('select[aria-label="调整象限 普通子事项"]').setValue('P3'); await flushPromises()
-    expect(data.subById('a','s1')!.pr).toBe('P3'); expect(data.taskById('a')!.pr).toBe('P2'); expect(flush).toHaveBeenCalledWith('a')
+    await wrapper.get('button[aria-label="完成任务 普通子事项"]').trigger('click'); await flushPromises()
+    expect(data.subById('a','s1')!.done).toBe(true); expect(data.taskById('a')!.pr).toBe('P2'); expect(flush).toHaveBeenCalledWith('a')
     expect(wrapper.text()).toContain('重试保存')
     flush.mockImplementation(async()=>{state.value='saved'})
     await wrapper.findAll('button').find(b=>b.text()==='重试保存')!.trigger('click'); await flushPromises()
     expect(state.value).toBe('saved')
     await wrapper.findAll('.quadrant-title').find(b=>b.text().includes('普通子事项'))!.trigger('click')
     expect(useUiStore().openTaskId).toBe('a'); expect(useUiStore().openTaskSubId).toBe('s1')
+  })
+  it('四象限按根任务优先级连续展示整个层级，移动主任务不改子项属性', async () => {
+    const { wrapper, data } = await open('quadrant')
+    const section = () => wrapper.findAll('.quadrant').find(n => n.attributes('aria-label') === '不重要紧急')!
+    expect(section().findAll('.quadrant-title').map(n => n.text())).toEqual(['主任务甲','↳ 普通子事项','↳ 嵌套子事项','↳ 完整下级任务'])
+    expect(section().get('.quadrant-count').text()).toBe('1')
+    expect(wrapper.find('select[aria-label="调整象限 普通子事项"]').exists()).toBe(false)
+    expect(wrapper.find('select[aria-label="调整象限 完整下级任务"]').exists()).toBe(false)
+    await wrapper.get('select[aria-label="调整象限 主任务甲"]').setValue('P3'); await flushPromises()
+    expect(section().findAll('.quadrant-task')).toHaveLength(0)
+    const target = wrapper.findAll('.quadrant').find(n => n.attributes('aria-label') === '不重要不紧急')!
+    expect(target.findAll('.quadrant-task')).toHaveLength(5)
+    expect(data.subById('a','s1')!.pr).toBe('P0'); expect(data.taskById('b')!.pr).toBe('P1')
+  })
+  it('四象限筛选命中子项仍保留祖先及根优先级', async () => {
+    const data = useDataStore(), projection = projectWorkItems(data.tasks)
+    data.tasks[0]!.status = '已完成'
+    const sub = projection.items.find(t => t.id === subItemKey('a','s2'))!
+    const wrapper = mount(TaskQuadrantView, { props: { tasks: [sub], contextTasks: projection.items, itemRefs: projection.refs, selectedIds: [], showDone: false } })
+    const section = wrapper.findAll('.quadrant').find(n => n.attributes('aria-label') === '不重要紧急')!
+    expect(section.findAll('.quadrant-title').map(n=>n.text())).toEqual(['主任务甲','↳ 普通子事项','↳ 嵌套子事项'])
   })
   it('投影不继承父级属性，历史子项保留稳定键和筛选祖先', () => {
     const data=useDataStore();data.tasks[0]!.subs=[{text:'历史子项',done:false}]
