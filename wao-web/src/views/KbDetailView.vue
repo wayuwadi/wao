@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
@@ -42,6 +44,7 @@ import {
 } from '@/api/board'
 import type { DocLink, DocTemplate, FileItem, RichDocContent } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
+const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView.vue'))
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const route = useRoute()
@@ -119,6 +122,8 @@ onMounted(() => {
 const doc = computed(() => (docId.value && data.docById(docId.value)
   && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
+const pageType = computed(() => base.value?.pageType ?? 'document')
+function pageIcon(id: string) { return ({ spreadsheet: 'ri-table-line', drawing: 'ri-artboard-line', document: 'ri-file-text-line' })[data.docById(id)?.pageType ?? 'document'] }
 const editingPrivateNote = computed(() => kbId.value === 'kb-notes' || base.value?.kbId === 'kb-notes')
 // 同一知识库仍复用一个页签，标题和地址指向当前文档，避免与“小记”模块同名。
 watch([() => data.docs[docId.value ?? '']?.title, () => kb.value?.name, docId], () => {
@@ -294,18 +299,18 @@ function openDoc(id: string) {
 const newDocFolderId = ref<string | null>(null)
 const creatingDoc = ref(false)
 const templatePickerOpen = ref(false)
-async function createDocFrom(templateId?: string) {
+async function createDocFrom(templateId?: string, type: 'document' | 'spreadsheet' | 'drawing' = 'document') {
   const folderId = newDocFolderId.value
   if (!folderId || creatingDoc.value) return
   creatingDoc.value = true
-  const id = await data.addDoc(kbId.value, folderId, templateId)
+  const id = await data.addDoc(kbId.value, folderId, templateId, type)
   creatingDoc.value = false
   if (id) {
     newDocFolderId.value = null
     folderOpen[`f:${folderId}`] = true
     if (newDocParent.value) { await moveNode(newDocParent.value, `d:${id}`); newDocParent.value = null }
     selectDoc(id)
-    toast(templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
+    toast(type === 'drawing' ? '已创建画板，可在草图中打开' : type === 'spreadsheet' ? '已创建表格' : templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
     nextTick(() => titleEl.value?.focus())
   } else {
@@ -942,11 +947,17 @@ const kbSettingsBusy = ref(false)
 const kbSettingsError = ref('')
 const moveDocId = ref<string | null>(null)
 const moveFolderId = ref('')
-const createItems = [
+const directoryContext = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const createItems = computed(() => [
   { id: 'doc', label: '新建文档', icon: 'ri-file-text-line' },
+  { id: 'spreadsheet', label: '新建表格', icon: 'ri-table-line' },
+  { id: 'drawing', label: '新建画板', icon: 'ri-artboard-line' },
   { id: 'template', label: '从模板新建…', icon: 'ri-file-copy-2-line' },
   { id: 'folder', label: '新建分组', icon: 'ri-folder-add-line' },
-]
+].filter(item => !kb.value?.notes || !['spreadsheet', 'drawing'].includes(item.id)))
+function openDirectoryContext(event: MouseEvent, parent?: string) {
+  void directoryContext.value?.openAt(event, '新增内容', createItems.value.map(item => ({ ...item, disabled: creatingDoc.value, run: () => parent ? createNested(item.id, parent) : createAction(item.id) })))
+}
 const folderItems = [
   { id: 'rename', label: '重命名', icon: 'ri-edit-line' },
   { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
@@ -991,6 +1002,7 @@ async function createAction(action: string, folderId?: string, parent?: string) 
   templatePickerOpen.value = action === 'template'
   newDocFolderId.value = target
   if (action === 'doc') await createDocFrom()
+  if (action === 'spreadsheet' || action === 'drawing') await createDocFrom(undefined, action)
 }
 function folderAction(action: string, id: string) {
   if (action === 'rename') startFolderRename(id)
@@ -1042,6 +1054,7 @@ async function saveKbSettings() {
 </script>
 
 <template>
+  <ContextActionMenu ref="directoryContext" />
   <div v-if="!kb" class="missing">知识库不存在。</div>
   <div v-else class="kb-detail wao-page-frame">
     <!-- 左栏 -->
@@ -1069,21 +1082,22 @@ async function saveKbSettings() {
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
       <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
-      <div ref="treeElement" class="tree">
+      <div ref="treeElement" class="tree" @contextmenu.prevent="openDirectoryContext($event)">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
         <div v-if="draggingNode?.startsWith('f:')" class="root-drop" @dragover.prevent @drop.prevent.stop="moveNode('', draggingNode, null)">拖到这里移至目录顶层</div>
         <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="node in mixedRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
-          :style="{ '--node-depth': node.depth }" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
+          :style="{ '--node-depth': node.depth }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
           @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
           <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="folderOpen[node.key] !== false" @click="folderOpen[node.key] = folderOpen[node.key] === false"><i class="chev" :class="folderOpen[node.key] === false ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
           <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
+            <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>
-          <div class="tree-row-actions"><ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
+          <div class="tree-row-actions"><ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems.filter(item => item.id !== 'template' || !data.docById(node.id)?.pageType || data.docById(node.id)?.pageType === 'document')" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
           <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" /></div>
         </div>
 
@@ -1101,7 +1115,7 @@ async function saveKbSettings() {
             <template v-else>
               <div v-for="item in archivedDocs" :key="item.id" class="doc-row archived-row">
                 <button class="doc-node" :class="{ on: docId === item.id }" @click="selectDoc(item.id)">
-                  <i class="ri-file-text-line doc-node-icon"></i>
+                  <i :class="[pageIcon(item.id), 'doc-node-icon']"></i>
                   <span class="doc-node-title">{{ item.title || '未命名文档' }}</span>
                 </button>
                 <button class="row-act" title="恢复到原文件夹" @click="unarchiveDoc(item.id)">
@@ -1123,7 +1137,7 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' }">
+    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document' }">
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
@@ -1133,7 +1147,7 @@ async function saveKbSettings() {
               <span v-if="currentArchived" class="tag-archived">已归档</span>
             </div>
             <span v-if="saving || saveFailed || docSavedAt" class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
-            <NoteWidthSwitch v-model="contentWidth" label="文档宽度" />
+            <NoteWidthSwitch v-if="pageType === 'document'" v-model="contentWidth" label="文档宽度" />
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
@@ -1158,7 +1172,7 @@ async function saveKbSettings() {
             >
 
             <label v-if="docId && !currentArchived" class="move-document bar-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
-            <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
+            <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button
@@ -1170,7 +1184,7 @@ async function saveKbSettings() {
             >
               <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
             </button>
-            <div class="share-wrap bar-share">
+            <div v-if="pageType !== 'drawing'" class="share-wrap bar-share">
               <button class="icon-act" title="复制分享链接" @click="moreMenuOpen = false; shareMenu = !shareMenu">
                 <i class="ri-links-line"></i>
               </button>
@@ -1197,10 +1211,10 @@ async function saveKbSettings() {
               <div v-if="moreMenuOpen" class="doc-more-menu" aria-label="更多文档操作">
                 <div v-if="saving || saveFailed || docSavedAt" class="more-save"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></div>
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
-                <button @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
+                <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
                 <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
-                <button class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
-                <button class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
+                <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
+                <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
                 <button class="danger" @click="moreMenuOpen = false; removeDoc(docId!)"><i class="ri-delete-bin-line"></i>删除这篇文档</button>
               </div>
@@ -1260,7 +1274,9 @@ async function saveKbSettings() {
             <div v-else-if="docId && data.docDraftErrors[docId]" class="doc-draft-warning" role="alert"><i class="ri-error-warning-line"></i>浏览器暂时无法写入离线草稿；请保持页面打开，并在网络恢复后点击保存重试。</div>
             <div v-if="saveFailed && currentSaveState?.errorMessage && docId && !data.docConflicts[docId]" class="doc-draft-warning" role="alert">保存失败：{{ currentSaveState.errorMessage }}。本机草稿已保留，可点击上方“重试”。</div>
 
-            <MarkdownEditor
+            <KnowledgeSheet v-if="pageType === 'spreadsheet'" :key="docId ?? 'sheet'" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
+            <KnowledgeDrawing v-else-if="pageType === 'drawing' && base?.drawingId" :key="base.drawingId" :drawing-id="base.drawingId" embedded />
+            <MarkdownEditor v-else
               :key="docId ?? 'empty-doc'"
               :search-request="String(route.query.findRequest ?? '')"
               :search-term="route.query.match === 'title' ? '' : typeof route.query.find === 'string' ? route.query.find : ''"
@@ -1311,7 +1327,7 @@ async function saveKbSettings() {
       </div>
     </div>
 
-        <aside v-if="doc && tocOpen" class="toc" aria-label="文档大纲" @keydown.esc.stop="closeOutline">
+        <aside v-if="doc && tocOpen && pageType === 'document'" class="toc" aria-label="文档大纲" @keydown.esc.stop="closeOutline">
           <div class="toc-label"><span>文档大纲</span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>

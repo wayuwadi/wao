@@ -133,4 +133,16 @@ describe('个人草图优化', () => {
     expect(fetchDrawingVersions).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
+  it('知识库内嵌打开同一画板，不读取个人列表或显示重命名删除入口', async () => {
+    vi.mocked(fetchDrawing).mockResolvedValue(drawing({ docId: 'doc1', kbId: 'kb1' }))
+    const wrapper = mount(DrawingsView, { props: { drawingId: 'dr1', embedded: true } })
+    await flushPromises()
+    expect(fetchDrawing).toHaveBeenCalledWith('dr1')
+    expect(fetchDrawings).not.toHaveBeenCalled()
+    expect(wrapper.find('.file-sidebar').exists()).toBe(false)
+    expect(wrapper.find('.title-trigger').exists()).toBe(false)
+    expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
 })

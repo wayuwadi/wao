@@ -9,5 +9,8 @@ public record DrawingFileDto(
         String sceneJson,
         int revision,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt) {
+        LocalDateTime updatedAt, String kbId, String docId) {
+    public DrawingFileDto(String id, String title, String sceneJson, int revision, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this(id, title, sceneJson, revision, createdAt, updatedAt, null, null);
+    }
 }

@@ -629,4 +629,23 @@ describe('知识库详情目录体验', () => {
     expect(source).toContain('height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h))')
     expect(source.match(/overscroll-behavior: contain/g)).toHaveLength(2)
   })
+  it('加号和目录右键提供独立表格及画板，并传递页面类型', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const add = vi.spyOn(useDataStore(pinia), 'addDoc').mockResolvedValue(null)
+    await wrapper.get('[aria-label="新增内容"]').trigger('click')
+    expect(document.body.textContent).toContain('新建表格')
+    expect(document.body.textContent).toContain('新建画板')
+    const button = [...document.querySelectorAll('button')].find(item => item.textContent?.trim() === '新建表格')
+    button?.click()
+    await flushPromises()
+    expect(add).toHaveBeenCalledWith('k3', expect.any(String), undefined, 'spreadsheet')
+    await wrapper.get('.tree').trigger('contextmenu', { clientX: 20, clientY: 30 })
+    await flushPromises()
+    const drawing = [...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === '新建画板') as HTMLButtonElement
+    expect(drawing).toBeTruthy()
+    drawing.click()
+    await flushPromises()
+    expect(add).toHaveBeenLastCalledWith('k3', expect.any(String), undefined, 'drawing')
+  })
+
 })

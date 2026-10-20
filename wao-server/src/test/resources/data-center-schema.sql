@@ -10,6 +10,7 @@ CREATE TABLE ai_task_run (
     finished_at DATETIME(3)
 );
 CREATE TABLE doc (
+    page_type VARCHAR(20) DEFAULT 'document', drawing_id VARCHAR(32),
     id VARCHAR(32) PRIMARY KEY,
     created_at DATETIME(3),
     updated_at DATETIME(3),

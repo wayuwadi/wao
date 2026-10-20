@@ -10,6 +10,12 @@ public class DrawingFileEntity {
     @TableId private String id;
     private String ownerMemberId;
     private String title;
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false) private String kbId;
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false) private String docId;
+    public String getKbId() { return kbId; }
+    public void setKbId(String value) { kbId = value; }
+    public String getDocId() { return docId; }
+    public void setDocId(String value) { docId = value; }
     private String sceneJson;
     private Integer revision;
     private LocalDateTime createdAt;

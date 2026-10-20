@@ -795,6 +795,7 @@ export const useDataStore = defineStore('data', () => {
         kbId,
         folderId,
         title: `${local.title || '未命名文档'}（冲突副本）`,
+        pageType: local.base.pageType === 'spreadsheet' ? 'spreadsheet' : 'document',
         blocks: legacyProjection(local.content),
         content: local.content,
       })
@@ -851,13 +852,13 @@ export const useDataStore = defineStore('data', () => {
    * <p>标题留空而不是塞「未命名文档」：新建后光标就落在标题上，占位文案由 placeholder 提供，
    * 用户一敲就是自己的标题，不用先把四个字删掉。作者由服务端按会话署名，离线兜底才用当前登录成员。
    */
-  async function addDoc(kbId: string, folderId: string, templateId?: string): Promise<string | null> {
+  async function addDoc(kbId: string, folderId: string, templateId?: string, pageType: 'document' | 'spreadsheet' | 'drawing' = 'document'): Promise<string | null> {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return null
     if (apiLive.value) {
       try {
-        const d = await apiCreateDoc({ kbId, folderId, title: '', templateId })
+        const d = await apiCreateDoc({ kbId, folderId, title: '', templateId, pageType })
         docs[d.id] = d
         folder.docs.push(d.id)
         return d.id
@@ -866,6 +867,7 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
+    if (pageType !== 'document') return null
     const id = uid('d')
     docs[id] = {
       id, title: '', author: currentAuthor(), created: nowIso(), updated: nowIso(),

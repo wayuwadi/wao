@@ -146,6 +146,9 @@ public class KnowledgeService {
             "kind", "id", "name", "size", "mime", "url", "snapshot", "source", "href", "target", "rel", "class");
     private static final TypeReference<List<DocLinkDto>> LINKS_TYPE = new TypeReference<>() { };
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private DrawingFileService drawingFiles;
+
     private final KbGroupMapper groupMapper;
     private final KbMapper kbMapper;
     private final KbFolderMapper folderMapper;
@@ -446,7 +449,7 @@ public class KnowledgeService {
                 DocEntity::getId, DocEntity::getKbId, DocEntity::getFolderId, DocEntity::getTitle,
                 DocEntity::getAuthorId, DocEntity::getAuto, DocEntity::getSystemGenerated, DocEntity::getCreatedLabel,
                 DocEntity::getUpdatedLabel, DocEntity::getCreatedAt, DocEntity::getUpdatedAt,
-                DocEntity::getRev, DocEntity::getTagsJson, DocEntity::getLinksJson));
+                DocEntity::getRev, DocEntity::getTagsJson, DocEntity::getLinksJson, DocEntity::getPageType, DocEntity::getDrawingId));
         List<String> noteKbIds = kbMapper.selectList(aliveKbs()).stream()
                 .filter(kb -> Boolean.TRUE.equals(kb.getNotes())).map(KbEntity::getId).toList();
         Map<String, DocEntity> notes = noteKbIds.isEmpty() ? Map.of()
@@ -458,7 +461,7 @@ public class KnowledgeService {
             DocDto metadata = toDtoWithBacklinks(entry, List.of());
             return new DocDto(metadata.id(), metadata.title(), metadata.author(), metadata.created(),
                     metadata.updated(), metadata.auto(), metadata.links(), List.of(), null, List.of(),
-                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false, metadata.systemGenerated());
+                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false, metadata.systemGenerated(), metadata.pageType(), metadata.drawingId());
         }).toList();
     }
 
@@ -512,6 +515,10 @@ public class KnowledgeService {
     public DocDto createDoc(CreateDocRequest req, String author) {
         if(noteAiManaged!=null&&author!=null&&NOTES_KB_ID.equals(req.kbId()))noteAiManaged.lockActor(author);
         KbEntity kb = requireKb(req.kbId());
+        String pageType = req.pageType() == null ? "document" : req.pageType();
+        if (!Set.of("document", "spreadsheet", "drawing").contains(pageType)) throw new BadRequestException("页面类型不受支持");
+        if (!"document".equals(pageType) && (Boolean.TRUE.equals(kb.getNotes()) || req.templateId() != null))
+            throw new BadRequestException("表格与画板请在普通知识库中创建，不能使用文档模板");
         KbFolderEntity folder = requireFolder(req.kbId(), req.folderId());
         List<DocLinkDto> links = List.of();
         List<DocBlockDto> blocks = List.of();
@@ -533,6 +540,20 @@ public class KnowledgeService {
             DocTemplateEntity template = requireTemplate(req.templateId(), author);
             blocks = templateBlocks(template);
             content = richContentOf(template);
+        }
+        if ("spreadsheet".equals(pageType)) {
+            if (content == null) content = KnowledgeSheetContent.empty(json);
+            KnowledgeSheetContent.validate(content);
+        }
+        if (!"document".equals(pageType)) {
+            String title = StringUtils.hasText(req.title()) ? req.title() : ("drawing".equals(pageType) ? "未命名画板" : "未命名表格");
+            DocDto created = insertDoc(req.kbId(), folder.getId(), title, author, blocks, content, links);
+            DocEntity entity = requireDoc(created.id());
+            entity.setPageType(pageType);
+            if ("drawing".equals(pageType)) entity.setDrawingId(drawingFiles.create(new cn.wayuwa.wao.dto.CreateDrawingFileRequest(title), author).id());
+            docMapper.updateById(entity);
+            if (entity.getDrawingId() != null) drawingFiles.linkDocument(entity.getDrawingId(), entity.getId(), author);
+            return toDto(entity);
         }
         return noteSaved(insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links),author,req.title(),null,true);
     }
@@ -1342,6 +1363,13 @@ public class KnowledgeService {
         if(noteAiManaged!=null&&actor!=null&&!NoteAiManagedService.derived())noteAiManaged.lockActor(actor);
         docMapper.selectByIdForUpdate(id);
         DocEntity e = requireDoc(id);
+        if ("spreadsheet".equals(e.getPageType())) {
+            if (req.blocks() != null && req.content() == null) throw new BadRequestException("请使用表格编辑器保存表格正文");
+            if (req.content() != null) {
+                if (req.expectedRev() == null) throw new BadRequestException("保存表格需要 expectedRev");
+                KnowledgeSheetContent.validate(req.content());
+            }
+        }
         if (req.systemGenerated() != null) {
             if (!NOTES_KB_ID.equals(e.getKbId())) throw new BadRequestException("只有小记支持系统来源");
             if (req.expectedRev() == null) throw new BadRequestException("修改系统来源需要 expectedRev");
@@ -1915,7 +1943,7 @@ public class KnowledgeService {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
                 e.getAuto(), withoutProjectLinks(links), blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
-                readList(e.getTagsJson(), new TypeReference<List<String>>() {}), true, Boolean.TRUE.equals(e.getSystemGenerated()));
+                readList(e.getTagsJson(), new TypeReference<List<String>>() {}), true, Boolean.TRUE.equals(e.getSystemGenerated()), e.getPageType() == null ? "document" : e.getPageType(), e.getDrawingId());
     }
 
     private static List<DocLinkDto> withoutProjectLinks(List<DocLinkDto> links) {

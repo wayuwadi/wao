@@ -203,4 +203,14 @@ class DrawingFileServiceTest {
         entity.setCreatedAt(LocalDateTime.of(2026, 8, 12, 10, revision));
         return entity;
     }
+    @Test
+    void knowledgeManagedDrawingCannotBeDeletedOrRenamedIndependently() {
+        var entity = new DrawingFileEntity(); entity.setId("dr1");
+        when(mapper.findOwned("dr1", OWNER)).thenReturn(entity);
+        when(mapper.linkedDocumentCount("dr1")).thenReturn(1);
+        assertThatThrownBy(() -> service.delete("dr1", OWNER)).isInstanceOf(BadRequestException.class).hasMessageContaining("知识库");
+        assertThatThrownBy(() -> service.rename("dr1", new RenameDrawingFileRequest("新名称"), OWNER)).isInstanceOf(BadRequestException.class);
+        verify(mapper, never()).deleteOwned("dr1", OWNER);
+    }
+
 }

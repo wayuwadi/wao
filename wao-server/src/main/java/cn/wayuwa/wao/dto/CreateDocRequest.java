@@ -15,7 +15,11 @@ public record CreateDocRequest(
         String title,
         String templateId,
         @Size(max = 5000) List<DocBlockDto> blocks,
-        RichDocContentDto content) {
+        RichDocContentDto content,
+        String pageType) {
+    public CreateDocRequest(String kbId, String folderId, String title, String templateId, List<DocBlockDto> blocks, RichDocContentDto content) {
+        this(kbId, folderId, title, templateId, blocks, content, "document");
+    }
 
     public CreateDocRequest(String kbId, String folderId, String title) {
         this(kbId, folderId, title, null, null, null);

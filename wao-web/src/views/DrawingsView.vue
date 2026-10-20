@@ -19,6 +19,7 @@ import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils
 
 type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
+const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
 const files = ref<DrawingFileSummary[]>([])
 const activeId = ref('')
 const current = ref<DrawingFile | null>(null)
@@ -28,7 +29,7 @@ const canvasKey = ref('empty')
 const loadingList = ref(true)
 const loadingFile = ref(false)
 const creating = ref(false)
-const sidebarOpen = ref(true)
+const sidebarOpen = ref(!props.embedded)
 const syncState = ref<SyncState>('loading')
 const error = ref('')
 const dirty = ref(false)
@@ -74,6 +75,7 @@ async function loadList() {
   loadingList.value = true
   error.value = ''
   try {
+    if (props.embedded && props.drawingId) { await openFile(props.drawingId); return }
     files.value = await fetchDrawings()
     const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
     const first = files.value.find((item) => item.id === requested)
@@ -409,6 +411,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(draftTimer)
+  if (dirty.value && current.value) {
+    void writeDrawingDraft({ id: current.value.id, sceneJson: sceneJson.value, revision: revision.value, updatedAt: Date.now() }).catch(() => undefined)
+    if (syncState.value !== 'conflict') void saveNow()
+  }
   window.removeEventListener('beforeunload', beforeUnload)
   document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
@@ -416,8 +422,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </script>
 
 <template>
-  <section ref="page" class="drawings-page wao-page-frame" :class="{ 'sidebar-open': sidebarOpen }">
-    <aside class="file-sidebar">
+  <section ref="page" class="drawings-page wao-page-frame" :class="{ 'sidebar-open': sidebarOpen, embedded }">
+    <aside v-if="!embedded" class="file-sidebar">
       <div class="sidebar-head">
         <div>
           <strong>我的草图</strong>
@@ -470,10 +476,11 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
             >
           </span>
           <span class="file-actions" @click.stop>
-            <button type="button" title="重命名" @click="renameFile(file)">
+            <a v-if="file.docId && file.kbId" :href="`/kb/${file.kbId}?doc=${file.docId}`" title="在知识库管理">知识库</a>
+            <button v-if="!file.docId" type="button" title="重命名" @click="renameFile(file)">
               <i class="ri-pencil-line"></i>
             </button>
-            <button type="button" title="删除" @click="removeFile(file)">
+            <button v-if="!file.docId" type="button" title="删除" @click="removeFile(file)">
               <i class="ri-delete-bin-line"></i>
             </button>
           </span>
@@ -484,14 +491,14 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
     <main class="drawing-workspace">
       <header class="drawing-toolbar">
         <button
-          v-if="!sidebarOpen"
+          v-if="!sidebarOpen && !embedded"
           class="icon-button"
           title="展开文件列表"
           @click="sidebarOpen = true"
         >
           <i class="ri-menu-line"></i>
         </button>
-        <div class="title-block">
+        <div v-if="!embedded" class="title-block">
           <input
             v-if="current && editingTitle"
             ref="titleInput"
@@ -504,7 +511,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
             @keydown.esc.prevent="cancelTitleEdit"
           />
           <button
-            v-else-if="current"
+            v-else-if="current && !current.docId"
             type="button"
             class="title-trigger"
             title="点击修改草图名称"
@@ -513,7 +520,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
             <strong>{{ current.title }}</strong
             ><i class="ri-pencil-line"></i>
           </button>
-          <strong v-else>个人草图</strong>
+          <strong v-else>{{ current?.title || '个人草图' }}</strong>
           <span v-if="current">{{ renaming ? '正在保存名称' : `版本 ${revision}` }}</span>
         </div>
         <details v-if="current" class="version-menu">
@@ -586,7 +593,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
           @change="canvasChanged"
           @ready="canvasReady"
         />
-        <div v-else class="canvas-empty">
+        <div v-else-if="!embedded" class="canvas-empty">
           <span><i class="ri-draft-line"></i></span>
           <h1>把想法画出来</h1>
           <p>选择左侧草图继续创作，或新建一张。打开文件后才会加载画布。</p>
@@ -600,6 +607,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </template>
 
 <style scoped>
+.drawings-page.embedded { height: 72vh; min-height: 440px; margin: 0; width: 100%; }
 .drawings-page {
   height: 100%;
   min-height: 0;

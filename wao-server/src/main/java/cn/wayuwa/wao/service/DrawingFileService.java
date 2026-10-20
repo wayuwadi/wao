@@ -58,6 +58,10 @@ public class DrawingFileService {
         return dto(entity);
     }
 
+    public void linkDocument(String id, String docId, String memberId) {
+        if (mapper.linkDocument(id, docId, memberId) != 1) throw new BadRequestException("关联知识库画板失败");
+    }
+
     /** 读取当前成员的一份草图；他人文件按不存在处理。 */
     public DrawingFileDto get(String id, String memberId) {
         return dto(required(id, memberId));
@@ -108,6 +112,8 @@ public class DrawingFileService {
 
     /** 重命名当前成员的草图文件。 */
     public DrawingFileSummaryDto rename(String id, RenameDrawingFileRequest request, String memberId) {
+        required(id, memberId);
+        if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中重命名");
         String title = normalizeTitle(request.title(), false);
         if (mapper.renameOwned(id, memberId, title, LocalDateTime.now()) == 0) throw notFound();
         return summary(required(id, memberId));
@@ -115,6 +121,8 @@ public class DrawingFileService {
 
     /** 删除当前成员的草图文件。 */
     public void delete(String id, String memberId) {
+        required(id, memberId);
+        if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中移入回收站");
         if (mapper.deleteOwned(id, memberId) == 0) throw notFound();
     }
 
@@ -175,12 +183,12 @@ public class DrawingFileService {
 
     private DrawingFileSummaryDto summary(DrawingFileEntity entity) {
         return new DrawingFileSummaryDto(entity.getId(), entity.getTitle(), entity.getRevision(),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getKbId(), entity.getDocId());
     }
 
     private DrawingFileDto dto(DrawingFileEntity entity) {
         return new DrawingFileDto(entity.getId(), entity.getTitle(), entity.getSceneJson(), entity.getRevision(),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getKbId(), entity.getDocId());
     }
 
     private NotFoundException notFound() {

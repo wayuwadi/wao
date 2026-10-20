@@ -31,6 +31,7 @@ CREATE TABLE kb_folder (
     cascade_del BOOLEAN NOT NULL
 );
 CREATE TABLE doc (
+    page_type VARCHAR(20) DEFAULT 'document', drawing_id VARCHAR(32),
     id VARCHAR(32) PRIMARY KEY, kb_id VARCHAR(32) NOT NULL,
     folder_id VARCHAR(32) NOT NULL, title VARCHAR(256) NOT NULL,
     author_id VARCHAR(32) NOT NULL, auto BOOLEAN NOT NULL,
