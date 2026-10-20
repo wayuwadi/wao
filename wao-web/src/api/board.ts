@@ -365,6 +365,7 @@ export const apiDeleteFolder = (kbId: string, folderId: string) =>
 // ---------------- 文档 ----------------
 
 export interface CreateDocPayload {
+  pageType?: 'document' | 'spreadsheet' | 'drawing'
   kbId: string
   folderId: string
   title?: string

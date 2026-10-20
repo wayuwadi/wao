@@ -1,6 +1,8 @@
 import { http, type ApiResponse } from './http'
 
 export interface DrawingFileSummary {
+  kbId?: string | null
+  docId?: string | null
   id: string
   title: string
   revision: number

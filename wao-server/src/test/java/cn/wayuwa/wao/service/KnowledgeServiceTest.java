@@ -1583,4 +1583,61 @@ class KnowledgeServiceTest {
         verify(docMapper, never()).insert(any(DocEntity.class));
     }
 
+    @Test
+    void createsTypedSheetWithPersistentBodyAndRejectsUnknownTypes() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        java.util.concurrent.atomic.AtomicReference<DocEntity> inserted = new java.util.concurrent.atomic.AtomicReference<>();
+        org.mockito.Mockito.doAnswer(call -> { inserted.set(call.getArgument(0)); return 1; }).when(docMapper).insert(any(DocEntity.class));
+        when(docMapper.selectById(org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> inserted.get());
+        var result = service.createDoc(new CreateDocRequest("k1", "f1", "", null, null, null, "spreadsheet"), "m1");
+        assertThat(result.pageType()).isEqualTo("spreadsheet");
+        assertThat(result.content().document().path("content").get(0).path("content").size()).isEqualTo(20);
+        assertThat(inserted.get().getPageType()).isEqualTo("spreadsheet");
+        assertThatThrownBy(() -> service.createDoc(new CreateDocRequest("k1", "f1", "", null, null, null, "invalid"), "m1"))
+            .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void workbookSavePreservesFormulaStyleAndRejectsOrdinaryDocument() throws Exception {
+        var root = new ObjectMapper().readTree("""
+            {"type":"waoWorkbook","attrs":{"snapshot":{"id":"book","sheetOrder":["s1"],
+            "sheets":{"s1":{"id":"s1","name":"Sheet1","rowCount":1000,"columnCount":26,
+            "cellData":{"0":{"0":{"v":30,"f":"=SUM(10,20)","s":"bold"}}}}},"styles":{"bold":{"bl":1}}}}}
+            """);
+        var content = new RichDocContentDto(1, root, "30");
+        var existing = doc("sheet", "k1", "f1");
+        existing.setPageType("spreadsheet");
+        when(docMapper.selectById("sheet")).thenReturn(existing);
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        var saved = service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 1));
+        assertThat(saved.content().document()).isEqualTo(root);
+        assertThat(saved.rev()).isEqualTo(2);
+        assertThatThrownBy(() -> service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 1)))
+            .isInstanceOf(ConflictException.class);
+        existing.setPageType("document");
+        assertThatThrownBy(() -> service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 2)))
+            .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void createsDrawingAndKnowledgePageWithOneIdentity() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        java.util.concurrent.atomic.AtomicReference<DocEntity> inserted = new java.util.concurrent.atomic.AtomicReference<>();
+        org.mockito.Mockito.doAnswer(call -> { inserted.set(call.getArgument(0)); return 1; }).when(docMapper).insert(any(DocEntity.class));
+        when(docMapper.selectById(org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> inserted.get());
+        DrawingFileService drawings = mock(DrawingFileService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "drawingFiles", drawings);
+        when(drawings.create(any(), eq("m1"))).thenReturn(new cn.wayuwa.wao.dto.DrawingFileDto("dr1", "画板", "{}", 1, null, null));
+        var result = service.createDoc(new CreateDocRequest("k1", "f1", "画板", null, null, null, "drawing"), "m1");
+        assertThat(result.drawingId()).isEqualTo("dr1");
+        assertThat(result.pageType()).isEqualTo("drawing");
+        verify(drawings).linkDocument("dr1", result.id(), "m1");
+    }
+
 }

@@ -25,6 +25,12 @@ public class DocEntity {
     private String kbId;
     private String folderId;
     private String title;
+    private String pageType;
+    private String drawingId;
+    public String getPageType() { return pageType; }
+    public void setPageType(String value) { pageType = value; }
+    public String getDrawingId() { return drawingId; }
+    public void setDrawingId(String value) { drawingId = value; }
     private String authorId;
     private Boolean auto;
     /** 展示来源，不能替代 authorId 或赋予系统权限。 */

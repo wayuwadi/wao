@@ -17,14 +17,14 @@ import org.apache.ibatis.annotations.Update;
 public interface DrawingFileMapper extends BaseMapper<DrawingFileEntity> {
 
     @Select("""
-            SELECT id, owner_member_id, title, revision, created_at, updated_at
-            FROM drawing_file
-            WHERE owner_member_id = #{ownerMemberId}
-            ORDER BY updated_at DESC, id DESC
+            SELECT f.id, f.owner_member_id, COALESCE(d.title, f.title) AS title, d.id AS doc_id, d.kb_id, f.revision, f.created_at, f.updated_at
+            FROM drawing_file f LEFT JOIN doc d ON d.id = f.knowledge_doc_id
+            WHERE f.owner_member_id = #{ownerMemberId} AND (f.knowledge_doc_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL AND d.archived_at IS NULL))
+            ORDER BY f.updated_at DESC, f.id DESC
             """)
     List<DrawingFileEntity> listOwned(@Param("ownerMemberId") String ownerMemberId);
 
-    @Select("SELECT * FROM drawing_file WHERE id = #{id} AND owner_member_id = #{ownerMemberId} LIMIT 1")
+    @Select("SELECT f.id, f.owner_member_id, COALESCE(d.title, f.title) AS title, d.id AS doc_id, d.kb_id, f.scene_json, f.revision, f.created_at, f.updated_at FROM drawing_file f LEFT JOIN doc d ON d.id = f.knowledge_doc_id WHERE f.id = #{id} AND f.owner_member_id = #{ownerMemberId} AND (f.knowledge_doc_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL)) LIMIT 1")
     DrawingFileEntity findOwned(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId);
 
     @Update("""
@@ -86,6 +86,12 @@ public interface DrawingFileMapper extends BaseMapper<DrawingFileEntity> {
             """)
     int renameOwned(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId,
             @Param("title") String title, @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Update("UPDATE drawing_file SET knowledge_doc_id = #{docId} WHERE id = #{id} AND owner_member_id = #{memberId} AND knowledge_doc_id IS NULL")
+    int linkDocument(@Param("id") String id, @Param("docId") String docId, @Param("memberId") String memberId);
+
+    @Select("SELECT COUNT(*) FROM drawing_file WHERE id = #{id} AND knowledge_doc_id IS NOT NULL")
+    int linkedDocumentCount(@Param("id") String id);
 
     @Delete("DELETE FROM drawing_file WHERE id = #{id} AND owner_member_id = #{ownerMemberId}")
     int deleteOwned(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId);
