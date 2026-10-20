@@ -2077,25 +2077,6 @@ function toggleLinkFromToolbar() {
   else openLinkEditor()
 }
 
-function duplicateSelectedBlock() {
-  const e = editor.value
-  if (!e) return
-  const { $from } = e.state.selection
-  const depth = Math.max(1, $from.depth)
-  const node = $from.node(depth)
-  const pos = $from.before(depth)
-  e.chain().focus().insertContentAt(pos + node.nodeSize, node.toJSON()).run()
-}
-
-function deleteSelectedBlock() {
-  const e = editor.value
-  if (!e) return
-  const { $from } = e.state.selection
-  const depth = Math.max(1, $from.depth)
-  const node = $from.node(depth)
-  const from = $from.before(depth)
-  e.chain().focus().deleteRange({ from, to: from + node.nodeSize }).run()
-}
 /** 协作者头像在编辑区里的纵向位置（顶层块序号 → px）。 */
 const lineTops = ref<Record<number, number>>({})
 
@@ -2629,10 +2610,6 @@ onBeforeUnmount(() => {
       />
       <DragHandle v-if="editor && advanced && !readonly" :editor="editor" class="block-drag-handle">
         <i class="ri-draggable"></i>
-        <div class="block-actions">
-          <button type="button" @click="duplicateSelectedBlock">复制块</button>
-          <button type="button" @click="deleteSelectedBlock">删除块</button>
-        </div>
       </DragHandle>
       <Teleport to="body">
       <div v-if="slashOpen && !readonly" ref="slashMenuEl" class="slash-menu" :style="{ ...slashPosition, zIndex: menuZIndex }" role="listbox" aria-label="插入内容块">
@@ -3024,9 +3001,6 @@ onBeforeUnmount(() => {
 .slash-menu b { font-size: 12px; }.slash-menu small,.slash-empty { color: var(--wao-text-weak); font-size: 10.5px; }.slash-empty { padding: 16px; text-align: center; }
 .upload-queue { margin:8px 0; display:grid; gap:6px; }.upload-queue > div { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--wao-line); border-radius:8px; background:var(--wao-bg-sub); }.upload-queue > div.failed { border-color:color-mix(in srgb,var(--wao-danger-strong) 35%,var(--wao-line)); }.upload-queue span { min-width:0; flex:1; display:flex; flex-direction:column; }.upload-queue b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }.upload-queue small { color:var(--wao-text-weak); font-size:10px; }.upload-queue button { border:0; background:transparent; color:var(--wao-primary-text); font-size:11px; cursor:pointer; }
 .block-drag-handle { z-index: 9; display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-weak); box-shadow: 0 4px 12px rgba(20,23,35,.1); cursor: grab; }
-.block-actions { display: none; position: absolute; left: 100%; top: 0; padding-left: 4px; }
-.block-drag-handle:hover .block-actions { display: flex; }
-.block-actions button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); padding: 5px 7px; white-space: nowrap; cursor: pointer; }
 .drawing-dialog { max-height: min(600px, calc(100vh - 40px)); overflow: auto; }
 .drawing-state { padding: 28px; text-align: center; color: var(--wao-text-weak); }.drawing-state.error { color: var(--wao-danger-strong); }
 .drawing-list { margin-top: 12px; display: grid; gap: 6px; }

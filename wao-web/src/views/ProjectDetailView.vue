@@ -651,6 +651,10 @@ function startQuickAdd(groupId: string) {
   nextTick(() => firstOf(quickAddInput.value)?.focus())
 }
 const quickAddDraftGroup = ref<string | null>(null)
+function onQuickAddFocusOut(event: FocusEvent) {
+  if (event.currentTarget instanceof HTMLElement && event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+  closeQuickAdd()
+}
 function closeQuickAdd() {
   if (quickAddState.value !== 'submitting') quickAddGroup.value = null
 }
@@ -1074,7 +1078,7 @@ watch(visibleTaskIds, (ids) => {
             <tbody v-if="quickAddGroup === section.id && !section.collapsed">
               <tr class="table-quick-add">
                 <td :colspan="visibleColumns.length">
-                  <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
+                  <div class="group-add-row" @focusout="onQuickAddFocusOut" :class="{ error: quickAddState === 'error' }">
                     <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
                     <input
                       ref="quickAddInput"
@@ -1206,7 +1210,7 @@ watch(visibleTaskIds, (ids) => {
 
           <div v-show="!collapsedGroups.includes(g.id)" class="group-body">
           <div v-if="quickAddGroup === g.id" class="group-add-wrap">
-            <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
+            <div class="group-add-row" @focusout="onQuickAddFocusOut" :class="{ error: quickAddState === 'error' }">
               <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
               <input
                 ref="quickAddInput"

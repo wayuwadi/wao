@@ -95,3 +95,16 @@ it('删除失败保留确认框和重试入口，重试只删除所选任务', a
   retry.click(); await flushPromises()
   expect(remove.mock.calls).toEqual([['b'], ['b']]); expect(document.querySelector('[role="dialog"]')).toBeNull()
 })
+
+it('快速添加失焦收起且保留草稿，内部移动焦点不收起', async () => {
+  const { wrapper } = await open()
+  const add = wrapper.findAll('button').find(button => button.attributes('aria-label') === '快速新建任务')!
+  await add.trigger('click'); await flushPromises()
+  await wrapper.get('.group-add-row input').setValue('尚未提交的任务')
+  await wrapper.get('.group-add-row').trigger('focusout', { relatedTarget: wrapper.get('.group-add-done').element })
+  expect(wrapper.find('.group-add-row').exists()).toBe(true)
+  await wrapper.get('.group-add-row').trigger('focusout', { relatedTarget: document.body })
+  expect(wrapper.find('.group-add-row').exists()).toBe(false)
+  await add.trigger('click'); await flushPromises()
+  expect((wrapper.get('.group-add-row input').element as HTMLInputElement).value).toBe('尚未提交的任务')
+})

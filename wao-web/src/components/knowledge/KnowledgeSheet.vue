@@ -4,6 +4,7 @@ import type { IWorkbookData } from '@univerjs/core'
 import type { FWorkbook } from '@univerjs/sheets/facade'
 import type { RichDocContent } from '@/types'
 import { readWorkbook, workbookContent } from '@/utils/knowledgeSheet'
+import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import { useTheme } from '@/composables/theme'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 const props = defineProps<{ content?: RichDocContent | null; disabled?: boolean; documentId?: string }>()
@@ -39,15 +40,12 @@ async function load() {
   loading.value = true; error.value = ''
   try {
     const snapshot = readWorkbook(props.content, `kb-${props.documentId ?? 'workbook'}`)
-    const [{ createUniver, LocaleType, CommandType, mergeLocales }, { UniverSheetsCorePreset }, { default: zhCN }, { UniverSheetsFilterPreset }, { default: filterZhCN }, { UniverSheetsSortPreset }, { default: sortZhCN }] = await Promise.all([
-      import('@univerjs/presets'), import('@univerjs/preset-sheets-core'), import('@univerjs/preset-sheets-core/locales/zh-CN'),
-      import('@univerjs/preset-sheets-filter'), import('@univerjs/preset-sheets-filter/locales/zh-CN'),
-      import('@univerjs/preset-sheets-sort'), import('@univerjs/preset-sheets-sort/locales/zh-CN'),
-      import('@univerjs/preset-sheets-core/lib/index.css'), import('@univerjs/preset-sheets-filter/lib/index.css'), import('@univerjs/preset-sheets-sort/lib/index.css'),
-    ])
+    const [{ createUniver, LocaleType, CommandType, mergeLocales }, { UniverSheetsCorePreset }, { default: zhCN }, { UniverSheetsFilterPreset }, { default: filterZhCN }, { UniverSheetsSortPreset }, { default: sortZhCN }] = await loadSheetRuntime()
     if (!mounted || token !== generation || !host.value) return
-    teardown()
-    instance = createUniver({ locale: LocaleType.ZH_CN, locales: { [LocaleType.ZH_CN]: mergeLocales(zhCN, filterZhCN, sortZhCN) }, darkMode: effective.value === 'dark',
+    subscription?.dispose(); subscription = null
+    if (workbook) instance?.univerAPI.disposeUnit(workbook.getId())
+    workbook = null
+    instance ??= createUniver({ locale: LocaleType.ZH_CN, locales: { [LocaleType.ZH_CN]: mergeLocales(zhCN, filterZhCN, sortZhCN) }, darkMode: effective.value === 'dark',
       presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'simple', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true }, disableAutoFocus: true }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
     workbook = instance.univerAPI.createWorkbook(snapshot as IWorkbookData)
     workbook.setEditable(!props.disabled)
@@ -63,8 +61,8 @@ async function flush() {
   if (workbook?.isCellEditing()) await workbook.endEditingAsync(true)
   publish()
 }
-watch(() => props.content, value => {
-  if (mounted && JSON.stringify(value) !== acceptedContent) void load()
+watch(() => [props.documentId, props.content] as const, ([id, value], [previousId]) => {
+  if (mounted && (id !== previousId || JSON.stringify(value) !== acceptedContent)) void load()
 })
 watch(() => props.disabled, value => workbook?.setEditable(!value))
 watch(effective, value => instance?.univerAPI.toggleDarkMode(value === 'dark'))
