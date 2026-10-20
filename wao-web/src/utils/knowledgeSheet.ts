@@ -1,3 +1,4 @@
+import type { ICellData, IWorkbookData } from '@univerjs/core'
 import type { RichDocContent, RichDocNode } from '@/types'
 
 export const MAX_SHEET_CELLS = 1000
@@ -47,4 +48,41 @@ export function parseSheetClipboard(text: string): string[][] {
 }
 export function sheetClipboard(rows: string[][]): string {
   return rows.map(row => row.map(value => /[\t\n"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value).join('\t')).join('\n')
+}
+
+
+export const WORKBOOK_NODE = 'waoWorkbook'
+/** Preserve the whole engine snapshot: formulas, styles, merges and all sheets. */
+export function readWorkbook(content: RichDocContent | null | undefined, id: string): Partial<IWorkbookData> {
+  if (content?.document?.type === WORKBOOK_NODE) {
+    const snapshot = content.document.attrs?.snapshot as Partial<IWorkbookData> | undefined
+    if (!snapshot?.id || !snapshot.sheets || !snapshot.sheetOrder?.length || snapshot.sheetOrder.some(key => !snapshot.sheets?.[key])) throw new Error('工作簿内容无法读取，原内容已保留')
+    return JSON.parse(JSON.stringify(snapshot)) as Partial<IWorkbookData>
+  }
+  const rows = readSheet(content)
+  const cellData: Record<number, Record<number, { v: string; t: number }>> = {}
+  rows.forEach((row, r) => row.forEach((value, c) => {
+    if (value) (cellData[r] ??= {})[c] = { v: value, t: 1 }
+  }))
+  return { id, name: '工作簿', appVersion: '1.1.0', locale: 'zhCN' as IWorkbookData['locale'], sheetOrder: ['sheet1'], styles: {},
+    sheets: { sheet1: { id: 'sheet1', name: 'Sheet1', rowCount: Math.max(1000, rows.length), columnCount: Math.max(26, rows[0]?.length ?? 0), cellData } as IWorkbookData['sheets'][string] } }
+}
+export function workbookContent(snapshot: IWorkbookData): RichDocContent {
+  const copy = JSON.parse(JSON.stringify(snapshot)) as IWorkbookData
+  // A bounded, escaped text projection for search and read-only sharing. Snapshot is the source of truth.
+  const lines: string[] = []
+  let remaining = 100000
+  const escape = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+  for (const key of copy.sheetOrder) {
+    const sheet = copy.sheets[key]
+    if (!sheet) continue
+    lines.push(`## ${escape(sheet.name)}`)
+    for (const [r, row] of Object.entries(sheet.cellData ?? {})) {
+      if (!row || remaining <= 0) break
+      const text = Object.entries(row as Record<string, ICellData | null>).filter(([, cell]) => cell != null).map(([c, cell]) => `${Number(c) + 1}: ${escape(cell?.v ?? cell?.f ?? cell?.p?.body?.dataStream)}`).join(' · ')
+      const line = `${Number(r) + 1} | ${text}`.slice(0, remaining)
+      lines.push(line); remaining -= line.length
+    }
+  }
+  return { version: 1, document: { type: WORKBOOK_NODE, attrs: { snapshot: copy } }, markdown: lines.join('\n\n') }
 }

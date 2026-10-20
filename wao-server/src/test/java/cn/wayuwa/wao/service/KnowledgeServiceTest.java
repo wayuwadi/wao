@@ -1601,6 +1601,28 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void workbookSavePreservesFormulaStyleAndRejectsOrdinaryDocument() throws Exception {
+        var root = new ObjectMapper().readTree("""
+            {"type":"waoWorkbook","attrs":{"snapshot":{"id":"book","sheetOrder":["s1"],
+            "sheets":{"s1":{"id":"s1","name":"Sheet1","rowCount":1000,"columnCount":26,
+            "cellData":{"0":{"0":{"v":30,"f":"=SUM(10,20)","s":"bold"}}}}},"styles":{"bold":{"bl":1}}}}}
+            """);
+        var content = new RichDocContentDto(1, root, "30");
+        var existing = doc("sheet", "k1", "f1");
+        existing.setPageType("spreadsheet");
+        when(docMapper.selectById("sheet")).thenReturn(existing);
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        var saved = service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 1));
+        assertThat(saved.content().document()).isEqualTo(root);
+        assertThat(saved.rev()).isEqualTo(2);
+        assertThatThrownBy(() -> service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 1)))
+            .isInstanceOf(ConflictException.class);
+        existing.setPageType("document");
+        assertThatThrownBy(() -> service.updateDoc("sheet", new PatchDocRequest(null, null, content, null, null, 2)))
+            .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
     void createsDrawingAndKnowledgePageWithOneIdentity() {
         when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
         when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));

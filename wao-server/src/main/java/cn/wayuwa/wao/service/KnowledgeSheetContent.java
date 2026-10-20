@@ -17,7 +17,48 @@ final class KnowledgeSheetContent {
         }
         return new RichDocContentDto(1, root, "");
     }
+    static boolean isWorkbook(RichDocContentDto content) {
+        return content != null && content.document() != null && "waoWorkbook".equals(content.document().path("type").asText());
+    }
+    private static void validateWorkbook(JsonNode document) {
+        JsonNode book = document.path("attrs").path("snapshot");
+        if (!book.isObject() || !book.path("id").isTextual() || book.path("id").asText().isBlank()
+                || !book.path("sheets").isObject() || !book.path("sheetOrder").isArray()
+                || book.path("sheetOrder").isEmpty() || book.path("sheetOrder").size() > 20
+                || document.toString().length() > 5_000_000) workbookFail();
+        var ids = new java.util.HashSet<String>();
+        int count = 0;
+        for (JsonNode key : book.path("sheetOrder")) {
+            if (!key.isTextual() || !ids.add(key.asText())) workbookFail();
+            JsonNode sheet = book.path("sheets").path(key.asText());
+            if (!sheet.isObject() || !key.asText().equals(sheet.path("id").asText())
+                    || sheet.path("rowCount").asInt() < 1 || sheet.path("rowCount").asInt() > 100_000
+                    || sheet.path("columnCount").asInt() < 1 || sheet.path("columnCount").asInt() > 1024) workbookFail();
+            JsonNode cells = sheet.path("cellData");
+            if (!cells.isMissingNode() && !cells.isObject()) workbookFail();
+            var rows = cells.fields();
+            while (rows.hasNext()) {
+                var row = rows.next();
+                if (!indexWithin(row.getKey(), sheet.path("rowCount").asInt())) workbookFail();
+                if (row.getValue().isNull()) continue;
+                if (!row.getValue().isObject()) workbookFail();
+                var columns = row.getValue().fields();
+                while (columns.hasNext()) {
+                    var cell = columns.next();
+                    if (++count > 100_000 || !indexWithin(cell.getKey(), sheet.path("columnCount").asInt())
+                            || (!cell.getValue().isNull() && !cell.getValue().isObject())) workbookFail();
+                }
+            }
+        }
+        if (book.path("sheets").size() != ids.size()) workbookFail();
+    }
+    private static boolean indexWithin(String index, int limit) {
+        try { return index.matches("[0-9]{1,6}") && Integer.parseInt(index) < limit; }
+        catch (NumberFormatException ignored) { return false; }
+    }
+    private static void workbookFail() { throw new BadRequestException("工作簿结构不合法或超过容量限制（20 个工作表、100000 个已用单元格、5MB）"); }
     static void validate(RichDocContentDto content) {
+        if (isWorkbook(content)) { validateWorkbook(content.document()); return; }
         JsonNode root = content == null ? null : content.document();
         if (root == null || !"doc".equals(root.path("type").asText()) || !root.path("content").isArray() || root.path("content").size() != 1) fail();
         JsonNode table = root.path("content").get(0);

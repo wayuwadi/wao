@@ -15,7 +15,7 @@ import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
  * 输入停顿即自动保存，右上角显示保存状态与此刻同在这篇文档里的人（ADR-017）。
  */
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -47,6 +47,10 @@ import type { DocLink, DocTemplate, FileItem, RichDocContent } from '@/types'
 const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView.vue'))
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
+const sheetEditor = ref<InstanceType<typeof KnowledgeSheet> | null>(null)
+async function flushSheet() { await sheetEditor.value?.flush() }
+onBeforeRouteLeave(flushSheet)
+onBeforeRouteUpdate(flushSheet)
 const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
@@ -271,7 +275,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushCurrentDoc)
   flushCurrentDoc()
 })
-function selectDoc(id: string) {
+async function selectDoc(id: string) {
+  await flushSheet()
   flushCurrentDoc()
   docId.value = id
   void router.replace({ query: { ...route.query, doc: id } })
@@ -969,7 +974,8 @@ const docItems = [
   { id: 'archive', label: '归档', icon: 'ri-archive-line' },
   { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
 ]
-function goHome() {
+async function goHome() {
+  await flushSheet()
   flushCurrentDoc()
   docId.value = null
   const query = { ...route.query }; delete query.doc
@@ -1137,12 +1143,13 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document' }">
+    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'spreadsheet-workspace': pageType === 'spreadsheet' }">
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
               <i class="ri-arrow-right-s-line b-sep"></i>
-              <span class="ellip document-name">{{ doc.title || '未命名文档' }}</span>
+              <input v-if="pageType === 'spreadsheet'" class="sheet-title" aria-label="表格名称" :value="doc.title" @input="editTitle" />
+              <span v-else class="ellip document-name">{{ doc.title || '未命名文档' }}</span>
               <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
               <span v-if="currentArchived" class="tag-archived">已归档</span>
             </div>
@@ -1238,6 +1245,7 @@ async function saveKbSettings() {
           </section>
           <template v-if="doc">
             <input
+              v-if="pageType !== 'spreadsheet'"
               ref="titleEl"
               class="doc-title"
               :value="doc.title"
@@ -1263,7 +1271,7 @@ async function saveKbSettings() {
                 <i class="ri-checkbox-circle-line"></i><span class="ellip">{{ task.title }}</span>
               </button>
             </div>
-            <div class="doc-hr"></div>
+            <div v-if="pageType !== 'spreadsheet'" class="doc-hr"></div>
 
             <div v-if="docId && data.docConflicts[docId]" class="doc-conflict" role="alert">
               <i class="ri-git-merge-line"></i>
@@ -1274,7 +1282,7 @@ async function saveKbSettings() {
             <div v-else-if="docId && data.docDraftErrors[docId]" class="doc-draft-warning" role="alert"><i class="ri-error-warning-line"></i>浏览器暂时无法写入离线草稿；请保持页面打开，并在网络恢复后点击保存重试。</div>
             <div v-if="saveFailed && currentSaveState?.errorMessage && docId && !data.docConflicts[docId]" class="doc-draft-warning" role="alert">保存失败：{{ currentSaveState.errorMessage }}。本机草稿已保留，可点击上方“重试”。</div>
 
-            <KnowledgeSheet v-if="pageType === 'spreadsheet'" :key="docId ?? 'sheet'" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
+            <KnowledgeSheet v-if="pageType === 'spreadsheet'" ref="sheetEditor" :document-id="docId ?? undefined" :key="docId ?? 'sheet'" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
             <KnowledgeDrawing v-else-if="pageType === 'drawing' && base?.drawingId" :key="base.drawingId" :drawing-id="base.drawingId" embedded />
             <MarkdownEditor v-else
               :key="docId ?? 'empty-doc'"
@@ -1427,6 +1435,11 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
+.spreadsheet-workspace .doc-scroll { display: flex; overflow: hidden; }
+.spreadsheet-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
+.spreadsheet-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sheet-title { width: 220px; min-width: 60px; max-width: 100%; padding: var(--wao-space-1); border: 0; color: var(--wao-text); background: transparent; font: inherit; }
+
 .document-save-status { flex: 0 1 150px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .doc-info { color: var(--wao-text-weak); cursor: help; }

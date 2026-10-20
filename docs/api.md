@@ -14,7 +14,7 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 `POST /api/docs` 可传 `pageType: document | spreadsheet | drawing`（默认 document）。表格和画板仅能在普通知识库创建。详情和轻量目录均返回 `pageType`，画板还返回 `drawingId`。创建画板在同一事务建立文档和草图关联，失败回滚。
 
-表格通过原文档 PATCH、expectedRev 和本机草稿机制保存；正文使用矩形 table/tableRow/tableCell/paragraph/text，最多 100 行、26 列、1000 格。支持增删行列、键盘导航、Excel TSV 多格粘贴与整表复制。当前按文本保存（含数值和公式原文），不计算公式，不支持 xlsx 导入导出、合并格或多工作表。旧客户端只提交 blocks 时不能覆写表格正文。
+表格通过原文档 PATCH、expectedRev 和本机草稿机制保存。独立页面采用 Univer 1.1.0，提供整页网格、工具栏、公式栏、单元格格式、合并、排序筛选和多 Sheet。正文为 `document: { type: "waoWorkbook", attrs: { snapshot: <IWorkbookData> } }`，完整保留公式、样式、合并区域与所有工作表；markdown 仅为有界、转义后的搜索和只读分享文本。默认 1000 行、26 列；服务端限制每工作簿 20 个 Sheet、每 Sheet 100000 行/1024 列、累计 100000 个单元格条目及快照 500 万字符。旧 table 正文打开时转换为工作簿，原有公式字符串仍保持文本。旧客户端只提交 blocks 时不能覆写表格正文；普通文档及模板不接受工作簿节点。本期不提供 xlsx 文件导入导出。
 
 画板复用 `/api/drawings` 的场景、版本和乐观锁。草图接口额外返回 `kbId/docId`，知识库和草图打开同一个 drawingId。权限沿用原草图创建者账号隔离，知识库页面本身可见不自动获得画板访问权。命名、归档和回收站由知识库管理；草图列表提供返回知识库入口。归档从草图列表隐藏但可经知识库打开，回收站中不可读；恢复后重新出现，文档最终清理通过外键同步清理画板与版本。
 

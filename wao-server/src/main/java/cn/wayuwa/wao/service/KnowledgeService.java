@@ -547,9 +547,10 @@ public class KnowledgeService {
         }
         if (!"document".equals(pageType)) {
             String title = StringUtils.hasText(req.title()) ? req.title() : ("drawing".equals(pageType) ? "未命名画板" : "未命名表格");
-            DocDto created = insertDoc(req.kbId(), folder.getId(), title, author, blocks, content, links);
+            DocDto created = insertDoc(req.kbId(), folder.getId(), title, author, blocks, KnowledgeSheetContent.isWorkbook(content) ? null : content, links);
             DocEntity entity = requireDoc(created.id());
             entity.setPageType(pageType);
+            if (KnowledgeSheetContent.isWorkbook(content)) applyRichContent(entity, content);
             if ("drawing".equals(pageType)) entity.setDrawingId(drawingFiles.create(new cn.wayuwa.wao.dto.CreateDrawingFileRequest(title), author).id());
             docMapper.updateById(entity);
             if (entity.getDrawingId() != null) drawingFiles.linkDocument(entity.getDrawingId(), entity.getId(), author);
@@ -2058,6 +2059,10 @@ public class KnowledgeService {
             throw new BadRequestException("高级文档正文不接受原始 HTML");
         }
         JsonNode document = content.document();
+        if (KnowledgeSheetContent.isWorkbook(content)) {
+            KnowledgeSheetContent.validate(content);
+            return new RichDocContentDto(RICH_CONTENT_VERSION, document, markdown);
+        }
         if (document != null && !document.isNull()) {
             String serialized = write(document);
             if (serialized.length() > MAX_RICH_CONTENT_LENGTH) {
@@ -2187,6 +2192,8 @@ public class KnowledgeService {
     }
 
     private void applyRichContent(DocEntity entity, RichDocContentDto supplied) {
+        if (KnowledgeSheetContent.isWorkbook(supplied) && !"spreadsheet".equals(entity.getPageType()))
+            throw new BadRequestException("工作簿只能保存在独立表格页");
         RichDocContentDto content = checkedRichContent(supplied);
         entity.setContentVersion(content == null ? null : content.version());
         entity.setContentJson(content == null || content.document() == null ? null : write(content.document()));
@@ -2194,6 +2201,7 @@ public class KnowledgeService {
     }
 
     private void applyRichContent(DocTemplateEntity entity, RichDocContentDto supplied) {
+        if (KnowledgeSheetContent.isWorkbook(supplied)) throw new BadRequestException("工作簿不支持文档模板");
         RichDocContentDto content = checkedRichContent(supplied);
         entity.setContentVersion(content == null ? null : content.version());
         entity.setContentJson(content == null || content.document() == null ? null : write(content.document()));
