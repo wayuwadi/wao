@@ -101,8 +101,18 @@ function render() {
 }
 
 watch(() => [props.sceneKey, props.name, effective.value], render)
-onMounted(render)
+function preventBrowserSave(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+}
+onMounted(() => {
+  window.addEventListener('keydown', preventBrowserSave, true)
+  render()
+})
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', preventBrowserSave, true)
   root?.unmount()
   root = null
 })

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
@@ -275,7 +276,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushCurrentDoc)
   flushCurrentDoc()
 })
+function preloadSheet(id: string) {
+  if (data.docById(id)?.pageType === 'spreadsheet') void loadSheetRuntime().catch(() => {})
+}
 async function selectDoc(id: string) {
+  if (id === docId.value) return
   await flushSheet()
   flushCurrentDoc()
   docId.value = id
@@ -1099,7 +1104,7 @@ async function saveKbSettings() {
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
-          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
+          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>
@@ -1120,7 +1125,7 @@ async function saveKbSettings() {
             <div v-else-if="!archivedDocs.length" class="archive-state">还没有归档文档</div>
             <template v-else>
               <div v-for="item in archivedDocs" :key="item.id" class="doc-row archived-row">
-                <button class="doc-node" :class="{ on: docId === item.id }" @click="selectDoc(item.id)">
+                <button class="doc-node" :class="{ on: docId === item.id }" @pointerenter="preloadSheet(item.id)" @focus="preloadSheet(item.id)" @click="selectDoc(item.id)">
                   <i :class="[pageIcon(item.id), 'doc-node-icon']"></i>
                   <span class="doc-node-title">{{ item.title || '未命名文档' }}</span>
                 </button>
@@ -1240,7 +1245,7 @@ async function saveKbSettings() {
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
             <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
               <button class="home-folder-title" :aria-expanded="homeFolderOpen[folder.id] !== false" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}</button>
-              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in homeDocIds(folder.docs)" :key="id" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
+              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in homeDocIds(folder.docs)" :key="id" @pointerenter="preloadSheet(id)" @focus="preloadSheet(id)" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
             </section>
           </section>
           <template v-if="doc">
@@ -1282,7 +1287,7 @@ async function saveKbSettings() {
             <div v-else-if="docId && data.docDraftErrors[docId]" class="doc-draft-warning" role="alert"><i class="ri-error-warning-line"></i>浏览器暂时无法写入离线草稿；请保持页面打开，并在网络恢复后点击保存重试。</div>
             <div v-if="saveFailed && currentSaveState?.errorMessage && docId && !data.docConflicts[docId]" class="doc-draft-warning" role="alert">保存失败：{{ currentSaveState.errorMessage }}。本机草稿已保留，可点击上方“重试”。</div>
 
-            <KnowledgeSheet v-if="pageType === 'spreadsheet'" ref="sheetEditor" :document-id="docId ?? undefined" :key="docId ?? 'sheet'" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
+            <KnowledgeSheet v-if="pageType === 'spreadsheet'" ref="sheetEditor" :document-id="docId ?? undefined" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
             <KnowledgeDrawing v-else-if="pageType === 'drawing' && base?.drawingId" :key="base.drawingId" :drawing-id="base.drawingId" embedded />
             <MarkdownEditor v-else
               :key="docId ?? 'empty-doc'"

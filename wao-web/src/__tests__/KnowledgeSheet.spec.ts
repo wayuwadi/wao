@@ -4,12 +4,12 @@ import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
 import { readWorkbook, sheetContent, workbookContent } from '@/utils/knowledgeSheet'
 import type { IWorkbookData } from '@univerjs/core'
 
-const engine = vi.hoisted(() => ({ snapshot: {} as Record<string, unknown>, change: (_command: { type: number }) => {}, dispose: vi.fn(), editable: vi.fn(), create: vi.fn(), endEdit: vi.fn() }))
+const engine = vi.hoisted(() => ({ snapshot: {} as Record<string, unknown>, change: (_command: { type: number }) => {}, dispose: vi.fn(), disposeUnit: vi.fn(), init: vi.fn(), editable: vi.fn(), create: vi.fn(), endEdit: vi.fn() }))
 vi.mock('@univerjs/presets', () => ({
   LocaleType: { ZH_CN: 'zhCN' }, CommandType: { MUTATION: 2 }, mergeLocales: () => ({}),
-  createUniver: () => ({ univer: { dispose: engine.dispose }, univerAPI: { toggleDarkMode: vi.fn(), createWorkbook: (snapshot: Record<string, unknown>) => {
+  createUniver: () => (engine.init(), { univer: { dispose: engine.dispose }, univerAPI: { disposeUnit: engine.disposeUnit, toggleDarkMode: vi.fn(), createWorkbook: (snapshot: Record<string, unknown>) => {
     engine.create(snapshot); engine.snapshot = snapshot
-    return { save: () => engine.snapshot, setEditable: engine.editable, onCommandExecuted: (callback: typeof engine.change) => { engine.change = callback; return { dispose: vi.fn() } }, isCellEditing: () => true, endEditingAsync: engine.endEdit }
+    return { getId: () => snapshot.id as string, save: () => engine.snapshot, setEditable: engine.editable, onCommandExecuted: (callback: typeof engine.change) => { engine.change = callback; return { dispose: vi.fn() } }, isCellEditing: () => true, endEditingAsync: engine.endEdit }
   } } }),
 }))
 vi.mock('@univerjs/preset-sheets-core', () => ({ UniverSheetsCorePreset: () => ({}) }))
@@ -60,6 +60,18 @@ describe('电子表格工作簿', () => {
     expect(wrapper.emitted('change')).toHaveLength(1)
     wrapper.unmount()
     expect(engine.dispose).toHaveBeenCalledOnce()
+  })
+  it('切换工作簿复用引擎并释放旧工作簿', async () => {
+    const wrapper = mount(KnowledgeSheet, { props: { content: workbookContent(book()), documentId: 'd1' } })
+    await vi.dynamicImportSettled(); await flushPromises()
+    const next = book(); next.id = 'next'
+    await wrapper.setProps({ documentId: 'd2', content: workbookContent(next) })
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(engine.init).toHaveBeenCalledTimes(1)
+    expect(engine.disposeUnit).toHaveBeenCalledWith('book')
+    expect(engine.create).toHaveBeenCalledTimes(2)
+    expect(engine.snapshot).toEqual(next)
+    wrapper.unmount()
   })
   it('离开前提交仍在编辑的单元格；损坏快照显示错误而不伪装空工作簿', async () => {
     const wrapper = mount(KnowledgeSheet, { props: { content: workbookContent(book()) } })
