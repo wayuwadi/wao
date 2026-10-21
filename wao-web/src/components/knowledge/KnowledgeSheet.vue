@@ -45,8 +45,10 @@ async function load() {
     subscription?.dispose(); subscription = null
     if (workbook) instance?.univerAPI.disposeUnit(workbook.getId())
     workbook = null
+    // Keep Univer's workbook focus registration: direct typing relies on it to
+    // enter cell editing and commit on Enter (not just update the formula bar).
     instance ??= createUniver({ locale: LocaleType.ZH_CN, locales: { [LocaleType.ZH_CN]: mergeLocales(zhCN, filterZhCN, sortZhCN) }, darkMode: effective.value === 'dark',
-      presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'grid', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true }, disableAutoFocus: true }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
+      presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'grid', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true } }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
     workbook = instance.univerAPI.createWorkbook(snapshot as IWorkbookData)
     workbook.setEditable(!props.disabled)
     acceptedContent = JSON.stringify(props.content)
