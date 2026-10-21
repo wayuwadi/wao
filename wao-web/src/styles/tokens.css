@@ -4,6 +4,13 @@
  */
 :root,
 [data-wao-theme='light'] {
+  /* 编辑器代码语法 */
+  --wao-code-keyword: #8250df;
+  --wao-code-string: #116329;
+  --wao-code-number: #0550ae;
+  --wao-code-function: #953800;
+  --wao-code-comment: #57606a;
+
   /* 品牌主色 */
   --wao-primary: #4358d6;
   --wao-primary-hover: #3a4cc2;
@@ -133,6 +140,11 @@
 /* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
 :root[data-theme='dark'],
 [data-wao-theme='dark'] {
+  --wao-code-keyword: #d2a8ff;
+  --wao-code-string: #7ee787;
+  --wao-code-number: #79c0ff;
+  --wao-code-function: #ffa657;
+  --wao-code-comment: #a0a8b4;
   /* 品牌主色：略微提亮，保证在深色背景上的可读性 */
   --wao-primary: #5365d8;
   --wao-primary-hover: #5869d5;
