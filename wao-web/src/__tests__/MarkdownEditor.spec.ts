@@ -87,6 +87,46 @@ async function mountEditor(props: {
   return w
 }
 
+describe('代码块', () => {
+  it('SQL 高亮、语言切换、撤销与序列化保留原文', async () => {
+    const source = "-- 示例\nSELECT name, 42 FROM demo WHERE name = '<tag>';"
+    const w = await mountEditor({ modelValue: '```sql\n' + source + '\n```', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(w.get('.hljs-keyword').text()).toBe('SELECT')
+    expect(w.get('.hljs-string').text()).toBe("'<tag>'")
+    expect(w.get('pre code').text()).toBe(source)
+    const original = e.getJSON()
+    await w.get('select[aria-label="代码语言"]').setValue('plaintext')
+    expect(w.find('.hljs-keyword').exists()).toBe(false)
+    expect(e.getJSON().content?.[0]?.attrs?.language).toBe('plaintext')
+    expect(e.state.doc.textContent).toBe(source)
+    e.commands.undo(); await nextTick()
+    expect(e.getJSON()).toEqual(original)
+    expect(e.getHTML()).not.toContain('自动换行')
+    expect(e.getHTML()).not.toContain('code-block-head')
+    await w.get('button[aria-pressed]').trigger('click')
+    expect(w.get('.wao-code-block').classes()).toContain('code-wrap')
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('只读代码可复制原文，失败可重试且不修改文档', async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error('denied')).mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const w = await mountEditor({ modelValue: '```sql\nSELECT 1;\n```', readonly: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    expect(w.find('select[aria-label="代码语言"]').exists()).toBe(false)
+    await w.get('[aria-label="复制代码"]').trigger('click'); await flushPromises()
+    expect(w.text()).toContain('复制失败，请重试')
+    await w.get('[aria-label="复制代码"]').trigger('click'); await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith('SELECT 1;')
+    expect(w.text()).toContain('已复制')
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+})
+
 describe('异步挂载焦点保护', () => {
   it('编辑器看图方向键切换，Esc 先关闭图片且不改正文，焦点返回入口', async () => {
     const w = await mountEditor({ modelValue: '', advanced: true, imageContextControls: true, document: { type: 'doc', content: [

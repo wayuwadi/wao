@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
@@ -241,6 +243,10 @@ const detailDemoComment = ref('')
             <p>蓝紫强调 · 清楚的文字 · 细线分隔 · 克制的圆角</p>
           </div>
           <section class="reference-section">
+            <h2>代码块 · 示例数据</h2>
+            <MarkdownEditor v-model="codeExample" :advanced="true" />
+          </section>
+        <section class="reference-section">
             <h3>可调侧栏 · 演示</h3>
             <div class="resize-example" :style="{ width: `${samplePaneWidth}px` }">
               拖动右边缘调整宽度

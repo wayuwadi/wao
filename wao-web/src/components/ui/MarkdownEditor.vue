@@ -19,7 +19,7 @@ import { indentEditorSelection } from '@/utils/editorIndent'
  * 正在输入的还会给那一行加一道颜色条（见 ADR-017）。不传就是普通编辑器，行为不变。
  */
 import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { EditorContent, useEditor } from '@tiptap/vue-3'
+import { EditorContent, useEditor, VueNodeViewRenderer } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { DragHandle } from '@tiptap/extension-drag-handle-vue-3'
 import StarterKit from '@tiptap/starter-kit'
@@ -45,7 +45,9 @@ import TextAlign from '@tiptap/extension-text-align'
 import Underline from '@tiptap/extension-underline'
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details'
 import UniqueID from '@tiptap/extension-unique-id'
-import { common, createLowlight } from 'lowlight'
+import CodeBlockNodeView from './CodeBlockNodeView.vue'
+import { codeLowlight } from './codeHighlight'
+import '@/styles/code-highlight.css'
 import { isCodexThreadUrl, normalizedLinkUrl, sanitizeContentHtml } from '@/utils/contentLinks'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
@@ -72,7 +74,9 @@ import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, M
 import { IndentableBulletList, IndentableOrderedList, IndentableTaskList, ListIndentAttributes } from './listIndentExtensions'
 import { LIST_TYPES, listIndent } from '@/utils/listIndent'
 
-const lowlight = createLowlight(common)
+const HighlightedCodeBlock = CodeBlockLowlight.extend({
+  addNodeView() { return VueNodeViewRenderer(CodeBlockNodeView) },
+})
 const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
 
 /** Markdown 标题会裁掉开头空白；用安全实体保留行首缩进，节点结构不变。 */
@@ -814,7 +818,7 @@ const editor = useEditor({
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     TableKit.configure({ table: { resizable: true } }),
-    CodeBlockLowlight.configure({ lowlight, enableTabIndentation: true, tabSize: 2 }),
+    HighlightedCodeBlock.configure({ lowlight: codeLowlight, enableTabIndentation: true, tabSize: 2 }),
     Mathematics.configure({ katexOptions: { throwOnError: false, strict: 'warn' } }),
     Details.configure({ persist: false }),
     DetailsSummary,
@@ -1096,10 +1100,9 @@ function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
   if (props.readonly || selectionDismissed.value || tableMenu.value || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value) return false
   if (!e.isFocused && !selectionMenuEl.value?.contains(document.activeElement)) return false
   if (e.state.selection instanceof CellSelection) return props.advanced && multipleCells(e)
-  if (e.isActive('table') && from === to) return false
+  if (e.isActive('codeBlock') || (e.isActive('table') && from === to)) return false
   const text = from !== to && state.doc.textBetween(from, to, '\n').trim().length > 0
   return text || (props.linkControls && e.isActive('link'))
-    || (props.advanced && e.isActive('codeBlock'))
 }
 
 const component = getCurrentInstance()
@@ -1689,7 +1692,6 @@ interface PendingUpload { id: string; file: File; state: 'uploading' | 'failed' 
 const pendingUploads = ref<PendingUpload[]>([])
 const COLOR_OPTIONS = ['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0']
 const HIGHLIGHT_OPTIONS = ['#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe']
-const CODE_LANGUAGES = ['plaintext', 'bash', 'json', 'yaml', 'java', 'javascript', 'typescript', 'html', 'css', 'sql', 'python', 'markdown']
 
 interface SlashAction {
   id: string
@@ -2052,24 +2054,6 @@ function setBlockType(value: string) {
   if (!chain) return
   if (value === 'paragraph') chain.setParagraph().run()
   else chain.setHeading({ level: Number(value.slice(1)) as 1 | 2 | 3 | 4 }).run()
-}
-
-function setCodeLanguage(event: Event) {
-  const language = (event.target as HTMLSelectElement).value
-  editor.value?.chain().focus().updateAttributes('codeBlock', { language }).run()
-}
-
-async function copyCodeBlock() {
-  const e = editor.value
-  if (!e) return
-  const { $from } = e.state.selection
-  for (let depth = $from.depth; depth > 0; depth--) {
-    const node = $from.node(depth)
-    if (node.type.name === 'codeBlock') {
-      await navigator.clipboard.writeText(node.textContent)
-      return
-    }
-  }
 }
 
 function toggleLinkFromToolbar() {
@@ -2540,10 +2524,7 @@ onBeforeUnmount(() => {
             <template v-if="advanced && multipleCells(editor)"><span class="selection-divider" aria-hidden="true"></span>
             <button v-for="action in tableActions" :key="action.command" type="button" :title="action.label" :aria-label="action.label" :disabled="!editor.can()[action.command]()" @mousedown.prevent @click="runTableAction(action.command)"><i :class="action.icon" aria-hidden="true"></i></button>
             </template>
-            <template v-if="advanced && editor.isActive('codeBlock')"><span class="selection-divider" aria-hidden="true"></span>
-              <label class="selection-language" title="选择代码语言"><i class="ri-code-box-line" aria-hidden="true"></i><select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select></label>
-            <button type="button" title="复制代码" aria-label="复制代码"  @mousedown.prevent @click="copyCodeBlock"><i class="ri-file-copy-line" aria-hidden="true"></i></button>
-            </template>
+
           </div>
         </BubbleMenu>
       </div>
@@ -3700,7 +3681,7 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   padding: 1px 5px;
 }
-.md-body :deep(pre) {
+.md-body :deep(pre:not(.code-block-pre)) {
   margin: 0 0 8px;
   background: var(--wao-bg-sub);
   border: 1px solid var(--wao-divider);
@@ -3708,7 +3689,7 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   overflow-x: auto;
 }
-.md-body :deep(pre code) {
+.md-body :deep(pre:not(.code-block-pre) code) {
   background: none;
   padding: 0;
   font-size: 12px;

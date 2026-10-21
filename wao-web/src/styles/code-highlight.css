@@ -1,0 +1,9 @@
+/* Lowlight decorations remain inside editable code; no HTML rewrite is needed. */
+.wao-code-block .hljs-keyword, .wao-code-block .hljs-selector-tag, .wao-code-block .hljs-literal { color: var(--wao-code-keyword); }
+.wao-code-block .hljs-string, .wao-code-block .hljs-regexp, .wao-code-block .hljs-addition { color: var(--wao-code-string); }
+.wao-code-block .hljs-number, .wao-code-block .hljs-symbol, .wao-code-block .hljs-attr, .wao-code-block .hljs-variable { color: var(--wao-code-number); }
+.wao-code-block .hljs-title, .wao-code-block .hljs-built_in, .wao-code-block .hljs-type, .wao-code-block .hljs-section { color: var(--wao-code-function); }
+.wao-code-block .hljs-comment, .wao-code-block .hljs-quote { color: var(--wao-code-comment); font-style: italic; }
+.wao-code-block .hljs-meta, .wao-code-block .hljs-tag, .wao-code-block .hljs-deletion { color: var(--wao-code-keyword); }
+.wao-code-block .hljs-emphasis { font-style: italic; }
+.wao-code-block .hljs-strong { font-weight: 600; }
