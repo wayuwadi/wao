@@ -46,7 +46,7 @@ async function load() {
     if (workbook) instance?.univerAPI.disposeUnit(workbook.getId())
     workbook = null
     instance ??= createUniver({ locale: LocaleType.ZH_CN, locales: { [LocaleType.ZH_CN]: mergeLocales(zhCN, filterZhCN, sortZhCN) }, darkMode: effective.value === 'dark',
-      presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'simple', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true }, disableAutoFocus: true }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
+      presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'grid', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true }, disableAutoFocus: true }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
     workbook = instance.univerAPI.createWorkbook(snapshot as IWorkbookData)
     workbook.setEditable(!props.disabled)
     acceptedContent = JSON.stringify(props.content)
