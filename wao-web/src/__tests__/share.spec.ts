@@ -1,8 +1,15 @@
 import { taskShareTarget } from '@/utils/share'
 import { describe, expect, it } from 'vitest'
-import { docShareTarget, shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { docOriginalUrl, docShareTarget, shareMarkdownUrl, shareUrl } from '@/utils/share'
 
 describe('分享链接', () => {
+  it('原文链接准确定位知识库和文档并转义特殊字符', () => {
+    const url = new URL(docOriginalUrl('kb/示例', 'doc#1&two'))
+    expect(url.origin).toBe(window.location.origin)
+    expect(url.pathname).toBe('/kb/kb%2F%E7%A4%BA%E4%BE%8B')
+    expect(url.searchParams.get('doc')).toBe('doc#1&two')
+    expect(url.hash).toBe('')
+  })
   it('主任务链接指向分享页', () => {
     expect(shareUrl('t1')).toBe(`${window.location.origin}/s/t/t1`)
   })

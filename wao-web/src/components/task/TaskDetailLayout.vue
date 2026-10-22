@@ -219,6 +219,12 @@ defineExpose({ selectSection, openProperties })
   padding: var(--wao-space-1);
 }
 .overview-description :deep(.field) { padding: 0; margin: 0; }
+/* Stretch the actual editable node, so the blank lower area accepts clicks too. */
+.overview-description :deep(> .field:first-child) { min-height: 100%; display: flex; flex-direction: column; }
+.overview-description :deep(> .field:first-child > .md),
+.overview-description :deep(.md-editor-wrap),
+.overview-description :deep(.md-body) { display: flex; flex-direction: column; flex: 1; }
+.overview-description :deep(.md-body .tiptap) { flex: 1; }
 .task-detail-layout {
   flex: 1;
   min-height: 0;

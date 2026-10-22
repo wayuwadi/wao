@@ -25,7 +25,7 @@ import { useDocPresence } from '@/composables/docPresence'
 import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
-import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
+import { docShareMarkdownUrl, docShareUrl, docOriginalUrl } from '@/utils/share'
 import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
 const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
@@ -65,6 +65,7 @@ const tocOpen = ref(true)
 
 const kbId = computed(() => String(route.params.id))
 const directoryWidth = ref(262)
+const directoryCollapsed = ref(false)
 const kb = computed(() => data.kbById(kbId.value))
 
 const firstDocId = () => {
@@ -893,6 +894,12 @@ async function exportSheetExcel() {
 const shareMenu = ref(false)
 const moreMenuOpen = ref(false)
 watch(docId, () => { moreMenuOpen.value = false })
+async function copyOriginalLink() {
+  if (!docId.value) return
+  shareMenu.value = false; moreMenuOpen.value = false
+  const url = docOriginalUrl(kbId.value, docId.value)
+  toast(await copyToClipboard(url) ? '知识库原文链接已复制，可用于定位文档' : '复制失败，请重试', 'ri-links-line')
+}
 async function copyDocShare(kind: 'page' | 'md') {
   if (!docId.value) return
   if (data.docs[docId.value]?.kbId === 'kb-notes') { shareMenu.value = false; shareNoteId.value = docId.value; return }
@@ -1081,7 +1088,7 @@ async function saveKbSettings() {
   <div v-if="!kb" class="missing">知识库不存在。</div>
   <div v-else class="kb-detail wao-page-frame">
     <!-- 左栏 -->
-    <div class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
+    <div v-show="!directoryCollapsed" id="kb-directory" class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
       <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
         <button class="back" @click="router.push('/knowledge')">
@@ -1103,7 +1110,7 @@ async function saveKbSettings() {
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
-      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
+      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><button title="收起知识库目录" aria-label="收起知识库目录" aria-controls="kb-directory" :aria-expanded="true" @click="directoryCollapsed = true"><i class="ri-side-bar-line"></i></button><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
       <div ref="treeElement" class="tree" @contextmenu.prevent="openDirectoryContext($event)">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
@@ -1160,8 +1167,10 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
+    <div class="document-pane" :class="{ 'content-narrow': !directoryCollapsed && contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
+          <button v-if="directoryCollapsed && !doc" class="directory-restore" aria-label="展开知识库目录" aria-controls="kb-directory" :aria-expanded="false" @click="directoryCollapsed = false"><i class="ri-side-bar-line"></i>展开目录</button>
           <div v-if="doc" class="doc-bar">
+            <button v-if="directoryCollapsed" class="icon-act" title="展开知识库目录" aria-label="展开知识库目录" aria-controls="kb-directory" :aria-expanded="false" @click="directoryCollapsed = false"><i class="ri-side-bar-line"></i></button>
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
               <i class="ri-arrow-right-s-line b-sep"></i>
@@ -1218,6 +1227,10 @@ async function saveKbSettings() {
                 <div class="share-scope">
                   分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录
                 </div>
+                <button class="share-item" @click="copyOriginalLink">
+                  <i class="ri-file-text-line"></i>
+                  <span class="share-main"><b>复制知识库原文链接</b><em>直接定位此文档，需登录并拥有访问权限</em></span>
+                </button>
                 <button class="share-item" @click="copyDocShare('page')">
                   <i class="ri-external-link-line"></i>
                   <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
@@ -1238,6 +1251,7 @@ async function saveKbSettings() {
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
                 <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
                 <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
+                <button class="more-share" @click="copyOriginalLink"><i class="ri-file-text-line"></i>复制知识库原文链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
@@ -1453,6 +1467,7 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
+.directory-restore { align-self: flex-start; flex-shrink: 0; margin: var(--wao-space-1) var(--wao-space-2); padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; }
 .editor-workspace .doc-scroll { display: flex; overflow: hidden; }
 .editor-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
 .editor-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

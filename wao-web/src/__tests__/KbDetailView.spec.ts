@@ -82,6 +82,18 @@ describe('知识库详情目录体验', () => {
     return wrapper
   }
 
+  it('收起和展开目录保留编辑器及未保存输入', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    await wrapper.get('.markdown-editor-stub').setValue('目录切换期间的草稿')
+    const editor = wrapper.get('.markdown-editor-stub').element
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    expect(wrapper.get('#kb-directory').attributes('style')).toContain('display: none')
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    await wrapper.get('[aria-label="展开知识库目录"]').trigger('click')
+    expect(wrapper.get('#kb-directory').attributes('style')).not.toContain('display: none')
+    expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe('目录切换期间的草稿')
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+  })
   it('文档宽度切换保留未保存正文和同一个编辑器，重开恢复成员偏好', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7', false, true)
     const data = useDataStore(pinia)

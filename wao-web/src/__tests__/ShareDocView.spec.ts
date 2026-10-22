@@ -32,6 +32,17 @@ describe('ShareDocView', () => {
     wrapper.unmount()
   })
 
+  it('工作簿由只读表格展示，保留全部工作表快照，不交给正文编辑器', async () => {
+    const content = { version: 1 as const, document: { type: 'waoWorkbook', attrs: { snapshot: { id: 'book', sheetOrder: ['a', 'b'], sheets: { a: { name: '清单' }, b: { name: '汇总' } } } } }, markdown: '清单内容' }
+    vi.mocked(apiShareDoc).mockResolvedValue({ id: 'sheet', title: '表格', note: false, kbId: 'kb', updated: '', md: '清单内容', content })
+    const wrapper = mount(ShareDocView, { global: { stubs: { KnowledgeSheet: { name: 'KnowledgeSheet', props: { content: Object, disabled: Boolean }, template: '<div class="sheet-stub" />' } } } })
+    await flushPromises()
+    expect(wrapper.find('.doc-body').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'KnowledgeSheet' }).props()).toMatchObject({ content, disabled: true })
+    expect(wrapper.get('.locate').attributes('href')).toBe('/kb/kb?doc=sheet')
+    wrapper.unmount()
+  })
+
   it('网络故障保留加载失败反馈，不误报分享已经失效', async () => {
     vi.mocked(apiShareDoc).mockRejectedValueOnce(new Error('网络中断'))
     const wrapper = mount(ShareDocView)
@@ -61,3 +72,4 @@ describe('ShareDocView', () => {
     wrapper.unmount()
   })
 })
+
