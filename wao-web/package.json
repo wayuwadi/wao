@@ -51,6 +51,7 @@
     "axios": "^1.18.1",
     "dompurify": "^3.4.12",
     "echarts": "^6.1.0",
+    "exceljs": "^4.4.0",
     "katex": "0.17.0",
     "lowlight": "3.3.0",
     "marked": "^18.0.7",

@@ -60,7 +60,7 @@ async function load() {
   } finally { if (token === generation) loading.value = false }
 }
 async function flush() {
-  if (workbook?.isCellEditing()) await workbook.endEditingAsync(true)
+  if (workbook?.isCellEditing() && !(await workbook.endEditingAsync(true))) throw new Error('当前单元格尚未提交，请完成编辑后重试')
   publish()
 }
 watch(() => [props.documentId, props.content] as const, ([id, value], [previousId]) => {
@@ -74,7 +74,17 @@ function beforeUnload(event: BeforeUnloadEvent) {
 onMounted(() => { mounted = true; window.addEventListener('beforeunload', beforeUnload); void load() })
 onBeforeUnmount(() => { mounted = false; generation++; window.removeEventListener('beforeunload', beforeUnload); teardown() })
 useSaveBeforeRefresh(flush)
-defineExpose({ flush })
+async function exportExcel(title: string) {
+  if (!workbook || loading.value || error.value) throw new Error('表格尚未加载完成，请稍后重试')
+  const token = generation
+  await flush()
+  if (token !== generation) throw new Error('文档已切换，请重新导出')
+  if (!workbook) throw new Error('工作簿已关闭，请重新打开后导出')
+  const snapshot = workbook.save()
+  const { downloadWorkbookExcel } = await import('@/utils/workbookExcel')
+  await downloadWorkbookExcel(snapshot, title)
+}
+defineExpose({ flush, exportExcel })
 </script>
 <template>
   <section class="knowledge-sheet" aria-label="电子表格工作簿">
