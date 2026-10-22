@@ -14,6 +14,8 @@ import { docShareMarkdownUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import type { SharedDoc } from '@/types'
+import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
+import { WORKBOOK_NODE } from '@/utils/knowledgeSheet'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 
 const route = useRoute()
@@ -24,6 +26,7 @@ let requestId = 0
 let expiryTimer: ReturnType<typeof setTimeout> | undefined
 
 const shared = ref<SharedDoc | null>(null)
+const isWorkbook = computed(() => shared.value?.content?.document?.type === WORKBOOK_NODE)
 const loading = ref(true)
 const error = ref('')
 
@@ -76,7 +79,7 @@ async function copyMd() {
 
 <template>
   <div class="share-page">
-    <div class="share-card">
+    <div class="share-card" :class="{ 'workbook-card': isWorkbook }">
       <div v-if="loading" class="state">正在加载…</div>
       <div v-else-if="error" class="state err">{{ error }} <button type="button" @click="load">重试</button></div>
 
@@ -92,8 +95,11 @@ async function copyMd() {
           <span v-if="shared.updated" class="chip plain">更新于 {{ shared.updated.slice(0, 10) }}</span>
         </div>
 
+        <div v-if="isWorkbook" class="shared-workbook">
+          <KnowledgeSheet :key="shared.id" :document-id="shared.id" :content="shared.content" disabled />
+        </div>
         <MarkdownEditor
-          v-if="shared.md || shared.content?.document"
+          v-else-if="shared.md || shared.content?.document"
           class="doc-body"
           :model-value="shared.md"
           :document="shared.content?.document"
@@ -115,6 +121,8 @@ async function copyMd() {
 </template>
 
 <style scoped>
+.share-card.workbook-card { max-width: 1420px; }
+.shared-workbook { height: 65vh; min-height: 360px; min-width: 0; border: 1px solid var(--wao-line); margin-top: var(--wao-space-2); }
 .share-page {
   min-height: 100vh;
   background: var(--wao-bg-page, #f6f7fa);
