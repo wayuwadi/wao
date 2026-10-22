@@ -8,8 +8,8 @@ function sample() {
   const book = readWorkbook(sheetContent([['0012', '=literal'], ['换行\n中文', '']]), 'test') as IWorkbookData
   const sheet = book.sheets.sheet1!
   sheet.name = '清单'
-  sheet.cellData[2] = { 0: { v: 12, t: 2, s: 'number' }, 1: { f: '=A3*2', v: 24, t: 2 }, 2: { v: false, t: 3 } }
-  sheet.cellData[3] = { 0: { v: '合并' } }
+  sheet.cellData![2] = { 0: { v: 12, t: 2, s: 'number' }, 1: { f: '=A3*2', v: 24, t: 2 }, 2: { v: false, t: 3 } }
+  sheet.cellData![3] = { 0: { v: '合并' } }
   sheet.mergeData = [{ startRow: 3, endRow: 3, startColumn: 0, endColumn: 1 }]
   sheet.columnData = { 0: { w: 145 } }; sheet.rowData = { 2: { h: 40 } }
   book.styles = { number: { bl: 1, bg: { rgb: '#FFFF00' }, n: { pattern: '0.00' }, bd: { t: { s: 1, cl: { rgb: '#000000' } } } } }

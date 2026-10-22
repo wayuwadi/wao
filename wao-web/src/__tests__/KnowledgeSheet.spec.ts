@@ -36,7 +36,7 @@ describe('电子表格工作簿', () => {
     const wrapper = mount(KnowledgeSheet, { props: { content: workbookContent(book()) } })
     await vi.dynamicImportSettled(); await flushPromises()
     engine.endEdit.mockImplementationOnce(async () => {
-      (engine.snapshot as unknown as IWorkbookData).sheets.sheet1!.cellData[3] = { 1: { v: 2222 } }
+      (engine.snapshot as unknown as IWorkbookData).sheets.sheet1!.cellData![3] = { 1: { v: 2222 } }
       return true
     })
     await wrapper.vm.exportExcel('测试表格')
