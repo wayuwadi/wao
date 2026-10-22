@@ -4,6 +4,9 @@ import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
 import { readWorkbook, sheetContent, workbookContent } from '@/utils/knowledgeSheet'
 import type { IWorkbookData } from '@univerjs/core'
 
+const exporter = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+vi.mock('@/utils/workbookExcel', () => ({ downloadWorkbookExcel: exporter }))
+
 const engine = vi.hoisted(() => ({ snapshot: {} as Record<string, unknown>, change: (_command: { type: number }) => {}, dispose: vi.fn(), disposeUnit: vi.fn(), init: vi.fn(), editable: vi.fn(), create: vi.fn(), endEdit: vi.fn() }))
 vi.mock('@univerjs/presets', () => ({
   LocaleType: { ZH_CN: 'zhCN' }, CommandType: { MUTATION: 2 }, mergeLocales: () => ({}),
@@ -29,6 +32,20 @@ function book() {
 }
 describe('电子表格工作簿', () => {
   beforeEach(() => { vi.clearAllMocks(); engine.endEdit.mockResolvedValue(true) })
+  it('导出先提交编辑并使用最新快照；提交失败不下载', async () => {
+    const wrapper = mount(KnowledgeSheet, { props: { content: workbookContent(book()) } })
+    await vi.dynamicImportSettled(); await flushPromises()
+    engine.endEdit.mockImplementationOnce(async () => {
+      (engine.snapshot as unknown as IWorkbookData).sheets.sheet1!.cellData[3] = { 1: { v: 2222 } }
+      return true
+    })
+    await wrapper.vm.exportExcel('测试表格')
+    expect(exporter).toHaveBeenCalledWith(expect.objectContaining({ sheets: expect.objectContaining({ sheet1: expect.objectContaining({ cellData: expect.objectContaining({ 3: { 1: { v: 2222 } } }) }) }) }), '测试表格')
+    exporter.mockClear(); engine.endEdit.mockResolvedValueOnce(false)
+    await expect(wrapper.vm.exportExcel('失败')).rejects.toThrow('尚未提交')
+    expect(exporter).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('迁移旧表格为网格工作簿，保留文本而不把旧公式原文偷偷执行', () => {
     const result = readWorkbook(sheetContent([['0012', '=SUM(A1:A3)', '多行\n文本']]), 'legacy')
     expect(result.sheets?.sheet1?.cellData?.[0]?.[1]).toEqual({ v: '=SUM(A1:A3)', t: 1 })

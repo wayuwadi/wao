@@ -878,6 +878,18 @@ function onDocScroll() {
 }
 
 /** 分享菜单开关（文档与小记共用同一个入口）。 */
+const exportingExcel = ref(false)
+async function exportSheetExcel() {
+  if (exportingExcel.value) return
+  exportingExcel.value = true; moreMenuOpen.value = false
+  try {
+    if (!sheetEditor.value) throw new Error('表格尚未加载完成')
+    await sheetEditor.value.exportExcel(doc.value?.title || '工作簿')
+    toast('Excel 已导出', 'ri-download-line')
+  } catch (cause) {
+    toast(cause instanceof Error ? cause.message : '导出失败，请重试', 'ri-error-warning-line')
+  } finally { exportingExcel.value = false }
+}
 const shareMenu = ref(false)
 const moreMenuOpen = ref(false)
 watch(docId, () => { moreMenuOpen.value = false })
@@ -1196,6 +1208,7 @@ async function saveKbSettings() {
             >
               <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
             </button>
+            <button v-if="pageType === 'spreadsheet'" class="icon-act" title="导出 Excel" aria-label="导出 Excel" :disabled="exportingExcel" @click="exportSheetExcel"><i class="ri-file-excel-2-line"></i></button>
             <div v-if="pageType !== 'drawing'" class="share-wrap bar-share">
               <button class="icon-act" title="复制分享链接" @click="moreMenuOpen = false; shareMenu = !shareMenu">
                 <i class="ri-links-line"></i>
