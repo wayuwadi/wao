@@ -50,7 +50,8 @@ async function load() {
     instance ??= createUniver({ locale: LocaleType.ZH_CN, locales: { [LocaleType.ZH_CN]: mergeLocales(zhCN, filterZhCN, sortZhCN) }, darkMode: effective.value === 'dark',
       presets: [UniverSheetsCorePreset({ container: host.value, header: true, ribbonType: 'grid', toolbar: true, formulaBar: true, footer: { sheetBar: true, statisticBar: true, zoomSlider: true, menus: true } }), UniverSheetsFilterPreset(), UniverSheetsSortPreset()] })
     workbook = instance.univerAPI.createWorkbook(snapshot as IWorkbookData)
-    workbook.setEditable(!props.disabled)
+    await workbook.getWorkbookPermission().setMode(props.disabled ? 'viewer' : 'owner')
+    if (!mounted || token !== generation || !workbook) return
     acceptedContent = JSON.stringify(props.content)
     lastSnapshot = JSON.stringify(workbook.save())
     subscription = workbook.onCommandExecuted(command => { if (command.type === CommandType.MUTATION) publish() })
@@ -66,7 +67,7 @@ async function flush() {
 watch(() => [props.documentId, props.content] as const, ([id, value], [previousId]) => {
   if (mounted && (id !== previousId || JSON.stringify(value) !== acceptedContent)) void load()
 })
-watch(() => props.disabled, value => workbook?.setEditable(!value))
+watch(() => props.disabled, () => { if (mounted) void load() })
 watch(effective, value => instance?.univerAPI.toggleDarkMode(value === 'dark'))
 function beforeUnload(event: BeforeUnloadEvent) {
   if (workbook?.isCellEditing()) { event.preventDefault(); event.returnValue = '' }

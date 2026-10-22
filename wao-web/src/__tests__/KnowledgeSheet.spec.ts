@@ -9,7 +9,7 @@ vi.mock('@univerjs/presets', () => ({
   LocaleType: { ZH_CN: 'zhCN' }, CommandType: { MUTATION: 2 }, mergeLocales: () => ({}),
   createUniver: () => (engine.init(), { univer: { dispose: engine.dispose }, univerAPI: { disposeUnit: engine.disposeUnit, toggleDarkMode: vi.fn(), createWorkbook: (snapshot: Record<string, unknown>) => {
     engine.create(snapshot); engine.snapshot = snapshot
-    return { getId: () => snapshot.id as string, save: () => engine.snapshot, setEditable: engine.editable, onCommandExecuted: (callback: typeof engine.change) => { engine.change = callback; return { dispose: vi.fn() } }, isCellEditing: () => true, endEditingAsync: engine.endEdit }
+    return { getId: () => snapshot.id as string, save: () => engine.snapshot, getWorkbookPermission: () => ({ setMode: engine.editable }), onCommandExecuted: (callback: typeof engine.change) => { engine.change = callback; return { dispose: vi.fn() } }, isCellEditing: () => true, endEditingAsync: engine.endEdit }
   } } }),
 }))
 vi.mock('@univerjs/preset-sheets-core', () => ({ UniverSheetsCorePreset: () => ({}) }))
@@ -55,7 +55,8 @@ describe('电子表格工作簿', () => {
     await vi.dynamicImportSettled(); await flushPromises()
     expect(engine.create).toHaveBeenCalledTimes(1)
     await wrapper.setProps({ disabled: true })
-    expect(engine.editable).toHaveBeenLastCalledWith(false)
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(engine.editable).toHaveBeenLastCalledWith('viewer')
     engine.change({ type: 2 })
     expect(wrapper.emitted('change')).toHaveLength(1)
     wrapper.unmount()
