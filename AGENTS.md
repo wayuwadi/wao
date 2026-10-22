@@ -6,7 +6,7 @@
 
 - 使用 Vue 3、TypeScript、Spring Boot 3、Java 17、MyBatis-Plus、MySQL 9 和 Flyway，不擅自更换技术栈。
 - Java 包名 `cn.wayuwa.wao.*`；响应统一为 `ApiResponse<T>`；前端 API 集中在 `wao-web/src/api/`。
-- 新需求或 BUG 使用独立 PR，基于最新 `main`；中文 Conventional Commits，正文包含“改动：”“原因：”“验收：”。
+- 同一次对话提出的需求与 BUG 合并到一个 PR，基于最新 `main`；已有未合并 PR 被整合时，解决冲突并明确替代关系；中文 Conventional Commits，正文包含“改动：”“原因：”“验收：”。
 - Flyway 新增唯一版本，不修改已交付迁移，不关闭校验或运行 `repair` 隐藏错误。原生产的兼容资源由服务器私有配置管理。
 - 不提交真实 `.env`、Token、Webhook、OAuth 会话、私钥、备份、日志、运行数据或个人截图；测试使用虚构数据。
 - 不重置用户数据库，不删除上传文件或修改密码库密钥。发布前确认环境、备份、版本和回退路径；公开仓库不授予生产操作权限。
