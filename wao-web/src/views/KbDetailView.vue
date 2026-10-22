@@ -25,7 +25,7 @@ import { useDocPresence } from '@/composables/docPresence'
 import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
-import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
+import { docShareMarkdownUrl, docShareUrl, docOriginalUrl } from '@/utils/share'
 import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
 const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
@@ -893,6 +893,12 @@ async function exportSheetExcel() {
 const shareMenu = ref(false)
 const moreMenuOpen = ref(false)
 watch(docId, () => { moreMenuOpen.value = false })
+async function copyOriginalLink() {
+  if (!docId.value) return
+  shareMenu.value = false; moreMenuOpen.value = false
+  const url = docOriginalUrl(kbId.value, docId.value)
+  toast(await copyToClipboard(url) ? '知识库原文链接已复制，可用于定位文档' : '复制失败，请重试', 'ri-links-line')
+}
 async function copyDocShare(kind: 'page' | 'md') {
   if (!docId.value) return
   if (data.docs[docId.value]?.kbId === 'kb-notes') { shareMenu.value = false; shareNoteId.value = docId.value; return }
@@ -1218,6 +1224,10 @@ async function saveKbSettings() {
                 <div class="share-scope">
                   分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录
                 </div>
+                <button class="share-item" @click="copyOriginalLink">
+                  <i class="ri-file-text-line"></i>
+                  <span class="share-main"><b>复制知识库原文链接</b><em>直接定位此文档，需登录并拥有访问权限</em></span>
+                </button>
                 <button class="share-item" @click="copyDocShare('page')">
                   <i class="ri-external-link-line"></i>
                   <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
@@ -1238,6 +1248,7 @@ async function saveKbSettings() {
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
                 <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
                 <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
+                <button class="more-share" @click="copyOriginalLink"><i class="ri-file-text-line"></i>复制知识库原文链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>

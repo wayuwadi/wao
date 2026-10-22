@@ -88,3 +88,8 @@ export function chatShareLink(title: string, url: string): string {
     .replace(/\s+/g, ' ')
     .slice(0, 240)}](<${url.replace(/>/g, '%3E')}>)`
 }
+
+/** 登录后直接定位知识库原文，保留原有访问权限。 */
+export function docOriginalUrl(kbId: string, docId: string): string {
+  return absoluteUrl(`/kb/${encodeURIComponent(kbId)}?doc=${encodeURIComponent(docId)}`)
+}
