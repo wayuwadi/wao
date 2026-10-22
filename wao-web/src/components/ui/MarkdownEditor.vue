@@ -3666,13 +3666,27 @@ onBeforeUnmount(() => {
   list-style: none;
   padding-left: 2px;
 }
-.md-body :deep(ul[data-type='taskList'] li) {
+.md-body :deep(li[data-checked]) {
   display: flex;
   align-items: flex-start;
   gap: 7px;
 }
-.md-body :deep(ul[data-type='taskList'] li > label) {
-  margin-top: 3px;
+.md-body :deep(li[data-checked] > label) {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 1.8em;
+}
+.md-body :deep(li[data-checked] > label input[type='checkbox']) {
+  margin: 0;
+  width: 1em;
+  height: 1em;
+  font: inherit;
+}
+.md-body :deep(li[data-checked] > div) { min-width: 0; flex: 1; }
+/* Strike only this item's paragraphs, not unfinished nested tasks. */
+.md-body :deep(li[data-checked][data-checked='true'] > div > p) {
+  text-decoration: line-through;
 }
 .md-body :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
