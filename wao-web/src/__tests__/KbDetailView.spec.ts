@@ -86,7 +86,10 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3?doc=d7', false, true)
     await wrapper.get('.markdown-editor-stub').setValue('目录切换期间的草稿')
     const editor = wrapper.get('.markdown-editor-stub').element
+    const toggle = wrapper.get('.directory-toggle').element
     await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    expect(wrapper.get('[aria-label="展开知识库目录"]').element).toBe(toggle)
+    expect(wrapper.get('.directory-toggle').attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('#kb-directory').attributes('style')).toContain('display: none')
     expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
     await wrapper.get('[aria-label="展开知识库目录"]').trigger('click')
