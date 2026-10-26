@@ -1086,7 +1086,8 @@ async function saveKbSettings() {
 <template>
   <ContextActionMenu ref="directoryContext" />
   <div v-if="!kb" class="missing">知识库不存在。</div>
-  <div v-else class="kb-detail wao-page-frame">
+  <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': directoryCollapsed }">
+    <button type="button" class="directory-toggle" :title="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" :aria-label="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" aria-controls="kb-directory" :aria-expanded="!directoryCollapsed" @click="directoryCollapsed = !directoryCollapsed"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
     <!-- 左栏 -->
     <div v-show="!directoryCollapsed" id="kb-directory" class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
       <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
@@ -1110,7 +1111,7 @@ async function saveKbSettings() {
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
-      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><button title="收起知识库目录" aria-label="收起知识库目录" aria-controls="kb-directory" :aria-expanded="true" @click="directoryCollapsed = true"><i class="ri-side-bar-line"></i></button><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
+      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
       <div ref="treeElement" class="tree" @contextmenu.prevent="openDirectoryContext($event)">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
@@ -1168,9 +1169,8 @@ async function saveKbSettings() {
 
     <!-- 文档区 -->
     <div class="document-pane" :class="{ 'content-narrow': !directoryCollapsed && contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
-          <button v-if="directoryCollapsed && !doc" class="directory-restore" aria-label="展开知识库目录" aria-controls="kb-directory" :aria-expanded="false" @click="directoryCollapsed = false"><i class="ri-side-bar-line"></i>展开目录</button>
+          <div v-if="directoryCollapsed && !doc" class="directory-home-bar" aria-hidden="true"></div>
           <div v-if="doc" class="doc-bar">
-            <button v-if="directoryCollapsed" class="icon-act" title="展开知识库目录" aria-label="展开知识库目录" aria-controls="kb-directory" :aria-expanded="false" @click="directoryCollapsed = false"><i class="ri-side-bar-line"></i></button>
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
               <i class="ri-arrow-right-s-line b-sep"></i>
@@ -1467,7 +1467,18 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
-.directory-restore { align-self: flex-start; flex-shrink: 0; margin: var(--wao-space-1) var(--wao-space-2); padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; }
+/* 同一个按钮始终锚定工作区左上角，切换目录不移动焦点或入口。 */
+.directory-toggle { position: absolute; top: 10px; left: var(--wao-space-2); z-index: 2; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.directory-toggle:hover { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
+.directory-toggle:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.side-top > .back { min-height: 28px; margin-left: 40px; }
+.directory-collapsed > .document-pane > .doc-bar { padding-left: 52px; }
+.directory-home-bar { flex: 0 0 48px; border-bottom: 1px solid var(--wao-line); }
+@media (pointer: coarse) {
+  .directory-toggle { top: 2px; left: var(--wao-space-1); width: 44px; height: 44px; }
+  .side-top > .back { margin-left: 48px; }
+  .directory-collapsed > .document-pane > .doc-bar { padding-left: 60px; min-height: 48px; }
+}
 .editor-workspace .doc-scroll { display: flex; overflow: hidden; }
 .editor-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
 .editor-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1536,6 +1547,7 @@ async function saveKbSettings() {
   color: var(--wao-text-weak);
 }
 .kb-detail {
+  position: relative;
   display: flex;
   /* 应用壳已经占去顶栏和页签栏；锁定剩余视口后，左右两栏才能各自滚动。 */
   height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h));
