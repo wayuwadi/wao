@@ -1,6 +1,2 @@
-import { createApp } from 'vue'
-import TodoQuickPreview from './components/todo/TodoQuickPreview.vue'
-import './styles/tokens.css'
-import './assets/base.css'
-import 'remixicon/fonts/remixicon.css'
-createApp(TodoQuickPreview).mount('#app')
+// 旧试用入口回到现有项目；个人试用草稿仍保留在浏览器中。
+location.replace('/projects')

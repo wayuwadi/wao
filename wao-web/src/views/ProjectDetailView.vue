@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { projectWorkItems, withProjectAncestors, decodeProjectSubtaskDisplay } from '@/utils/projectWorkItems'
@@ -78,7 +79,7 @@ const projTab = computed(() => {
 // 普通入口统一打开表格；显式视图链接及当前页面的手动切换仍由 URL 指定。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : 'list'
+  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' || q === 'checklist' ? q : 'list'
 })
 const subtaskDisplay = useMemberPreference(() => `project-layout-v1:subtasks:${pid.value}:${pdTaskView.value}`, decodeProjectSubtaskDisplay, JSON.stringify)
 const showSubtasks = computed(() => subtaskDisplay.value.value.show)
@@ -101,7 +102,7 @@ function setTab(t: string) {
   router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
 }
 function setView(v: TaskView) {
-  if (v === 'list') finishSelection()
+  if (v === 'list' || v === 'checklist') finishSelection()
   ui.setTaskView(pid.value, v)
   router.replace({ query: { ...route.query, view: v } })
 }
@@ -838,7 +839,7 @@ watch(visibleTaskIds, (ids) => {
     <template v-else-if="data.loadStates.projects !== 'loaded'">正在加载项目信息…</template>
     <template v-else>项目不存在或当前账号无权访问。<button class="btn-ghost" @click="router.push('/projects')">返回全部项目</button></template>
   </div>
-  <div v-else class="detail wao-page-frame" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
+  <div v-else class="detail wao-page-frame" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && pdTaskView !== 'checklist' && (batchSelectionOpen || selectedTaskIds.length) }">
     <div v-if="data.loadStates.projects === 'error'" class="task-scope" role="alert">
       项目信息刷新失败，当前显示上次读取的项目信息。{{ data.loadErrors.projects }}
       <button @click="data.hydrate()">重新加载项目</button>
@@ -877,11 +878,11 @@ watch(visibleTaskIds, (ids) => {
     </div>
     <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar" aria-label="任务工具栏">
       <div v-show="!searchQuery" class="seg">
-        <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+        <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['清单', 'ri-list-check-2', 'checklist'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
           <i :class="v[1]"></i>{{ v[0] }}
         </button>
       </div>
-      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :tree="pdTaskView === 'list' || pdTaskView === 'group'"
+      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
         :saving="subtaskDisplay.state.value === 'saving'" :error="subtaskDisplay.error.value"
         @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
       <div class="project-search-bar">
@@ -928,7 +929,7 @@ watch(visibleTaskIds, (ids) => {
           >{{ creator.name }}</button>
         </div>
       </div>
-      <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      <button v-if="!searchQuery && pdTaskView !== 'list' && pdTaskView !== 'checklist' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
       <template v-if="pdTaskView === 'list' && !searchQuery">
         <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
           <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
@@ -977,15 +978,15 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="searchableTasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
+      <ProjectTaskSearch v-if="searchQuery && pdTaskView !== 'checklist'" :query="searchQuery" :tasks="searchableTasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
       <div v-if="hiddenFinishedOnly" class="task-scope" role="status">
         当前范围内 {{ doneTasks.length }} 项任务已收尾并收起；项目共 {{ ptasks.length }} 项任务。
         <button @click="showDone = true">查看已完成</button>
       </div>
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
-      <div v-show="!searchQuery && !hideTaskViews" class="project-normal-tasks">
+      <div v-show="pdTaskView === 'checklist' || (!searchQuery && !hideTaskViews)" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
-      <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
+      <div v-if="pdTaskView !== 'list' && pdTaskView !== 'checklist' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
         <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
         <span class="selection-count">已选 {{ selectedTaskIds.length }} 项</span>
@@ -1261,6 +1262,9 @@ watch(visibleTaskIds, (ids) => {
         v-model:show-done="showDone" :tasks="displayItems" :context-tasks="decoratedItems" :item-refs="workProjection.refs" :project-id="pid"
         :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0"
         @select="toggleSelection" />
+      <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid"
+        :items="displayItems" :context-items="decoratedItems" :item-refs="workProjection.refs"
+        :show-done="showDone" :collapsed="collapsedSubTasks" :query="searchQuery" @toggle="toggleSubtasks" />
       <div v-else class="board">
         <div
           v-for="col in visibleBoard"
