@@ -2,6 +2,7 @@
 import { computed, ref, toRefs, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
+import TodoQuickList from '@/components/todo/TodoQuickList.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingState'
 import { TODO_DUE_GROUPS, todoDueGroup } from '@/utils/todoDueGroups'
@@ -24,7 +25,7 @@ const session = useSessionStore()
 const ui = useUiStore()
 const route = useRoute()
 const { workspace, selectedDay } = toRefs(useBrowsingState('todo-workspace', { workspace: 'day', selectedDay: data.today }, {
-  workspace: oneOf('day', 'all'), selectedDay: value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)),
+  workspace: oneOf('day', 'all', 'quick'), selectedDay: value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)),
 }))
 watch(() => route?.query.date, date => {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) { selectedDay.value = date; workspace.value = 'day' }
@@ -118,14 +119,15 @@ function onDropStatus(status: TaskStatus) {
   <div class="todo wao-page-frame" :class="{ 'todo-day': workspace === 'day', 'todo-quadrant': workspace === 'all' && taskView === 'quadrant' }">
     <div class="ptop">
       <div class="ptitle">待办</div>
-      <nav class="workspace-switch" aria-label="待办视图"><button type="button" :aria-pressed="workspace === 'day'" @click="workspace = 'day'">按天</button><button type="button" :aria-pressed="workspace === 'all'" @click="workspace = 'all'">全部待办</button></nav>
+      <nav class="workspace-switch" aria-label="待办视图"><button type="button" :aria-pressed="workspace === 'day'" @click="workspace = 'day'">按天</button><button type="button" :aria-pressed="workspace === 'all'" @click="workspace = 'all'">全部待办</button><button type="button" :aria-pressed="workspace === 'quick'" @click="workspace = 'quick'">随手清单</button></nav>
       <span v-if="workspace === 'all'" class="ptip">任务归属于各自项目</span>
-      <WaoButton class="todo-new-task" variant="ghost" @click="ui.openNewTask()">
+      <WaoButton v-if="workspace !== 'quick'" class="todo-new-task" variant="ghost" @click="ui.openNewTask()">
         <i class="ri-add-line"></i>新建任务
       </WaoButton>
     </div>
 
     <TodoDayView v-if="workspace === 'day'" v-model:date="selectedDay" @all="workspace = 'all'" />
+    <TodoQuickList v-if="workspace === 'quick'" :key="session.currentUser.id" :user-id="session.currentUser.id" />
     <div v-if="workspace === 'all'" class="mt-toolbar">
       <button
         v-for="c in (['全部', '我负责', '我参与', '等待他人'] as const)"
