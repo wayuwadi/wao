@@ -5,7 +5,7 @@ import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 const samplePaneWidth = ref(236)
-const demoShowSubs = ref(true), demoShowDone = ref(false)
+const demoShowSubs = ref(true), demoShowDone = ref(false), demoCollapsed = ref(false)
 import WaoLogo from '@/components/WaoLogo.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -416,7 +416,7 @@ const detailDemoComment = ref('')
             <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
             <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
               <p>项目四象限：子任务缩进跟随主任务，整组以主任务优先级归类。</p>
-              <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree @expand="feedback = '示例：全部展开'" @collapse="feedback = '示例：全部收起'" />
+              <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree :collapsed="demoCollapsed" @expand="demoCollapsed = false; feedback = '示例：全部展开'" @collapse="demoCollapsed = true; feedback = '示例：全部收起'" />
               <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
                 <template #basic><WaoField v-slot="field" label="项目名称"><input :id="field.id" v-model="projectDemoName" /></WaoField></template>
                 <template #members><p>示例负责人 · 负责人</p><p>示例成员 · 项目成员</p></template>

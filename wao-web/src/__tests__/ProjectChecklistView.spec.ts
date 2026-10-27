@@ -21,7 +21,7 @@ function setup(error = false) {
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { MarkdownEditor: { props: ['modelValue'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { stubs: { MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
@@ -32,10 +32,10 @@ describe('项目清单详情', () => {
     const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)
     await wrapper.findAll('.task-select')[1]!.trigger('click')
     await flushPromises()
-    expect(wrapper.get('.checklist-detail').text()).toContain('子任务详情')
+    expect(wrapper.get('h2').text()).toBe('子任务')
     expect(useUiStore().openTaskId).toBeFalsy()
-    await wrapper.get('.editor-caption button').trigger('click')
-    await wrapper.get('textarea').setValue('## 子任务记录')
+    wrapper.findComponent({ name: 'MarkdownEditor' }).vm.$emit('update:modelValue', '## 子任务记录')
+    await flushPromises()
     expect(update).toHaveBeenCalledWith('parent', 'child', { desc: '## 子任务记录' })
     expect(patch).not.toHaveBeenCalled()
     await wrapper.findAll('.task-select')[0]!.trigger('click')

@@ -421,8 +421,6 @@ function locateItemParent(id: string) {
  * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
  * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
  */
-const actionCounts = computed(() => Object.fromEntries(PROJECT_ACTION_FILTERS.map(filter => [filter.id,
-  ptasks.value.filter(task => matchesProjectAction(task, filter.id, data.today)).length])))
 const activeActionLabel = computed(() => PROJECT_ACTION_FILTERS.find(filter => filter.id === actionFilter.value)?.label ?? '')
 const resultTasks = computed(() => searchQuery.value
   ? searchProjectTasks(allTasks.value, searchQuery.value).map(match => match.task) : allTasks.value)
@@ -882,7 +880,7 @@ watch(visibleTaskIds, (ids) => {
           <i :class="v[1]"></i>{{ v[0] }}
         </button>
       </div>
-      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
+      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :collapsed="collapsedSubTasks.length > 0" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
         :saving="subtaskDisplay.state.value === 'saving'" :error="subtaskDisplay.error.value"
         @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
       <div class="project-search-bar">
@@ -952,16 +950,6 @@ watch(visibleTaskIds, (ids) => {
           </div>
         </details>
       </template>
-    </div>
-
-    <div v-if="projTab === '任务' && pdTaskView !== 'quadrant'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
-      <span class="action-count-scope">项目计数</span>
-      <button :aria-pressed="actionFilter === 'all'" @click="actionFilter = 'all'">全部</button>
-      <button v-for="filter in PROJECT_ACTION_FILTERS" :key="filter.id" :aria-pressed="actionFilter === filter.id"
-        :disabled="tasksUnavailable" :title="`${filter.label}的项目任务总数；与负责人、创建人和关键词组合筛选`"
-        @click="actionFilter = actionFilter === filter.id ? 'all' : filter.id">
-        {{ filter.label }} <span class="wao-tabular">{{ tasksUnavailable ? '—' : actionCounts[filter.id] }}</span>
-      </button>
     </div>
 
     <!-- 任务 -->
