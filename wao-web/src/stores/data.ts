@@ -1758,6 +1758,7 @@ export const useDataStore = defineStore('data', () => {
       pdcaCycles,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: createdAt, by: currentAuthor() }],
       ...core,
+      due: core.due || core.endAt?.slice(0, 10) || todayIso(),
     }
     tasks.value.unshift(local)
     storeTaskDraft(local)
@@ -1965,7 +1966,7 @@ export const useDataStore = defineStore('data', () => {
     // 与主任务一致：负责人、创建人都不留空，默认就是录入的人。
     const me = useSessionStore().userId
     t.subs.unshift({
-      id, text: title, done: false, desc: '', images: [], parentId: parentId || null, pr: 'P2',
+      id, text: title, done: false, desc: '', images: [], parentId: parentId || null, pr: 'P2', due:todayIso(),
       owner: me || null, createdBy: me || null, createdAt: nowIso(),
     })
     logActivity(t, `添加了子任务「${title}」`)

@@ -16,11 +16,23 @@ import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
+import TaskDocuments from '@/components/task/TaskDocuments.vue'
+import TaskDueDate from '@/components/task/TaskDueDate.vue'
+import { deadlineInfo } from '@/utils/taskDeadline'
+import { todayIso } from '@/utils/time'
+import { useTaskDeadlineDefaults } from '@/composables/taskDeadlineDefaults'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
+const deadlineDefaults = useTaskDeadlineDefaults()
+const today = ref(todayIso())
+const refreshToday = () => { today.value = todayIso() }
+const dayTimer = setInterval(refreshToday, 60000)
+onMounted(() => window.addEventListener('focus', refreshToday))
+onBeforeUnmount(() => { clearInterval(dayTimer); window.removeEventListener('focus', refreshToday) })
+const overdue = (task:Task) => deadlineInfo(task.due, today.value, task.status === '已完成').overdue
 const actions = useProjectItemActions(() => props.itemRefs)
 // Keep completion reversible locally before saving, so even a slow request cannot block undo.
 const pendingCompletion = ref(new Set<string>())
@@ -217,6 +229,29 @@ const description = computed({
     else data.patchTask(taskId, { desc })
   },
 })
+async function changeDue(due:string) {
+  if (!selected.value) return
+  const { taskId, subId } = source.value
+  await actions.save(selected.value.id, () => subId ? data.updateSub(taskId, subId, { due }) : data.patchTask(taskId, { due }))
+}
+const taskTitle = computed(() => source.value.subId
+  ? data.subById(source.value.taskId, source.value.subId)?.text ?? ''
+  : data.taskById(source.value.taskId)?.title ?? '')
+const titleDraft = ref('')
+watch([selectedId, taskTitle], () => { titleDraft.value = taskTitle.value }, { immediate:true })
+function editTitle(event: Event) {
+  const title = (event.target as HTMLInputElement).value
+  titleDraft.value = title
+  if (!title.trim() || !selected.value) return
+  detailOnlySelection.value = true
+  const { taskId, subId } = source.value
+  if (subId) data.updateSub(taskId, subId, { text:title })
+  else data.patchTask(taskId, { title })
+}
+function finishTitle() {
+  if (!titleDraft.value.trim()) titleDraft.value = taskTitle.value
+  void data.flushTask(source.value.taskId)
+}
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
 const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
@@ -246,7 +281,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
           <span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
-          <span v-if="task.due" class="task-meta">{{ task.due }}</span>
+          <span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : '截止日期'">{{ task.due }}</span>
         </button>
       </div>
       </div></section>
@@ -262,21 +297,24 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="status-pill" aria-label="任务状态" aria-haspopup="menu" :aria-expanded="propertyMenu === 'status'" :style="{ color: PROJECT_STATUS_COLORS[selected.status], borderColor: PROJECT_STATUS_COLORS[selected.status] }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'status' ? null : 'status'">{{ projectStatusLabel(selected.status) }}</button>
             <CellMenu v-if="propertyMenu === 'status'" :anchor="statusAnchor" @close="propertyMenu = null"><button v-for="status in statusOptions" :key="status" role="menuitemradio" :aria-checked="status === selected.status" @click="changeStatus(status)"><span class="status-pill" :style="{ color: PROJECT_STATUS_COLORS[status], borderColor: PROJECT_STATUS_COLORS[status] }">{{ projectStatusLabel(status) }}</span><i v-if="status === selected.status" class="ri-check-line"></i></button></CellMenu>
           </span>
-          <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><span ref="priorityAnchor" class="priority-anchor">
+          <TaskDueDate :key="selected.id" :due="selected.due" :today="today" :completed="selected.status === '已完成'" :disabled="actions.busy(selected.id)" :missing-count="deadlineDefaults.missingCount.value" :bulk-busy="deadlineDefaults.busy.value" @fill-missing="deadlineDefaults.fill" @change="changeDue" /><span ref="priorityAnchor" class="priority-anchor">
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
-        <h2>{{ selected.title }}</h2>
+        <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情…" @upload-image="uploadImage" />
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
           <div v-for="child in directChildren" :key="child.id" class="detail-subtask">
             <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
             <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
-            <span v-if="child.due" class="task-meta">{{ child.due }}</span>
+            <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>
           </div>
         </section>
         <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
+        <TaskDocuments :key="`${useSessionStore().userId}:${selected.id}`" :task-id="source.taskId" :sub-id="source.subId" :title="taskTitle" :description="description" />
         <div class="save-status" aria-live="polite">
+          <span v-if="deadlineDefaults.result.value" role="status">{{ deadlineDefaults.result.value }}</span>
+          <WaoButton v-for="failure in deadlineDefaults.failures.value" :key="failure.id" variant="ghost" @click="actions.open(failure.id)">{{ failure.title }}：{{ failure.error }} · 查看保存问题</WaoButton>
           <SaveHint :saving="saveState === 'saving'" :failed="saveState === 'error'" :saved-at="data.taskSavedAt(source.taskId)" :error-message="data.taskSaveError(source.taskId)" />
           <WaoButton v-if="saveState === 'error'" variant="ghost" @click="actions.open(selected.id)">查看保存问题</WaoButton>
         </div>
@@ -343,8 +381,11 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }
 .task-title { font-family:var(--wao-font); font-weight:400; color:var(--wao-text-2); letter-spacing:0.01em; -webkit-font-smoothing:antialiased; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
 .finished { text-decoration:line-through; color:var(--wao-text-weak); }
+.task-meta.overdue { color:var(--wao-danger-strong); }
 .task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
 h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }
+.detail-title-input { width:100%; min-width:0; box-sizing:border-box; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text); font:inherit; padding:var(--wao-space-1) 0; }
+.detail-title-input:hover,.detail-title-input:focus { background:var(--wao-bg-sub); }
 .save-status { margin-top:var(--wao-space-1); display:flex; gap:var(--wao-space-2); flex-wrap:wrap; }
 .parent-task-link { justify-content:flex-start; max-width:100%; margin-top:var(--wao-space-3); padding:var(--wao-space-1) var(--wao-space-2); font-family:var(--wao-font); text-align:left; }
 .parent-task-link span { min-width:0; overflow-wrap:anywhere; }

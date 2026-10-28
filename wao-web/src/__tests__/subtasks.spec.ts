@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
+import { todayIso } from '@/utils/time'
 
 /** 子任务读写：内嵌在任务的 subs 里，靠稳定 id 定位（历史数据回落到下标合成键）。 */
 describe('data store · 子任务', () => {
@@ -24,6 +25,7 @@ describe('data store · 子任务', () => {
     const sub = data.subById(taskId, id!)
     expect(sub?.text).toBe('扫描身份证')
     expect(sub?.done).toBe(false)
+    expect(sub?.due).toBe(todayIso())
     expect(sub?.pr).toBe('P2')
     const child = data.addSub(taskId, '下级子任务', id)!
     expect(data.subById(taskId, child)?.pr).toBe('P2')

@@ -24,11 +24,31 @@ function setup(error = false) {
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { stubs: { TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('右侧标题实时同步列表，子事项编辑正确落点，空标题不覆盖内容', async () => {
+    const { data, wrapper } = setup()
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    const patch = vi.spyOn(data, 'patchTask').mockImplementation((id, values) => Object.assign(data.taskById(id)!, values))
+    const update = vi.spyOn(data, 'updateSub').mockImplementation((id, child, values) => Object.assign(data.subById(id, child)!, values))
+    await wrapper.get('[aria-label="任务标题"]').setValue('新的父标题')
+    const sync = async () => { const p = projectWorkItems(data.tasks); await wrapper.setProps({ items:p.items, contextItems:p.items, itemRefs:p.refs }) }
+    await sync()
+    expect(wrapper.findAll('.task-select')[0]!.text()).toContain('新的父标题')
+    expect(patch).toHaveBeenCalledWith('parent', { title:'新的父标题' })
+    await wrapper.get('[aria-label="任务标题"]').setValue(' ')
+    await wrapper.get('[aria-label="任务标题"]').trigger('blur')
+    expect(data.tasks[0]!.title).toBe('新的父标题')
+    await wrapper.findAll('.task-select')[1]!.trigger('click')
+    await wrapper.get('[aria-label="任务标题"]').setValue('新的子标题')
+    await sync()
+    expect(update).toHaveBeenCalledWith('parent', 'child', { text:'新的子标题' })
+    expect(wrapper.findAll('.task-select')[1]!.text()).toContain('新的子标题')
+    expect(data.tasks[0]!.title).toBe('新的父标题')
+  })
   it('离开清单串行提交同源子事项，等待期间正文保存不阻止取消', async () => {
     const { data, wrapper } = setup()
     data.tasks[0]!.subs.push({ id:'second', text:'第二子任务', done:false })
@@ -110,7 +130,7 @@ describe('项目清单详情', () => {
     expect(wrapper.get('[aria-label="直属子任务"]').text()).toContain('子任务')
     await wrapper.setProps({ collapsed: ['parent'] })
     await wrapper.get('.child-title').trigger('click')
-    expect(wrapper.get('h2').text()).toBe('子任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
     expect(wrapper.emitted('toggle')).toContainEqual(['parent'])
     await wrapper.setProps({ collapsed:[] })
     expect(wrapper.get('.checklist-row.selected').text()).toContain('子任务')
@@ -120,9 +140,9 @@ describe('项目清单详情', () => {
     await wrapper.findAll('[role=menuitemradio]').find(b => b.text().includes('P1'))!.trigger('click')
     expect(update).toHaveBeenCalledWith('parent', 'child', { pr: 'P1' })
     await wrapper.setProps({ collapsed: ['parent'], items: [...wrapper.props('items')] })
-    expect(wrapper.get('h2').text()).toBe('子任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
     await wrapper.get('.parent-task-link').trigger('click')
-    expect(wrapper.get('h2').text()).toBe('父任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
   })
   it('顶部切换分组和状态，子事项沿用父分组且只提供支持的状态', async () => {
     const { data, wrapper } = setup()
@@ -150,7 +170,7 @@ describe('项目清单详情', () => {
     const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)
     await wrapper.findAll('.task-select')[1]!.trigger('click')
     await flushPromises()
-    expect(wrapper.get('h2').text()).toBe('子任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
     expect(useUiStore().openTaskId).toBeFalsy()
     wrapper.findComponent({ name: 'MarkdownEditor' }).vm.$emit('update:modelValue', '## 子任务记录')
     await flushPromises()
@@ -166,7 +186,7 @@ describe('项目清单详情', () => {
     await wrapper.findAll('.task-select')[1]!.trigger('click')
     await wrapper.setProps({ query: '', collapsed: ['parent'] })
     expect(wrapper.findAll('.task-select')).toHaveLength(1)
-    expect(wrapper.get('h2').text()).toBe('父任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
     await wrapper.setProps({ query: '不存在' })
     expect(wrapper.find('h2').exists()).toBe(false)
     expect(wrapper.text()).toContain('没有匹配的任务')

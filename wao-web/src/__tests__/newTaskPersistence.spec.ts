@@ -12,6 +12,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
+import { todayIso } from '@/utils/time'
 
 vi.mock('@/api/board', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/board')>(),
@@ -70,6 +71,7 @@ describe('新建任务的落库反馈', () => {
     putTask.mockImplementationOnce(savedTask)
     const creating = data.addTask({ title: '新任务', project: 'p1', pr: 'P2', owner: 'm1', due: '', desc: '最初正文' })
     const original = JSON.parse(JSON.stringify(data.tasks[0]!)) as Task
+    expect(original.due).toBe(todayIso())
     data.patchTask(original.id, { desc: '请求期间继续写的正文' })
     confirm(original)
     const result = await creating
@@ -131,25 +133,25 @@ describe('新建任务的落库反馈', () => {
     w.unmount()
   })
 
-  it('截止日期默认不设置，不再自动落在今天', async () => {
+  it('新建默认今天截止，保存到真实任务', async () => {
     putTask.mockImplementation((id, task) => savedTask(id, task))
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
-    expect(wrapper.find('.pills .pill.on').text()).toBe('不设置')
+    expect(wrapper.find('.pills .pill.on').text()).toBe('今天')
     await wrapper.find('.title-input').setValue('不排期的任务')
     await wrapper.find('.foot .btn-primary').trigger('click')
     await flushPromises()
-    expect(data.tasks[0]).toMatchObject({ title: '不排期的任务', due: '' })
+    expect(data.tasks[0]).toMatchObject({ title: '不排期的任务', due: todayIso() })
     wrapper.unmount()
   })
 
-  it('日历预设全天安排不填截止，新建时段仍保留独立截止', async () => {
+  it('日历安排默认今天截止，显式截止仍独立于执行时段', async () => {
     const ui = useUiStore()
     ui.openModal('task'); ui.modalScheduleDate = '2026-10-07'
     putTask.mockImplementation(savedTask)
     let w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
     await w.get('.title-input').setValue('无截止的全天安排')
     await w.get('.foot .btn-primary').trigger('click'); await flushPromises()
-    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: '', startAt: null, endAt: null })
+    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: todayIso(), startAt: null, endAt: null })
     w.unmount()
     ui.openModal('task', '', '', '2026-10-07T23:00', '2026-10-08T02:00')
     w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
