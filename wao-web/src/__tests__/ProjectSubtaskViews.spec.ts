@@ -39,6 +39,36 @@ async function open(view = 'list') {
 }
 
 describe('子任务四视图', () => {
+  it('清单分组加号展开就地输入，失败保留草稿并重试同一任务', async () => {
+    const data = useDataStore()
+    data.projectById('p1')!.taskGroups = [{ id:'g1', name:'工作' }, { id:'g2', name:'生活' }]
+    const created = { ...data.tasks[0]!, id:'new-task', title:'新任务', groupId:'g2' }
+    const add = vi.spyOn(data, 'addTask').mockResolvedValue({ task:created, persisted:false })
+    const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => {})
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue()
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const { wrapper } = await open('checklist')
+    const section = wrapper.getComponent(ProjectChecklistView).findAll('section')[1]!
+    await section.get('.group-heading').trigger('click')
+    expect(section.get('.group-heading').attributes('aria-expanded')).toBe('false')
+    await section.get('[aria-label="在 生活 新建任务"]').trigger('click'); await flushPromises()
+    expect(section.get('.group-heading').attributes('aria-expanded')).toBe('true')
+    const input = section.get<HTMLInputElement>('.group-add-row input')
+    expect(document.activeElement).toBe(input.element)
+    await input.setValue('新任务'); await input.trigger('keydown', { key:'Enter', isComposing:true })
+    expect(add).not.toHaveBeenCalled()
+    await input.trigger('keydown', { key:'Enter' }); await flushPromises()
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ title:'新任务', project:'p1', groupId:'g2' }))
+    expect(input.element.value).toBe('新任务')
+    expect(section.text()).toContain('未保存到服务器')
+    await section.get('.group-add-done').trigger('click'); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(patch).toHaveBeenCalledWith('new-task', expect.objectContaining({ groupId:'g2' }))
+    expect(flush).toHaveBeenCalledWith('new-task')
+    expect(input.element.value).toBe('')
+    await input.trigger('keydown', { key:'Escape' })
+    expect(section.find('.group-add-row').exists()).toBe(false)
+  })
   it('重新打开项目恢复最近视图，显式链接更新记忆', async () => {
     const { wrapper, router } = await open('checklist')
     await router.replace('/projects/p1'); await flushPromises()
