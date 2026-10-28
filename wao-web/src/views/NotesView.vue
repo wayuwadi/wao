@@ -6,6 +6,7 @@ import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import { imageDisplayName } from '@/utils/imageDisplayName'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
+import NoteVisualRecap from '@/components/notes/NoteVisualRecap.vue'
 import NoteAiCompanion from '@/components/notes/NoteAiCompanion.vue'
 import type { CompanionStage } from '@/api/noteAiCompanion'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
@@ -62,6 +63,8 @@ function openMediaCopy(note: Doc) {
   mediaCopyContent.value = JSON.parse(JSON.stringify(displayedContent(note))) as RichDocContent
 }
 const writingOpen = ref(true)
+const visualRecapId = ref('')
+const visualRecapNote = computed(() => notes.value.find(n => n.id === visualRecapId.value))
 const companion = ref<InstanceType<typeof NoteAiCompanion> | null>(null)
 const newComposer = ref<InstanceType<typeof NoteComposer> | null>(null)
 const writingFocusRequest = ref(0)
@@ -488,6 +491,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'read', label: '全屏阅读', run: () => startReading(id, undefined, 'full') },
     { id: 'side', label: '侧栏速览', run: () => startReading(id, undefined, 'side') },
     ...(note.author === session.currentUser.id ? [
+      { id: 'visual-recap', label: '图文整理', disabled: hasPendingNoteDraft(note), run: () => { visualRecapId.value = id } },
       { id: 'ai-results', label: 'AI 改了什么', run: () => selectCompanion(id) },
       { id: 'ai-chat', label: '聊聊这篇', run: () => selectCompanion(id, 'chat') },
     ] : []),
@@ -1190,6 +1194,7 @@ onMounted(() => void loadPins())
 
 <template>
   <main class="notes-page wao-page-frame" @contextmenu="openImageMenu">
+    <NoteVisualRecap v-if="visualRecapNote" :key="`${session.currentUser.id}:${visualRecapNote.id}`" :note-id="visualRecapNote.id" :rev="visualRecapNote.rev ?? 0" :blocked="hasPendingNoteDraft(visualRecapNote)" @close="visualRecapId = ''" />
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :note-id="mediaCopyNote.id" :title="mediaCopyNote.title" @close="mediaCopyContent = null" />
     <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
@@ -1309,6 +1314,7 @@ onMounted(() => void loadPins())
           <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>
           <div class="reader-layout-actions">
             <div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div>
+            <button v-if="readingNote.author === session.currentUser.id" type="button" :disabled="readerEditing || hasPendingNoteDraft(readingNote)" @click="visualRecapId = readingNote.id"><i class="ri-layout-masonry-line" aria-hidden="true"></i>图文整理</button>
             <NoteWidthSwitch v-if="readerMode === 'full'" v-model="contentWidth" label="阅读宽度" />
             <button type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制</span></button>
             <details ref="readerMore" class="reader-more"><summary tabindex="0" aria-label="更多阅读操作"><i class="ri-more-line" aria-hidden="true"></i><span>更多</span></summary><div class="reader-more-panel" @click="closeReaderMore">
