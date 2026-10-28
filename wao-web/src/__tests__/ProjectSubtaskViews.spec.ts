@@ -85,6 +85,36 @@ describe('子任务四视图', () => {
     expect(sections[0]!.text()).toContain('工作'); expect(sections[0]!.text()).toContain('普通子事项')
     expect(sections[1]!.text()).toContain('生活'); expect(sections[1]!.text()).toContain('独立主任务')
   })
+  it('子事项拖到其他分组的顶层任务旁时跟随目标分组', async () => {
+    const data = useDataStore()
+    data.projectById('p1')!.taskGroups = [{ id:'g1', name:'工作' }, { id:'g2', name:'生活' }]
+    data.taskById('a')!.groupId = 'g1'; data.taskById('c')!.groupId = 'g2'
+    const promoted = { ...data.taskById('a')!, id:'promoted', parentTaskId:null, subs:[] }
+    vi.spyOn(data, 'promoteSubtask').mockImplementation(async () => { data.tasks.push(promoted); return promoted })
+    vi.spyOn(data, 'moveTask').mockResolvedValue()
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue()
+    const { wrapper } = await open('checklist')
+    wrapper.getComponent(ProjectChecklistView).vm.$emit('move', 'sub:a:s1', 'c', 'before'); await flushPromises()
+    expect(data.taskById('promoted')!.groupId).toBe('g2')
+    expect(flush).toHaveBeenCalledWith('promoted')
+    expect(useTaskOrderStore().state('project:p1').ids.indexOf('promoted')).toBeLessThan(useTaskOrderStore().state('project:p1').ids.indexOf('c'))
+  })
+  it('完整任务拖入子事项保留原父级，嵌套子事项拒绝无损无法表达的移动', async () => {
+    const { wrapper, data } = await open('checklist')
+    const promote = vi.spyOn(data, 'promoteSubtask').mockImplementation(async () => {
+      const promoted = { ...data.taskById('a')!, id:'promoted', parentTaskId:null, subs:[] }
+      data.tasks.push(promoted); return promoted
+    })
+    const move = vi.spyOn(data, 'moveTask').mockImplementation(async (id, parentId) => { data.taskById(id)!.parentTaskId = parentId })
+    const checklist = wrapper.getComponent(ProjectChecklistView)
+    checklist.vm.$emit('move', 'c', 'sub:a:s2', 'inside'); await flushPromises()
+    expect(promote).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled()
+    checklist.vm.$emit('move', 'c', 'sub:a:s1', 'inside'); await flushPromises()
+    expect(move).toHaveBeenNthCalledWith(1, 'promoted', 'a')
+    expect(move).toHaveBeenNthCalledWith(2, 'c', 'promoted')
+    expect(data.taskById('promoted')!.parentTaskId).toBe('a')
+    expect(data.taskById('c')!.parentTaskId).toBe('promoted')
+  })
   it.each(['list','group'])('%s 支持全部收起和展开，并保留层级', async view => {
     const { wrapper } = await open(view)
     await wrapper.findAll('button').find(b => b.text() === '收起全部')!.trigger('click'); await flushPromises()

@@ -19,7 +19,7 @@ vi.mock('@/api/favorites', async (original) => ({
 describe('项目未收尾口径', () => {
   beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
 
-  it('已完成主任务有多层未收尾子项时，卡片和页签与表格一致且不改写状态', async () => {
+  it('已完成主任务有多层未收尾子项时，卡片和标题计数与表格一致且不改写状态', async () => {
     const data = useDataStore(), source = data.tasksByProject('p1')[0]!
     data.tasks = [{ ...source, status: '已完成', subs: [
       { id: 'parent', text: '上级', done: true },
@@ -31,7 +31,7 @@ describe('项目未收尾口径', () => {
     await flushPromises()
     expect(wrapper.findAll('.task-row')).toHaveLength(1)
     expect(useDeco().decoProj(data.projectById('p1')!).taskOpen).toBe(1)
-    expect(wrapper.get('.ptab-count').text()).toBe('1')
+    expect(wrapper.get('.project-task-count').text()).toBe('任务 1')
     expect(wrapper.text()).toContain('仍有 1 项子项未收尾')
     for (const view of ['board', 'group', 'quadrant']) {
       await router.replace(`/projects/p1?view=${view}`); await flushPromises()
@@ -53,7 +53,7 @@ describe('项目未收尾口径', () => {
     expect(projectCompletionLabel([finished])).toBe('未收尾 0 项／共 1 项任务')
   })
 
-  it('负责人筛选只改变当前范围的计数，页签仍表示整个项目', async () => {
+  it('负责人筛选只改变当前范围的计数，标题仍表示整个项目', async () => {
     const data = useDataStore(), source = data.tasks[0]!
     data.tasks = [
       { ...source, id: 'mine', project: 'p1', owner: 'wg', status: '待验证', subs: [] },
@@ -65,7 +65,7 @@ describe('项目未收尾口径', () => {
     await router.push('/projects/p1')
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
-    expect(wrapper.get('.ptab-count').text()).toBe('2')
+    expect(wrapper.get('.project-task-count').text()).toBe('任务 2')
     expect(wrapper.text()).toContain('筛选内未收尾 1／共 1 项任务（项目共 2 项')
     expect(wrapper.findAll('.task-row')).toHaveLength(1)
     wrapper.unmount()

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
@@ -10,6 +10,8 @@ import { useDataStore } from '@/stores/data'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { seedDataStore } from './helpers/seedDataStore'
 import projectDetailSource from '@/views/ProjectDetailView.vue?raw'
+
+enableAutoUnmount(afterEach)
 
 vi.mock('@/api/ai', () => ({ createAiRuns: vi.fn<() => Promise<never[]>>().mockResolvedValue([]) }))
 vi.mock('@/api/favorites', async (importOriginal) => ({
@@ -128,12 +130,12 @@ describe('项目页聚焦任务', () => {
     reload.mockRestore()
   })
 
-  it('普通入口始终默认表格，忽略旧看板偏好，仍允许手动切换', async () => {
+  it('普通入口恢复最近视图，显式切换后更新记忆', async () => {
     useUiStore().setTaskView('p1', 'board')
     await router.push('/projects/p1')
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
-    expect(wrapper.find('table[aria-label="项目任务表格"]').exists()).toBe(true)
+    expect(wrapper.find('.board').exists()).toBe(true)
     const boardButton = wrapper.findAll('.seg-btn').find((button) => button.text().includes('看板'))!
     await boardButton.trigger('click')
     await flushPromises()
@@ -141,7 +143,7 @@ describe('项目页聚焦任务', () => {
     expect(wrapper.find('.board').exists()).toBe(true)
     await router.push('/projects/p1')
     await flushPromises()
-    expect(wrapper.find('table[aria-label="项目任务表格"]').exists()).toBe(true)
+    expect(wrapper.find('.board').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -178,7 +180,7 @@ describe('项目页聚焦任务', () => {
     wrapper.unmount()
   })
 
-  it('项目头部之后直接展示任务页签，不再展示项目迭代概览', async () => {
+  it('任务数量保留在标题，低频内容移入更多菜单', async () => {
     await router.push('/projects/p1')
     await router.isReady()
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
@@ -187,7 +189,15 @@ describe('项目页聚焦任务', () => {
     expect(wrapper.find('.project-loop').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('项目最终目标')
     expect(wrapper.text()).not.toContain('当前迭代')
-    expect(wrapper.get('.ptabs').text()).toContain('任务')
+    expect(wrapper.find('.ptabs').exists()).toBe(false)
+    expect(wrapper.get('.project-task-count').text()).toMatch(/^任务 \d+/)
+    await wrapper.get('[aria-label="项目更多操作"]').trigger('click')
+    for (const label of ['项目文档', '项目文件', '项目记忆', '项目动态']) expect(wrapper.text()).toContain(label)
+    await wrapper.findAll('button').find(b => b.text() === '项目文档')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBe('文档')
+    await wrapper.get('.project-task-count').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
     expect(wrapper.find('.tab-toolbar').exists()).toBe(true)
     wrapper.unmount()
   })

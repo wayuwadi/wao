@@ -722,6 +722,9 @@ const checklistSections = computed(() => groups.value.map(group => ({
 async function moveChecklistItem(sourceKey: string, targetKey: string | null, side: 'before' | 'inside' | 'after') {
   if (operationBusy.value || sourceKey === targetKey) return
   const source = itemActions.source(sourceKey), target = targetKey ? itemActions.source(targetKey) : null
+  if (!source.subId && target?.subId && data.subById(target.taskId, target.subId)?.parentId) {
+    toast('请先将目标子事项提升为任务，再调整完整任务的层级', 'ri-information-line'); return
+  }
   // Reject descendant drops before any promotion or write.
   let cursor = targetKey
   const seen = new Set<string>()
@@ -736,7 +739,12 @@ async function moveChecklistItem(sourceKey: string, targetKey: string | null, si
       else await data.moveTask(source.taskId, null)
     } else if (source.subId && !target.subId && side !== 'inside') {
       const promoted = await data.promoteSubtask(source.taskId, source.subId)
-      await data.moveTask(promoted.id, data.taskById(target.taskId)?.parentTaskId ?? null)
+      const parentId = data.taskById(target.taskId)?.parentTaskId ?? null
+      await data.moveTask(promoted.id, parentId)
+      if (!parentId) {
+        data.moveTaskToGroup(promoted.id, groupIdOf(data.taskById(target.taskId)!))
+        await data.flushTask(promoted.id)
+      }
       await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), promoted.id, target.taskId, side === 'after')
     } else if (source.subId) {
       const parentSub = target.subId && side === 'inside' ? target.subId
@@ -748,7 +756,10 @@ async function moveChecklistItem(sourceKey: string, targetKey: string | null, si
       }
     } else {
       let targetTaskId = target.taskId
-      if (target.subId) targetTaskId = (await data.promoteSubtask(target.taskId, target.subId)).id
+      if (target.subId) {
+        targetTaskId = (await data.promoteSubtask(target.taskId, target.subId)).id
+        await data.moveTask(targetTaskId, target.taskId)
+      }
       const parentId = side === 'inside' ? targetTaskId : data.taskById(targetTaskId)?.parentTaskId ?? null
       await data.moveTask(source.taskId, parentId)
       if (!parentId && side !== 'inside') {
@@ -899,7 +910,7 @@ watch(visibleTaskIds, (ids) => {
       <div class="phead-icon" :style="{ background: pd.areaColor }"><i :class="pd.icon || 'ri-stack-line'"></i></div>
       <div class="phead-name-wrap">
         <div class="phead-name-row">
-          <div class="phead-name">{{ pd.name }}</div><button class="project-task-count" @click="setTab('任务')">任务 {{ pdTabs[0]?.count }}</button>
+          <div class="phead-name">{{ pd.name }}</div><button class="project-task-count" :title="pdTabs[0]?.title" @click="setTab('任务')">任务 {{ tasksUnavailable ? '—' : pdTabs[0]?.count }}</button>
         </div>
       </div>
       <div class="spacer"></div>

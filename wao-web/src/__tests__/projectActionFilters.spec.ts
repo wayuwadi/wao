@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
-import { useTaskOrderStore } from '@/stores/taskOrder'
 import { seedDataStore } from './helpers/seedDataStore'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { matchesProjectAction } from '@/utils/projectActionFilters'
@@ -29,7 +28,6 @@ async function view() {
   const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } }); await flushPromises()
   return wrapper
 }
-const button = (w: Awaited<ReturnType<typeof view>>, label: string) => w.findAll('.project-action-filters button').find(b => b.text().startsWith(label))!
 
 describe('项目需要处理事项', () => {
   it('按任务计数，不把内嵌子项当任务；已收尾和空等待排除', () => {
@@ -38,53 +36,31 @@ describe('项目需要处理事项', () => {
     expect(tasks.filter(t => matchesProjectAction(t, 'waiting', '2026-10-03')).map(t => t.id)).toEqual(['verify'])
     expect(tasks.filter(t => matchesProjectAction(t, 'overdue', '2026-10-03')).map(t => t.id)).toEqual(['verify', 'sub'])
   })
-  it('项目计数不受人员和关键词影响，交集结果可清除条件，任务状态不改写', async () => {
+  it('计数快捷行已移除，标题未收尾数量不受人员和关键词影响，清除筛选不改任务', async () => {
     const w = await view(); const ui = useUiStore(); const original = JSON.stringify(useDataStore().tasks)
-    expect(button(w, '待验证').text()).toContain('2')
-    await button(w, '待验证').trigger('click')
-    expect(w.findAll('.task-row')).toHaveLength(2)
+    expect(w.find('.project-action-filters').exists()).toBe(false)
+    expect(w.get('.project-task-count').text()).toBe('任务 3')
     ui.setOwnerFilter('p1', 'wg'); ui.setCreatorFilter('p1', 'wg'); await flushPromises()
     expect(w.findAll('.task-row')).toHaveLength(1)
-    expect(button(w, '待验证').text()).toContain('2')
-    expect(w.text()).toContain('筛选内未收尾 1／共 1 项任务（项目共 4 项')
+    expect(w.get('.project-task-count').text()).toBe('任务 3')
     await w.get('[aria-label="项目内查找"]').setValue('子待验')
-    expect(w.text()).toContain('筛选内未收尾 0／共 0 项任务')
     expect(w.get('.project-search-results').text()).toContain('1 项被快捷条件或人员筛选排除')
     await w.findAll('.project-search-results button').find(b => b.text().includes('清除筛选'))!.trigger('click')
-    expect(button(w, '全部').attributes('aria-pressed')).toBe('true')
     expect(w.get('.project-search-results').text()).toContain('命中 1 项任务')
     expect(JSON.stringify(useDataStore().tasks)).toBe(original)
   })
-  it('快捷条件清除后恢复排序、子项折叠和个人顺序；失败不显示伪零', async () => {
+  it('跨视图保留人员筛选，均不恢复计数快捷行', async () => {
     const w = await view()
-    await w.findAll('.task-row').find(row => row.text().includes('乙 子项'))!.get('.tree-toggle').trigger('click')
-    await w.get('thead th:nth-child(2) button').trigger('click')
-    const sort = w.get('thead th:nth-child(2)').attributes('aria-sort')
-    const order = JSON.stringify(useTaskOrderStore().state('project:p1').ids)
-    await button(w, '等待反馈').trigger('click'); expect(w.findAll('.task-row')).toHaveLength(1)
-    await button(w, '全部').trigger('click')
-    expect(w.find('.table-subs').exists()).toBe(false)
-    expect(w.get('thead th:nth-child(2)').attributes('aria-sort')).toBe(sort)
-    expect(JSON.stringify(useTaskOrderStore().state('project:p1').ids)).toBe(order)
-    useDataStore().taskLoadState = 'error'; await flushPromises()
-    expect(button(w, '待验证').text()).toContain('—')
-    expect(button(w, '待验证').attributes('disabled')).toBeDefined()
-    expect(w.text()).toContain('任务刷新失败')
-    useDataStore().taskLoadState = 'loaded'; await flushPromises()
-    expect(button(w, '待验证').text()).toContain('2')
-  })
-  it('进入四象限移除计数快捷行并清除隐藏状态条件，仍保留人员筛选', async () => {
-    const w = await view()
-    await button(w, '等待反馈').trigger('click')
     useUiStore().setOwnerFilter('p1', 'wg'); await flushPromises()
     await w.findAll('.seg-btn').find(b => b.text() === '四象限')!.trigger('click')
     await flushPromises()
     expect(w.find('.project-action-filters').exists()).toBe(false)
     expect(w.findAll('.quadrant-task')).toHaveLength(2)
     expect(w.text()).toContain('甲 负责的')
-    expect(w.text()).not.toContain('等待反馈的任务')
     await w.findAll('.seg-btn').find(b => b.text() === '表格')!.trigger('click')
     await flushPromises()
-    expect(button(w, '全部').attributes('aria-pressed')).toBe('true')
+    expect(w.find('.project-action-filters').exists()).toBe(false)
+    expect(w.findAll('.task-row')).toHaveLength(2)
+    expect(w.get('.project-task-count').text()).toBe('任务 3')
   })
 })

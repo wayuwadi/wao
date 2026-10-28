@@ -22,7 +22,7 @@ vi.mock('@/components/ui/MarkdownEditor.vue', () => ({
 }))
 
 /**
- * 新建入口与任务视图：右上角只留两个按钮、普通入口默认表格、看板「待办」列自带加号。
+ * 新建入口与任务视图：右上角只留两个按钮、普通入口首次默认表格并记忆选择、看板「待办」列自带加号。
  *
  * 这些都是「少点一次」的交互，断言必须落在真实渲染出来的 DOM 上，
  * 光验证 store 的状态说明不了按钮到底在不在。
@@ -220,26 +220,26 @@ describe('项目任务视图', () => {
     wrapper.unmount()
   })
 
-  it('手动切到看板后，从普通入口重新打开仍默认表格', async () => {
+  it('手动切到看板后，从普通入口重新打开恢复看板', async () => {
     const first = await mountProject()
-    await first.findAll('.seg-btn')[1]!.trigger('click')
+    await first.findAll('.seg-btn').find(button => button.text() === '看板')!.trigger('click')
     await flushPromises()
     expect(first.find('.board').exists()).toBe(true)
     first.unmount()
 
-    // 重开普通入口不应恢复上次的看板视图。
+    // 重开普通入口恢复持久化的项目视图。
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)
     const second = await mountProject()
-    expect(second.find('.task-list-card').exists()).toBe(true)
+    expect(second.find('.board').exists()).toBe(true)
     second.unmount()
   })
 
   it('看板「待办」列头有加号，点它直接新建这个项目的任务', async () => {
     const ui = useUiStore()
     const wrapper = await mountProject()
-    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    await wrapper.findAll('.seg-btn').find(button => button.text() === '看板')!.trigger('click')
     await flushPromises()
 
     const adds = wrapper.findAll('.board-col-add')
