@@ -1310,7 +1310,28 @@ watch(visibleTaskIds, (ids) => {
         @select="toggleSelection" />
       <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid"
         :items="displayItems" :context-items="decoratedItems" :item-refs="workProjection.refs"
-        :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" :query="searchQuery" @toggle="toggleSubtasks" />
+        :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" :query="searchQuery" @toggle="toggleSubtasks" @add="startQuickAdd" @reveal="id => { if (!displayItems.some(task => task.id === id)) clearTaskFilters() }">
+        <template #group-add="{ section }">
+          <div v-if="quickAddGroup === section.id" class="group-add-wrap">
+            <div class="group-add-row" @focusout="onQuickAddFocusOut" :class="{ error: quickAddState === 'error' }">
+              <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
+              <input
+                ref="quickAddInput"
+                v-model="quickAddText"
+                :disabled="quickAddState === 'submitting'"
+                placeholder="任务标题，回车创建，连着敲可以一次录好几条"
+                @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(section.id)"
+                @keydown.esc.stop.prevent="!$event.isComposing && closeQuickAdd()"
+              />
+              <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(section.id) : (quickAddGroup = null)">
+                {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
+              </button>
+            </div>
+            <span v-if="quickAddState === 'error'" class="group-add-error" role="alert">未保存到服务器，输入仍保留</span>
+          </div>
+
+        </template>
+      </ProjectChecklistView>
       <div v-else class="board">
         <div
           v-for="col in visibleBoard"

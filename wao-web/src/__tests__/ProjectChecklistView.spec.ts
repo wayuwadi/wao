@@ -29,6 +29,55 @@ function setup(error = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('离开清单串行提交同源子事项，等待期间正文保存不阻止取消', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs.push({ id:'second', text:'第二子任务', done:false })
+    const projection = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items:projection.items, contextItems:projection.items, itemRefs:projection.refs })
+    let saving = false
+    vi.spyOn(data, 'taskSaveState').mockImplementation(() => saving ? 'saving' : 'saved')
+    vi.spyOn(data, 'flushTask').mockImplementation(async () => { await Promise.resolve(); saving = false })
+    const state = vi.spyOn(data, 'setSubState').mockImplementation(() => { saving = true })
+    await wrapper.get('[aria-label="完成 子任务"]').setValue(true)
+    saving = true
+    await wrapper.setProps({ query:'' })
+    expect(wrapper.get('[aria-label="完成 子任务"]').attributes('disabled')).toBeUndefined()
+    saving = false
+    await wrapper.get('[aria-label="完成 第二子任务"]').setValue(true)
+    wrapper.unmount(); await flushPromises()
+    expect(state).toHaveBeenCalledWith('parent', 'child', '已完成')
+    expect(state).toHaveBeenCalledWith('parent', 'second', '已完成')
+  })
+  it('完成保留三秒，可再次点击取消且不改原状态；到期才保存并隐藏', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs = []
+    const sync = async () => {
+      const projection = projectWorkItems(data.tasks)
+      await wrapper.setProps({ items:projection.items, contextItems:projection.items, itemRefs:projection.refs })
+    }
+    await sync()
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    const patch = vi.spyOn(data, 'patchTask').mockImplementation((id, values) => { Object.assign(data.taskById(id)!, values) })
+    try {
+      await wrapper.get('[aria-label="完成 父任务"]').setValue(true)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.find('.checklist-row').exists()).toBe(true)
+      expect(patch).not.toHaveBeenCalled()
+      await wrapper.get('[aria-label="完成 父任务"]').setValue(false)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(patch).not.toHaveBeenCalled()
+      expect(data.tasks[0]!.status).toBe('待办')
+      await wrapper.get('[aria-label="完成 父任务"]').setValue(true)
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(patch).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1); await sync()
+      expect(patch).toHaveBeenCalledWith('parent', { status:'已完成' })
+      expect(wrapper.find('.checklist-row').exists()).toBe(false)
+      await wrapper.setProps({ showDone:true })
+      expect(wrapper.find('.checklist-row').exists()).toBe(true)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
   it('宽度键盘调整保存到成员偏好，重新挂载恢复，切换成员隔离', async () => {
     const session = useSessionStore()
     session.accept({ accountId: 'test', member: { id: 'one', name: '甲', initial: '甲', role: '', color: '' }, identities: [], createdAt: '' })
@@ -62,12 +111,18 @@ describe('项目清单详情', () => {
     await wrapper.setProps({ collapsed: ['parent'] })
     await wrapper.get('.child-title').trigger('click')
     expect(wrapper.get('h2').text()).toBe('子任务')
+    expect(wrapper.emitted('toggle')).toContainEqual(['parent'])
+    await wrapper.setProps({ collapsed:[] })
+    expect(wrapper.get('.checklist-row.selected').text()).toContain('子任务')
+    expect(wrapper.get('.parent-task-link').text()).toContain('父任务')
     expect(wrapper.find('[aria-label="直属子任务"]').exists()).toBe(false)
     await wrapper.get('[aria-label="任务优先级"]').trigger('click')
     await wrapper.findAll('[role=menuitemradio]').find(b => b.text().includes('P1'))!.trigger('click')
     expect(update).toHaveBeenCalledWith('parent', 'child', { pr: 'P1' })
     await wrapper.setProps({ collapsed: ['parent'], items: [...wrapper.props('items')] })
     expect(wrapper.get('h2').text()).toBe('子任务')
+    await wrapper.get('.parent-task-link').trigger('click')
+    expect(wrapper.get('h2').text()).toBe('父任务')
   })
   it('顶部切换分组和状态，子事项沿用父分组且只提供支持的状态', async () => {
     const { data, wrapper } = setup()
