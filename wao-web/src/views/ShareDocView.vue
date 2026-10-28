@@ -8,9 +8,7 @@ import WaoLogo from '@/components/WaoLogo.vue'
  */
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { apiShareDoc } from '@/api/board'
 import { readPublicNote, publicNoteUrl } from '@/api/notePublicShare'
-import { docShareMarkdownUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import type { SharedDoc } from '@/types'
@@ -44,16 +42,15 @@ async function load() {
       expiresAt.value = result.expiresAt
       expiryTimer = setTimeout(() => { shared.value = null; error.value = '分享链接已到期。' }, Math.max(0, new Date(result.expiresAt).getTime() - Date.now()))
     } else {
-      const result = await apiShareDoc(docId.value)
-      if (request !== requestId) return
-      shared.value = result; expiresAt.value = ''
+      error.value = '此旧分享链接已停用，请文档作者生成限时分享链接。'
+      expiresAt.value = ''
     }
   } catch (cause) {
     if (request !== requestId) return
     shared.value = null
     const failure = cause as { status?: number; response?: { status?: number } }
     error.value = (failure?.status ?? failure?.response?.status) === 404
-      ? '分享链接无效、已撤销或已到期。小记需要作者主动生成限时分享链接。'
+      ? '分享链接无效、已撤销或已到期。文档和小记需要作者主动生成限时分享链接。'
       : '分享内容加载失败，请重试。'
   } finally {
     if (request === requestId) loading.value = false
@@ -64,7 +61,7 @@ onMounted(() => { void load(); document.addEventListener('visibilitychange', rec
 onBeforeUnmount(() => { requestId++; clearTimeout(expiryTimer); document.removeEventListener('visibilitychange', recheck) })
 watch([docId, token], load)
 
-const mdUrl = computed(() => token.value ? publicNoteUrl(token.value, true) : docShareMarkdownUrl(docId.value))
+const mdUrl = computed(() => token.value ? publicNoteUrl(token.value, true) : '')
 const originalUrl = computed(() =>
   shared.value ? `/kb/${shared.value.kbId}?doc=${encodeURIComponent(shared.value.id)}` : '/kb',
 )

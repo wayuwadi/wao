@@ -1575,7 +1575,7 @@ public class KnowledgeService {
     }
 
     private void markDocDeleted(DocEntity d, LocalDateTime now, String memberId, boolean cascade) {
-        if(noteAssetPrivacy!=null && NOTES_KB_ID.equals(d.getKbId()))noteAssetPrivacy.deleted(d.getId());
+        if(noteAssetPrivacy!=null)noteAssetPrivacy.deleted(d.getId());
         d.setDeletedAt(now);
         d.setDeletedBy(memberId);
         d.setCascadeDel(cascade);

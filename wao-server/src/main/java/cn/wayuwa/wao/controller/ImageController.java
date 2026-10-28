@@ -57,7 +57,7 @@ public class ImageController {
         String memberId = currentMember.id(request);
         if (projectId != null) projects.requireAccess(projectId, memberId);
         var uploaded=images.upload(file, source, projectId);
-        if(source!=null && source.startsWith("小记"))noteAssets.privateUpload("images",uploaded.id());
+        if(source!=null && (source.startsWith("小记") || source.startsWith("文档")))noteAssets.privateUpload("images",uploaded.id());
         return ApiResponse.ok(uploaded);
     }
 
