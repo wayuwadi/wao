@@ -26,6 +26,23 @@ function setup(error = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('顶部切换分组和状态，子事项沿用父分组且只提供支持的状态', async () => {
+    const { data, wrapper } = setup()
+    data.projectById(data.tasks[0]!.project)!.taskGroups = [{ id: 'g1', name: '工作' }, { id: 'g2', name: '生活' }]
+    const move = vi.spyOn(data, 'moveTaskToGroup').mockImplementation(() => undefined)
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)
+    await flushPromises()
+    await wrapper.get('[aria-label="任务分组"]').setValue('g2')
+    expect(move).toHaveBeenCalledWith('parent', 'g2')
+    await wrapper.get('[aria-label="任务状态"]').setValue('进行中')
+    expect(patch).toHaveBeenCalledWith('parent', { status: '进行中' })
+    expect(flush).toHaveBeenCalledWith('parent')
+    expect(wrapper.get('[aria-label="任务状态"]').text()).not.toContain('已完成')
+    await wrapper.findAll('.task-select')[1]!.trigger('click')
+    expect(wrapper.get('[aria-label="任务分组"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[aria-label="任务状态"]').findAll('option')).toHaveLength(3)
+  })
   it('点击子任务只切换右侧卡片，Markdown 写入真实子事项而非父正文', async () => {
     const { data, wrapper } = setup()
     const update = vi.spyOn(data, 'updateSub').mockImplementation(() => undefined)

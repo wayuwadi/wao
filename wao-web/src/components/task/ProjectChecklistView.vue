@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
-import type { Task } from '@/types'
+import { TASK_STATUSES } from '@/utils/domain'
+import type { Task, TaskStatus } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { taskHierarchyDrop } from '@/utils/taskDrop'
@@ -40,6 +41,27 @@ watch(rows, value => {
 }, { immediate: true })
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
+const taskGroups = computed(() => selected.value?.project ? data.taskGroupsOf(selected.value.project) : [])
+const groupRoot = computed(() => {
+  let task = data.taskById(source.value.taskId)
+  const seen = new Set<string>()
+  while (task?.parentTaskId && !seen.has(task.id)) {
+    seen.add(task.id)
+    const parent = data.taskById(task.parentTaskId)
+    if (!parent) break
+    task = parent
+  }
+  return task
+})
+const inheritedGroup = computed(() => !!source.value.subId || groupRoot.value?.id !== source.value.taskId)
+const selectedGroup = computed(() => taskGroups.value.some(group => group.id === groupRoot.value?.groupId) ? groupRoot.value!.groupId : taskGroups.value[0]?.id)
+const statusOptions = computed(() => (source.value.subId ? ['待办', '进行中', '待验证'] : TASK_STATUSES.filter(status => status !== '已完成')) as TaskStatus[])
+async function changeGroup(event: Event) {
+  if (!selected.value || inheritedGroup.value) return
+  const groupId = (event.target as HTMLSelectElement).value
+  if (!taskGroups.value.some(group => group.id === groupId)) return
+  await actions.save(selected.value.id, () => data.moveTaskToGroup(source.value.taskId, groupId))
+}
 const description = computed({
   get: () => source.value.subId ? data.subById(source.value.taskId, source.value.subId)?.desc ?? '' : data.taskById(source.value.taskId)?.desc ?? '',
   set: desc => {
@@ -80,7 +102,9 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
     <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
-        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="selected.due">{{ selected.due }}</span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
+        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><select v-if="taskGroups.length" class="detail-property" aria-label="任务分组" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :value="selectedGroup" :disabled="inheritedGroup || actions.busy(selected.id)" @change="changeGroup"><option v-for="group in taskGroups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
+          <select v-if="selected.status !== '已完成'" class="detail-property" aria-label="任务状态" :value="selected.status" :disabled="actions.busy(selected.id)" @change="actions.status(selected.id, ($event.target as HTMLSelectElement).value as TaskStatus)"><option v-for="status in statusOptions" :key="status" :value="status">{{ status === '待办' ? '未开始' : status }}</option></select>
+          <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <h2>{{ selected.title }}</h2>
         <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="360" placeholder="记录任务详情…" @upload-image="uploadImage" />
         <div class="save-status" aria-live="polite">
@@ -99,7 +123,12 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .checklist-tasks,.checklist-detail { min-width:0; max-height:calc(100dvh - 220px); overflow:auto; border:0; border-radius:0; box-shadow:none; }
 .checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
 .checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); border-left:1px solid var(--wao-line); padding:0 0 0 var(--wao-space-3); }
-.detail-caption { display:flex; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
+.detail-caption { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
+.detail-property { min-width:0; max-width:180px; padding:var(--wao-space-1); border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-2); font:inherit; cursor:pointer; }
+.detail-property:hover { background:var(--wao-bg-sub); }
+.detail-property:disabled { cursor:default; color:var(--wao-text-weak); }
+.detail-property option { background:var(--wao-bg-card); color:var(--wao-text); }
+.detail-due { display:inline-flex; align-items:center; gap:var(--wao-space-1); white-space:nowrap; }
 .detail-completion { display:flex; align-items:center; gap:var(--wao-space-1); cursor:pointer; }
 .more-actions { margin-left:auto; padding:0 var(--wao-space-1); min-height:32px; }
 .checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
@@ -122,7 +151,7 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }
 .save-status { margin-top:var(--wao-space-1); display:flex; gap:var(--wao-space-2); flex-wrap:wrap; }
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
-button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
+button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {
   .checklist-layout { grid-template-columns:minmax(0,1fr); }
   .checklist-tasks { max-height:260px; padding:0; }
