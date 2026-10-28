@@ -673,6 +673,9 @@ const detailDemoComment = ref('')
 </template>
 
 <style scoped>
+.detail-demo-row input[type=checkbox] { appearance:none; width:14px; height:14px; border:1px solid var(--wao-primary); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:inline-grid; place-content:center; }
+.detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }
+.detail-demo-row input[type=checkbox]:checked::after { content:"✓"; color:var(--wao-on-primary); font-size:var(--wao-font-caption); }
 .resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
 .detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }

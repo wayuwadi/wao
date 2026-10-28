@@ -99,6 +99,7 @@
   /* 圆角 */
   --wao-radius-card: 12px;
   --wao-radius-control: 8px;
+  --wao-radius-checkbox: 4px;
   --wao-radius-pill: 999px;
   --wao-radius-modal: 16px;
 

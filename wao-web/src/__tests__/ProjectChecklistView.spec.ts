@@ -26,6 +26,25 @@ function setup(error = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('旗标优先级保存到当前任务，详情底部显示直属子项并可切换', async () => {
+    const { data, wrapper } = setup()
+    const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)
+    const update = vi.spyOn(data, 'updateSub').mockImplementation(() => undefined)
+    vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    await wrapper.get('[aria-label="任务优先级"]').trigger('click')
+    await wrapper.findAll('[role=menuitemradio]').find(b => b.text().includes('P0'))!.trigger('click')
+    expect(patch).toHaveBeenCalledWith('parent', { pr: 'P0' })
+    expect(wrapper.get('[aria-label="直属子任务"]').text()).toContain('子任务')
+    await wrapper.setProps({ collapsed: ['parent'] })
+    await wrapper.get('.child-title').trigger('click')
+    expect(wrapper.get('h2').text()).toBe('子任务')
+    expect(wrapper.find('[aria-label="直属子任务"]').exists()).toBe(false)
+    await wrapper.get('[aria-label="任务优先级"]').trigger('click')
+    await wrapper.findAll('[role=menuitemradio]').find(b => b.text().includes('P1'))!.trigger('click')
+    expect(update).toHaveBeenCalledWith('parent', 'child', { pr: 'P1' })
+    await wrapper.setProps({ collapsed: ['parent'], items: [...wrapper.props('items')] })
+    expect(wrapper.get('h2').text()).toBe('子任务')
+  })
   it('顶部切换分组和状态，子事项沿用父分组且只提供支持的状态', async () => {
     const { data, wrapper } = setup()
     data.projectById(data.tasks[0]!.project)!.taskGroups = [{ id: 'g1', name: '工作' }, { id: 'g2', name: '生活' }]

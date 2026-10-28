@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import CellMenu from '@/components/task/CellMenu.vue'
-import { PROJECT_STATUS_COLORS, projectStatusLabel } from '@/utils/projectStatusPresentation'
+import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS, projectStatusLabel } from '@/utils/projectStatusPresentation'
 import { selectableTaskStatuses } from '@/config/features'
-import type { Task, TaskStatus } from '@/types'
+import type { Task, TaskStatus, Priority } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { taskHierarchyDrop } from '@/utils/taskDrop'
@@ -20,6 +20,7 @@ const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; move
 const data = useDataStore()
 const actions = useProjectItemActions(() => props.itemRefs)
 const selectedId = ref('')
+const detailOnlySelection = ref(false)
 const matches = computed(() => {
   const items = props.items.filter(t => props.showDone || t.status !== '已完成' || data.taskSaveState(actions.sourceId(t.id)) === 'error')
   return props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
@@ -39,12 +40,23 @@ function drop(target: string | null, event: DragEvent) {
   dragging.value = null; over.value = null
 }
 watch(rows, value => {
+  if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
   if (!value.some(row => row.task.id === selectedId.value)) selectedId.value = value[0]?.task.id ?? ''
 }, { immediate: true })
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
-const propertyMenu = ref<'group' | 'status' | null>(null)
+const propertyMenu = ref<'group' | 'status' | 'priority' | null>(null)
 const groupAnchor = ref<HTMLElement | null>(null)
+const priorityAnchor = ref<HTMLElement | null>(null)
+const priorities: Priority[] = ['P0', 'P1', 'P2', 'P3']
+const priorityColor = (task: Task) => props.itemRefs[task.id]?.priorityUnset ? PROJECT_PRIORITY_COLORS.P3 : PROJECT_PRIORITY_COLORS[task.pr]
+const directChildren = computed(() => props.contextItems.filter(task => task.parentTaskId === selectedId.value))
+function selectChild(id: string) { detailOnlySelection.value = true; selectedId.value = id }
+async function changePriority(priority: Priority) {
+  propertyMenu.value = null
+  if (selected.value) await actions.priority(selected.value.id, priority)
+}
+watch(() => props.query, () => { detailOnlySelection.value = false })
 const statusAnchor = ref<HTMLElement | null>(null)
 watch(selectedId, () => { propertyMenu.value = null })
 async function changeStatus(status: TaskStatus) {
@@ -102,8 +114,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
-        <input type="checkbox" :checked="task.status === '已完成'" :disabled="actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="actions.toggle(task.id)" />
-        <button class="task-select" :aria-pressed="selectedId === task.id" @click="selectedId = task.id">
+        <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="task.status === '已完成'" :disabled="actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="actions.toggle(task.id)" />
+        <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
           <span class="task-title" :title="task.title" :class="{ finished: task.status === '已完成' }">{{ task.title || '未命名任务' }}</span>
           <span v-if="task.due" class="task-meta">{{ task.due }}</span>
         </button>
@@ -112,7 +124,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
     <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
-        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
+        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
             <CellMenu v-if="propertyMenu === 'group'" :anchor="groupAnchor" @close="propertyMenu = null"><button v-for="group in taskGroups" :key="group.id" role="menuitemradio" :aria-checked="group.id === selectedGroup" @click="changeGroup(group.id)">{{ group.name }}<i v-if="group.id === selectedGroup" class="ri-check-line"></i></button></CellMenu>
           </span>
@@ -120,9 +132,19 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="status-pill" aria-label="任务状态" aria-haspopup="menu" :aria-expanded="propertyMenu === 'status'" :style="{ color: PROJECT_STATUS_COLORS[selected.status], borderColor: PROJECT_STATUS_COLORS[selected.status] }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'status' ? null : 'status'">{{ projectStatusLabel(selected.status) }}</button>
             <CellMenu v-if="propertyMenu === 'status'" :anchor="statusAnchor" @close="propertyMenu = null"><button v-for="status in statusOptions" :key="status" role="menuitemradio" :aria-checked="status === selected.status" @click="changeStatus(status)"><span class="status-pill" :style="{ color: PROJECT_STATUS_COLORS[status], borderColor: PROJECT_STATUS_COLORS[status] }">{{ projectStatusLabel(status) }}</span><i v-if="status === selected.status" class="ri-check-line"></i></button></CellMenu>
           </span>
-          <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
+          <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><span ref="priorityAnchor" class="priority-anchor">
+            <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
+            <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i>{{ priority }} · {{ PROJECT_PRIORITY_LABELS[priority] }}<i v-if="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" class="ri-check-line"></i></button></CellMenu>
+          </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <h2>{{ selected.title }}</h2>
-        <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="360" placeholder="记录任务详情…" @upload-image="uploadImage" />
+        <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情…" @upload-image="uploadImage" />
+        <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
+          <div v-for="child in directChildren" :key="child.id" class="detail-subtask">
+            <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="child.status === '已完成'" :disabled="actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="actions.toggle(child.id)" />
+            <button class="child-title" :class="{ finished: child.status === '已完成' }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
+            <span v-if="child.due" class="task-meta">{{ child.due }}</span>
+          </div>
+        </section>
         <div class="save-status" aria-live="polite">
           <SaveHint :saving="saveState === 'saving'" :failed="saveState === 'error'" :saved-at="data.taskSavedAt(source.taskId)" :error-message="data.taskSaveError(source.taskId)" />
           <WaoButton v-if="saveState === 'error'" variant="ghost" @click="actions.open(selected.id)">查看保存问题</WaoButton>
@@ -146,11 +168,17 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .status-pill { display:inline-flex; align-items:center; height:20px; padding:0 var(--wao-space-1); border:1px solid; border-radius:var(--wao-radius-pill); background:transparent; font:inherit; font-size:var(--wao-font-caption); line-height:1; white-space:nowrap; cursor:pointer; }
 .detail-due { display:inline-flex; align-items:center; gap:var(--wao-space-1); white-space:nowrap; }
 .detail-completion { display:flex; align-items:center; gap:var(--wao-space-1); cursor:pointer; }
-.more-actions { margin-left:auto; padding:0 var(--wao-space-1); min-height:32px; }
+.priority-anchor { margin-left:auto; display:inline-flex; }
+.priority-flag { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:0; background:transparent; border-radius:var(--wao-radius-control); font-size:18px; cursor:pointer; }
+.priority-flag:hover { background:var(--wao-bg-sub); }
+.detail-subtasks { margin-top:var(--wao-space-3); border-top:1px solid var(--wao-line); }
+.detail-subtask { display:flex; align-items:center; gap:var(--wao-space-1); min-height:40px; border-bottom:1px solid var(--wao-line); }
+.child-title { flex:1; min-width:0; padding:var(--wao-space-1) 0; border:0; background:transparent; font:inherit; font-weight:400; color:var(--wao-text-2); text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.more-actions { padding:0 var(--wao-space-1); min-height:32px; }
 .checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
 .checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
-input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--wao-text-weak); border-radius:0; background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
-input[type=checkbox]:checked { background:var(--wao-primary); border-color:var(--wao-primary); }
+input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--task-priority-color, var(--wao-text-weak)); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
+input[type=checkbox]:checked { background:var(--task-priority-color, var(--wao-primary)); border-color:var(--task-priority-color, var(--wao-primary)); }
 input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary); font-size:var(--wao-font-caption); line-height:1; }
 .group-heading { width:100%; border:0; background:var(--wao-bg-sub); color:var(--wao-text); text-align:left; padding:var(--wao-space-1); font:inherit; cursor:pointer; }
 .group-heading small { color:var(--wao-text-weak); }
