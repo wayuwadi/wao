@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
+import { savePreference } from '@/api/favorites'
 import { useUiStore } from '@/stores/ui'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import { seedDataStore } from './helpers/seedDataStore'
 
+vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
 function setup(error = false) {
@@ -26,6 +29,27 @@ function setup(error = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('宽度键盘调整保存到成员偏好，重新挂载恢复，切换成员隔离', async () => {
+    const session = useSessionStore()
+    session.accept({ accountId: 'test', member: { id: 'one', name: '甲', initial: '甲', role: '', color: '' }, identities: [], createdAt: '' })
+    const { wrapper } = setup()
+    await flushPromises()
+    const divider = wrapper.get('[role=separator]')
+    await divider.trigger('keydown', { key: 'ArrowRight' }); await flushPromises()
+    expect(savePreference).toHaveBeenCalledWith('project-checklist-split-v1', expect.any(String))
+    const saved = [...vi.mocked(savePreference).mock.calls].reverse().find(call => call[0] === 'project-checklist-split-v1')
+    expect(Number(saved?.[1])).toBeCloseTo(.415)
+    expect(divider.attributes('aria-valuenow')).toBe('42')
+    wrapper.unmount()
+    const restored = setup().wrapper
+    await flushPromises()
+    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('42')
+    session.accept({ accountId: 'test', member: { id: 'two', name: '乙', initial: '乙', role: '', color: '' }, identities: [], createdAt: '' })
+    await flushPromises()
+    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('40')
+    await restored.get('[role=separator]').trigger('keydown', { key: 'End' }); await flushPromises()
+    expect(Number(restored.get('[role=separator]').attributes('aria-valuenow'))).toBeLessThanOrEqual(75)
+  })
   it('旗标优先级保存到当前任务，详情底部显示直属子项并可切换', async () => {
     const { data, wrapper } = setup()
     const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)

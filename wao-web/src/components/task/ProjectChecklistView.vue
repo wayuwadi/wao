@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { useMemberPreference } from '@/composables/memberPreference'
+import { useSessionStore } from '@/stores/session'
 import CellMenu from '@/components/task/CellMenu.vue'
 import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS, projectStatusLabel } from '@/utils/projectStatusPresentation'
 import { selectableTaskStatuses } from '@/config/features'
@@ -19,6 +21,62 @@ const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: Proje
 const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
 const actions = useProjectItemActions(() => props.itemRefs)
+const layout = ref<HTMLElement | null>(null)
+const layoutWidth = ref(0)
+const split = useMemberPreference('project-checklist-split-v1', raw => {
+  const value = raw == null ? NaN : Number(raw)
+  return Number.isFinite(value) ? Math.min(.75, Math.max(.25, value)) : .395
+}, String)
+const previewSplit = ref<number | null>(null)
+const splitPointer = ref<number | null>(null)
+const splitTarget = ref<HTMLElement | null>(null)
+const compact = computed(() => layoutWidth.value > 0 && layoutWidth.value < 600)
+function boundSplit(value: number) {
+  const width = Math.max(1, (layoutWidth.value || 1000) - 9)
+  const min = Math.min(.45, Math.max(.25, 220 / width))
+  const max = Math.max(min, Math.min(.75, 1 - 280 / width))
+  return Math.min(max, Math.max(min, value))
+}
+const splitRatio = computed(() => boundSplit(previewSplit.value ?? split.value.value))
+const splitStyle = computed(() => compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
+function startSplit(event: PointerEvent) {
+  if (event.button !== 0 || compact.value) return
+  event.preventDefault()
+  splitPointer.value = event.pointerId
+  previewSplit.value = splitRatio.value
+  splitTarget.value = event.currentTarget as HTMLElement
+  splitTarget.value.setPointerCapture(event.pointerId)
+}
+function moveSplit(event: PointerEvent) {
+  if (splitPointer.value !== event.pointerId || !layout.value) return
+  const rect = layout.value.getBoundingClientRect()
+  previewSplit.value = boundSplit((event.clientX - rect.left - 4.5) / Math.max(1, rect.width - 9))
+}
+function endSplit(save = true) {
+  const pointer = splitPointer.value, target = splitTarget.value, ratio = previewSplit.value
+  splitPointer.value = null; splitTarget.value = null
+  if (pointer != null && target?.hasPointerCapture(pointer)) target.releasePointerCapture(pointer)
+  if (save && ratio != null) void split.set(ratio)
+  previewSplit.value = null
+}
+function keySplit(event: KeyboardEvent) {
+  if (event.key === 'Escape') { endSplit(false); return }
+  const delta = event.shiftKey ? .05 : .02
+  const next = event.key === 'ArrowLeft' ? splitRatio.value - delta : event.key === 'ArrowRight' ? splitRatio.value + delta : event.key === 'Home' ? .25 : event.key === 'End' ? .75 : null
+  if (next == null) return
+  event.preventDefault(); void split.set(boundSplit(next))
+}
+let layoutObserver: ResizeObserver | undefined
+onMounted(() => {
+  if (!layout.value) return
+  layoutWidth.value = layout.value.getBoundingClientRect().width
+  if (typeof ResizeObserver !== 'undefined') {
+    layoutObserver = new ResizeObserver(entries => { layoutWidth.value = entries[0]?.contentRect.width ?? 0 })
+    layoutObserver.observe(layout.value)
+  }
+})
+watch(() => useSessionStore().userId, () => endSplit(false))
+onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
 const selectedId = ref('')
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
@@ -103,7 +161,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 </script>
 
 <template>
-  <div class="checklist-layout">
+  <div v-if="split.error.value" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
+  <div ref="layout" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact }" :style="splitStyle">
     <WaoCard class="checklist-tasks">
 
       <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
@@ -122,6 +181,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </div>
       </div></section>
     </WaoCard>
+    <div class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.395)"></div>
     <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
         <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
@@ -157,10 +217,21 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 
 <style scoped>
 .tree-toggle,.task-select { border:0; background:transparent; font:inherit; color:inherit; cursor:pointer; }
+.split-sync { display:flex; gap:var(--wao-space-1); color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
+.split-sync button { border:0; background:transparent; color:var(--wao-primary-text); cursor:pointer; }
+.checklist-divider { position:relative; align-self:stretch; min-height:440px; cursor:col-resize; touch-action:none; user-select:none; }
+.checklist-divider::before { content:''; position:absolute; top:0; bottom:0; left:4px; width:1px; background:var(--wao-line); }
+.checklist-divider:hover::before,.checklist-divider:focus-visible::before,.is-resizing .checklist-divider::before { background:var(--wao-primary); width:3px; left:3px; }
+.checklist-divider:focus-visible { outline:2px solid var(--wao-primary); outline-offset:0; }
+.is-resizing { user-select:none; cursor:col-resize; }
+.checklist-layout.is-compact { grid-template-columns:minmax(0,1fr); }
+.is-compact .checklist-divider { display:none; }
+.is-compact .checklist-tasks { max-height:260px; padding:0; }
+.is-compact .checklist-detail { position:static; max-height:none; min-height:300px; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
 .checklist-layout { display:grid; grid-template-columns:minmax(240px, 0.85fr) minmax(0, 1.3fr); align-items:start; }
 .checklist-tasks,.checklist-detail { min-width:0; max-height:calc(100dvh - 220px); overflow:auto; border:0; border-radius:0; box-shadow:none; }
 .checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
-.checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); border-left:1px solid var(--wao-line); padding:0 0 0 var(--wao-space-3); }
+.checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); padding:0 0 0 var(--wao-space-2); }
 .detail-caption { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
 .property-anchor { display:inline-flex; align-items:center; }
 .group-chip { display:inline-flex; align-items:center; gap:var(--wao-space-1); max-width:220px; border:0; border-radius:var(--wao-radius-control); background:var(--wao-primary-soft); color:var(--wao-primary-text); padding:4px var(--wao-space-1); font:inherit; cursor:pointer; }
@@ -197,7 +268,8 @@ h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {
-  .checklist-layout { grid-template-columns:minmax(0,1fr); }
+  .checklist-layout { grid-template-columns:minmax(0,1fr) !important; }
+  .checklist-divider { display:none; }
   .checklist-tasks { max-height:260px; padding:0; }
   .checklist-detail { position:static; max-height:none; min-height:300px; border-left:0; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
   .task-select { min-height:44px; }
