@@ -288,7 +288,11 @@ class ShareServiceTest {
     void shareDocConvertsBlocksToStandardMarkdown() {
         when(knowledge.getDoc("d1")).thenReturn(doc("kb1"));
 
-        SharedDocDto shared = service.shareDoc("d1");
+        assertThatThrownBy(() -> service.shareDoc("d1")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.documentSnapshot("d1", "other"))
+                .isInstanceOf(cn.wayuwa.wao.common.ForbiddenException.class);
+
+        SharedDocDto shared = service.documentSnapshot("d1", "wg");
 
         assertThat(shared.title()).isEqualTo("装修避坑清单");
         assertThat(shared.note()).isFalse();
@@ -313,7 +317,7 @@ class ShareServiceTest {
                 legacy.created(), legacy.updated(), legacy.auto(), legacy.links(), legacy.blocks(), rich,
                 legacy.backlinks(), legacy.kbId(), legacy.folderId(), legacy.rev()));
 
-        SharedDocDto shared = service.shareDoc("d1");
+        SharedDocDto shared = service.documentSnapshot("d1", "wg");
 
         assertThat(shared.md()).isEqualTo(rich.markdown());
         assertThat(shared.content()).isEqualTo(rich);
@@ -333,7 +337,7 @@ class ShareServiceTest {
     void docMarkdownEndpointAbsolutizesInlineImages() {
         when(knowledge.getDoc("d1")).thenReturn(doc("kb1"));
 
-        String md = service.toMarkdown(service.shareDoc("d1"), BASE);
+        String md = service.toMarkdown(service.documentSnapshot("d1", "wg"), BASE);
 
         assertThat(md).startsWith("# 装修避坑清单");
         assertThat(md).contains("- 更新于：2026-07-20T09:30:00+08:00");

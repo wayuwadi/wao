@@ -37,12 +37,12 @@ export function shareMarkdownUrl(taskId: string, subId?: string | null, openOnly
   return absoluteUrl(`/api/share/tasks/${taskId}.md${openOnly ? '?openOnly=true' : ''}`)
 }
 
-/** 文档 / 小记分享页地址 `/s/d/<id>`（免登录只读）。 */
+/** @deprecated 旧 ID 分享已停用；新外链使用作者生成的 publicNoteUrl(token)。 */
 export function docShareUrl(docId: string): string {
   return absoluteUrl(`/s/d/${encodeURIComponent(docId)}`)
 }
 
-/** 文档 / 小记的 Markdown 直读地址 —— 复制给 AI 时用这个。 */
+/** @deprecated 旧 ID 直读已停用；新 Markdown 外链使用 publicNoteUrl(token, true)。 */
 export function docShareMarkdownUrl(docId: string): string {
   return absoluteUrl(`/api/share/docs/${encodeURIComponent(docId)}.md`)
 }

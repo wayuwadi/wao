@@ -6,7 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import java.util.regex.Pattern;
 
-/** 小记素材的持久私有标记，移除引用不会重新公开。 */
+/** 文档与小记素材的持久私有标记，移除引用不会重新公开。 */
 @Service
 public class NoteAssetPrivacyService {
     /** 第二张图入库前识别持久阶段归属，避免产生短暂可匿名访问的图片。 */
@@ -21,7 +21,6 @@ public class NoteAssetPrivacyService {
 
     /** 保存小记时将正文中的图片及附件标为私有。 */
     public void saved(DocDto doc) {
-        if (!KnowledgeService.NOTES_KB_ID.equals(doc.kbId())) return;
         var matcher=ASSET.matcher(json.valueToTree(doc).toString());
         while(matcher.find()) mark(matcher.group(1),matcher.group(2));
     }
@@ -31,10 +30,10 @@ public class NoteAssetPrivacyService {
         if (!type.equals("images") && !type.equals("files")) return false;
         if (jdbc.queryForObject("SELECT COUNT(*) FROM private_note_asset WHERE asset_type=? AND asset_id=?",Integer.class,type,id)>0) return true;
         // 未保存的图文草稿以及旧原文也属于私有内容。
-        boolean found = type.equals("images") && jdbc.queryForObject("SELECT COUNT(*) FROM image_blob WHERE id=? AND source LIKE '小记%'",Integer.class,id)>0;
+        boolean found = type.equals("images") && jdbc.queryForObject("SELECT COUNT(*) FROM image_blob WHERE id=? AND (source LIKE '小记%' OR source LIKE '文档%')",Integer.class,id)>0;
         if(!found && type.equals("images")) found=jdbc.queryForObject("SELECT COUNT(*) FROM image_blob i WHERE i.id=? AND (EXISTS(SELECT 1 FROM note_ai_workflow w WHERE i.source=CONCAT('文章总览图 · ',w.image_run_id)) OR EXISTS(SELECT 1 FROM note_ai_transformation t WHERE i.source=CONCAT('文章总览图 · ',t.task_id)))",Integer.class,id)>0;
         if(!found) found=jdbc.queryForObject("SELECT COUNT(*) FROM note_source_asset_ref WHERE asset_type IN (?,?) AND asset_id=?",Integer.class,type,type.equals("images")?"image":"file",id)>0;
-        if(!found) found=jdbc.queryForObject("SELECT COUNT(*) FROM doc WHERE kb_id='kb-notes' AND CONCAT_WS('',content_markdown,content_json,blocks_json) LIKE ?",Integer.class,"%/api/"+type+"/"+id+"/%")>0;
+        if(!found) found=jdbc.queryForObject("SELECT COUNT(*) FROM doc WHERE CONCAT_WS('',content_markdown,content_json,blocks_json) LIKE ?",Integer.class,"%/api/"+type+"/"+id+"/%")>0;
         if(found) mark(type,id);
         return found;
     }

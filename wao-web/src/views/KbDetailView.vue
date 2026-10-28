@@ -25,7 +25,7 @@ import { useDocPresence } from '@/composables/docPresence'
 import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
-import { docShareMarkdownUrl, docShareUrl, docOriginalUrl } from '@/utils/share'
+import { docOriginalUrl } from '@/utils/share'
 import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
 const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
@@ -900,19 +900,10 @@ async function copyOriginalLink() {
   const url = docOriginalUrl(kbId.value, docId.value)
   toast(await copyToClipboard(url) ? '知识库原文链接已复制，可用于定位文档' : '复制失败，请重试', 'ri-links-line')
 }
-async function copyDocShare(kind: 'page' | 'md') {
+function openDocumentShare() {
   if (!docId.value) return
-  if (data.docs[docId.value]?.kbId === 'kb-notes') { shareMenu.value = false; shareNoteId.value = docId.value; return }
-  const url = kind === 'md' ? docShareMarkdownUrl(docId.value) : docShareUrl(docId.value)
   shareMenu.value = false
-  toast(
-    (await copyToClipboard(url))
-      ? kind === 'md'
-        ? 'Markdown 地址已复制，可直接发给 AI'
-        : '分享页链接已复制，对方无需登录即可查看'
-      : '复制失败，请手动选中复制',
-    'ri-links-line',
-  )
+  shareNoteId.value = docId.value
 }
 
 /** 粘贴 / 拖入的图片存进图床，再把地址回插到光标处。 */
@@ -936,7 +927,7 @@ async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
     done(null)
     return
   }
-  const item = await data.uploadFile(file, undefined, editingPrivateNote.value)
+  const item = await data.uploadFile(file, undefined, true)
   if (!item) toast('文件上传失败，正文仍可继续编辑', 'ri-error-warning-line')
   done(item)
 }
@@ -1225,21 +1216,15 @@ async function saveKbSettings() {
               <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
               <div v-if="shareMenu" class="share-menu">
                 <div class="share-scope">
-                  分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录
+                  分享整篇{{ kb.notes ? '小记' : '文档' }} · 默认需登录，限时链接可免登录
                 </div>
                 <button class="share-item" @click="copyOriginalLink">
                   <i class="ri-file-text-line"></i>
                   <span class="share-main"><b>复制知识库原文链接</b><em>直接定位此文档，需登录并拥有访问权限</em></span>
                 </button>
-                <button class="share-item" @click="copyDocShare('page')">
+                <button class="share-item" @click="openDocumentShare()">
                   <i class="ri-external-link-line"></i>
-                  <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
-                </button>
-                <button class="share-item" @click="copyDocShare('md')">
-                  <i class="ri-robot-2-line"></i>
-                  <span class="share-main"
-                    ><b>复制 Markdown 地址</b><em>一次 GET 即全文，给 AI 用</em></span
-                  >
+                  <span class="share-main"><b>限时分享设置</b><em>生成或撤销链接，可选 1 小时、1 天或 7 天</em></span>
                 </button>
               </div>
             </div>
@@ -1252,8 +1237,7 @@ async function saveKbSettings() {
                 <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
                 <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
                 <button class="more-share" @click="copyOriginalLink"><i class="ri-file-text-line"></i>复制知识库原文链接</button>
-                <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
-                <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
+                <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; openDocumentShare()"><i class="ri-links-line"></i>限时分享设置</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
                 <button class="danger" @click="moreMenuOpen = false; removeDoc(docId!)"><i class="ri-delete-bin-line"></i>删除这篇文档</button>
               </div>
@@ -1463,7 +1447,7 @@ async function saveKbSettings() {
       </section>
     </div>
   </div>
-  <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
+  <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :note="data.docs[shareNoteId]?.kbId === 'kb-notes'" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
 </template>
 
 <style scoped>

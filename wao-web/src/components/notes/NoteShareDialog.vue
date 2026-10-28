@@ -4,7 +4,7 @@ import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { createNoteShare, listNoteShares, revokeNoteShare, publicNoteUrl, type NoteShareEntry, type CreatedNoteShare } from '@/api/notePublicShare'
 import { copyToClipboard } from '@/utils/clipboard'
-const props = defineProps<{ noteId: string; title?: string }>()
+const props = withDefaults(defineProps<{ noteId: string; title?: string; note?: boolean }>(), { note: true })
 const emit = defineEmits<{ close: [] }>()
 const entries = ref<NoteShareEntry[]>([])
 const created = ref<CreatedNoteShare | null>(null)
@@ -55,9 +55,9 @@ function date(value: string): string { return new Date(value).toLocaleString() }
 function close() { if (!busy.value) emit('close') }
 </script>
 <template>
-  <SettingsDialogShell title="小记分享设置" :description="title || '未命名小记'" width="640px" height="auto" @close="close">
+  <SettingsDialogShell :title="note === false ? '文档分享设置' : '小记分享设置'" :description="title || (note === false ? '未命名文档' : '未命名小记')" width="640px" height="auto" @close="close">
     <div class="note-sharing">
-      <p class="notice">小记默认私有。持有分享链接的人无需登录即可读取。</p>
+      <p class="notice">{{ note === false ? '文档默认需要登录访问。' : '小记默认私有。' }}持有分享链接的人无需登录即可读取。</p>
       <p>分享已保存的正文和配图，不包含草稿、后续修改或原文对照。附件仍需登录。撤销不能收回对方已下载的内容。</p>
       <p v-if="loading" role="status">正在加载分享状态…</p>
       <template v-else-if="loaded">

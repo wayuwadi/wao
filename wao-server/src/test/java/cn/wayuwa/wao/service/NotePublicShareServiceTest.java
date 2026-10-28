@@ -24,7 +24,7 @@ class NotePublicShareServiceTest {
         db.execute("CREATE TABLE note_public_share(id CHAR(32) PRIMARY KEY,doc_id VARCHAR(32),owner_id VARCHAR(32),token_hash CHAR(64) UNIQUE,snapshot_json LONGTEXT,created_at TIMESTAMP,expires_at TIMESTAMP,revoked_at TIMESTAMP)");
         db.update("INSERT INTO doc(id,author_id,kb_id) VALUES ('note','owner','kb-notes')");
         shares=mock(ShareService.class);images=mock(ImageService.class);
-        when(shares.noteSnapshot("note","owner")).thenReturn(new SharedDocDto("note","标题",true,"kb-notes","保存时间","- [ ] 原始清单\n  描述\n![图](/api/images/pic/raw)"));
+        when(shares.documentSnapshot("note","owner")).thenReturn(new SharedDocDto("note","标题",true,"kb-notes","保存时间","- [ ] 原始清单\n  描述\n![图](/api/images/pic/raw)"));
         service=new NotePublicShareService(db,shares,images,new ObjectMapper(),Clock.fixed(now,ZoneOffset.UTC));
     }
     @Test void noImplicitSharingAndOnlyAuthorMayManage() {
@@ -40,7 +40,7 @@ class NotePublicShareServiceTest {
         assertThat(created.token()).matches("ns_[A-Za-z0-9_-]{43}");
         assertThat(created.expiresAt()).isEqualTo(now.plus(Duration.ofDays(7)));
         assertThat(db.queryForObject("SELECT token_hash FROM note_public_share",String.class)).hasSize(64).doesNotContain(created.token());
-        when(shares.noteSnapshot("note","owner")).thenReturn(new SharedDocDto("note","私有新增",true,"kb-notes","","不能公开的未来正文"));
+        when(shares.documentSnapshot("note","owner")).thenReturn(new SharedDocDto("note","私有新增",true,"kb-notes","","不能公开的未来正文"));
         var read=service.read(created.token());
         assertThat(read.doc().md()).contains("- [ ] 原始清单\n  描述","/api/share/notes/"+created.token()+"/images/pic/raw").doesNotContain("未来正文");
         assertThat(service.list("owner","note")).hasSize(1);
@@ -73,12 +73,33 @@ class NotePublicShareServiceTest {
         assertThatThrownBy(()->service.read(created.token())).isInstanceOf(NotFoundException.class);
     }
     @Test void ownAbsoluteImagesAreMappedButForeignUrlsDoNotGrantLocalImageAccess() {
-        when(shares.noteSnapshot("note","owner")).thenReturn(new SharedDocDto("note","标题",true,"kb-notes","",
+        when(shares.documentSnapshot("note","owner")).thenReturn(new SharedDocDto("note","标题",true,"kb-notes","",
                 "![本站](https://wao.wayuwa.cn/api/images/own/raw)\n![外站](https://else.example/api/images/foreign/raw)"));
         var created=service.create("owner","note",1);
         assertThat(service.read(created.token()).doc().md()).contains("/api/share/notes/"+created.token()+"/images/own/raw","https://else.example/api/images/foreign/raw");
         assertThatThrownBy(()->service.image(created.token(),"foreign")).isInstanceOf(NotFoundException.class);
         verify(images,never()).raw("foreign");
         service.image(created.token(),"own");verify(images).raw("own");
+    }
+
+    @Test void knowledgeDocumentsUseTheSameRevocableSnapshotAndOwnerBoundary() {
+        db.update("INSERT INTO doc(id,author_id,kb_id) VALUES ('document','owner','knowledge')");
+        when(shares.documentSnapshot("document","owner")).thenReturn(
+                new SharedDocDto("document","知识库文档",false,"knowledge","保存时间","原始正文 ![图](/api/images/doc-image/raw)"));
+        assertThatThrownBy(()->service.create("other","document",24)).isInstanceOf(ForbiddenException.class);
+        var created=service.create("owner","document",24);
+        assertThat(service.read(created.token()).doc().note()).isFalse();
+        assertThat(service.read(created.token()).doc().md()).contains("/api/share/notes/"+created.token()+"/images/doc-image/raw");
+        when(shares.documentSnapshot("document","owner")).thenReturn(
+                new SharedDocDto("document","未来标题",false,"knowledge","","不能自动公开的编辑"));
+        assertThat(service.read(created.token()).doc().title()).isEqualTo("知识库文档");
+        var expired=new NotePublicShareService(db,shares,images,new ObjectMapper(),Clock.fixed(now.plus(Duration.ofDays(1)),ZoneOffset.UTC));
+        assertThatThrownBy(()->expired.read(created.token())).isInstanceOf(NotFoundException.class);
+        db.update("UPDATE doc SET author_id='other' WHERE id='document'");
+        assertThatThrownBy(()->service.read(created.token())).isInstanceOf(NotFoundException.class);
+        db.update("UPDATE doc SET author_id='owner' WHERE id='document'");
+        service.revoke("owner","document",created.id());
+        assertThatThrownBy(()->service.read(created.token())).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(()->service.image(created.token(),"doc-image")).isInstanceOf(NotFoundException.class);
     }
 }
