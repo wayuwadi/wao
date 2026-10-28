@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
-import { TASK_STATUSES } from '@/utils/domain'
+import CellMenu from '@/components/task/CellMenu.vue'
+import { PROJECT_STATUS_COLORS, projectStatusLabel } from '@/utils/projectStatusPresentation'
+import { selectableTaskStatuses } from '@/config/features'
 import type { Task, TaskStatus } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { useProjectItemActions } from '@/composables/projectItemActions'
@@ -41,6 +43,14 @@ watch(rows, value => {
 }, { immediate: true })
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
+const propertyMenu = ref<'group' | 'status' | null>(null)
+const groupAnchor = ref<HTMLElement | null>(null)
+const statusAnchor = ref<HTMLElement | null>(null)
+watch(selectedId, () => { propertyMenu.value = null })
+async function changeStatus(status: TaskStatus) {
+  propertyMenu.value = null
+  if (selected.value) await actions.status(selected.value.id, status)
+}
 const taskGroups = computed(() => selected.value?.project ? data.taskGroupsOf(selected.value.project) : [])
 const groupRoot = computed(() => {
   let task = data.taskById(source.value.taskId)
@@ -55,10 +65,10 @@ const groupRoot = computed(() => {
 })
 const inheritedGroup = computed(() => !!source.value.subId || groupRoot.value?.id !== source.value.taskId)
 const selectedGroup = computed(() => taskGroups.value.some(group => group.id === groupRoot.value?.groupId) ? groupRoot.value!.groupId : taskGroups.value[0]?.id)
-const statusOptions = computed(() => (source.value.subId ? ['待办', '进行中', '待验证'] : TASK_STATUSES.filter(status => status !== '已完成')) as TaskStatus[])
-async function changeGroup(event: Event) {
+const statusOptions = computed(() => (source.value.subId ? ['待办', '进行中', '待验证'] : selectableTaskStatuses(selected.value?.status ?? '待办').filter(status => status !== '已完成')) as TaskStatus[])
+async function changeGroup(groupId: string) {
   if (!selected.value || inheritedGroup.value) return
-  const groupId = (event.target as HTMLSelectElement).value
+  propertyMenu.value = null
   if (!taskGroups.value.some(group => group.id === groupId)) return
   await actions.save(selected.value.id, () => data.moveTaskToGroup(source.value.taskId, groupId))
 }
@@ -102,8 +112,14 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
     <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
-        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><select v-if="taskGroups.length" class="detail-property" aria-label="任务分组" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :value="selectedGroup" :disabled="inheritedGroup || actions.busy(selected.id)" @change="changeGroup"><option v-for="group in taskGroups" :key="group.id" :value="group.id">{{ group.name }}</option></select>
-          <select v-if="selected.status !== '已完成'" class="detail-property" aria-label="任务状态" :value="selected.status" :disabled="actions.busy(selected.id)" @change="actions.status(selected.id, ($event.target as HTMLSelectElement).value as TaskStatus)"><option v-for="status in statusOptions" :key="status" :value="status">{{ status === '待办' ? '未开始' : status }}</option></select>
+        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
+            <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
+            <CellMenu v-if="propertyMenu === 'group'" :anchor="groupAnchor" @close="propertyMenu = null"><button v-for="group in taskGroups" :key="group.id" role="menuitemradio" :aria-checked="group.id === selectedGroup" @click="changeGroup(group.id)">{{ group.name }}<i v-if="group.id === selectedGroup" class="ri-check-line"></i></button></CellMenu>
+          </span>
+          <span v-if="selected.status !== '已完成'" ref="statusAnchor" class="property-anchor">
+            <button class="status-pill" aria-label="任务状态" aria-haspopup="menu" :aria-expanded="propertyMenu === 'status'" :style="{ color: PROJECT_STATUS_COLORS[selected.status], borderColor: PROJECT_STATUS_COLORS[selected.status] }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'status' ? null : 'status'">{{ projectStatusLabel(selected.status) }}</button>
+            <CellMenu v-if="propertyMenu === 'status'" :anchor="statusAnchor" @close="propertyMenu = null"><button v-for="status in statusOptions" :key="status" role="menuitemradio" :aria-checked="status === selected.status" @click="changeStatus(status)"><span class="status-pill" :style="{ color: PROJECT_STATUS_COLORS[status], borderColor: PROJECT_STATUS_COLORS[status] }">{{ projectStatusLabel(status) }}</span><i v-if="status === selected.status" class="ri-check-line"></i></button></CellMenu>
+          </span>
           <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <h2>{{ selected.title }}</h2>
         <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="360" placeholder="记录任务详情…" @upload-image="uploadImage" />
@@ -124,10 +140,10 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
 .checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); border-left:1px solid var(--wao-line); padding:0 0 0 var(--wao-space-3); }
 .detail-caption { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
-.detail-property { min-width:0; max-width:180px; padding:var(--wao-space-1); border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-2); font:inherit; cursor:pointer; }
-.detail-property:hover { background:var(--wao-bg-sub); }
-.detail-property:disabled { cursor:default; color:var(--wao-text-weak); }
-.detail-property option { background:var(--wao-bg-card); color:var(--wao-text); }
+.property-anchor { display:inline-flex; align-items:center; }
+.group-chip { display:inline-flex; align-items:center; gap:var(--wao-space-1); max-width:220px; border:0; border-radius:var(--wao-radius-control); background:var(--wao-primary-soft); color:var(--wao-primary-text); padding:4px var(--wao-space-1); font:inherit; cursor:pointer; }
+.group-chip:disabled { cursor:default; }
+.status-pill { display:inline-flex; align-items:center; height:20px; padding:0 var(--wao-space-1); border:1px solid; border-radius:var(--wao-radius-pill); background:transparent; font:inherit; font-size:var(--wao-font-caption); line-height:1; white-space:nowrap; cursor:pointer; }
 .detail-due { display:inline-flex; align-items:center; gap:var(--wao-space-1); white-space:nowrap; }
 .detail-completion { display:flex; align-items:center; gap:var(--wao-space-1); cursor:pointer; }
 .more-actions { margin-left:auto; padding:0 var(--wao-space-1); min-height:32px; }
@@ -145,7 +161,7 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .tree-toggle,.tree-spacer { width:16px; flex-shrink:0; }
 .tree-toggle { height:32px; padding:0; color:var(--wao-text-weak); }
 .task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }
-.task-title { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
+.task-title { font-family:var(--wao-font); font-weight:400; color:var(--wao-text-2); letter-spacing:0.01em; -webkit-font-smoothing:antialiased; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
 .finished { text-decoration:line-through; color:var(--wao-text-weak); }
 .task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
 h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }

@@ -39,6 +39,15 @@ async function open(view = 'list') {
 }
 
 describe('子任务四视图', () => {
+  it('重新打开项目恢复最近视图，显式链接更新记忆', async () => {
+    const { wrapper, router } = await open('checklist')
+    await router.replace('/projects/p1'); await flushPromises()
+    expect(wrapper.findComponent(ProjectChecklistView).exists()).toBe(true)
+    await router.replace('/projects/p1?view=list'); await flushPromises()
+    await router.replace('/projects/p1'); await flushPromises()
+    expect(wrapper.findComponent(ProjectChecklistView).exists()).toBe(false)
+    expect(useUiStore().taskViewOf('p1')).toBe('list')
+  })
   it.each(['list', 'group', 'board', 'quadrant'])('%s 展示两类子任务，始终展示层级，完成独立过滤', async view => {
     const { wrapper } = await open(view)
     const area = () => wrapper.get('.project-normal-tasks')
@@ -68,14 +77,10 @@ describe('子任务四视图', () => {
     checklist.vm.$emit('move', 'sub:a:s2', 'sub:a:s1', 'inside'); await flushPromises()
     expect(sub).toHaveBeenCalledWith('a', 's2', 'a', 's1')
   })
-  it('清单沿用表格分组，子事项跟随父任务分组', async () => {
+  it('清单直接显示项目分组，无需浏览器先开启表格分组', async () => {
     useDataStore().projectById('p1')!.taskGroups = [{ id:'g1', name:'工作' }, { id:'g2', name:'生活' }]
     useDataStore().tasks[0]!.groupId = 'g1'; useDataStore().tasks[2]!.groupId = 'g2'
-    const { wrapper } = await open('list')
-    const settings = wrapper.get('.project-display-settings summary')
-    await settings.trigger('click'); await flushPromises()
-    await wrapper.findAll('button').find(b => b.text() === '按分组')!.trigger('click'); await flushPromises()
-    await wrapper.findAll('button').find(b => b.text() === '清单')!.trigger('click'); await flushPromises()
+    const { wrapper } = await open('checklist')
     const sections = wrapper.getComponent(ProjectChecklistView).findAll('section')
     expect(sections[0]!.text()).toContain('工作'); expect(sections[0]!.text()).toContain('普通子事项')
     expect(sections[1]!.text()).toContain('生活'); expect(sections[1]!.text()).toContain('独立主任务')

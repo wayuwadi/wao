@@ -21,7 +21,7 @@ function setup(error = false) {
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { stubs: { CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
@@ -33,15 +33,18 @@ describe('项目清单详情', () => {
     const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
     const patch = vi.spyOn(data, 'patchTask').mockImplementation(() => undefined)
     await flushPromises()
-    await wrapper.get('[aria-label="任务分组"]').setValue('g2')
+    await wrapper.get('[aria-label="任务分组"]').trigger('click')
+    await wrapper.findAll('[role=menuitemradio]').find(b => b.text() === '生活')!.trigger('click')
     expect(move).toHaveBeenCalledWith('parent', 'g2')
-    await wrapper.get('[aria-label="任务状态"]').setValue('进行中')
+    await wrapper.get('[aria-label="任务状态"]').trigger('click')
+    await wrapper.findAll('[role=menuitemradio]').find(b => b.text() === '进行中')!.trigger('click')
     expect(patch).toHaveBeenCalledWith('parent', { status: '进行中' })
     expect(flush).toHaveBeenCalledWith('parent')
     expect(wrapper.get('[aria-label="任务状态"]').text()).not.toContain('已完成')
     await wrapper.findAll('.task-select')[1]!.trigger('click')
     expect(wrapper.get('[aria-label="任务分组"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[aria-label="任务状态"]').findAll('option')).toHaveLength(3)
+    await wrapper.get('[aria-label="任务状态"]').trigger('click')
+    expect(wrapper.findAll('[role=menuitemradio]')).toHaveLength(3)
   })
   it('点击子任务只切换右侧卡片，Markdown 写入真实子事项而非父正文', async () => {
     const { data, wrapper } = setup()

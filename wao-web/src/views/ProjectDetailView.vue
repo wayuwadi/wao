@@ -76,11 +76,15 @@ const projTab = computed(() => {
   const t = route.query.tab as string | undefined
   return t && t !== '总览' ? t : '任务'
 })
-// 普通入口统一打开表格；显式视图链接及当前页面的手动切换仍由 URL 指定。
+// 显式链接优先；普通入口恢复该项目上次选择，首次仍打开表格。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' || q === 'checklist' ? q : 'list'
+  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' || q === 'checklist' ? q : ui.taskViewOf(pid.value, 'list')
 })
+watch([pid, () => route.query.view], () => {
+  const view = route.query.view
+  if (view === 'list' || view === 'board' || view === 'group' || view === 'quadrant' || view === 'checklist') ui.setTaskView(pid.value, view)
+}, { immediate: true })
 const subtaskDisplay = useMemberPreference(() => `project-layout-v1:subtasks:${pid.value}:${pdTaskView.value}`, decodeProjectSubtaskDisplay, JSON.stringify)
 const showSubtasks = computed(() => true)
 const collapsedSubTasks = computed({
@@ -711,9 +715,9 @@ const tableSections = computed(() => {
     : sections
 })
 
-const checklistSections = computed(() => tableSections.value.map(section => ({
-  id: section.id, name: section.name, header: section.header, collapsed: section.collapsed,
-  itemIds: displayItems.value.filter(task => !section.header || groupIdOf(task) === section.id).map(task => task.id),
+const checklistSections = computed(() => groups.value.map(group => ({
+  id: group.id, name: group.name, header: true, collapsed: collapsedGroups.value.includes(group.id),
+  itemIds: displayItems.value.filter(task => groupIdOf(task) === group.id).map(task => task.id),
 })))
 async function moveChecklistItem(sourceKey: string, targetKey: string | null, side: 'before' | 'inside' | 'after') {
   if (operationBusy.value || sourceKey === targetKey) return

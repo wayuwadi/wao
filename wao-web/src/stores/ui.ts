@@ -172,8 +172,8 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /** 某项目上次使用的视图；旧全局值只作为一次性的兼容回落。 */
-  function taskViewOf(projectId: string): TaskView {
-    return taskViews.value[projectId] ?? taskViews.value.__legacy__ ?? 'board'
+  function taskViewOf(projectId: string, fallback: TaskView = 'board'): TaskView {
+    return taskViews.value[projectId] ?? taskViews.value.__legacy__ ?? fallback
   }
 
   /** 记住某项目这次选的视图，不影响其他项目。 */
