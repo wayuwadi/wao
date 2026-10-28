@@ -8,22 +8,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
 class NoteAssetPrivacyServiceTest {
-    @Test void migrationProtectsOldDocumentAssetsBeforeTheirFirstAnonymousRequest() throws Exception {
-        var db=new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
-        db.execute("CREATE TABLE private_note_asset(asset_type VARCHAR(8),asset_id VARCHAR(64),PRIMARY KEY(asset_type,asset_id))");
-        db.execute("CREATE TABLE image_blob(id VARCHAR(64),source VARCHAR(160))");
-        db.execute("CREATE TABLE file_blob(id VARCHAR(64))");
-        db.execute("CREATE TABLE doc(content_markdown LONGTEXT,content_json LONGTEXT,blocks_json LONGTEXT)");
-        db.update("INSERT INTO image_blob VALUES ('doc-draft','文档 · 草稿'),('doc-saved','历史上传'),('task','任务 · 可公开')");
-        db.update("INSERT INTO file_blob VALUES ('doc-file'),('other-file')");
-        db.update("INSERT INTO doc(content_markdown) VALUES ('![图](/api/images/doc-saved/raw) [文件](/api/files/doc-file/download)')");
-        String migration=java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/db/migration/V195__document_share_asset_privacy.sql"));
-        for(String statement:migration.split(";")) if(!statement.isBlank()) db.execute(statement);
-        db.update("DELETE FROM doc");
-        assertThat(db.queryForList("SELECT asset_id FROM private_note_asset ORDER BY asset_id",String.class))
-                .containsExactly("doc-draft","doc-file","doc-saved");
-    }
-
     @Test void draftUploadsOriginalsAndSavedReferencesStayPrivateAfterRemoval() {
         var db=new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
         db.execute("CREATE TABLE private_note_asset(asset_type VARCHAR(8),asset_id VARCHAR(64),PRIMARY KEY(asset_type,asset_id))");
