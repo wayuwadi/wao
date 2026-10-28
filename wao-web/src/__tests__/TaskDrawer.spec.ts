@@ -118,6 +118,24 @@ describe('TaskDrawer', () => {
     useToastHost().items.splice(0)
   })
 
+  it('任务描述用斜线插入标题并写回任务草稿', async () => {
+    data.taskById(taskId)!.desc = ''
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await waitFor(w, '.tiptap')
+    const component = w.findComponent((await import('@/components/ui/MarkdownEditor.vue')).default)
+    const editor = (component.vm as unknown as { editor: import('@tiptap/core').Editor }).editor
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 100, bottom: 120, left: 100, right: 100 })
+    editor.commands.insertContent('/h2')
+    await flushPromises()
+    expect(document.querySelector('.slash-menu')).not.toBeNull()
+    await w.get('.tiptap').trigger('keydown', { key: 'Enter' })
+    editor.commands.insertContent('验收标准')
+    await flushPromises()
+    expect(data.taskById(taskId)!.desc).toContain('## 验收标准')
+    w.unmount()
+  })
+
   it('没有打开的任务时不渲染抽屉', () => {
     expect(mountDrawer().find('.drawer').exists()).toBe(false)
   })

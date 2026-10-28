@@ -209,6 +209,7 @@ const props = withDefaults(
     noteTitleOnImage?: boolean
     noteAiOrigin?: NoteAiOrigin
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
+    slashCommands?: boolean
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
     compact?: boolean
@@ -244,6 +245,7 @@ const props = withDefaults(
     articleImageUpload: true,
     selectionImage: false,
     noteTitleOnImage: false,
+    slashCommands: false,
     advanced: false,
     compact: false,
     hideToolbar: false,
@@ -1924,7 +1926,7 @@ const slashActions = computed<SlashAction[]>(() => [
   { id: 'link-card', label: '链接卡片', hint: '安全展示外部地址', icon: 'ri-links-line', run: insertLinkCard, full: true },
   { id: 'drawing', label: '画板', hint: '引用个人 Excalidraw 草图', icon: 'ri-shape-line', run: openDrawings, full: true },
   { id: 'divider', label: '分隔线', hint: '分隔章节', icon: 'ri-separator', run: () => editor.value?.chain().focus().setHorizontalRule().run() },
-].filter((action) => (props.advanced && !props.compact) || !action.full))
+].filter((action) => ((props.advanced && !props.compact) || !action.full) && (action.id !== 'h1' || props.allowH1)))
 
 const filteredSlashActions = computed(() => {
   const query = slashQuery.value.trim().toLowerCase()
@@ -1932,7 +1934,7 @@ const filteredSlashActions = computed(() => {
 })
 
 function updateSlashMenu(e: Editor) {
-  if (!props.advanced || composing.value) return
+  if (!(props.advanced || props.slashCommands) || props.readonly || composing.value) return
   const { $from } = e.state.selection
   const text = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
   const match = /^\/([^\s/]*)$/.exec(text)
@@ -2010,7 +2012,7 @@ function onEditorKeydown(event: KeyboardEvent) {
     }
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key === '/' && props.advanced) {
+  if ((event.ctrlKey || event.metaKey) && event.key === '/' && (props.advanced || props.slashCommands) && !props.readonly) {
     event.preventDefault()
     helpOpen.value = !helpOpen.value
     return

@@ -60,6 +60,7 @@ async function mountEditor(props: {
   imageContextControls?: boolean
   selectionImage?: boolean
   menuZIndex?: number
+  slashCommands?: boolean
   advanced?: boolean
   articleImageKey?: string
   noteTitleOnImage?: boolean
@@ -2436,4 +2437,24 @@ describe('拖入文档附件', () => {
       w.unmount()
     }
   })
+})
+
+it('简洁任务描述支持斜线搜索与键盘插入，取消保留原文', async () => {
+  setActivePinia(createPinia())
+  const w = await mountEditor({ modelValue: '', slashCommands: true })
+  const e = (w.vm as unknown as { editor: Editor }).editor
+  expect(w.find('.advanced-toolbar').exists()).toBe(false)
+  e.commands.insertContent('/h2')
+  await nextTick()
+  expect(document.querySelectorAll('.slash-menu button')).toHaveLength(1)
+  await w.get('.tiptap').trigger('keydown', { key: 'Enter' })
+  expect(e.isActive('heading', { level: 2 })).toBe(true)
+  expect(e.getText().trim()).toBe('')
+  e.commands.setParagraph()
+  e.commands.insertContent('/task')
+  await nextTick()
+  await w.get('.tiptap').trigger('keydown', { key: 'Escape' })
+  expect(document.querySelector('.slash-menu')).toBeNull()
+  expect(e.getText().trim()).toBe('/task')
+  w.unmount()
 })
