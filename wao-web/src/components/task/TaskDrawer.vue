@@ -1147,7 +1147,8 @@ async function uploadAttachment(event: Event) {
               </div>
               <MarkdownEditor
                 v-model="subDesc"
-                placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
+                slash-commands
+                placeholder="补充这个子任务的做法、验收标准…输入 / 插入标题、列表等，可直接粘贴截图"
                 :min-height="200"
                 @upload-image="onSubImage"
               />
@@ -1172,7 +1173,8 @@ async function uploadAttachment(event: Event) {
               </div>
               <MarkdownEditor
                 v-model="desc"
-                placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
+                slash-commands
+                placeholder="补充背景、目标与边界…输入 / 插入标题、列表等，可直接粘贴截图"
                 :min-height="84"
                 @upload-image="onTaskImage"
               />
