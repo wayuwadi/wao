@@ -145,7 +145,7 @@ describe('项目表格：按需添加子任务与行内修改', () => {
     expect(titles().some((text) => text.includes(finished.title))).toBe(false)
     expect(wrapper.find('.done-toggle').exists()).toBe(false)
 
-    const toggle = wrapper.get('.done-switch')
+    const toggle = wrapper.get('.subtask-controls [role=switch]')
     expect(toggle.text()).toContain('显示已完成')
     expect(toggle.attributes('aria-checked')).toBe('false')
     await toggle.trigger('click')

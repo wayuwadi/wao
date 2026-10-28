@@ -75,8 +75,7 @@ describe('项目详情读取状态', () => {
     const wrapper = await open(view)
     expect(wrapper.text()).toContain('暂时无法确认任务数量')
     expect(wrapper.get('.project-normal-tasks').isVisible()).toBe(false)
-    expect(wrapper.find('.ptab-count').element?.parentElement?.textContent).not.toContain('任务')
-    expect(wrapper.get('.ptab').attributes('title')).not.toContain('暂无任务')
+    expect(wrapper.get('.project-task-count').text()).toBe('任务 —')
     data.taskLoadState = 'loading'
     await flushPromises()
     expect(wrapper.text()).toContain('正在加载任务')
@@ -84,7 +83,7 @@ describe('项目详情读取状态', () => {
     data.taskLoadState = 'loaded'
     await flushPromises()
     expect(wrapper.get('.project-normal-tasks').isVisible()).toBe(true)
-    expect(wrapper.get('.ptab').text()).toContain('0')
+    expect(wrapper.get('.project-task-count').text()).toBe('任务 0')
   })
 
   it('已有任务刷新失败保留原视图、搜索输入和内容，恢复不重建视图', async () => {

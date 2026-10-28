@@ -5,7 +5,7 @@ import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 const samplePaneWidth = ref(236)
-const demoShowSubs = ref(true), demoShowDone = ref(false)
+const demoShowSubs = ref(true), demoShowDone = ref(false), demoCollapsed = ref(false)
 import WaoLogo from '@/components/WaoLogo.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -416,7 +416,7 @@ const detailDemoComment = ref('')
             <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
             <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
               <p>项目四象限：子任务缩进跟随主任务，整组以主任务优先级归类。</p>
-              <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree @expand="feedback = '示例：全部展开'" @collapse="feedback = '示例：全部收起'" />
+              <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree :collapsed="demoCollapsed" @expand="demoCollapsed = false; feedback = '示例：全部展开'" @collapse="demoCollapsed = true; feedback = '示例：全部收起'" />
               <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
                 <template #basic><WaoField v-slot="field" label="项目名称"><input :id="field.id" v-model="projectDemoName" /></WaoField></template>
                 <template #members><p>示例负责人 · 负责人</p><p>示例成员 · 项目成员</p></template>
@@ -673,6 +673,9 @@ const detailDemoComment = ref('')
 </template>
 
 <style scoped>
+.detail-demo-row input[type=checkbox] { appearance:none; width:14px; height:14px; border:1px solid var(--wao-primary); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:inline-grid; place-content:center; }
+.detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }
+.detail-demo-row input[type=checkbox]:checked::after { content:"✓"; color:var(--wao-on-primary); font-size:var(--wao-font-caption); }
 .resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
 .detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }

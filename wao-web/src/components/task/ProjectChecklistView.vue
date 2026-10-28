@@ -1,0 +1,277 @@
+<script setup lang="ts">
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { useMemberPreference } from '@/composables/memberPreference'
+import { useSessionStore } from '@/stores/session'
+import CellMenu from '@/components/task/CellMenu.vue'
+import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS, projectStatusLabel } from '@/utils/projectStatusPresentation'
+import { selectableTaskStatuses } from '@/config/features'
+import type { Task, TaskStatus, Priority } from '@/types'
+import { useDataStore } from '@/stores/data'
+import { useProjectItemActions } from '@/composables/projectItemActions'
+import { taskHierarchyDrop } from '@/utils/taskDrop'
+import { taskTreeRows } from '@/utils/taskHierarchy'
+import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
+import { searchProjectTasks } from '@/utils/projectTaskSearch'
+import WaoCard from '@/components/ui/WaoCard.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import SaveHint from '@/components/ui/SaveHint.vue'
+
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
+const data = useDataStore()
+const actions = useProjectItemActions(() => props.itemRefs)
+const layout = ref<HTMLElement | null>(null)
+const layoutWidth = ref(0)
+const split = useMemberPreference('project-checklist-split-v1', raw => {
+  const value = raw == null ? NaN : Number(raw)
+  return Number.isFinite(value) ? Math.min(.75, Math.max(.25, value)) : .395
+}, String)
+const previewSplit = ref<number | null>(null)
+const splitPointer = ref<number | null>(null)
+const splitTarget = ref<HTMLElement | null>(null)
+const compact = computed(() => layoutWidth.value > 0 && layoutWidth.value < 600)
+function boundSplit(value: number) {
+  const width = Math.max(1, (layoutWidth.value || 1000) - 9)
+  const min = Math.min(.45, Math.max(.25, 220 / width))
+  const max = Math.max(min, Math.min(.75, 1 - 280 / width))
+  return Math.min(max, Math.max(min, value))
+}
+const splitRatio = computed(() => boundSplit(previewSplit.value ?? split.value.value))
+const splitStyle = computed(() => compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
+function startSplit(event: PointerEvent) {
+  if (event.button !== 0 || compact.value) return
+  event.preventDefault()
+  splitPointer.value = event.pointerId
+  previewSplit.value = splitRatio.value
+  splitTarget.value = event.currentTarget as HTMLElement
+  splitTarget.value.setPointerCapture(event.pointerId)
+}
+function moveSplit(event: PointerEvent) {
+  if (splitPointer.value !== event.pointerId || !layout.value) return
+  const rect = layout.value.getBoundingClientRect()
+  previewSplit.value = boundSplit((event.clientX - rect.left - 4.5) / Math.max(1, rect.width - 9))
+}
+function endSplit(save = true) {
+  const pointer = splitPointer.value, target = splitTarget.value, ratio = previewSplit.value
+  splitPointer.value = null; splitTarget.value = null
+  if (pointer != null && target?.hasPointerCapture(pointer)) target.releasePointerCapture(pointer)
+  if (save && ratio != null) void split.set(ratio)
+  previewSplit.value = null
+}
+function keySplit(event: KeyboardEvent) {
+  if (event.key === 'Escape') { endSplit(false); return }
+  const delta = event.shiftKey ? .05 : .02
+  const next = event.key === 'ArrowLeft' ? splitRatio.value - delta : event.key === 'ArrowRight' ? splitRatio.value + delta : event.key === 'Home' ? .25 : event.key === 'End' ? .75 : null
+  if (next == null) return
+  event.preventDefault(); void split.set(boundSplit(next))
+}
+let layoutObserver: ResizeObserver | undefined
+onMounted(() => {
+  if (!layout.value) return
+  layoutWidth.value = layout.value.getBoundingClientRect().width
+  if (typeof ResizeObserver !== 'undefined') {
+    layoutObserver = new ResizeObserver(entries => { layoutWidth.value = entries[0]?.contentRect.width ?? 0 })
+    layoutObserver.observe(layout.value)
+  }
+})
+watch(() => useSessionStore().userId, () => endSplit(false))
+onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
+const selectedId = ref('')
+const detailOnlySelection = ref(false)
+const matches = computed(() => {
+  const items = props.items.filter(t => props.showDone || t.status !== '已完成' || data.taskSaveState(actions.sourceId(t.id)) === 'error')
+  return props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
+})
+const rows = computed(() => taskTreeRows(withProjectAncestors(matches.value, props.contextItems), props.query ? [] : props.collapsed))
+const groupedRows = computed(() => (props.sections ?? [{ id: '__all', name: '', header: false, collapsed: false, itemIds: props.contextItems.map(t => t.id) }]).map(section => ({ ...section, rows: rows.value.filter(row => section.itemIds.includes(row.task.id)) })))
+const dragging = ref<string | null>(null)
+const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
+function startDrag(id: string, event: DragEvent) {
+  if (props.busy) { event.preventDefault(); return }
+  dragging.value = id
+  event.dataTransfer?.setData('text/plain', id)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+function drop(target: string | null, event: DragEvent) {
+  if (dragging.value && !props.busy) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
+  dragging.value = null; over.value = null
+}
+watch(rows, value => {
+  if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
+  if (!value.some(row => row.task.id === selectedId.value)) selectedId.value = value[0]?.task.id ?? ''
+}, { immediate: true })
+const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
+const source = computed(() => actions.source(selectedId.value))
+const propertyMenu = ref<'group' | 'status' | 'priority' | null>(null)
+const groupAnchor = ref<HTMLElement | null>(null)
+const priorityAnchor = ref<HTMLElement | null>(null)
+const priorities: Priority[] = ['P0', 'P1', 'P2', 'P3']
+const priorityColor = (task: Task) => props.itemRefs[task.id]?.priorityUnset ? PROJECT_PRIORITY_COLORS.P3 : PROJECT_PRIORITY_COLORS[task.pr]
+const directChildren = computed(() => props.contextItems.filter(task => task.parentTaskId === selectedId.value))
+function selectChild(id: string) { detailOnlySelection.value = true; selectedId.value = id }
+async function changePriority(priority: Priority) {
+  propertyMenu.value = null
+  if (selected.value) await actions.priority(selected.value.id, priority)
+}
+watch(() => props.query, () => { detailOnlySelection.value = false })
+const statusAnchor = ref<HTMLElement | null>(null)
+watch(selectedId, () => { propertyMenu.value = null })
+async function changeStatus(status: TaskStatus) {
+  propertyMenu.value = null
+  if (selected.value) await actions.status(selected.value.id, status)
+}
+const taskGroups = computed(() => selected.value?.project ? data.taskGroupsOf(selected.value.project) : [])
+const groupRoot = computed(() => {
+  let task = data.taskById(source.value.taskId)
+  const seen = new Set<string>()
+  while (task?.parentTaskId && !seen.has(task.id)) {
+    seen.add(task.id)
+    const parent = data.taskById(task.parentTaskId)
+    if (!parent) break
+    task = parent
+  }
+  return task
+})
+const inheritedGroup = computed(() => !!source.value.subId || groupRoot.value?.id !== source.value.taskId)
+const selectedGroup = computed(() => taskGroups.value.some(group => group.id === groupRoot.value?.groupId) ? groupRoot.value!.groupId : taskGroups.value[0]?.id)
+const statusOptions = computed(() => (source.value.subId ? ['待办', '进行中', '待验证'] : selectableTaskStatuses(selected.value?.status ?? '待办').filter(status => status !== '已完成')) as TaskStatus[])
+async function changeGroup(groupId: string) {
+  if (!selected.value || inheritedGroup.value) return
+  propertyMenu.value = null
+  if (!taskGroups.value.some(group => group.id === groupId)) return
+  await actions.save(selected.value.id, () => data.moveTaskToGroup(source.value.taskId, groupId))
+}
+const description = computed({
+  get: () => source.value.subId ? data.subById(source.value.taskId, source.value.subId)?.desc ?? '' : data.taskById(source.value.taskId)?.desc ?? '',
+  set: desc => {
+    if (!selected.value) return
+    const { taskId, subId } = source.value
+    if (subId) data.updateSub(taskId, subId, { desc })
+    else data.patchTask(taskId, { desc })
+  },
+})
+const saveState = computed(() => data.taskSaveState(source.value.taskId))
+const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
+async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
+  if (file.size > data.MAX_IMAGE_BYTES) { done(null, file.name); return }
+  const image = await data.uploadImage(file, `任务 · ${selected.value?.title ?? ''}`)
+  done(image?.url ?? null, image?.name ?? file.name)
+}
+</script>
+
+<template>
+  <div v-if="split.error.value" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
+  <div ref="layout" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact }" :style="splitStyle">
+    <WaoCard class="checklist-tasks">
+
+      <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
+      <div v-if="dragging" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
+      <section v-for="section in groupedRows" :key="section.id">
+      <button v-if="section.header" class="group-heading" :aria-expanded="!section.collapsed" @click="emit('toggleGroup', section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.rows.length }}</small></button>
+      <div v-show="!section.collapsed">
+      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+        <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+        <span v-else class="tree-spacer"></span>
+        <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="task.status === '已完成'" :disabled="actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="actions.toggle(task.id)" />
+        <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
+          <span class="task-title" :title="task.title" :class="{ finished: task.status === '已完成' }">{{ task.title || '未命名任务' }}</span>
+          <span v-if="task.due" class="task-meta">{{ task.due }}</span>
+        </button>
+      </div>
+      </div></section>
+    </WaoCard>
+    <div class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.395)"></div>
+    <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
+      <template v-if="selected">
+        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="selected.status === '已完成'" :disabled="actions.busy(selected.id)" @change="actions.toggle(selected.id)" /><span>{{ selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
+            <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
+            <CellMenu v-if="propertyMenu === 'group'" :anchor="groupAnchor" @close="propertyMenu = null"><button v-for="group in taskGroups" :key="group.id" role="menuitemradio" :aria-checked="group.id === selectedGroup" @click="changeGroup(group.id)">{{ group.name }}<i v-if="group.id === selectedGroup" class="ri-check-line"></i></button></CellMenu>
+          </span>
+          <span v-if="selected.status !== '已完成'" ref="statusAnchor" class="property-anchor">
+            <button class="status-pill" aria-label="任务状态" aria-haspopup="menu" :aria-expanded="propertyMenu === 'status'" :style="{ color: PROJECT_STATUS_COLORS[selected.status], borderColor: PROJECT_STATUS_COLORS[selected.status] }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'status' ? null : 'status'">{{ projectStatusLabel(selected.status) }}</button>
+            <CellMenu v-if="propertyMenu === 'status'" :anchor="statusAnchor" @close="propertyMenu = null"><button v-for="status in statusOptions" :key="status" role="menuitemradio" :aria-checked="status === selected.status" @click="changeStatus(status)"><span class="status-pill" :style="{ color: PROJECT_STATUS_COLORS[status], borderColor: PROJECT_STATUS_COLORS[status] }">{{ projectStatusLabel(status) }}</span><i v-if="status === selected.status" class="ri-check-line"></i></button></CellMenu>
+          </span>
+          <span v-if="selected.due" class="detail-due" title="预计结束日期"><i class="ri-calendar-line" aria-hidden="true"></i>{{ selected.due }}</span><span ref="priorityAnchor" class="priority-anchor">
+            <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
+            <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i>{{ priority }} · {{ PROJECT_PRIORITY_LABELS[priority] }}<i v-if="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" class="ri-check-line"></i></button></CellMenu>
+          </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
+        <h2>{{ selected.title }}</h2>
+        <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情…" @upload-image="uploadImage" />
+        <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
+          <div v-for="child in directChildren" :key="child.id" class="detail-subtask">
+            <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="child.status === '已完成'" :disabled="actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="actions.toggle(child.id)" />
+            <button class="child-title" :class="{ finished: child.status === '已完成' }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
+            <span v-if="child.due" class="task-meta">{{ child.due }}</span>
+          </div>
+        </section>
+        <div class="save-status" aria-live="polite">
+          <SaveHint :saving="saveState === 'saving'" :failed="saveState === 'error'" :saved-at="data.taskSavedAt(source.taskId)" :error-message="data.taskSaveError(source.taskId)" />
+          <WaoButton v-if="saveState === 'error'" variant="ghost" @click="actions.open(selected.id)">查看保存问题</WaoButton>
+        </div>
+      </template>
+      <p v-else class="empty">选择左侧任务，在这里查看详情</p>
+    </WaoCard>
+  </div>
+</template>
+
+<style scoped>
+.tree-toggle,.task-select { border:0; background:transparent; font:inherit; color:inherit; cursor:pointer; }
+.split-sync { display:flex; gap:var(--wao-space-1); color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
+.split-sync button { border:0; background:transparent; color:var(--wao-primary-text); cursor:pointer; }
+.checklist-divider { position:relative; align-self:stretch; min-height:440px; cursor:col-resize; touch-action:none; user-select:none; }
+.checklist-divider::before { content:''; position:absolute; top:0; bottom:0; left:4px; width:1px; background:var(--wao-line); }
+.checklist-divider:hover::before,.checklist-divider:focus-visible::before,.is-resizing .checklist-divider::before { background:var(--wao-primary); width:3px; left:3px; }
+.checklist-divider:focus-visible { outline:2px solid var(--wao-primary); outline-offset:0; }
+.is-resizing { user-select:none; cursor:col-resize; }
+.checklist-layout.is-compact { grid-template-columns:minmax(0,1fr); }
+.is-compact .checklist-divider { display:none; }
+.is-compact .checklist-tasks { max-height:260px; padding:0; }
+.is-compact .checklist-detail { position:static; max-height:none; min-height:300px; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
+.checklist-layout { display:grid; grid-template-columns:minmax(240px, 0.85fr) minmax(0, 1.3fr); align-items:start; }
+.checklist-tasks,.checklist-detail { min-width:0; max-height:calc(100dvh - 220px); overflow:auto; border:0; border-radius:0; box-shadow:none; }
+.checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
+.checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); padding:0 0 0 var(--wao-space-2); }
+.detail-caption { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
+.property-anchor { display:inline-flex; align-items:center; }
+.group-chip { display:inline-flex; align-items:center; gap:var(--wao-space-1); max-width:220px; border:0; border-radius:var(--wao-radius-control); background:var(--wao-primary-soft); color:var(--wao-primary-text); padding:4px var(--wao-space-1); font:inherit; cursor:pointer; }
+.group-chip:disabled { cursor:default; }
+.status-pill { display:inline-flex; align-items:center; height:20px; padding:0 var(--wao-space-1); border:1px solid; border-radius:var(--wao-radius-pill); background:transparent; font:inherit; font-size:var(--wao-font-caption); line-height:1; white-space:nowrap; cursor:pointer; }
+.detail-due { display:inline-flex; align-items:center; gap:var(--wao-space-1); white-space:nowrap; }
+.detail-completion { display:flex; align-items:center; gap:var(--wao-space-1); cursor:pointer; }
+.priority-anchor { margin-left:auto; display:inline-flex; }
+.priority-flag { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:0; background:transparent; border-radius:var(--wao-radius-control); font-size:18px; cursor:pointer; }
+.priority-flag:hover { background:var(--wao-bg-sub); }
+.detail-subtasks { margin-top:var(--wao-space-3); border-top:1px solid var(--wao-line); }
+.detail-subtask { display:flex; align-items:center; gap:var(--wao-space-1); min-height:40px; border-bottom:1px solid var(--wao-line); }
+.child-title { flex:1; min-width:0; padding:var(--wao-space-1) 0; border:0; background:transparent; font:inherit; font-weight:400; color:var(--wao-text-2); text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.more-actions { padding:0 var(--wao-space-1); min-height:32px; }
+.checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
+.checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
+input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--task-priority-color, var(--wao-text-weak)); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
+input[type=checkbox]:checked { background:var(--task-priority-color, var(--wao-primary)); border-color:var(--task-priority-color, var(--wao-primary)); }
+input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary); font-size:var(--wao-font-caption); line-height:1; }
+.group-heading { width:100%; border:0; background:var(--wao-bg-sub); color:var(--wao-text); text-align:left; padding:var(--wao-space-1); font:inherit; cursor:pointer; }
+.group-heading small { color:var(--wao-text-weak); }
+.root-drop { position:absolute; bottom:0; left:0; right:0; z-index:1; background:var(--wao-bg-card); padding:var(--wao-space-2); border:1px dashed var(--wao-primary); color:var(--wao-primary-text); }
+.drop-inside { outline:1px solid var(--wao-primary); background:var(--wao-primary-soft); }
+.drop-before { border-top:2px solid var(--wao-primary); }
+.drop-after { border-bottom:2px solid var(--wao-primary); }
+.tree-toggle,.tree-spacer { width:16px; flex-shrink:0; }
+.tree-toggle { height:32px; padding:0; color:var(--wao-text-weak); }
+.task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }
+.task-title { font-family:var(--wao-font); font-weight:400; color:var(--wao-text-2); letter-spacing:0.01em; -webkit-font-smoothing:antialiased; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
+.finished { text-decoration:line-through; color:var(--wao-text-weak); }
+.task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
+h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }
+.save-status { margin-top:var(--wao-space-1); display:flex; gap:var(--wao-space-2); flex-wrap:wrap; }
+.empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
+button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
+@media(max-width:760px) {
+  .checklist-layout { grid-template-columns:minmax(0,1fr) !important; }
+  .checklist-divider { display:none; }
+  .checklist-tasks { max-height:260px; padding:0; }
+  .checklist-detail { position:static; max-height:none; min-height:300px; border-left:0; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
+  .task-select { min-height:44px; }
+}
+</style>

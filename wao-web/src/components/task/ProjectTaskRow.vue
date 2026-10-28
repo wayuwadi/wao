@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, projectStatusLabel } from '@/utils/projectStatusPresentation'
 import { computed, nextTick, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -37,18 +38,11 @@ const data = useDataStore()
 const session = useSessionStore()
 
 /** 描边状态色：未开始蓝、进行中橙、已完成绿，与 ONES 的状态胶囊一致。 */
-const STATUS_COLOR: Record<TaskStatus, string> = {
-  待办: '#338fe5',
-  收集中: '#d172a8',
-  进行中: '#f08c00',
-  'AI 进行中': '#8a5cd6',
-  待验证: '#d9a13b',
-  已完成: '#3fb96f',
-}
-const PRIORITY_COLOR: Record<Priority, string> = { P0: '#e5484d', P1: '#f08c00', P2: '#338fe5', P3: '#9aa0ab' }
+const STATUS_COLOR = PROJECT_STATUS_COLORS
+const PRIORITY_COLOR = PROJECT_PRIORITY_COLORS
 const PRIORITIES: Priority[] = ['P0', 'P1', 'P2', 'P3']
 const statusColor = (status: TaskStatus) => STATUS_COLOR[status] ?? '#9aa0ab'
-const statusLabel = (status: TaskStatus) => (status === '待办' ? '未开始' : status)
+const statusLabel = projectStatusLabel
 
 const menu = ref<'status' | 'pr' | 'owner' | null>(null)
 const statusCell = ref<HTMLElement | null>(null)
