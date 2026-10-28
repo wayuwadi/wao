@@ -1,10 +1,10 @@
 <script setup lang="ts">
-defineProps<{ show: boolean; showDone: boolean; tree?: boolean; collapsed?: boolean; saving?: boolean; error?: string }>()
+defineProps<{ show: boolean; showDone: boolean; tree?: boolean; hideSubtaskToggle?: boolean; collapsed?: boolean; saving?: boolean; error?: string }>()
 const emit = defineEmits<{ 'update:show': [value: boolean]; 'update:showDone': [value: boolean]; expand: []; collapse: []; retry: [] }>()
 </script>
 <template>
   <div class="subtask-controls" role="group" aria-label="子任务显示设置">
-    <button type="button" role="switch" :aria-checked="show" @click="emit('update:show', !show)">显示子任务</button>
+    <button v-if="!hideSubtaskToggle" type="button" role="switch" :aria-checked="show" @click="emit('update:show', !show)">显示子任务</button>
     <button type="button" role="switch" :aria-checked="showDone" @click="emit('update:showDone', !showDone)">显示已完成</button>
     <button v-if="show && tree" type="button" :aria-expanded="!collapsed" @click="collapsed ? emit('expand') : emit('collapse')"><i :class="collapsed ? 'ri-expand-up-down-line' : 'ri-collapse-diagonal-line'"></i>{{ collapsed ? '展开全部' : '收起全部' }}</button>
     <span v-if="saving" role="status">同步中…</span>

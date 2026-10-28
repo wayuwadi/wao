@@ -82,7 +82,7 @@ const pdTaskView = computed<TaskView>(() => {
   return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' || q === 'checklist' ? q : 'list'
 })
 const subtaskDisplay = useMemberPreference(() => `project-layout-v1:subtasks:${pid.value}:${pdTaskView.value}`, decodeProjectSubtaskDisplay, JSON.stringify)
-const showSubtasks = computed(() => subtaskDisplay.value.value.show)
+const showSubtasks = computed(() => true)
 const collapsedSubTasks = computed({
   get: () => subtaskDisplay.value.value.collapsed,
   set: (collapsed: string[]) => { void subtaskDisplay.set({ ...subtaskDisplay.value.value, collapsed }) },
@@ -710,6 +710,53 @@ const tableSections = computed(() => {
     ? sections.sort((a, b) => (tableSort.value!.direction === 'asc' ? 1 : -1) * a.name.localeCompare(b.name, 'zh-CN'))
     : sections
 })
+
+const checklistSections = computed(() => tableSections.value.map(section => ({
+  id: section.id, name: section.name, header: section.header, collapsed: section.collapsed,
+  itemIds: displayItems.value.filter(task => !section.header || groupIdOf(task) === section.id).map(task => task.id),
+})))
+async function moveChecklistItem(sourceKey: string, targetKey: string | null, side: 'before' | 'inside' | 'after') {
+  if (operationBusy.value || sourceKey === targetKey) return
+  const source = itemActions.source(sourceKey), target = targetKey ? itemActions.source(targetKey) : null
+  // Reject descendant drops before any promotion or write.
+  let cursor = targetKey
+  const seen = new Set<string>()
+  while (cursor && !seen.has(cursor)) {
+    if (cursor === sourceKey) { toast('不能移动到自己的子任务中', 'ri-information-line'); return }
+    seen.add(cursor); cursor = workProjection.value.refs[cursor]?.parentKey ?? null
+  }
+  operationError.value = ''
+  try {
+    if (!target) {
+      if (source.subId) await data.promoteSubtask(source.taskId, source.subId)
+      else await data.moveTask(source.taskId, null)
+    } else if (source.subId && !target.subId && side !== 'inside') {
+      const promoted = await data.promoteSubtask(source.taskId, source.subId)
+      await data.moveTask(promoted.id, data.taskById(target.taskId)?.parentTaskId ?? null)
+      await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), promoted.id, target.taskId, side === 'after')
+    } else if (source.subId) {
+      const parentSub = target.subId && side === 'inside' ? target.subId
+        : target.subId ? data.subById(target.taskId, target.subId)?.parentId ?? null : null
+      await data.moveSubtask(source.taskId, source.subId, target.taskId, parentSub)
+      if (target.subId && side !== 'inside') {
+        data.reorderSub(target.taskId, source.subId, target.subId, side === 'after')
+        await data.flushTask(target.taskId)
+      }
+    } else {
+      let targetTaskId = target.taskId
+      if (target.subId) targetTaskId = (await data.promoteSubtask(target.taskId, target.subId)).id
+      const parentId = side === 'inside' ? targetTaskId : data.taskById(targetTaskId)?.parentTaskId ?? null
+      await data.moveTask(source.taskId, parentId)
+      if (!parentId && side !== 'inside') {
+        data.moveTaskToGroup(source.taskId, groupIdOf(data.taskById(targetTaskId)!))
+        await data.flushTask(source.taskId)
+      }
+      if (side !== 'inside') await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.taskId, targetTaskId, side === 'after')
+    }
+    if (targetKey) collapsedSubTasks.value = collapsedSubTasks.value.filter(id => id !== targetKey)
+  } catch (error) { operationError.value = error instanceof Error ? error.message : '移动失败'; toast(operationError.value, 'ri-error-warning-line') }
+}
+
 async function moveUnder(id: string, parentId: string | null) {
   operationError.value = ''
   try {
@@ -848,7 +895,7 @@ watch(visibleTaskIds, (ids) => {
       <div class="phead-icon" :style="{ background: pd.areaColor }"><i :class="pd.icon || 'ri-stack-line'"></i></div>
       <div class="phead-name-wrap">
         <div class="phead-name-row">
-          <div class="phead-name">{{ pd.name }}</div>
+          <div class="phead-name">{{ pd.name }}</div><button class="project-task-count" @click="setTab('任务')">任务 {{ pdTabs[0]?.count }}</button>
         </div>
       </div>
       <div class="spacer"></div>
@@ -861,6 +908,7 @@ watch(visibleTaskIds, (ids) => {
           <button @click="projectInfoOpen = !projectInfoOpen; projectMenuOpen = false"><i class="ri-information-line"></i>项目简介与周期</button>
           <button @click="settingsOpen = true; projectMenuOpen = false"><i class="ri-settings-3-line"></i>项目设置</button>
           <button @click="favorites.toggle('project', pid, pd.name); projectMenuOpen = false"><i class="ri-star-line"></i>{{ favorites.isFav('project', pid) ? '取消收藏' : '收藏到左侧菜单' }}</button>
+          <button @click="setTab('文档'); projectMenuOpen = false">项目文档</button><button @click="setTab('文件'); projectMenuOpen = false">项目文件</button>
           <button @click="setTab('记忆'); projectMenuOpen = false"><i class="ri-brain-line"></i>项目记忆</button>
           <button @click="setTab('动态'); projectMenuOpen = false"><i class="ri-history-line"></i>项目动态</button>
         </div>
@@ -869,18 +917,13 @@ watch(visibleTaskIds, (ids) => {
     </div>
 
     <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ pd.due ? fmtDate(pd.due) : '未排期' }}</div>
-    <div class="ptabs">
-      <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
-        {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
-      </button>
-    </div>
     <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar" aria-label="任务工具栏">
       <div v-show="!searchQuery" class="seg">
         <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['清单', 'ri-list-check-2', 'checklist'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
           <i :class="v[1]"></i>{{ v[0] }}
         </button>
       </div>
-      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" :collapsed="collapsedSubTasks.length > 0" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
+      <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" hide-subtask-toggle :collapsed="collapsedSubTasks.length > 0" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
         :saving="subtaskDisplay.state.value === 'saving'" :error="subtaskDisplay.error.value"
         @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
       <div class="project-search-bar">
@@ -1252,7 +1295,7 @@ watch(visibleTaskIds, (ids) => {
         @select="toggleSelection" />
       <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid"
         :items="displayItems" :context-items="decoratedItems" :item-refs="workProjection.refs"
-        :show-done="showDone" :collapsed="collapsedSubTasks" :query="searchQuery" @toggle="toggleSubtasks" />
+        :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" :query="searchQuery" @toggle="toggleSubtasks" />
       <div v-else class="board">
         <div
           v-for="col in visibleBoard"
@@ -1384,6 +1427,7 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.project-task-count { border:0; background:transparent; color:var(--wao-text-weak); font-size:var(--wao-font-caption); cursor:pointer; padding:var(--wao-space-1); }
 .item-parent { display: block; max-width: 100%; margin: 4px 0 8px; padding: 0; border: 0; background: transparent; color: var(--wao-text-3); text-align: left; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .item-tree-toggle { padding: 0; border: 0; background: transparent; color: var(--wao-text-3); min-width: 22px; min-height: 28px; cursor: pointer; }
 .item-child-mark, .item-context-label { color: var(--wao-text-3); font-size: 12px; }

@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import type { Task } from '@/types'
 import { useDataStore } from '@/stores/data'
 import { useProjectItemActions } from '@/composables/projectItemActions'
+import { taskHierarchyDrop } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
@@ -11,8 +12,8 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string }>()
-defineEmits<{ toggle: [id: string] }>()
+const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
 const actions = useProjectItemActions(() => props.itemRefs)
 const selectedId = ref('')
@@ -21,6 +22,19 @@ const matches = computed(() => {
   return props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
 })
 const rows = computed(() => taskTreeRows(withProjectAncestors(matches.value, props.contextItems), props.query ? [] : props.collapsed))
+const groupedRows = computed(() => (props.sections ?? [{ id: '__all', name: '', header: false, collapsed: false, itemIds: props.contextItems.map(t => t.id) }]).map(section => ({ ...section, rows: rows.value.filter(row => section.itemIds.includes(row.task.id)) })))
+const dragging = ref<string | null>(null)
+const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
+function startDrag(id: string, event: DragEvent) {
+  if (props.busy) { event.preventDefault(); return }
+  dragging.value = id
+  event.dataTransfer?.setData('text/plain', id)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+function drop(target: string | null, event: DragEvent) {
+  if (dragging.value && !props.busy) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
+  dragging.value = null; over.value = null
+}
 watch(rows, value => {
   if (!value.some(row => row.task.id === selectedId.value)) selectedId.value = value[0]?.task.id ?? ''
 }, { immediate: true })
@@ -49,7 +63,11 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     <WaoCard class="checklist-tasks">
 
       <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
-      <div v-for="{ task, depth } in rows" :key="task.id" class="checklist-row" :class="{ selected: selectedId === task.id }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+      <div v-if="dragging" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
+      <section v-for="section in groupedRows" :key="section.id">
+      <button v-if="section.header" class="group-heading" :aria-expanded="!section.collapsed" @click="emit('toggleGroup', section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.rows.length }}</small></button>
+      <div v-show="!section.collapsed">
+      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
         <input type="checkbox" :checked="task.status === '已完成'" :disabled="actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="actions.toggle(task.id)" />
@@ -58,6 +76,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           <span v-if="task.due" class="task-meta">{{ task.due }}</span>
         </button>
       </div>
+      </div></section>
     </WaoCard>
     <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
@@ -78,14 +97,22 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .tree-toggle,.task-select { border:0; background:transparent; font:inherit; color:inherit; cursor:pointer; }
 .checklist-layout { display:grid; grid-template-columns:minmax(240px, 0.85fr) minmax(0, 1.3fr); align-items:start; }
 .checklist-tasks,.checklist-detail { min-width:0; max-height:calc(100dvh - 220px); overflow:auto; border:0; border-radius:0; box-shadow:none; }
-.checklist-tasks { padding:0 var(--wao-space-2) 0 0; }
+.checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
 .checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); border-left:1px solid var(--wao-line); padding:0 0 0 var(--wao-space-3); }
 .detail-caption { display:flex; align-items:center; gap:var(--wao-space-2); color:var(--wao-text-weak); font-size:var(--wao-font-caption); border-bottom:1px solid var(--wao-line); min-height:36px; }
 .detail-completion { display:flex; align-items:center; gap:var(--wao-space-1); cursor:pointer; }
 .more-actions { margin-left:auto; padding:0 var(--wao-space-1); min-height:32px; }
 .checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
 .checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
-input[type=checkbox] { flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
+input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--wao-text-weak); border-radius:0; background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
+input[type=checkbox]:checked { background:var(--wao-primary); border-color:var(--wao-primary); }
+input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary); font-size:var(--wao-font-caption); line-height:1; }
+.group-heading { width:100%; border:0; background:var(--wao-bg-sub); color:var(--wao-text); text-align:left; padding:var(--wao-space-1); font:inherit; cursor:pointer; }
+.group-heading small { color:var(--wao-text-weak); }
+.root-drop { position:absolute; bottom:0; left:0; right:0; z-index:1; background:var(--wao-bg-card); padding:var(--wao-space-2); border:1px dashed var(--wao-primary); color:var(--wao-primary-text); }
+.drop-inside { outline:1px solid var(--wao-primary); background:var(--wao-primary-soft); }
+.drop-before { border-top:2px solid var(--wao-primary); }
+.drop-after { border-bottom:2px solid var(--wao-primary); }
 .tree-toggle,.tree-spacer { width:16px; flex-shrink:0; }
 .tree-toggle { height:32px; padding:0; color:var(--wao-text-weak); }
 .task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }

@@ -1,3 +1,4 @@
+import { quickDraftRecoveryId, isRecoveredQuickDraft, sameQuickDraftContent } from '@/utils/quickDraftRecovery'
 import type { IdentitySelection } from '@/api/digitalMembers'
 import { reactive, ref, watch } from 'vue'
 import { PreviousTodoWriteRecovered } from '@/api/dayWorkspace'
@@ -307,6 +308,14 @@ export const useDataStore = defineStore('data', () => {
             taskSaveStates[id] = 'error'
             taskSaveErrors[id] = '任务已删除或不可访问，本机草稿已保留，不能自动恢复为任务'
             tasks.value = tasks.value.filter(task => task.id !== id)
+            continue
+          }
+          if (remoteTask?.editVersion && !draft.editVersion && isRecoveredQuickDraft(requestMember, id) && sameQuickDraftContent(draft, remoteTask)) {
+            const existing = tasks.value.find(task => task.id === id)
+            if (existing) Object.assign(existing, clone(remoteTask))
+            clearTaskDraft(id)
+            delete taskConflicts[id]; delete taskSaveErrors[id]
+            taskSaveStates[id] = 'saved'; taskSavedAts[id] = nowIso()
             continue
           }
           const current = tasks.value.find((task) => task.id === id)
@@ -1283,9 +1292,10 @@ export const useDataStore = defineStore('data', () => {
   }
 
   function loadTaskDrafts(): Record<string, Task> {
+    let recovered: Record<string, Task> = {}
     try {
       const member = useSessionStore().userId
-      const recovered = readTaskDrafts(member, taskDraftWindow)
+      recovered = readTaskDrafts(member, taskDraftWindow)
       const legacyKey = taskDraftStorageKey()
       const legacy = JSON.parse(localStorage.getItem(legacyKey) || '{}') as Record<string, Task>
       // 旧的无成员集合只认明确创建人；无法确认归属的旧记录留在原处。
@@ -1298,8 +1308,22 @@ export const useDataStore = defineStore('data', () => {
       localStorage.removeItem(legacyKey)
       if (Object.keys(eligible).length) localStorage.setItem(TASK_DRAFT_KEY,
         JSON.stringify(Object.fromEntries(Object.entries(unscoped).filter(([id]) => !eligible[id]))))
+      for (const [oldId, draft] of Object.entries(recovered)) {
+        const repairedId = quickDraftRecoveryId(draft)
+        if (!repairedId) continue
+        // Commit a durable replacement before removing the invalid draft. Keep an explicit backup.
+        localStorage.setItem('wao-quick-draft-backup:' + member + ':' + oldId, JSON.stringify(draft))
+        const repaired = recovered[repairedId] ?? { ...draft, id: repairedId }
+        writeTaskDraft(member, taskDraftWindow, repaired)
+        recovered[repairedId] = repaired
+        removeTaskDraft(member, taskDraftWindow, oldId)
+        delete recovered[oldId]
+        for (const child of Object.values(recovered)) {
+          if (child.parentTaskId === oldId) { child.parentTaskId = repairedId; writeTaskDraft(member, taskDraftWindow, child) }
+        }
+      }
       return recovered
-    } catch { return {} }
+    } catch { return recovered }
   }
 
   const taskPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
@@ -1950,7 +1974,7 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 把一条子任务移动到另一条之前；稳定 id 保证分享链接不会因排序失效。 */
-  function reorderSub(taskId: string, dragSubId: string, overSubId: string) {
+  function reorderSub(taskId: string, dragSubId: string, overSubId: string, after = false) {
     if (lockedSubtaskIds.has(taskId)) return
     if (dragSubId === overSubId) return
     const t = taskById(taskId)
@@ -1960,7 +1984,7 @@ export const useDataStore = defineStore('data', () => {
     if (from < 0 || over < 0) return
     const [moved] = t.subs.splice(from, 1)
     const target = from < over ? over - 1 : over
-    t.subs.splice(target, 0, moved!)
+    t.subs.splice(target + (after ? 1 : 0), 0, moved!)
     logActivity(t, `调整了子任务「${moved!.text}」的顺序`)
     persistTask(taskId)
   }

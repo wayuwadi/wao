@@ -1,3 +1,4 @@
+import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -38,33 +39,46 @@ async function open(view = 'list') {
 }
 
 describe('子任务四视图', () => {
-  it.each(['list', 'group', 'board', 'quadrant'])('%s 展示两类子任务，关闭后仅主任务，完成独立过滤', async view => {
+  it.each(['list', 'group', 'board', 'quadrant'])('%s 展示两类子任务，始终展示层级，完成独立过滤', async view => {
     const { wrapper } = await open(view)
     const area = () => wrapper.get('.project-normal-tasks')
     expect(area().text()).toContain('普通子事项'); expect(area().text()).toContain('完整下级任务')
     expect(area().text()).not.toContain('已完成子事项')
-    await wrapper.get('.subtask-controls [role=switch]:nth-child(2)').trigger('click'); await flushPromises()
+    await wrapper.get('.subtask-controls [role=switch]').trigger('click'); await flushPromises()
     expect(area().text()).toContain('已完成子事项')
-    await wrapper.get('.subtask-controls [role=switch]:first-child').trigger('click'); await flushPromises()
-    // 表格保留挂载草稿，因此只检查可见节点。
-    expect(area().findAll('.inline-sub-row,.grow,.board-card,.quadrant-task,.task-row').filter(n => n.isVisible()).map(n => n.text()).join(' ')).not.toMatch(/普通子事项|完整下级任务|已完成子事项/)
+    expect(wrapper.find('[role=switch][aria-label=显示子任务]').exists()).toBe(false)
     expect(area().text()).toContain('主任务甲'); expect(area().text()).toContain('独立主任务')
   })
-  it('视图与成员偏好隔离，失败保留选择并可重试，刷新读取一致', async () => {
-    const { wrapper, router } = await open('board')
-    vi.mocked(savePreference).mockRejectedValueOnce(new Error('offline'))
-    await wrapper.get('.subtask-controls [role=switch]:first-child').trigger('click'); await flushPromises()
-    expect(wrapper.get('.subtask-controls').text()).toContain('本机选择已保留')
-    await wrapper.get('.subtask-controls [role=alert] button').trigger('click'); await flushPromises()
-    expect(savePreference).toHaveBeenLastCalledWith('project-layout-v1:subtasks:p1:board', JSON.stringify({ show: false, collapsed: [] }))
-    await router.replace('/projects/p1?view=group'); await flushPromises()
-    expect(wrapper.get('.subtask-controls [role=switch]').attributes('aria-checked')).toBe('true')
-    vi.mocked(fetchPreference).mockImplementation(async key => key.endsWith(':board') ? '{"show":false,"collapsed":[]}' : '')
-    await router.replace('/projects/p1?view=board'); await flushPromises()
-    expect(wrapper.get('.subtask-controls [role=switch]').attributes('aria-checked')).toBe('false')
-    vi.mocked(fetchPreference).mockResolvedValue('')
-    useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '乙', initial: '乙', color: '', role: '' }, identities: [], createdAt: '' }); await flushPromises()
-    expect(wrapper.get('.subtask-controls [role=switch]').attributes('aria-checked')).toBe('true')
+  it('忽略旧的隐藏子任务偏好，保持层级可见', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('{"show":false,"collapsed":[]}')
+    const { wrapper } = await open('list')
+    expect(wrapper.text()).toContain('普通子事项')
+    expect(wrapper.get('.subtask-controls').findAll('[role=switch]')).toHaveLength(1)
+  })
+  it('清单拖动复用真实任务移动接口并拒绝循环归属', async () => {
+    const { wrapper, data } = await open('checklist')
+    const move = vi.spyOn(data, 'moveTask').mockResolvedValue(undefined)
+    const checklist = wrapper.getComponent(ProjectChecklistView)
+    checklist.vm.$emit('move', 'c', 'a', 'inside'); await flushPromises()
+    expect(move).toHaveBeenCalledWith('c', 'a')
+    move.mockClear()
+    checklist.vm.$emit('move', 'a', 'b', 'inside'); await flushPromises()
+    expect(move).not.toHaveBeenCalled()
+    const sub = vi.spyOn(data, 'moveSubtask').mockResolvedValue(undefined)
+    checklist.vm.$emit('move', 'sub:a:s2', 'sub:a:s1', 'inside'); await flushPromises()
+    expect(sub).toHaveBeenCalledWith('a', 's2', 'a', 's1')
+  })
+  it('清单沿用表格分组，子事项跟随父任务分组', async () => {
+    useDataStore().projectById('p1')!.taskGroups = [{ id:'g1', name:'工作' }, { id:'g2', name:'生活' }]
+    useDataStore().tasks[0]!.groupId = 'g1'; useDataStore().tasks[2]!.groupId = 'g2'
+    const { wrapper } = await open('list')
+    const settings = wrapper.get('.project-display-settings summary')
+    await settings.trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(b => b.text() === '按分组')!.trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(b => b.text() === '清单')!.trigger('click'); await flushPromises()
+    const sections = wrapper.getComponent(ProjectChecklistView).findAll('section')
+    expect(sections[0]!.text()).toContain('工作'); expect(sections[0]!.text()).toContain('普通子事项')
+    expect(sections[1]!.text()).toContain('生活'); expect(sections[1]!.text()).toContain('独立主任务')
   })
   it.each(['list','group'])('%s 支持全部收起和展开，并保留层级', async view => {
     const { wrapper } = await open(view)
