@@ -13,6 +13,8 @@ import WaoField from '@/components/ui/WaoField.vue'
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
+import TaskDueDate from '@/components/task/TaskDueDate.vue'
+const deadlineExample = ref('2026-10-20')
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
@@ -451,6 +453,7 @@ const detailDemoComment = ref('')
             <p>概览直接编辑描述并限制显示高度，子任务紧接其后；桌面默认展开属性与评论，描述页签用于阅读全文。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
+          <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
           <div class="task-detail-demo">
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
               <template #heading><h2>把一个想法拆成可执行的行动</h2></template>
