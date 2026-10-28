@@ -275,7 +275,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <span v-if="child.due" class="task-meta">{{ child.due }}</span>
           </div>
         </section>
-        <button v-if="parentTask" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i>父任务：{{ parentTask.title }}</button>
+        <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
         <div class="save-status" aria-live="polite">
           <SaveHint :saving="saveState === 'saving'" :failed="saveState === 'error'" :saved-at="data.taskSavedAt(source.taskId)" :error-message="data.taskSaveError(source.taskId)" />
           <WaoButton v-if="saveState === 'error'" variant="ghost" @click="actions.open(selected.id)">查看保存问题</WaoButton>
@@ -324,8 +324,11 @@ input[type=checkbox]:checked { background:var(--task-priority-color, var(--wao-p
 input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary); font-size:var(--wao-font-caption); line-height:1; }
 .group-header { display:flex; align-items:center; background:var(--wao-bg-sub); }
 .group-heading { flex:1; min-width:0; border:0; background:transparent; color:var(--wao-text); text-align:left; padding:var(--wao-space-1); font:inherit; cursor:pointer; }
-.group-add-button { flex-shrink:0; width:32px; height:32px; color:var(--wao-text-weak); border-radius:var(--wao-radius-control); }
-.group-add-button:hover { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
+.group-add-button { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:28px; height:28px; padding:0; border:0; background:transparent; color:var(--wao-text-3); border-radius:var(--wao-radius-control); cursor:pointer; opacity:0; }
+.group-add-button i { font-size:16px; }
+.group-header:hover .group-add-button, .group-header:focus-within .group-add-button { opacity:1; }
+.group-add-button:hover { color:var(--wao-on-primary); background:var(--wao-primary); }
+@media (hover:none) { .group-add-button { opacity:1; } }
 .group-heading small { color:var(--wao-text-weak); }
 .cell-menu button.priority-option { display:grid; grid-template-columns:16px 24px 1fr; justify-content:start; gap:var(--wao-space-2); }
 .priority-option > i { text-align:center; }
@@ -343,7 +346,9 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
 h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }
 .save-status { margin-top:var(--wao-space-1); display:flex; gap:var(--wao-space-2); flex-wrap:wrap; }
-.parent-task-link { display:flex; align-items:center; gap:var(--wao-space-1); margin-top:var(--wao-space-3); padding:var(--wao-space-2) 0; color:var(--wao-primary-text); text-align:left; overflow-wrap:anywhere; }
+.parent-task-link { justify-content:flex-start; max-width:100%; margin-top:var(--wao-space-3); padding:var(--wao-space-1) var(--wao-space-2); font-family:var(--wao-font); text-align:left; }
+.parent-task-link span { min-width:0; overflow-wrap:anywhere; }
+.parent-task-link i { flex-shrink:0; }
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {

@@ -911,6 +911,7 @@ watch(visibleTaskIds, (ids) => {
       <div class="phead-name-wrap">
         <div class="phead-name-row">
           <div class="phead-name">{{ pd.name }}</div><button class="project-task-count" :title="pdTabs[0]?.title" @click="setTab('任务')">任务 {{ tasksUnavailable ? '—' : pdTabs[0]?.count }}</button>
+          <span class="project-layout-sync" role="status" aria-live="polite">{{ subtaskDisplay.state.value === 'saving' ? '同步中…' : '' }}</span>
         </div>
       </div>
       <div class="spacer"></div>
@@ -939,7 +940,7 @@ watch(visibleTaskIds, (ids) => {
         </button>
       </div>
       <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" hide-subtask-toggle :collapsed="collapsedSubTasks.length > 0" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
-        :saving="subtaskDisplay.state.value === 'saving'" :error="subtaskDisplay.error.value"
+        :error="subtaskDisplay.error.value"
         @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
       <div class="project-search-bar">
         <i class="ri-search-line" aria-hidden="true"></i>
@@ -1464,6 +1465,7 @@ watch(visibleTaskIds, (ids) => {
 
 <style scoped>
 .project-task-count { border:0; background:transparent; color:var(--wao-text-weak); font-size:var(--wao-font-caption); cursor:pointer; padding:var(--wao-space-1); }
+.project-layout-sync { flex-shrink:0; min-width:4em; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
 .item-parent { display: block; max-width: 100%; margin: 4px 0 8px; padding: 0; border: 0; background: transparent; color: var(--wao-text-3); text-align: left; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .item-tree-toggle { padding: 0; border: 0; background: transparent; color: var(--wao-text-3); min-width: 22px; min-height: 28px; cursor: pointer; }
 .item-child-mark, .item-context-label { color: var(--wao-text-3); font-size: 12px; }
