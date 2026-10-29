@@ -474,17 +474,18 @@ const detailDemoComment = ref('')
         <template v-else-if="active === 'task-detail'">
           <div class="section-heading">
             <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
-            <p>概览直接编辑描述并限制显示高度，子任务紧接其后；桌面默认展开属性与评论，描述页签用于阅读全文。</p>
+            <p>描述随内容增高，子任务与评论在主栏连续展示；桌面右侧只放属性，收起后仍可写评论。长描述可切换独立页签阅读。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
           <div class="task-detail-demo">
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
-              <template #heading><h2>把一个想法拆成可执行的行动</h2></template>
-              <template #summary><span>进行中 · P2 · 演示成员</span><span>演示草稿 · 不写入账号</span></template>
-              <template #description><WaoField v-slot="{ id }" label="描述草稿（演示）"><textarea :id="id" v-model="detailDemoDescription" class="detail-demo-input"></textarea></WaoField></template>
+              <template #heading><h2 class="detail-demo-title">把一个想法拆成可执行的行动</h2></template>
+              <template #summary="{ propertiesOpen }"><span v-if="!propertiesOpen">进行中 · P2 · 演示成员</span></template>
+              <template #description="{ compact }"><MarkdownEditor v-model="detailDemoDescription" :min-height="compact ? 56 : 200" slash-commands /></template>
               <template #subtasks><h3>子任务</h3><label v-for="item in detailDemoSubtasks" :key="item.title" class="detail-demo-row"><input v-model="item.done" type="checkbox" />{{ item.title }}</label></template>
-              <template #properties><p>编号 #演示 · 状态 进行中</p><p>负责人 演示成员</p><WaoField v-slot="{ id }" label="评论草稿（演示）"><textarea :id="id" v-model="detailDemoComment" class="detail-demo-input"></textarea></WaoField></template>
+              <template #properties><p>编号 #演示 · 状态 进行中</p><p>负责人 演示成员</p></template>
+              <template #comments><WaoField v-slot="{ id }" label="评论草稿（演示）"><textarea :id="id" v-model="detailDemoComment" class="detail-demo-input"></textarea></WaoField></template>
             </TaskDetailLayout>
           </div>
         </template>
@@ -705,6 +706,7 @@ const detailDemoComment = ref('')
 .detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }
 .detail-demo-row input[type=checkbox]:checked::after { content:"✓"; color:var(--wao-on-primary); font-size:var(--wao-font-caption); }
 .resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
+.detail-demo-title { margin: 0; font-size: calc(var(--wao-font-reading) * 1.5); line-height: 1.4; font-weight: 600; }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
 .detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
 .detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0; border-bottom: 1px solid var(--wao-line); }

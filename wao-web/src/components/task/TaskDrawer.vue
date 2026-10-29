@@ -127,7 +127,6 @@ watch(
     aiLauncherSubId.value = null
     relationOpen.value = false
     editingComment.value = null
-    confirmingDelete.value = false
     aiRuns.value = []
     aiRunsLoaded.value = false
     aiRunsUnchangedRounds = 0
@@ -299,8 +298,6 @@ async function removeComment(index: number) {
 }
 
 // ---- 删除任务 ----
-/** 二次确认状态：删任务不可撤销，点一次先变成「确认删除」。 */
-const confirmingDelete = ref(false)
 const deleteTarget = ref<{ taskId: string; subId?: string; title: string } | null>(null)
 const deletingCurrent = ref(false)
 const deleteCurrentError = ref('')
@@ -328,15 +325,6 @@ async function confirmDeleteCurrent() {
     toast(`已删除${target.subId ? '子任务' : '任务'}「${target.title}」`, 'ri-delete-bin-line')
   } catch (error) { deleteCurrentError.value = error instanceof Error ? error.message : '删除失败，请重试。' }
   finally { deletingCurrent.value = false }
-}
-async function removeTask() {
-  const t = task.value
-  if (!t) return
-  const title = t.title
-  confirmingDelete.value = false
-  ui.closeTask()
-  const ok = await data.deleteTask(t.id)
-  toast(ok ? `已删除任务「${title}」` : '任务删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
 }
 /**
  * 活动时间线：时间转成相对描述，主语按「看的人是谁」现算。
@@ -620,15 +608,6 @@ function removeSubImage(idx: number) {
   const t = task.value
   if (t && openSubId.value) data.removeSubImage(t.id, openSubId.value, idx)
 }
-function deleteSub() {
-  const t = task.value
-  const sub = openSub.value
-  if (!t || !openSubId.value || !sub) return
-  if (!window.confirm(`删除子任务「${sub.text}」？其描述和执行记录关联也会一并移除。`)) return
-  data.removeSub(t.id, openSubId.value)
-  backToTask()
-  toast('子任务已删除', 'ri-delete-bin-line')
-}
 
 // ---- 分享链接 ----
 
@@ -748,7 +727,7 @@ async function sendComment() {
   }
 }
 function commentKey(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault()
     sendComment()
   }
@@ -1093,7 +1072,6 @@ async function uploadAttachment(event: Event) {
       <div v-if="!openSub && parentTask" class="task-hierarchy-links">
         <div v-if="parentTask">父任务：<button @click="ui.openTask(parentTask.id)">#{{ parentTask.number ?? '…' }} {{ parentTask.title }}</button></div>
       </div>
-      <TaskLabelEditor :key="task.id + (openSubId ?? '')" :task-id="task.id" :sub-id="openSubId ?? undefined" />
       <TaskDetailLayout
         ref="detailLayout"
         :context-key="detailContextKey"
@@ -1103,25 +1081,9 @@ async function uploadAttachment(event: Event) {
       >
         <template #heading>
           <div class="main detail-title">
-            <template v-if="openSub">
-              <div class="type-line">
-                <WorkItemIcon kind="subtask" :size="18" />子任务
-                <span class="type-parent">属于 <button @click="backToTask">#{{ task.number ?? '…' }} {{ task.title }}</button></span>
-              </div>
-              <textarea
-                ref="subTitleArea"
-                class="title-input"
-                :class="{ done: openSub.done }"
-                rows="1"
-                :value="openSub.text"
-                placeholder="子任务名称"
-                @input="editSubTitle"
-                @keydown.enter.prevent
-              ></textarea>
-
-            </template>
-            <template v-else>
-              <div class="type-line">
+            <div class="detail-kicker">
+              <div v-if="openSub" class="type-line"><WorkItemIcon kind="subtask" :size="18" />子任务</div>
+              <div v-else class="type-line">
                 <button ref="typeAnchor" class="work-item-type" type="button" aria-label="工作项类型" aria-haspopup="menu" :aria-expanded="menu === 'type'" @click="menu = menu === 'type' ? null : 'type'">
                   <WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><span>{{ WORK_ITEM_TYPES.find(kind => kind.id === currentWorkItemType)?.label }}</span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>
                 </button>
@@ -1129,15 +1091,16 @@ async function uploadAttachment(event: Event) {
                   <button v-for="kind in WORK_ITEM_TYPES" :key="kind.id" class="work-item-type-option" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span class="work-item-type-label">{{ kind.label }}</span></button>
                 </CellMenu>
               </div>
-              <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
-
-            </template>
+              <TaskLabelEditor :key="task.id + (openSubId ?? '')" :task-id="task.id" :sub-id="openSubId ?? undefined" inline />
+            </div>
+            <textarea v-if="openSub" ref="subTitleArea" class="title-input" :class="{ done: openSub.done }" rows="1" :value="openSub.text" aria-label="子任务名称" placeholder="子任务名称" @input="editSubTitle" @keydown.enter.prevent></textarea>
+            <textarea v-else ref="taskTitleArea" class="title-input" rows="1" :value="task.title" aria-label="任务名称" @input="editTitle"></textarea>
           </div>
         </template>
-        <template #summary>
-          <button type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
-          <button type="button" class="detail-meta" aria-label="编辑优先级" @click="detailLayout?.openProperties()">{{ openSub ? openSub.pr || '未设置优先级' : task.pr }}</button>
-          <button type="button" class="detail-meta" aria-label="编辑负责人" @click="detailLayout?.openProperties()">负责人 {{ session.memberById(openSub ? openSub.owner || '' : task.owner).name || '未设置' }}</button>
+        <template #summary="{ propertiesOpen }">
+          <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
+          <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑优先级" @click="detailLayout?.openProperties()">{{ openSub ? openSub.pr || '未设置优先级' : task.pr }}</button>
+          <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑负责人" @click="detailLayout?.openProperties()">负责人 {{ session.memberById(openSub ? openSub.owner || '' : task.owner).name || '未设置' }}</button>
           <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
           <button v-if="saveState === 'error' && !data.taskConflicts[task.id]" type="button" class="text-btn small" @click="data.flushTask(task.id)">重试保存</button>
         </template>
@@ -1151,7 +1114,7 @@ async function uploadAttachment(event: Event) {
                 v-model="subDesc"
                 slash-commands
                 placeholder="补充这个子任务的做法、验收标准…输入 / 插入标题、列表等，可直接粘贴截图"
-                :min-height="200"
+                :min-height="compact ? 56 : 200"
                 @upload-image="onSubImage"
               />
             </div>
@@ -1177,7 +1140,7 @@ async function uploadAttachment(event: Event) {
                 v-model="desc"
                 slash-commands
                 placeholder="补充背景、目标与边界…输入 / 插入标题、列表等，可直接粘贴截图"
-                :min-height="84"
+                :min-height="compact ? 56 : 200"
                 @upload-image="onTaskImage"
               />
             </div>
@@ -1261,6 +1224,47 @@ async function uploadAttachment(event: Event) {
             @upload-image="onContinueImage"
           />
         </template>
+        <template #comments>
+          <!-- 评论：跟着当前查看的任务 / 子任务 -->
+          <div class="task-comments">
+            <h3 class="comments-title">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></h3>
+            <div class="comment-list">
+              <div v-for="cm in comments" :key="cm.index" class="comment">
+                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
+                <div class="c-main">
+                  <div class="c-head">
+                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
+                    <span class="spacer"></span>
+                    <template v-if="cm.mine && editingComment !== cm.index">
+                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
+                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
+                    </template>
+                  </div>
+                  <div v-if="editingComment === cm.index" class="c-edit">
+                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc.stop="cancelEditComment"></textarea>
+                    <div class="c-edit-ops">
+                      <button class="text-btn small" @click="cancelEditComment">取消</button>
+                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
+                    </div>
+                  </div>
+                  <div v-else class="c-text">{{ cm.text }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="comment-input">
+              <div class="ci-wrap">
+                <textarea v-model="commentText" rows="3" aria-label="评论内容" :disabled="sendingComment" placeholder="写下评论…" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey"></textarea>
+                <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
+                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
+                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
+                  </button>
+                </div>
+                <button type="button" class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
+              </div>
+            </div>
+            <p class="comment-help">Enter 发送 · Shift + Enter 换行<span v-if="!openSub"> · @成员名 通知对方</span></p>
+          </div>
+        </template>
         <template #properties>
         <!-- 子任务属性：与任务属性栏同一位置、同一版式 -->
         <div v-if="openSub" class="props">
@@ -1330,44 +1334,6 @@ async function uploadAttachment(event: Event) {
             <button class="text-btn small" @click="openRelationPicker"><i class="ri-links-line"></i>{{ openSub ? '关联知识文档' : '关联知识、任务、文件或 HTML' }}</button>
           </div>
 
-          <!-- 评论：跟着当前查看的任务 / 子任务 -->
-          <div class="prop-section side-comments">
-            <div class="props-label sm">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></div>
-            <div class="comment-list">
-              <div v-for="cm in comments" :key="cm.index" class="comment">
-                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
-                <div class="c-main">
-                  <div class="c-head">
-                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
-                    <span class="spacer"></span>
-                    <template v-if="cm.mine && editingComment !== cm.index">
-                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
-                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
-                    </template>
-                  </div>
-                  <div v-if="editingComment === cm.index" class="c-edit">
-                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc.stop="cancelEditComment"></textarea>
-                    <div class="c-edit-ops">
-                      <button class="text-btn small" @click="cancelEditComment">取消</button>
-                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
-                    </div>
-                  </div>
-                  <div v-else class="c-text">{{ cm.text }}</div>
-                </div>
-              </div>
-            </div>
-            <div class="comment-input">
-              <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" :placeholder="openSub ? '写评论，回车发送' : '写评论，回车发送；@成员名 会通知对方'" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
-                <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
-                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
-                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
-                  </button>
-                </div>
-                <button class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i></button>
-              </div>
-            </div>
-          </div>
 
           <div v-if="AI_RUN_ENABLED && !openSub.done" class="prop-section">
             <button v-if="openSubDispatched" class="sub-detail-action" type="button" disabled>
@@ -1375,14 +1341,6 @@ async function uploadAttachment(event: Event) {
             </button>
             <button v-else class="sub-detail-action" type="button" @click="runOpenSubWithAi">
               <i class="ri-robot-2-line"></i>交给 AI 跑
-            </button>
-          </div>
-          <div class="prop-section sub-detail-actions">
-            <button class="sub-detail-action" type="button" @click="copyShare('page')">
-              <i class="ri-links-line"></i>复制该子任务分享链接
-            </button>
-            <button class="sub-detail-action danger" type="button" @click="deleteSub">
-              <i class="ri-delete-bin-line"></i>删除子任务
             </button>
           </div>
         </div>
@@ -1426,7 +1384,7 @@ async function uploadAttachment(event: Event) {
           <div class="prop-row">
             <span class="prop-key">负责人</span>
             <button class="owner-btn" @click="menu = menu === 'owner' ? null : 'owner'">
-              <span class="mini-av" :style="{ background: tv.ownerColor }">{{ tv.ownerInitial }}</span>{{ tv.ownerName }}<i class="ri-arrow-down-s-line"></i>
+              <span class="mini-av" :style="{ background: tv.ownerColor }">{{ tv.ownerInitial }}</span><span class="ellip" :title="tv.ownerName">{{ tv.ownerName }}</span><i class="ri-arrow-down-s-line"></i>
             </button>
             <div v-if="menu === 'owner'" class="pmenu w150">
               <button v-for="m in session.members" :key="m.id" class="pmenu-item" :aria-pressed="task.owner === m.id" @click="setOwner(m.id)">
@@ -1491,44 +1449,6 @@ async function uploadAttachment(event: Event) {
             <button class="text-btn small" @click="openRelationPicker"><i class="ri-links-line"></i>{{ openSub ? '关联知识文档' : '关联知识、任务、文件或 HTML' }}</button>
           </div>
 
-          <!-- 评论：跟着当前查看的任务 / 子任务 -->
-          <div class="prop-section side-comments">
-            <div class="props-label sm">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></div>
-            <div class="comment-list">
-              <div v-for="cm in comments" :key="cm.index" class="comment">
-                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
-                <div class="c-main">
-                  <div class="c-head">
-                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
-                    <span class="spacer"></span>
-                    <template v-if="cm.mine && editingComment !== cm.index">
-                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
-                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
-                    </template>
-                  </div>
-                  <div v-if="editingComment === cm.index" class="c-edit">
-                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc.stop="cancelEditComment"></textarea>
-                    <div class="c-edit-ops">
-                      <button class="text-btn small" @click="cancelEditComment">取消</button>
-                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
-                    </div>
-                  </div>
-                  <div v-else class="c-text">{{ cm.text }}</div>
-                </div>
-              </div>
-            </div>
-            <div class="comment-input">
-              <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" :placeholder="openSub ? '写评论，回车发送' : '写评论，回车发送；@成员名 会通知对方'" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
-                <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
-                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
-                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
-                  </button>
-                </div>
-                <button class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i></button>
-              </div>
-            </div>
-          </div>
           <details class="optional-props"><summary>更多属性 · 参与人、排期与自定义</summary>
           <div class="prop-row">
             <span class="prop-key">参与人</span>
@@ -1621,24 +1541,7 @@ async function uploadAttachment(event: Event) {
           </div>
 
           </details>
-          <!-- 删除任务：明摆在属性栏底部，不藏在右键菜单里 -->
-          <div class="danger-zone">
-            <template v-if="!confirmingDelete">
-              <div class="dz-text">
-                <div class="dz-title">删除任务</div>
-                <div class="dz-sub">连同子任务、评论与活动一起删除，不可恢复。</div>
-              </div>
-              <button class="btn-danger" @click="confirmingDelete = true"><i class="ri-delete-bin-line"></i>删除</button>
-            </template>
-            <template v-else>
-              <div class="dz-text">
-                <div class="dz-title">确认删除「{{ task.title }}」？</div>
-                <div class="dz-sub">此操作不可撤销。</div>
-              </div>
-              <button class="text-btn small" @click="confirmingDelete = false">取消</button>
-              <button class="btn-danger" @click="removeTask"><i class="ri-delete-bin-line"></i>确认删除</button>
-            </template>
-          </div>
+
         </div>
         </template>
       </TaskDetailLayout>
@@ -1675,7 +1578,7 @@ async function uploadAttachment(event: Event) {
 .delete-current { color: var(--wao-danger); }
 .delete-confirm-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
 .detail-title, .detail-subtasks { min-width: 0; }
-.detail-meta { border: 0; padding: 4px 8px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: var(--wao-font-caption); cursor: pointer; }
+.detail-meta { border: 0; padding: 4px 8px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: var(--wao-font-body); cursor: pointer; }
 .detail-meta:hover { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
 .full-child-tasks { margin-bottom: var(--wao-space-2); }
 .full-child-link { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; padding: 10px 0; text-align: left; border: 0; border-bottom: 1px solid var(--wao-line); background: transparent; color: var(--wao-primary-text); cursor: pointer; }
@@ -1743,52 +1646,6 @@ async function uploadAttachment(event: Event) {
   cursor: not-allowed;
 }
 
-/* 删除任务 */
-.danger-zone {
-  margin-top: 14px;
-  border: 1px solid var(--wao-danger-line);
-  background: var(--wao-danger-bg);
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.dz-text {
-  flex: 1;
-  min-width: 0;
-}
-.dz-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--wao-danger-strong);
-}
-.dz-sub {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--wao-text-weak);
-}
-.btn-danger {
-  height: 30px;
-  padding: 0 11px;
-  border: none;
-  background: var(--wao-danger);
-  color: #fff;
-  border-radius: 8px;
-  font-size: 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.btn-danger:hover {
-  filter: brightness(0.95);
-}
-.btn-danger i {
-  font-size: 13px;
-}
-
 .mask {
   position: fixed;
   inset: 0;
@@ -1802,7 +1659,8 @@ async function uploadAttachment(event: Event) {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(1120px, calc(100vw - 64px));
-  height: min(860px, calc(100vh - 48px));
+  height: min(820px, calc(100dvh - 48px));
+  font: 400 var(--wao-font-body)/1.6 var(--wao-font);
   background: var(--wao-bg-card);
   z-index: 81;
   border-radius: var(--wao-radius-modal);
@@ -1974,15 +1832,16 @@ async function uploadAttachment(event: Event) {
 }
 
 .title-input {
+  box-sizing: border-box;
   width: 100%;
   border: none;
   outline: none;
-  font-size: 21px;
-  font-weight: 700;
+  font-size: calc(var(--wao-font-reading) * 1.5);
+  font-weight: 600;
   color: var(--wao-text);
   background: none;
   padding: 2px 0;
-  border-radius: 6px;
+  border-radius: var(--wao-radius-control);
   resize: none;
   overflow: hidden;
   line-height: 1.4;
@@ -2760,10 +2619,6 @@ async function uploadAttachment(event: Event) {
   padding-top: 10px;
   position: relative;
 }
-.sub-detail-actions {
-  display: grid;
-  gap: 8px;
-}
 .sub-detail-action {
   width: 100%;
   min-height: 36px;
@@ -2786,15 +2641,6 @@ async function uploadAttachment(event: Event) {
 .sub-detail-action:focus-visible {
   outline: 3px solid rgba(67, 88, 214, .16);
   outline-offset: 1px;
-}
-.sub-detail-action.danger {
-  border-color: var(--wao-danger-line);
-  background: var(--wao-danger-bg);
-  color: var(--wao-danger-strong);
-}
-.sub-detail-action.danger:hover {
-  border-color: var(--wao-danger-line);
-  background: var(--wao-danger-bg);
 }
 .custom-row {
   display: flex;
@@ -2946,18 +2792,63 @@ async function uploadAttachment(event: Event) {
     margin-left: auto;
   }
 }
-/* 属性栏里的关联与评论：窄栏排版 */
 .side-relations .attach-list { margin: 4px 0 2px; }
 .side-relations .attach { padding: 6px 8px; }
-.side-count { margin-left: 6px; color: var(--wao-text-faint); letter-spacing: 0; }
-.side-comments .comment-list { gap: 10px; margin-top: 6px; }
-.side-comments .c-av { width: 22px; height: 22px; font-size: 10px; }
-.side-comments .c-text { font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
-.side-comments .comment-input { margin-top: 10px; }
-.side-comments .ci-wrap { gap: 6px; }
-.side-comments .ci-wrap input { height: 32px; font-size: 12.5px; }
-.side-comments .send { width: 34px; height: 32px; padding: 0; justify-content: center; flex-shrink: 0; }
-.side-comments .mention-menu { right: 40px; }
+.detail-kicker { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wao-space-1) var(--wao-space-2); margin-bottom: var(--wao-space-1); }
+.detail-kicker .type-line { margin: 0; flex-shrink: 0; font-size: var(--wao-font-body); color: var(--wao-text-3); }
+.detail-kicker :deep(.task-labels) { flex: 1; min-width: 140px; margin: 0; }
+.detail-kicker :deep(.task-labels > button) { color: var(--wao-text-3); }
+.detail-kicker :deep(.label-chip) { font-size: var(--wao-font-help, 13px); }
+.work-item-type { min-height: 32px; padding: 4px var(--wao-space-1); border-color: transparent; background: transparent; font-size: var(--wao-font-body); }
+.comments-title { display: flex; align-items: center; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); font-size: var(--wao-font-reading, 16px); font-weight: 600; }
+.side-count { color: var(--wao-text-3); font-size: var(--wao-font-body); font-weight: 400; }
+.task-comments .comment-list { gap: var(--wao-space-3); }
+.task-comments .c-head { flex-wrap: wrap; align-items: center; }
+.task-comments .c-head b { font-size: var(--wao-font-body); }
+.task-comments .c-time { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
+.task-comments .c-text { font-size: var(--wao-font-reading, 16px); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
+.task-comments .c-av { width: 32px; height: 32px; font-size: var(--wao-font-help, 13px); }
+.task-comments .ci-wrap { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+.task-comments .ci-wrap textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; padding: var(--wao-space-1) var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-reading, 16px)/1.7 var(--wao-font); }
+.task-comments .ci-wrap textarea:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.task-comments .ci-wrap textarea::placeholder { color: var(--wao-text-3); }
+.task-comments .send { min-height: 36px; font-size: var(--wao-font-body); border-radius: var(--wao-radius-control); }
+.task-comments .mention-menu { right: 0; bottom: 100%; max-height: 200px; overflow: auto; }
+.comment-help { margin: var(--wao-space-1) 0 0; color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); }
+.comment:focus-within .c-op { opacity: 1; }
+.c-op:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.c-edit-input { color: var(--wao-text); background: var(--wao-bg-card); font-size: var(--wao-font-reading, 16px); }
+.props > .props-label:first-child { display: none; }
+.props-label, .prop-key, .optional-props > summary { color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); letter-spacing: normal; }
+.prop-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); justify-items: start; min-height: 40px; padding: 4px 0; }
+.prop-row > button, .prop-val { min-width: 0; max-width: 100%; }
+.prop-row .date-input, .prop-row .datetime-input { box-sizing: border-box; width: 100%; }
+.prop-row .due-hint { grid-column: 2; font-size: var(--wao-font-help, 13px); }
+.prop-row .owner-btn { width: 100%; }
+.prop-val, .props .pill, .props .owner-btn, .props .proj-btn, .props .text-btn { font-size: var(--wao-font-body); }
+.props :deep(.subtask-properties label), .props :deep(.subtask-properties summary) { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
+.props :deep(.subtask-properties input), .props :deep(.subtask-properties select) { min-height: 32px; font-size: var(--wao-font-body); }
+.field-label { color: var(--wao-text); font-size: var(--wao-font-reading, 16px); font-weight: 600; letter-spacing: normal; }
+.detail-subtasks :deep(.inline-subs) { border: 0; border-radius: 0; }
+.detail-subtasks :deep(.list-head) { background: transparent; padding: 0 0 var(--wao-space-1); height: auto; min-height: 36px; flex-wrap: wrap; }
+.detail-subtasks :deep(.list-title) { font-size: var(--wao-font-reading, 16px); }
+.detail-subtasks :deep(.inline-sub) { min-height: 44px; }
+.detail-subtasks :deep(.sub-open) { font-size: var(--wao-font-body); white-space: normal; overflow-wrap: anywhere; text-align: left; padding-block: var(--wao-space-1); }
+.detail-subtasks :deep(.sub-open.done), .detail-subtasks :deep(.done-switch), .detail-subtasks :deep(.list-count), .detail-subtasks :deep(.empty), .detail-subtasks :deep(.number) { color: var(--wao-text-3); }
+.detail-subtasks :deep(.done-switch), .detail-subtasks :deep(.list-count), .detail-subtasks :deep(.empty) { font-size: var(--wao-font-help, 13px); }
+.detail-subtasks :deep(form input) { font: inherit; min-height: 36px; }
+.detail-subtasks :deep(form input::placeholder) { color: var(--wao-text-3); }
+@media (max-width: 760px) {
+  .detail-subtasks :deep(.inline-sub) { flex-wrap: wrap; row-gap: 0; padding-block: var(--wao-space-1); }
+  .detail-subtasks :deep(.grip) { display: none; }
+  .detail-subtasks :deep(.sub-open) { flex: 1 1 calc(100% - 32px); min-height: 44px; }
+  .detail-subtasks :deep(.number), .detail-subtasks :deep(.flag), .detail-subtasks :deep(.due), .detail-subtasks :deep(.sub-av), .detail-subtasks :deep(.sub-state) { order: 1; }
+  .detail-subtasks :deep(.number) { margin-left: var(--wao-space-3); }
+}
+@media (pointer: coarse) {
+  .c-op { opacity: 1; min-width: 44px; min-height: 44px; }
+  .task-comments .send, .work-item-type, .props button, .props :deep(select), .props :deep(input), .detail-subtasks :deep(button), .detail-subtasks :deep(form input) { min-height: 44px; }
+}
 .state-pill.sm { cursor: inherit; }
 .task-hierarchy-links { padding: 8px 24px; border-bottom: 1px solid var(--wao-line); font-size: 13px; }
 .task-hierarchy-links button { border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; margin: 4px 8px 4px 0; text-align: left; }

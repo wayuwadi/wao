@@ -112,7 +112,7 @@ defineExpose({ selectSection, openProperties })
   >
     <header class="detail-heading">
       <slot name="heading" />
-      <div class="detail-summary"><slot name="summary" /></div>
+      <div class="detail-summary"><slot name="summary" :properties-open="propertiesOpen" /></div>
     </header>
     <div class="detail-navigation">
       <nav class="detail-tabs" role="tablist" aria-label="任务内容">
@@ -138,13 +138,13 @@ defineExpose({ selectSection, openProperties })
         variant="ghost"
         :aria-expanded="propertiesOpen"
         :aria-controls="`${id}-properties`"
-        aria-label="属性、关联与评论"
+        aria-label="属性与关联"
         @click="propertiesOpen ? closeProperties() : openProperties()"
         ><i class="ri-layout-right-line" aria-hidden="true"></i>属性</WaoButton
       >
     </div>
     <div class="detail-body">
-      <div ref="scrollArea" class="detail-scroll" @scroll.passive="remember()">
+      <div ref="scrollArea" class="detail-scroll" tabindex="0" role="region" aria-label="任务正文" @scroll.passive="remember()">
         <section
           v-show="section === 'overview'"
           :id="`${id}-overview-panel`"
@@ -153,8 +153,8 @@ defineExpose({ selectSection, openProperties })
         >
           <div class="preview-heading">
             <h3>描述</h3>
-            <WaoButton variant="ghost" @click="selectSection('description')"
-              >{{ $slots.description ? '展开描述' : description.trim() || imageCount ? '查看全文' : '添加描述'
+            <WaoButton v-if="!$slots.description" variant="ghost" @click="selectSection('description')"
+              >{{ description.trim() || imageCount ? '查看全文' : '添加描述'
               }}<i class="ri-arrow-right-line" aria-hidden="true"></i
             ></WaoButton>
           </div>
@@ -192,15 +192,19 @@ defineExpose({ selectSection, openProperties })
         >
           <slot name="subtasks" /><slot name="activity" />
         </section>
+        <section v-if="$slots.comments" class="detail-comments" aria-label="评论">
+          <slot name="comments" />
+        </section>
       </div>
       <aside
         v-show="propertiesOpen"
         :id="`${id}-properties`"
         class="detail-properties"
-        aria-label="属性、关联与评论"
+        tabindex="0"
+        aria-label="属性与关联"
       >
         <div class="properties-heading">
-          <h3>属性与评论</h3>
+          <h3>属性</h3>
           <WaoButton variant="ghost" @click="closeProperties">收起</WaoButton>
         </div>
         <slot name="properties" />
@@ -210,30 +214,32 @@ defineExpose({ selectSection, openProperties })
 </template>
 
 <style scoped>
+/* Keep every detail region scrollable without displaying scrollbar tracks. */
+.task-detail-layout,
+.task-detail-layout :deep(*) {
+  scrollbar-width: none;
+}
+.task-detail-layout::-webkit-scrollbar,
+.task-detail-layout :deep(*::-webkit-scrollbar) {
+  display: none;
+}
 .overview-description {
-  height: clamp(160px, 24vh, 220px);
+  max-height: min(360px, 42vh);
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--wao-line);
-  border-radius: var(--wao-radius-control);
-  padding: var(--wao-space-1);
 }
 .overview-description :deep(.field) { padding: 0; margin: 0; }
-/* Stretch the actual editable node, so the blank lower area accepts clicks too. */
-.overview-description :deep(> .field:first-child) { min-height: 100%; display: flex; flex-direction: column; }
-.overview-description :deep(> .field:first-child > .md),
-.overview-description :deep(.md-editor-wrap),
-.overview-description :deep(.md-body) { display: flex; flex-direction: column; flex: 1; }
-.overview-description :deep(.md-body .tiptap) { flex: 1; }
 .task-detail-layout {
+  font: 400 var(--wao-font-body)/1.6 var(--wao-font);
+  color: var(--wao-text);
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 .detail-heading {
-  padding: var(--wao-space-2) var(--wao-space-3) var(--wao-space-1);
-  max-height: 30%;
+  padding: var(--wao-space-2) var(--wao-space-4) var(--wao-space-1);
+  max-height: 35%;
   overflow: auto;
   flex-shrink: 0;
 }
@@ -242,9 +248,10 @@ defineExpose({ selectSection, openProperties })
   align-items: center;
   flex-wrap: wrap;
   gap: var(--wao-space-1);
-  padding-top: var(--wao-space-1);
 }
+.detail-summary:not(:has(> *)) { display: none; }
 .detail-summary :deep(.hint) {
+  font-size: var(--wao-font-help, 13px);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -253,7 +260,7 @@ defineExpose({ selectSection, openProperties })
   align-items: center;
   justify-content: space-between;
   gap: var(--wao-space-1);
-  padding: 0 var(--wao-space-3);
+  padding: 0 var(--wao-space-4);
   border-bottom: 1px solid var(--wao-line);
   flex-shrink: 0;
 }
@@ -272,6 +279,7 @@ defineExpose({ selectSection, openProperties })
   background: transparent;
   color: var(--wao-text-3);
   font: inherit;
+  font-size: var(--wao-font-reading, 16px);
   cursor: pointer;
 }
 .detail-tabs button[aria-selected='true'] {
@@ -288,7 +296,7 @@ defineExpose({ selectSection, openProperties })
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: var(--wao-space-2) var(--wao-space-3) var(--wao-space-3);
+  padding: var(--wao-space-3) var(--wao-space-4) var(--wao-space-4);
 }
 .preview-heading,
 .properties-heading {
@@ -299,7 +307,7 @@ defineExpose({ selectSection, openProperties })
 }
 h3 {
   margin: 0;
-  font-size: var(--wao-font-body);
+  font-size: var(--wao-font-reading, 16px);
   font-weight: 600;
 }
 .description-preview {
@@ -308,6 +316,8 @@ h3 {
   background: var(--wao-bg-sub);
 }
 .description-preview p {
+  font-size: var(--wao-font-reading, 16px);
+  line-height: 1.7;
   margin: 0;
   color: var(--wao-text-2);
   overflow-wrap: anywhere;
@@ -325,15 +335,36 @@ h3 {
   font-size: var(--wao-font-caption);
 }
 .overview-subtasks {
-  margin-top: var(--wao-space-3);
+  margin-top: var(--wao-space-4);
 }
+.preview-heading { margin-bottom: var(--wao-space-1); }
+.detail-comments {
+  margin-top: var(--wao-space-4);
+  padding-top: var(--wao-space-3);
+  border-top: 1px solid var(--wao-line);
+}
+/* Reading sizes are local to task details, including the shared design preview. */
+.detail-scroll :deep(.md-body .tiptap) {
+  font-size: var(--wao-font-reading, 16px);
+  line-height: 1.7;
+  color: var(--wao-text-2);
+  overflow-wrap: anywhere;
+}
+.detail-scroll :deep(.md-body h1) { font-size: 1.5em; }
+.detail-scroll :deep(.md-body h2) { font-size: 1.25em; }
+.detail-scroll :deep(.md-body h3) { font-size: 1.125em; }
+.detail-scroll :deep(.md-body h4) { font-size: 1em; }
+.detail-scroll :deep(.md-body p.is-editor-empty:first-child::before) { color: var(--wao-text-3); }
+.detail-scroll :deep(.image-actions) { position: static; justify-content: flex-end; padding: var(--wao-space-1); }
+.detail-scroll :deep(.image-upload) { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
 .detail-properties {
-  flex: 0 0 310px;
+  box-sizing: border-box;
+  flex: 0 0 280px;
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
   border-left: 1px solid var(--wao-line);
-  padding: var(--wao-space-2);
+  padding: var(--wao-space-3) var(--wao-space-2);
   background: var(--wao-bg-sub);
 }
 .properties-heading {

@@ -16,33 +16,34 @@ function layout() {
       heading: '<h2>任务标题</h2>',
       description: '<textarea aria-label="描述草稿"></textarea>',
       subtasks: '<input aria-label="新增子任务草稿" />',
-      properties: '<textarea aria-label="评论草稿"></textarea>',
+      properties: '<input aria-label="属性草稿" />',
+      comments: '<textarea aria-label="评论草稿"></textarea>',
     },
   })
 }
 
 describe('任务详情分区与浏览状态', () => {
-  it('概览直接展示同一编辑器，固定区域可展开全文且子任务可见', async () => {
+  it('概览直接展示同一编辑器和子任务，并可切换全文', async () => {
     const wrapper = layout()
     expect(wrapper.get('[data-section="overview"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('input').isVisible()).toBe(true)
+    expect(wrapper.get('input[aria-label="新增子任务草稿"]').isVisible()).toBe(true)
     expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
     expect(wrapper.find('.description-preview img').exists()).toBe(false)
     expect(wrapper.find('.overview-description').exists()).toBe(true)
-    await wrapper.get('.preview-heading button').trigger('click')
+    await wrapper.get('[data-section="description"]').trigger('click')
     expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
-    expect(wrapper.get('input').isVisible()).toBe(false)
+    expect(wrapper.get('input[aria-label="新增子任务草稿"]').isVisible()).toBe(false)
   })
 
   it('页签切换不重建编辑器或列表，描述和新增子任务草稿均保留', async () => {
     const wrapper = layout()
     const editor = wrapper.get('textarea[aria-label="描述草稿"]')
-    const input = wrapper.get('input')
+    const input = wrapper.get('input[aria-label="新增子任务草稿"]')
     await input.setValue('尚未回车的子任务')
     await wrapper.get('[data-section="description"]').trigger('click')
     await editor.setValue('正在输入的描述')
     await wrapper.get('[data-section="subtasks"]').trigger('click')
-    expect(wrapper.get('input').element).toBe(input.element)
+    expect(wrapper.get('input[aria-label="新增子任务草稿"]').element).toBe(input.element)
     expect((input.element as HTMLInputElement).value).toBe('尚未回车的子任务')
     await wrapper.get('[data-section="description"]').trigger('click')
     expect(wrapper.get('textarea[aria-label="描述草稿"]').element).toBe(editor.element)
@@ -65,7 +66,7 @@ describe('任务详情分区与浏览状态', () => {
     expect(scroll.scrollTop).toBe(260)
   })
 
-  it('属性与评论收起不丢输入，Esc 收起并将焦点返回属性入口', async () => {
+  it('属性收起不影响主栏评论草稿，切换分区保留输入', async () => {
     const wrapper = layout()
     const toggle = wrapper.get('.properties-toggle')
     expect(wrapper.get('.detail-properties').isVisible()).toBe(true)
@@ -75,6 +76,10 @@ describe('任务详情分区与浏览状态', () => {
     await nextTick()
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(toggle.element)
+    expect(comment.isVisible()).toBe(true)
+    expect(wrapper.get('.detail-comments').find('textarea').element).toBe(comment.element)
+    await wrapper.get('[data-section="description"]').trigger('click')
+    expect(comment.isVisible()).toBe(true)
     await toggle.trigger('click')
     expect((comment.element as HTMLTextAreaElement).value).toBe('未发送的评论')
   })
@@ -83,7 +88,7 @@ describe('任务详情分区与浏览状态', () => {
     const wrapper = layout()
     await wrapper.setProps({ description: '', subtaskCount: 0 })
     expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
-    expect(wrapper.get('.preview-heading button').text()).toContain('展开描述')
+    expect(wrapper.find('.preview-heading button').exists()).toBe(false)
     await wrapper.get('[data-section="overview"]').trigger('keydown', { key: 'End' })
     expect(wrapper.get('[data-section="subtasks"]').attributes('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(wrapper.get('[data-section="subtasks"]').element)
