@@ -168,6 +168,7 @@ const router = createRouter({
           component: () => import('@/views/TodoView.vue'),
           meta: { module: 'todo', tabKind: 'module' },
         },
+        { path: 'focus', name: 'focus', component: () => import('@/views/FocusView.vue'), meta: { module: 'focus', tabKind: 'module' } },
         {
           path: 'chat',
           name: 'chat',

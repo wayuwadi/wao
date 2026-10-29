@@ -30,6 +30,7 @@ export type ModuleId =
   | 'ideas'
   | 'calendar'
   | 'todo'
+  | 'focus'
   | 'knowledge'
   | 'files'
   | 'reference-images'
