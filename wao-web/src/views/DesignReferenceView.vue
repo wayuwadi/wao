@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from '@/composables/toast'
 import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
@@ -387,6 +388,7 @@ const detailDemoComment = ref('')
                 >删除示例</WaoButton
               >
             </div>
+            <WaoButton variant="ghost" @click="toast('演示：优先级已修改，四象限已更新', 'ri-check-line', {duration:8000,action:{label:'撤销',run:()=>{feedback='已撤销演示操作，没有修改账号数据。'}}})">演示操作反馈与撤销</WaoButton>
             <p class="demo-feedback" role="status">
               {{ feedback || '一个操作区域通常只有一个主操作；危险动作写清楚。' }}
             </p>

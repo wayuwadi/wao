@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTaskScrollMemory } from '@/composables/taskViewMemory'
 import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
@@ -25,7 +26,7 @@ import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const props = defineProps<{ stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -95,6 +96,8 @@ const sections = computed(() => TASK_QUADRANTS.map((quadrant,index) => {
  const ids=new Set(matching.map(t=>t.id))
  return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!ids.has(t.id)})),count:matching.length}
 }))
+const scrollRoot = ref<HTMLElement | null>(null)
+const rememberScroll = useTaskScrollMemory(scrollRoot, () => props.stateKey ?? `project:${props.projectId ?? 'all'}:quadrant`, () => sections.value.map(s => s.tasks.length).join(','))
 const isChild = (id: string) => !!props.itemRefs?.[id]?.parentKey
 async function save(id: string, change?: () => void) {
   if (!data.taskById(sourceId(id)) || busy(id)) return
@@ -107,11 +110,7 @@ async function save(id: string, change?: () => void) {
 }
 async function setPriority(id: string, priority: Priority) {
   if (isChild(id) || customized.value) return
-  await save(id, () => {
-    const ref = itemActions.source(id)
-    if (ref.subId) data.updateSub(ref.taskId, ref.subId, { pr: priority })
-    else if (data.taskById(id)?.pr !== priority) data.patchTask(id, { pr: priority }, `将优先级改为「${priority}」`)
-  })
+  await itemActions.priority(id, priority)
 }
 async function toggleComplete(id: string) {
   await save(id, () => {
@@ -172,7 +171,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 </script>
 
 <template>
-  <div class="quadrant-view">
+  <div ref="scrollRoot" class="quadrant-view" @scroll.capture="rememberScroll">
     <div class="quadrant-toolbar">
       <TaskOrderStatus :scope="orderScope" /><span v-if="customized">自定义筛选 · 任务可出现在多个象限</span>
       <button v-if="doneCount && !itemRefs" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
@@ -192,19 +191,21 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
               :title="expanded ? '还原四象限' : '放大象限'" @click="expanded = expanded ? null : section.priority"><i :class="expanded ? 'ri-contract-left-right-line' : 'ri-expand-diagonal-line'"></i></button>
           </div>
         </header>
-        <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
+        <div :data-task-scroll="section.priority" class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
           <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ 'context-only': task.contextOnly, done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
             :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
             @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
-            <button v-if="selectionMode && !itemActions.isSub(task.id)" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
+            <button v-if="selectionMode" :disabled="task.contextOnly" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
               @click="emit('select', task.id)"><i :class="selectedIds.includes(task.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
               <button class="quadrant-title" :title="task.title" :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
+              <span v-if="itemRefs?.[task.id]?.priorityUnset && itemRefs?.[task.id]?.parentKey" class="save-hint" title="未单独设置优先级，跟随父任务">继承</span>
+              <span v-if="task.contextOnly" class="save-hint" title="仅展示父子关系，不计入本象限数量">父任务</span>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
               <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
@@ -274,8 +275,8 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
 .quadrant-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
-.quadrant-toolbar:not(:has(*)) { display:none; }
 .quadrant-toolbar { flex-shrink:0; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; margin: 0 0 6px; font-size: 12px; color: var(--wao-text-weak); }
+.quadrant-toolbar:not(:has(*)) { display:none; }
 .quadrant-toolbar > span { display: inline-flex; align-items: center; gap: 6px; }
 button, select { font: inherit; color: var(--wao-text); }
 button { cursor: pointer; }
@@ -321,20 +322,21 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .has-error .quadrant-save { flex-basis: 100%; flex-wrap: wrap; }
 .has-error .quadrant-save :deep(.hint) { white-space: normal; overflow-wrap: anywhere; }
 .quadrant-save button { color: var(--wao-danger-strong); font-size: 12px; }
-.quadrant-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 12px 0; color: var(--wao-text-faint); font-size: 12px; }
+.quadrant-empty { margin:0; display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 12px 0; color: var(--wao-text-faint); font-size: 12px; }
 .quadrant-empty > i { color: color-mix(in srgb, var(--quadrant-color) 35%, var(--wao-bg-card)); font-size: 26px; }
 @media (max-width: 760px) {
   .quadrant-view { min-height: 0; }
   .quadrants { gap: 7px; }
   header { gap: 4px; padding: 5px 7px; flex-wrap: wrap; }
-  h2 { font-size: 12px; }
+  h2 { font-size: var(--wao-font-body); }
   .quadrant-actions { width: 100%; justify-content: flex-end; }
   .quadrant-actions button { width: 30px; height: 28px; }
   .quadrant-list { padding: 3px; }
   .quadrant-task { gap: 2px; }
   .quadrant-complete, .quadrant-select { flex-basis: 24px; min-height: 32px; }
-  .quadrant-title { font-size: 12px; line-height: 24px; }
-  .quadrant-meta { max-width: 28%; }
+  .quadrant-title { font-size: var(--wao-font-body); line-height: 24px; }
+  .quadrant-meta, .quadrant-execution, .quadrant-task-body > .save-hint { display:none; }
+  .quadrants.expanded .quadrant-meta, .quadrants.expanded .quadrant-task-body > .save-hint { display:flex; }
   .quadrant-project { margin-left: 0; }
   .quadrant-due, .quadrant-status { display: none; }
   .quadrants.expanded .quadrant-meta { max-width: 40%; }
@@ -342,7 +344,8 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
   .quadrant-task-body { gap: 3px; }
   .quadrant-task { min-height: 44px; }
   .quadrant-more { width: 24px; min-height: 32px; }
-  .quadrant-move { flex-basis: 22px; min-height: 32px; opacity: .7; }
+  .quadrant-move { display:none; }
+  .quadrants.expanded .quadrant-move { display:flex; }
   .quadrant-toolbar { font-size: 11px; }
   .quadrant-toolbar button { min-height: 34px; }
   .quadrants.expanded header { flex-wrap: nowrap; }
