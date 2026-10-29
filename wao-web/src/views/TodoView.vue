@@ -55,7 +55,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
 function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUUID(),name:heading.value+(query.value?' · '+query.value:''),selection:selection.value,query:query.value}]) }
 </script>
 <template>
- <div class="task-workspace">
+ <div class="task-workspace" :class="{ 'quadrant-workspace': layout === 'quadrant' && !['review', 'legacy'].includes(selection) }">
   <nav class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <p>清单</p><button v-for="project in data.projects" :key="project.id" :class="{active:selection==='project:'+project.id}" @click="selection='project:'+project.id"><i class="ri-list-check"></i>{{ project.name }}</button>
@@ -81,6 +81,9 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
 </template>
 <style scoped>
 .task-workspace { display:grid; grid-template-columns:210px minmax(0,1fr); min-height:calc(100dvh - 110px); color:var(--wao-text); font-family:var(--wao-font); font-size:var(--wao-font-body); }
+.quadrant-workspace { height:calc(100dvh - 110px); min-height:480px; }
+.quadrant-workspace .workspace-main { display:flex; flex-direction:column; min-height:0; overflow:auto; }
+.quadrant-workspace .workspace-main > :not(.quadrant-view) { flex-shrink:0; }
 .task-navigation { padding:var(--wao-space-2); border-right:1px solid var(--wao-line); overflow:auto; max-height:calc(100dvh - 110px); }
 button { font:inherit; color:inherit; border:0; border-radius:var(--wao-radius-control); background:transparent; cursor:pointer; }
 .task-navigation>button,.nav-footer>button { display:flex; gap:var(--wao-space-1); align-items:center; text-align:left; width:100%; min-height:38px; padding:var(--wao-space-1); overflow-wrap:anywhere; }
@@ -102,5 +105,5 @@ input { min-width:0; color:var(--wao-text); background:var(--wao-bg-sub); font:i
 .quick-add button { color:var(--wao-primary-text); }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
-@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;}button {min-height:44px;} }
+@media(max-width:600px) { .quadrant-workspace {height:auto;} .quadrant-workspace .workspace-main {min-height:600px;} .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;}button {min-height:44px;} }
 </style>

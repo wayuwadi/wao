@@ -258,8 +258,9 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 .quadrant-more:hover, .quadrant-more:focus-visible { background: var(--wao-bg-hover); }
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
-.quadrant-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.quadrant-view { container-type:inline-size; display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .quadrant-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin: 4px 0 6px; font-size: 12px; color: var(--wao-text-weak); }
+.quadrant-toolbar:empty { display:none; }
 .quadrant-toolbar > span { display: inline-flex; align-items: center; gap: 6px; }
 button, select { font: inherit; color: var(--wao-text); }
 button { cursor: pointer; }
@@ -267,15 +268,15 @@ button:disabled { opacity: .5; cursor: wait; }
 button:focus-visible, .quadrant-move:focus-within { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .quadrant-toolbar button, .quadrant-save button, .quadrant-empty button { border: 0; border-radius: 5px; background: transparent; padding: 5px 6px; color: var(--wao-text-weak); }
 .quadrant-toolbar button:hover, .quadrant-empty button:hover { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
-.quadrants { min-height:calc(100dvh - 330px); display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.quadrants { display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .quadrants.expanded { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .quadrant { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .quadrant.drop-target { border-color: var(--quadrant-color); box-shadow: inset 0 0 0 2px var(--quadrant-color); }
 header { display: flex; align-items: center; gap: 7px; flex-shrink: 0; min-height: 44px; padding: 4px 12px; background: color-mix(in srgb, var(--quadrant-color) 5%, var(--wao-bg-card)); }
 .quadrant-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--quadrant-color); flex-shrink: 0; }
-h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color); }
+h2 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color); }
 .quadrant-count { font-size: 12px; color: var(--wao-text-weak); }
-.quadrant-actions { display: flex; gap: 2px; margin-left: auto; }
+.quadrant-actions { flex-shrink:0; display: flex; gap: 2px; margin-left: auto; }
 .quadrant-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--wao-text-weak); font-size: 16px; }
 .quadrant-actions button:hover { background: var(--wao-bg-hover); color: var(--quadrant-color); }
 .quadrant-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 7px; scrollbar-width: thin; }
@@ -291,9 +292,9 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-title { display: block; flex: 1 1 80px; min-width: 0; padding: 3px 0; border: 0; background: none; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; font-size: 13px; }
 .quadrant-title:hover { color: var(--wao-primary-text); }
 .done .quadrant-title { text-decoration: line-through; color: var(--wao-text-weak); }
-.quadrant-meta { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 40%; font-size: 11px; line-height: 18px; color: var(--wao-text-3); }
+.quadrant-meta { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 40%; overflow:hidden; white-space:nowrap; font-size: 11px; line-height: 18px; color: var(--wao-text-3); }
 .quadrant-execution, .quadrant-task-body > .save-hint { max-width: 20%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--wao-primary-text); }
-.quadrant-due, .quadrant-status { flex-shrink: 0; }
+.quadrant-due, .quadrant-status { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .quadrant-project { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-project i { margin-right: 3px; }
 .quadrant-move { position: relative; flex: 0 0 26px; height: 26px; display: grid; place-items: center; color: var(--wao-text-weak); border-radius: 5px; opacity: .4; }
@@ -307,6 +308,10 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-save button { color: var(--wao-danger-strong); font-size: 12px; }
 .quadrant-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 12px 0; color: var(--wao-text-faint); font-size: 12px; }
 .quadrant-empty > i { color: color-mix(in srgb, var(--quadrant-color) 35%, var(--wao-bg-card)); font-size: 26px; }
+@container (max-width: 560px) {
+  .quadrants { grid-template-columns:minmax(0,1fr); grid-template-rows:none; grid-auto-rows:280px; flex:none; }
+  .quadrants.expanded { grid-auto-rows: minmax(280px, 1fr); }
+}
 @media (max-width: 760px) {
   .quadrant-view { min-height: 300px; }
   .quadrants { gap: 7px; }
