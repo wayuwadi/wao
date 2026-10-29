@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
-const props = defineProps<{ taskId: string; subId?: string }>()
+const props = defineProps<{ taskId: string; subId?: string; autoOpen?: boolean; inline?: boolean }>()
+const emit=defineEmits<{done:[]}>()
 const labels = useTaskLabelsStore()
 const editing = ref(false), draft = ref(''), revision = ref(0), saving = ref(false), error = ref('')
 const input = ref<HTMLInputElement | null>(null)
@@ -16,6 +17,7 @@ watch(key, () => {
  } catch { error.value = '标签草稿读取失败，请保持页面并重试' }
  if (!labels.ready && !labels.loading) void labels.load()
 }, { immediate: true })
+watch(() => props.autoOpen && labels.ready, ready => { if (ready && !editing.value) begin() }, { immediate:true })
 function begin() { draft.value = current.value.tags.join('，'); revision.value = current.value.revision; editing.value = true; void nextTick(()=>input.value?.focus()) }
 function protect() {
  try { localStorage.setItem(key.value, JSON.stringify({ text: draft.value, revision: revision.value })) }
@@ -29,15 +31,15 @@ async function save() {
  try {
   await labels.save({ taskId: props.taskId, subId: props.subId ?? '', revision: revision.value, tags: [...new Set(draft.value.split(/[,，]/).map(s => s.trim()).filter(Boolean))] })
   localStorage.removeItem(draftKey)
-  if (key.value === identity) editing.value = false
+  if (key.value === identity) { editing.value = false; emit('done') }
  } catch (e: any) { if (key.value === identity) error.value = e.response?.data?.message || '标签未保存，草稿已保留，请重试' }
  finally { if (key.value === identity) saving.value = false }
 }
 async function reload() { await labels.load(); if (!labels.error) { revision.value = current.value.revision; protect() } }
-function cancel() { try { localStorage.removeItem(key.value); editing.value = false; error.value = '' } catch { error.value = '无法清除草稿，请重试' } }
+function cancel() { try { localStorage.removeItem(key.value); editing.value = false; error.value = ''; emit('done') } catch { error.value = '无法清除草稿，请重试' } }
 </script>
 <template>
- <div class="task-labels">
+ <div class="task-labels" :class="{inline}">
   <span v-for="tag in current.tags" :key="tag" class="label-chip"># {{ tag }}</span>
   <button v-if="!editing" type="button" :disabled="!labels.ready" @click="begin"><i class="ri-price-tag-3-line"></i> 标签</button>
   <form v-else role="dialog" aria-label="编辑任务标签" @submit.prevent="save" @keydown.esc.stop.prevent="cancel">
@@ -51,6 +53,7 @@ function cancel() { try { localStorage.removeItem(key.value); editing.value = fa
 </template>
 <style scoped>
 .task-labels { position:relative; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
+.inline form { position:static; width:100%; box-sizing:border-box; box-shadow:none; }
 .label-chip { background:var(--wao-primary-soft); color:var(--wao-primary-text); border-radius:var(--wao-radius-pill); padding:2px var(--wao-space-1); font-size:var(--wao-font-caption); }
 button { border:0; background:transparent; color:var(--wao-primary-text); font:inherit; cursor:pointer; min-height:32px; }
 button:disabled { opacity:.5; cursor:default; }
