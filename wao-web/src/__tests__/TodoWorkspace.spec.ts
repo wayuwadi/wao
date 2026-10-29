@@ -17,6 +17,34 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('共享清单按可见权限显示他人创建和负责的任务，指派给我才限制负责人',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!, project=data.projects[0]!
+  data.tasks=[
+   {...base,id:'mine',title:'本人负责',owner:'wg',parts:[],createdBy:'other',project:project.id,subs:[]},
+   {...base,id:'parent',title:'共享主任务',owner:'other',parts:[],createdBy:'other',project:project.id,subs:[{id:'child',text:'共享子任务',owner:'other',done:false,due:data.today}]},
+   {...base,id:'closed',title:'共享已完成',owner:'other',parts:[],createdBy:'other',project:project.id,status:'已完成',subs:[]},
+  ]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  const nav=(name:string)=>wrapper.findAll('.task-navigation button').find(b=>b.text()===name)!
+  const rows=()=>wrapper.findAll('.checklist-row').map(row=>row.text()).join('\n')
+  expect(rows()).toContain('共享主任务');expect(rows()).toContain('共享子任务');expect(rows()).not.toContain('共享已完成')
+  expect(wrapper.get('.count').text()).toBe('3')
+  await nav(project.name).trigger('click');await flushPromises()
+  expect(rows()).toContain('共享主任务');expect(rows()).toContain('共享子任务')
+  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  expect(wrapper.findAll('.quadrant-task').some(row=>row.text().includes('共享主任务'))).toBe(true)
+  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='清单')!.trigger('click')
+  await nav('指派给我').trigger('click');await flushPromises()
+  expect(rows()).toContain('本人负责');expect(rows()).not.toContain('共享主任务');expect(rows()).not.toContain('共享子任务')
+  await nav('已完成').trigger('click');await flushPromises()
+  expect(rows()).toContain('共享已完成');expect(rows()).not.toContain('共享主任务')
+  await nav('联调').trigger('click');await flushPromises()
+  expect(rows()).toContain('共享子任务')
+  // 授权任务源撤回后，清单及标签不保留旧的共享任务。
+  data.tasks=data.tasks.filter(t=>t.id==='mine');await flushPromises()
+  expect(rows()).not.toContain('共享子任务');expect(wrapper.findAll('.task-navigation button').some(b=>b.text()==='联调')).toBe(false)
+  wrapper.unmount()
+ })
  it('filters child labels while retaining ancestry and selecting the matching child',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
   const tag=wrapper.findAll('.task-navigation>button').find(b=>b.text().includes('联调'))!
