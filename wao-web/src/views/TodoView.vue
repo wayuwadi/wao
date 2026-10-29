@@ -14,6 +14,7 @@ import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
 import TodoLegacyView from './TodoLegacyView.vue'
+import TodayDates from '@/components/routines/TodayDates.vue'
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), labels = useTaskLabelsStore(), route = useRoute()
 const selection = ref('all'), query = ref(''), layout = ref<'list' | 'quadrant'>('list'), collapsed = ref<string[]>([]), selectedDay = ref(data.today)
 const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-2-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
@@ -72,6 +73,7 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
    <TodoLegacyView v-else-if="selection==='legacy'" />
    <template v-else>
     <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <TodayDates v-if="selection==='today'" />
     <div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div>
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>

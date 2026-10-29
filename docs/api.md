@@ -49,3 +49,13 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 浏览器会话接口（按当前成员隔离）：`GET /api/focus` 返回服务端时间、当前计时、最近 200 条历史与今日/累计统计；`PUT /api/focus/{id}` 开始，id 为 32 位小写十六进制稳定重试编号，body 为 `{mode: pomodoro|stopwatch|break, minutes: 1..180, taskId, subId, note}`；`POST /api/focus/{id}` 操作，body 为 `{revision, action: pause|resume|save|finish, note}`。省略 note 视为空笔记，客户端每次携带当前草稿。
 
 开始时检查关联任务权限，返回自身已存在的同 id 记录，已有其它进行中记录返回 409。修改版本过期返回 409；完成事务同步创建带「番茄钟」标签的小记，重复完成返回同一结果。休息不创建小记。详情见 [番茄专注规范](specs/pomodoro-focus.md)。不增加 CLI/MCP 或工作区令牌授权。
+# 倒数日与习惯打卡
+
+浏览器登录成员接口（不自动扩展已有工作区令牌）：
+
+- `GET /api/routines?month=2026-10`：成员的日期/习惯、日期计算、统计及所选月份/最近 7 天的日志。`today` 以服务端上海日期为准。
+- `PUT /api/routines/{id}`：保存条目，`id` 为稳定 32 位十六进制编号，新增 `revision=0`，修改携带当前版本。`kind=countdown|habit` 创建后不可更改。`status=active|archived|trash` 支持可恢复删除。
+- `PUT /api/routines/{id}/checkins/{YYYY-MM-DD}`：保存本人习惯当日的 `{revision, amount, note}`，新日志版本 0，数量 0 表示撤销。响应含历史 `target` 快照。
+- `PUT /api/focus/{id}` 可增加可选 `habitId`，不能同时关联任务；结束小记包含习惯链接，不自动打卡。
+
+跨成员返回不存在，过期版本返回 409；详情与日期/连续统计定义见 [倒数日与习惯打卡](specs/countdowns-habits.md)。

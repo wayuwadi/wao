@@ -71,4 +71,12 @@ class FocusServiceTest {
         assertThatThrownBy(()->tx.execute(t->service.start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",new FocusService.Start("pomodoro",25,"private","",""),"me"))).isInstanceOf(NotFoundException.class);
     }
     @Test void restDoesNotCreateNoteOrIncreaseFocusStats(){var s=start("break",5,"","");now+=300_000;change(s,"finish","");verifyNoInteractions(notes);assertThat(service.state("me").stats().totalCount()).isZero();}
+    @Test void habitFocusChecksOwnershipAndSavesItsLinkWithoutCheckingIn(){
+        RoutineService routines=mock(RoutineService.class);var habit=new RoutineService.Item();habit.kind="habit";habit.id="habit";habit.name="阅读习惯";
+        when(routines.owned("me","habit")).thenReturn(habit);service=new FocusService(jdbc,new ObjectMapper(),tasks,notes,clock,routines);
+        var s=tx.execute(t->service.start(id,new FocusService.Start("pomodoro",25,"","","读书笔记","habit"),"me"));
+        assertThat(s.habitId).isEqualTo("habit");assertThat(s.taskTitle).isEqualTo("阅读习惯");now+=1000;change(s,"finish","读书笔记");
+        var capture=org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);verify(notes).createNote(anyString(),capture.capture(),eq("me"));
+        assertThat(capture.getValue().blocks().get(1).p()).contains("/habits?habit=habit");verify(routines).owned("me","habit");verifyNoMoreInteractions(routines);
+    }
 }

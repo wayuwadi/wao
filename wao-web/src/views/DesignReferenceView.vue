@@ -3,6 +3,10 @@ import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import FocusDial from '@/components/focus/FocusDial.vue'
+import DateCounterCard from '@/components/routines/DateCounterCard.vue'
+import { newRoutine } from '@/api/personalRoutines'
+const sampleDate={...newRoutine('countdown','2026-12-31'),name:'迎接新年 · 示例',emoji:'🎉',color:'pink',style:'outline'}
+const sampleDateSummary={id:sampleDate.id,occurrence:'2026-12-31',days:30,lunarLabel:'',age:null,total:0,monthCount:0,monthRate:0,streak:0,bestStreak:0,streakUnit:'天',weekCount:0,scheduledDates:[]}
 const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
 const clipboardExample = ref('- demo.fact_sales 新增goods_type\n\n1. dws\\demo\\fact_sales.py\n2. ads\\demo\\fact_sales.py\n\nhttps://example.com/docs?field=goods_type')
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
@@ -255,6 +259,7 @@ const detailDemoComment = ref('')
             <MarkdownEditor v-model="codeExample" slash-commands />
           </section>
           <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>时间戳驱动的计时视图；示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
+          <section class="reference-section"><h2>倒数日 · 示例数据</h2><p>日期卡片复用主题颜色、简洁/浅底/描边样式；示例不创建提醒。</p><DateCounterCard :item="sampleDate" :summary="sampleDateSummary" /></section>
           <section class="reference-section clipboard-example">
             <h2>复制与链接 · 示例数据</h2>
             <p>普通复制保留文字与路径；粘贴完整网址后可单击打开。</p>
