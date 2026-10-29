@@ -2,6 +2,8 @@ package cn.wayuwa.wao.domain;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -11,7 +13,9 @@ public class AttendanceConnectorEntity {
     @TableId private String memberId;
     private String provider; private String username; private String vaultItemId; private Boolean enabled;
     private String remoteEmployeeId; private byte[] sessionCiphertext; private byte[] sessionNonce;
-    private String status; private LocalDateTime lastSyncedAt; private String lastError;
+    private String status; private LocalDateTime lastSyncedAt;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String lastError;
     private LocalDate historySyncedFrom; private String historyBackfillClaimToken; private LocalDateTime historyBackfillClaimedAt;
     private LocalDateTime createdAt; private LocalDateTime updatedAt;
     public String getMemberId(){return memberId;} public void setMemberId(String v){memberId=v;}
