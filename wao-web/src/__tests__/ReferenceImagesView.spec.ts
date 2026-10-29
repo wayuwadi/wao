@@ -44,7 +44,7 @@ describe('ReferenceImagesView', () => {
     await wrapper.get('.compose-row button').trigger('click')
     await flushPromises()
     expect(api.stream).toHaveBeenCalledWith('参考这个首页，设计我的项目页', [], undefined,
-      'conversation-1', undefined, 'local-codex', [picture.id])
+      'conversation-1', undefined, 'local-codex', [picture.id], expect.any(AbortSignal))
     expect(wrapper.text()).toContain('看到了项目概览的层级。')
   })
 

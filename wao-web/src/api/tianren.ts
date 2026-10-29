@@ -108,8 +108,8 @@ export async function createTianrenShareLink(readingId: string): Promise<string>
 export const fetchSharedTianrenReading = (token: string) =>
   data<SharedTianrenReading>(http.get(`/api/share/tianren/${encodeURIComponent(token)}`))
 
-export async function* streamTianrenInterpretation(focus: string): AsyncGenerator<string> {
-  yield* streamTextEvents('/api/tianren/readings/today/interpret/stream', { focus })
+export async function* streamTianrenInterpretation(focus: string, signal?: AbortSignal): AsyncGenerator<string> {
+  yield* streamTextEvents('/api/tianren/readings/today/interpret/stream', { focus }, { signal })
 }
 
 /** 下线节奏仪表盘后，卦象仍沿用既有成员通知偏好。 */

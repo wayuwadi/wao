@@ -28,6 +28,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/tianren/readings")
 public class TianrenController {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.AssistantStreamExecutor streams;
+
     private static final String FALLBACK_MEMBER = "wg";
 
     private final TianrenReadingService readings;
@@ -92,12 +95,7 @@ public class TianrenController {
     public SseEmitter interpret(@Valid @RequestBody TianrenInterpretRequest request, HttpServletRequest http) {
         String memberId = member(http);
         SseEmitter emitter = new SseEmitter(310_000L);
-        Thread worker = new Thread(
-                () -> automation.interpretStream(memberId, request.focus(), emitter),
-                "wao-tianren-stream");
-        worker.setDaemon(true);
-        worker.start();
-        return emitter;
+        return streams.submit(emitter, () -> automation.interpretStream(memberId, request.focus(), emitter));
     }
 
     private String member(HttpServletRequest http) {

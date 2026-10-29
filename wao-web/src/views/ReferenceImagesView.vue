@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { createAssistantConversation, fetchAssistantStatus, streamChat } from '@/api/assistant'
 import { listReferenceImages, uploadReferenceImage, type ReferenceImage } from '@/api/referenceImages'
@@ -87,9 +87,14 @@ function toggle(id: string) {
   if (selected.value.length < 4) { selected.value.push(id); selectionError.value = '' }
   else selectionError.value = '每次最多选择四张参考图，请先取消一张。'
 }
+let streamController: AbortController | undefined
+onBeforeUnmount(() => streamController?.abort())
+
 async function ask() {
   if (!selected.value.length || sending.value || uploading.value) return
   sending.value = true
+  const controller = new AbortController()
+  streamController = controller
   sendError.value = ''
   answer.value = ''
   const text = prompt.value.trim() || defaultPrompt
@@ -100,10 +105,11 @@ async function ask() {
     const conversation = await createAssistantConversation()
     conversationId.value = conversation.id
     for await (const token of streamChat(text, [], undefined, conversation.id, undefined,
-      'local-codex', imageIds)) answer.value += token
+      'local-codex', imageIds, controller.signal)) answer.value += token
     prompt.value = ''
     try { localStorage.removeItem(draftKey.value) } catch { /* 内存输入已清空 */ }
   } catch (cause) {
+    if (controller.signal.aborted) return
     sendError.value = errorMessage(cause, '带图提问失败，请重试')
     // 保留当前选择与输入；失败会话可从 AI 对话历史重新打开。
   } finally { sending.value = false }

@@ -349,10 +349,15 @@ async function ensureConversation(): Promise<string> {
   return created.id
 }
 
+let streamController: AbortController | undefined
+onBeforeUnmount(() => streamController?.abort())
+
 async function send(text?: string, context?: string) {
   const msg = (text ?? input.value).trim()
   if (!msg || sending.value || historyLoading.value || historyError.value || !assistantStatus.value.configured) return
   sending.value = true
+  const controller = new AbortController()
+  streamController = controller
   sendError.value = ''
   savedReply.value = false
   sourcePanelOpen.value = false
@@ -369,7 +374,7 @@ async function send(text?: string, context?: string) {
     scrollToBottom()
     try {
       for await (const token of streamChat(msg, history, context, conversationId,
-        currentSourceFilter(), capabilityId.value)) {
+        currentSourceFilter(), capabilityId.value, undefined, controller.signal)) {
         assistantMsg.content += token
         scrollToBottom()
       }
@@ -377,6 +382,7 @@ async function send(text?: string, context?: string) {
       saveDraft('', originalDraftId)
       savedReply.value = true
     } catch (error) {
+      if (controller.signal.aborted) return
       sendError.value = error instanceof Error ? error.message : '请求失败，请重试'
       // 错误不伪装成模型回复；重新读取持久化历史，避免把乐观消息带入下一轮。
       try {
@@ -459,6 +465,7 @@ watch(() => props.modelValue || props.embedded, (value) => {
     focusInput()
   } else {
     stopStatusRefresh()
+    streamController?.abort()
   }
 })
 watch(() => ui.assistantDraft, () => {

@@ -132,6 +132,7 @@ export async function* streamChat(
   sourceFilter?: AssistantSourceFilter,
   aiCapabilityId?: string,
   referenceImageIds?: string[],
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   yield* streamTextEvents('/api/assistant/chat/stream', {
     message,
@@ -141,5 +142,5 @@ export async function* streamChat(
     sourceFilter,
     aiCapabilityId,
     referenceImageIds,
-  })
+  }, { signal })
 }

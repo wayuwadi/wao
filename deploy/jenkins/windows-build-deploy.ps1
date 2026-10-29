@@ -41,6 +41,7 @@ try {
       foreach($game in @('dino','rift','starfield','beasts','camp')){Run "$nodeRoot/npm.cmd" @('run',"build:$game")}
     }else{
       Run "$nodeRoot/npm.cmd" @('run','type-check')
+      Run "$nodeRoot/npm.cmd" @('run','test:stability')
       Run "$nodeRoot/node.exe" @('node_modules/vite/bin/vite.js','build')
     }
   }
