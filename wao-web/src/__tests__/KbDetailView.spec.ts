@@ -184,6 +184,70 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.find('.library-home').exists()).toBe(true)
   })
 
+  // Regression: knowledge QA — 首页搜索、读取失败与归档提示，2026-10-29。
+  it('首页与目录共享搜索，清空后恢复列表，排序不修改存储顺序', async () => {
+    const data = useDataStore(pinia)
+    data.docs.d7!.title = 'Alpha 方案'
+    data.docs.d8!.title = 'Beta 方案'
+    data.docs.d7!.updated = '2026-10-01T10:00:00Z'
+    data.docs.d8!.updated = '2026-10-28T10:00:00Z'
+    const before = JSON.stringify(data.kbById('k3')!.folders)
+    const wrapper = await mountView()
+    await wrapper.get('.tree-search input').setValue('Beta')
+    expect(wrapper.findAll('.home-document-name').map(node => node.text())).toEqual(['Beta 方案'])
+    expect(wrapper.get('.home-result-count').text()).toContain('1')
+    await wrapper.get('[aria-label="搜索首页文档"]').setValue('不存在的文档')
+    expect(wrapper.get('.library-home').text()).toContain('没有匹配的文件夹或文档')
+    await wrapper.get('.home-clear-search').trigger('click')
+    expect(wrapper.findAll('.home-document-name')).toHaveLength(2)
+    await wrapper.get('[aria-label="首页文档排序"]').setValue('updated')
+    expect(wrapper.findAll('.home-document-name').map(node => node.text())).toEqual(['Beta 方案', 'Alpha 方案'])
+    await wrapper.get('[aria-label="首页文档排序"]').setValue('title')
+    expect(wrapper.findAll('.home-document-name').map(node => node.text())).toEqual(['Alpha 方案', 'Beta 方案'])
+    expect(JSON.stringify(data.kbById('k3')!.folders)).toBe(before)
+  })
+
+  it('目录加载失败显示原因并可重试，保留已有列表', async () => {
+    const data = useDataStore(pinia)
+    data.loadStates.docs = 'error'
+    data.loadErrors.docs = '网络暂时不可用'
+    const retry = vi.spyOn(data, 'refreshDocs').mockImplementation(async () => {
+      data.loadStates.docs = 'loaded'
+      return true
+    })
+    const wrapper = await mountView()
+    expect(wrapper.get('.home-load-error').text()).toContain('网络暂时不可用')
+    expect(wrapper.get('.library-home').text()).not.toContain('正在加载目录')
+    expect(wrapper.findAll('.home-document-name')).toHaveLength(2)
+    await wrapper.get('.home-load-error button').trigger('click')
+    await flushPromises()
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.home-load-error').exists()).toBe(false)
+  })
+
+  it('历史群聊库不伪造最近同步时间和新增条数', async () => {
+    const wrapper = await mountView('/kb/k4')
+    expect(wrapper.get('.sync-bar').text()).not.toContain('今天 06:12')
+    expect(wrapper.get('.sync-bar').text()).not.toContain('新增 12 条')
+    expect(wrapper.get('.sync-bar').text()).toContain('历史归档')
+  })
+
+  it('切换知识库时加载新库归档，旧请求失败不污染新库状态', async () => {
+    const data = useDataStore(pinia)
+    let finishOld!: (value: boolean) => void
+    const archived = vi.spyOn(data, 'refreshArchivedDocs')
+      .mockReturnValueOnce(new Promise<boolean>(resolve => { finishOld = resolve }))
+      .mockResolvedValueOnce(true)
+    const wrapper = await mountView('/kb/k3', true)
+    await wrapper.vm.$router.push('/kb/k4')
+    await flushPromises()
+    expect(archived.mock.calls.map(args => args[0])).toEqual(['k3', 'k4'])
+    finishOld(false)
+    await flushPromises()
+    // 空归档区在请求完成后隐藏；旧请求不能重新带回错误或加载提示。
+    expect(wrapper.find('.archive-tree').exists()).toBe(false)
+  })
+
   it('小记知识库目录和首页默认按更新时间倒序，可切换正序', async () => {
     const data = useDataStore(pinia)
     data.kbById('kb-notes')!.folders[0]!.docs = ['d7', 'd8']
