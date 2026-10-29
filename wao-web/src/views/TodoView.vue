@@ -20,13 +20,10 @@ const saved = useMemberPreference<{id:string; name:string; selection:string; que
 watch(() => labels.identity, () => { selection.value='all'; query.value=''; collapsed.value=[]; void labels.load() }, { immediate:true })
 watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; selection.value='review' } }, {immediate:true})
 const projection = computed(() => projectWorkItems(data.tasks))
-const personal = computed(() => projection.value.items.filter(item => {
- const source = data.taskById(projection.value.refs[item.id]?.taskId ?? item.id)
- return item.owner===session.userId || item.parts.includes(session.userId) || (projection.value.refs[item.id]?.subId && source && (source.owner===session.userId || source.parts.includes(session.userId)))
-}))
-const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
+// tasks 已由服务端按项目可见权限过滤；负责人/参与者是筛选条件，不是共享任务的可见权限。
+const visibleTags = computed(()=>[...new Set(projection.value.items.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
-const filtered = computed(() => personal.value.filter(task => {
+const filtered = computed(() => projection.value.items.filter(task => {
  if(selection.value==='completed') return isTaskFinished(task)
  if(isTaskFinished(task)) return false
  if(selection.value==='assigned' && task.owner!==session.userId) return false
