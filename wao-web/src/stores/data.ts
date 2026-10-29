@@ -561,6 +561,10 @@ export const useDataStore = defineStore('data', () => {
   let docMemberGeneration = 0
   watch(() => useSessionStore().userId, () => {
     docMemberGeneration++
+    docsRequest = null
+    Object.keys(docs).forEach(id => { delete docs[id] })
+    loadStates.docs = 'idle'
+    delete loadErrors.docs
     docRequests.clear()
     Object.keys(docLoadErrors).forEach(id => { delete docLoadErrors[id] })
     Object.values(docPersistTimers).forEach(clearTimeout)
@@ -1230,15 +1234,18 @@ export const useDataStore = defineStore('data', () => {
 
   function loadDocs(): Promise<boolean> {
     if (docsRequest) return docsRequest
+    const generation = docMemberGeneration
     loadStates.docs = 'loading'
     delete loadErrors.docs
-    docsRequest = fetchDocs()
+    const request = fetchDocs()
       .then((list) => {
+        if (generation !== docMemberGeneration) return false
         replaceDocs(list)
         loadStates.docs = 'loaded'
         return true
       })
       .catch((cause: unknown) => {
+        if (generation !== docMemberGeneration) return false
         loadStates.docs = 'error'
         loadErrors.docs = cause instanceof Error && cause.message
           ? cause.message
@@ -1246,9 +1253,10 @@ export const useDataStore = defineStore('data', () => {
         return false
       })
       .finally(() => {
-        docsRequest = null
+        if (docsRequest === request) docsRequest = null
       })
-    return docsRequest
+    docsRequest = request
+    return request
   }
 
   /** 回收站条目（知识库 / 文件夹 / 文档），保留 7 天后由后端自动清理。 */

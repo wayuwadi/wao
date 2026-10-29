@@ -20,7 +20,9 @@ import { newPolishRequestId } from '@/api/polishJobs'
 import { useRoute } from 'vue-router'
 import { useReleaseNoteExperience } from '@/composables/releaseNoteExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { contentHit, documentSearchText } from '@/utils/contentSearch'
+import { contentHit } from '@/utils/contentSearch'
+import { createNoteTextCache, focusNoteSummary } from '@/utils/noteListContent'
+import { renderMarkdown } from '@/utils/markdown'
 import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
 const shareNoteId = ref('')
 function openNoteShare(id: string) { shareNoteId.value = id }
@@ -143,23 +145,58 @@ type NoteComposerHandle = { dirty: boolean; save: () => Promise<void>; appendPla
 const noteComposers = new Map<string, NoteComposerHandle>()
 const retryingEnrichment = ref<string[]>([])
 const serverWorkflows = ref<Record<string, NoteAiWorkflowStatus>>({})
-let workflowTimer: ReturnType<typeof setInterval> | undefined
+let workflowTimer: ReturnType<typeof setTimeout> | undefined
+let workflowRequestMember: string | null = null
+let workflowReloadPending = false
+let workflowDisposed = false
+let workflowGeneration = 0
+let workflowSnapshotLoaded = false
+function onWorkflowVisibility() {
+  if (workflowTimer) clearTimeout(workflowTimer)
+  if (!document.hidden) void loadServerWorkflows()
+}
 async function loadServerWorkflows() {
+  if (workflowDisposed || document.hidden) return
+  if (workflowTimer) clearTimeout(workflowTimer)
   if (!session.currentUser.id) { serverWorkflows.value = {}; return }
   const memberId = session.currentUser.id
+  if (workflowRequestMember === memberId) { workflowReloadPending = true; return }
+  workflowRequestMember = memberId
+  const generation = ++workflowGeneration
+  let failed = false
   try {
     const values = await fetchNoteAiWorkflows()
-    if (memberId !== session.currentUser.id) return
+    if (workflowDisposed || generation !== workflowGeneration || memberId !== session.currentUser.id) return
     const previous = serverWorkflows.value
-    serverWorkflows.value = Object.fromEntries(values.map(value => [value.docId, value]))
-    if (values.some(value => ['title', 'image', 'polish', 'tags'].some(stage => {
+    const next = Object.fromEntries(values.map(value => [value.docId, value]))
+    if (JSON.stringify(previous) !== JSON.stringify(next)) serverWorkflows.value = next
+    const changed = values.filter(value => ['title', 'image', 'polish', 'tags'].some(stage => {
       const key = stage as 'title' | 'image' | 'polish' | 'tags' | 'thinking'
-      return value[key] === 'DONE' && previous[value.docId]?.[key] !== 'DONE'
-    }))) {
-      void data.refreshDocs()
-      void initializeNoteWorkflow(memberId)
+      return value[key] === 'DONE' && (previous[value.docId]?.[key] !== 'DONE'
+        || JSON.stringify(value.stages?.[key]) !== JSON.stringify(previous[value.docId]?.stages?.[key]))
+    }))
+    // 首次同步可能有跨设备已完成任务；只做一次目录刷新，避免为历史任务逐条请求。
+    if (!workflowSnapshotLoaded && changed.length) failed = !(await data.refreshDocs())
+    else await Promise.all(changed.map(async value => {
+      try {
+        const doc = await fetchDoc(value.docId)
+        if (!workflowDisposed && generation === workflowGeneration && memberId === session.currentUser.id) data.applyRemoteDoc(doc)
+      } catch { failed = true }
+    }))
+    if (!workflowDisposed && generation === workflowGeneration && memberId === session.currentUser.id) {
+      if (failed) serverWorkflows.value = previous // 下一轮仍能识别尚未读取的完成阶段。
+      else workflowSnapshotLoaded = true
     }
-  } catch { /* 保留已显示的阶段状态，下一轮自动重读。 */ }
+  } catch { failed = true /* 保留已显示内容，稍后重试。 */ }
+  finally {
+    if (generation === workflowGeneration) {
+      workflowRequestMember = null
+      const active = Object.values(serverWorkflows.value).some(value => [value.title, value.image, value.polish, value.tags, value.thinking].some(state => state === 'PENDING' || state === 'RUNNING'))
+      const delay = workflowReloadPending ? 0 : failed || active ? 20_000 : 120_000
+      workflowReloadPending = false
+      if (!workflowDisposed && !document.hidden && memberId === session.currentUser.id) workflowTimer = setTimeout(() => void loadServerWorkflows(), delay)
+    }
+  }
 }
 const noteCounts = ref<Record<string, number>>({})
 const notePreviewOverflowIds = ref<string[]>([])
@@ -352,6 +389,22 @@ const tagError = ref('')
 const editingIds = ref<string[]>([])
 const mobileActionsId = ref('')
 const noteDrafts = ref<Record<string, NoteDraftSnapshot>>({})
+const noteTextCache = createNoteTextCache()
+function noteText(note: Doc) { return noteTextCache.text(note.id, displayedContent(note)) }
+const savedNoticeId = ref('')
+const locatedSavedId = ref('')
+async function locateSavedNote(moveFocus = true) {
+  const id = savedNoticeId.value
+  if (!id || !notes.value.some(note => note.id === id)) return
+  locatedSavedId.value = id
+  discoveryMode.value = 'notes'
+  const index = matching.value.findIndex(note => note.id === id)
+  if (index >= 0) limit.value = Math.max(limit.value, index + 1)
+  await nextTick()
+  const card = notesList.value?.querySelector<HTMLElement>(`[data-note-id="${id}"]`)
+  card?.scrollIntoView?.({ block: 'nearest', behavior: 'auto' })
+  if (moveFocus) card?.focus({ preventScroll: true })
+}
 function displayedContent(note: Doc) { return noteDrafts.value[note.id]?.content ?? latestNoteContent(note) }
 function displayedTitle(note: Doc) { return noteDrafts.value[note.id]?.title ?? note.title }
 function displayedTags(note: Doc) { return noteDrafts.value[note.id]?.tags ?? note.tags ?? [] }
@@ -847,8 +900,14 @@ const matching = computed(() => {
     && (selectedAuthor.value === '__me__' ? !!session.currentUser.id && doc.author === session.currentUser.id : !selectedAuthor.value || (doc.systemGenerated ? '__system__' : doc.author) === selectedAuthor.value)
     && (imageFilter.value === 'all' || (cardImages(doc).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
-    && (!needle || `${displayedTitle(doc)}\n${documentSearchText({ blocks: doc.blocks, content: displayedContent(doc) })}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
+    && (!needle || `${displayedTitle(doc)}\n${noteText(doc)}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
+watch(notes, values => noteTextCache.retain(new Set(values.map(note => note.id))))
+watch(() => session.currentUser.id, () => { noteTextCache.clear(); savedNoticeId.value = ''; locatedSavedId.value = '' })
+const focusSummaries = computed(() => new Map(visible.value.map(note => [note.id,
+  !noteDrafts.value[note.id] && !query.value && !displayedContent(note).document && !cardImages(note).length
+    ? focusNoteSummary(displayedTitle(note), displayedTags(note), displayedMarkdown(note)) : null])))
+const compactFocusBodies = computed(() => new Map([...focusSummaries.value].map(([id, summary]) => [id, summary ? renderMarkdown(summary.body) : ''])))
 function inTimeRange(value: string, range: typeof timeFilter.value) {
   if (range === 'all') return true
   const date = new Date(value)
@@ -934,6 +993,7 @@ function fourStageComplete(id: string, stage: typeof aiStages[number]) {
 }
 function fourComplete(id: string) { return aiStages.every(stage => fourStageComplete(id, stage)) }
 async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags' | 'thinking' | 'four') {
+  const memberId = session.currentUser.id
   if (retryingEnrichment.value.includes(note.id)) return
   if (stage === 'four' && fourComplete(note.id)) { toast('四项已完成，无需重复执行'); return }
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
@@ -947,6 +1007,7 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
     if (composer?.dirty) {
       noteEnrichmentStatus[note.id] = '正在保存小记修改，再继续重试…'
       await composer.save()
+      if (memberId !== session.currentUser.id || workflowDisposed) return
       if (composer.dirty) {
         noteEnrichmentStatus[note.id] = '自动整理未完成：小记修改尚未保存，请先处理保存提示后重试'
         return
@@ -960,12 +1021,16 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
       let queued = 0
       for (const next of aiStages) {
         const fresh = (await fetchNoteAiWorkflows()).find(status => status.docId === note.id)
+        if (memberId !== session.currentUser.id || workflowDisposed) return
         if (fresh) serverWorkflows.value[note.id] = fresh
         const state = workflowProgress(note.id)?.[next]
         if (fourStageComplete(note.id, next) || state === 'running' || fresh?.[next] === 'PENDING') continue
         const latest = await fetchDoc(note.id)
+        if (memberId !== session.currentUser.id || workflowDisposed) return
         data.applyRemoteDoc(latest)
-        serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, next, latest.rev ?? 1, newPolishRequestId())
+        const started = await startSavedNoteStage(note.id, next, latest.rev ?? 1, newPolishRequestId())
+        if (memberId !== session.currentUser.id || workflowDisposed) return
+        serverWorkflows.value[note.id] = started
         queued++
       }
       toast(queued ? `已接续 ${queued} 项未完成能力` : '已完成或正在处理中，无需重复执行')
@@ -973,19 +1038,25 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
     }
     if (stage) {
       const latest = data.docById(note.id) ?? note
-      serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, stage, latest.rev ?? 1, newPolishRequestId())
+      const started = await startSavedNoteStage(note.id, stage, latest.rev ?? 1, newPolishRequestId())
+      if (memberId !== session.currentUser.id || workflowDisposed) return
+      serverWorkflows.value[note.id] = started
       return
     }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
-    serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
+    const retried = await retryNoteAiWorkflow(note.id)
+    if (memberId !== session.currentUser.id || workflowDisposed) return
+    serverWorkflows.value[note.id] = retried
     noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
 
   } catch (cause) {
+    if (memberId !== session.currentUser.id || workflowDisposed) return
     const message = cause instanceof Error ? cause.message : 'AI 操作未完成，请重试'
     noteEnrichmentStatus[note.id] = message
     toast(message, 'ri-error-warning-line', { duration: 6000 })
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
+    if (memberId === session.currentUser.id && !workflowDisposed) void loadServerWorkflows()
   }
 }
 function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') {
@@ -995,7 +1066,11 @@ function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags' | 
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
 const retainedEdits = computed(() => notes.value.filter(note => (editingIds.value.includes(note.id) || searchFocus.value.id === note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
-const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
+const visible = computed(() => {
+  const list = [...matching.value.slice(0, limit.value), ...retainedEdits.value]
+  const located = notes.value.find(note => note.id === locatedSavedId.value)
+  return located && !list.some(note => note.id === located.id) ? [located, ...list] : list
+})
 const notePreviews = computed(() => new Map(visible.value.map(note => [note.id, cardImages(note)])))
 const cardActiveImages = ref<Record<string, number | undefined>>({})
 watch(() => session.currentUser.id, () => { cardActiveImages.value = {} })
@@ -1041,13 +1116,15 @@ watch([selectedTag, sort, imageFilter, timeFilter], () => {
   limit.value = PAGE_SIZE; confirmingDeleteId.value = ''
   notesList.value?.scrollTo?.({ top: 0 })
 })
-function noteSearchHit(note: Doc) {
+function computeNoteSearchHit(note: Doc) {
   const term = query.value
   const title = contentHit(displayedTitle(note), term)
-  const body = contentHit(documentSearchText({ blocks: note.blocks, content: displayedContent(note) }), term)
+  const body = contentHit(noteText(note), term)
   const tags = contentHit(displayedTags(note).join(' '), term)
   return title ? { ...title, field: '标题' } : body ? { ...body, field: '正文' } : tags ? { ...tags, field: '标签' } : null
 }
+const searchHits = computed(() => new Map(query.value ? visible.value.map(note => [note.id, computeNoteSearchHit(note)]) : []))
+function noteSearchHit(note: Doc) { return searchHits.value.get(note.id) }
 async function locateSearchNote(id: string, term: string, body = true) {
   if (!notes.value.some(note => note.id === id)) return
   searchFocus.value = { id, term: body ? term : '' }; searchRequest.value++
@@ -1092,11 +1169,10 @@ function onCreated(id: string) {
   companionNoteId.value = id
   companionExplicitId.value = ''
   void companion.value?.refresh()
-  query.value = ''
-  selectedTag.value = ''
-  limit.value = PAGE_SIZE
+  savedNoticeId.value = id
+  locatedSavedId.value = ''
   highlighted.value = id
-  notesList.value?.scrollTo?.({ top: 0 })
+  if (matching.value.some(note => note.id === id)) void locateSavedNote(false)
   void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
@@ -1129,12 +1205,14 @@ async function reload() {
     refreshing.value = false
   }
 }
+let tagsRequest = 0
 async function loadTags() {
+  const request = ++tagsRequest, member = session.currentUser.id
   tagsLoading.value = true
   tagsError.value = ''
-  try { tagNames.value = await fetchNoteTags() }
-  catch { tagsError.value = '标签读取失败，可重试；正文和已选标签仍保留。' }
-  finally { tagsLoading.value = false }
+  try { const names = await fetchNoteTags(); if (request === tagsRequest && member === session.currentUser.id) tagNames.value = names }
+  catch { if (request === tagsRequest && member === session.currentUser.id) tagsError.value = '标签读取失败，可重试；正文和已选标签仍保留。' }
+  finally { if (request === tagsRequest && member === session.currentUser.id) tagsLoading.value = false }
 }
 async function createTag() {
   if (creatingTag.value) return
@@ -1171,9 +1249,10 @@ onMounted(() => {
   void loadTags()
   window.addEventListener('scroll', onNotesScroll, { passive: true })
 })
-onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); workflowTimer = setInterval(() => { if (!document.hidden) void loadServerWorkflows() }, 20_000); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
+onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); document.addEventListener('visibilitychange', onWorkflowVisibility); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
+onBeforeUnmount(() => { workflowDisposed = true; workflowGeneration++; document.removeEventListener('visibilitychange', onWorkflowVisibility) })
 onBeforeUnmount(() => { if (reading.value) restoreReaderBackground(); clearCardClickTimer(); notePreviewResizeObserver?.disconnect(); window.removeEventListener('resize', measureAllNotePreviews); window.removeEventListener('resize', onReaderResize); window.removeEventListener('resize', positionDeleteConfirmation); document.removeEventListener('scroll', positionDeleteConfirmation, true); window.removeEventListener('pointerdown', onOutsideDeleteConfirmation); window.removeEventListener('keydown', onDeleteConfirmationKeydown); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
-watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows() })
+watch(() => session.currentUser.id, memberId => { workflowSnapshotLoaded = false; serverWorkflows.value = {}; tagNames.value = []; if (memberId) { void data.ensureDocsLoaded(); void loadTags() }; void initializeNoteWorkflow(memberId); void loadServerWorkflows() })
 watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
   if (previous?.[0] !== memberId) noteDrafts.value = {}
   for (const note of values) {
@@ -1245,10 +1324,11 @@ onMounted(() => void loadPins())
         <p v-if="pinError" class="error" role="alert">{{ pinError }}<button v-if="!pinsReady" @click="loadPins">重试读取置顶</button></p>
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
         <div class="list-summary"><span>{{ matching.length }} 条小记</span><span>{{ filterSummary }}</span></div>
+        <p v-if="savedNoticeId" class="saved-note-notice" role="status">已保存到服务器<span v-if="!matching.some(note => note.id === savedNoticeId)">，当前筛选未包含这条小记</span>。<button type="button" @click="locateSavedNote()">查看刚保存的小记</button><button type="button" aria-label="关闭保存提示" @click="savedNoticeId = ''; locatedSavedId = ''">关闭</button></p>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
-        <p v-if="!loading && !loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
+        <p v-if="!loading && !loadError && !visible.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated && noteDisplay.settings.value.distinguishSystem }" :style="{ '--note-system-color': noteDisplay.settings.value.systemColor }" :data-note-id="note.id"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'compact-focus': focusSummaries.get(note.id) && !expandedIds.includes(note.id) && !editingIds.includes(note.id), 'system-generated': note.systemGenerated && noteDisplay.settings.value.distinguishSystem }" :style="{ '--note-system-color': noteDisplay.settings.value.systemColor }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div v-if="!editingIds.includes(note.id)" class="note-meta">
@@ -1261,6 +1341,9 @@ onMounted(() => void loadPins())
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
               <NoteAiStageButton :disabled="stageDisabled(note.id, 'thinking')" :title="`思考图：${stageActionText(note.id, 'thinking')}`" :aria-label="`思考图${stageActionText(note.id, 'thinking')}`" @activate="onStageClick(note, 'thinking')"><i class="ri-lightbulb-line" aria-hidden="true"></i></NoteAiStageButton>
             </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
+              <button class="note-card-text-action" type="button" :aria-label="`阅读小记：${note.title}`" @click.stop="startReading(note.id, $event)">阅读</button>
+              <button class="note-card-text-action" type="button" :aria-label="`编辑小记：${note.title}`" @click.stop="editNote(note.id)">编辑</button>
+              <button class="note-card-text-action" type="button" :aria-expanded="mobileActionsId === note.id" :aria-label="`AI 工具：${note.title}`" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id">AI 工具</button>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
             </span>
@@ -1276,7 +1359,11 @@ onMounted(() => void loadPins())
           </NoteComposer>
           <template v-else>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
-            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
+            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><div v-if="focusSummaries.get(note.id) && !expandedIds.includes(note.id)" class="focus-note-preview">
+              <div class="focus-note-summary"><span class="focus-note-duration">专注 {{ focusSummaries.get(note.id)!.duration }}</span><span class="focus-note-time">{{ focusSummaries.get(note.id)!.time }}</span></div>
+              <div class="focus-note-excerpt" v-html="compactFocusBodies.get(note.id)"></div>
+
+            </div><MarkdownEditor v-else :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <figure v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image-item" :class="{ active: cardActiveImages[note.id] === index + 1 }" :data-card-image="index + 1" :aria-label="`图 ${index + 1} ${imageDisplayName(image.alt, index + 1)}`">
@@ -1287,7 +1374,7 @@ onMounted(() => void loadPins())
               </figure>
             </aside>
           </div>
-          <div class="note-card-footer"><p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id))" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click.stop="selectedTag = tag"># {{ tag }}</button></div><div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div></div>
+          <div class="note-card-footer"><button v-if="focusSummaries.get(note.id) && !expandedIds.includes(note.id) && !editingIds.includes(note.id)" type="button" class="note-card-text-action" @click.stop="expandedIds.push(note.id)">查看完整记录</button><p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id))" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click.stop="selectedTag = tag"># {{ tag }}</button></div><div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div></div>
           </template>
           <Teleport to="body"><div v-if="confirmingDeleteId === note.id && !reading" :ref="setDeleteConfirmation" :id="`note-delete-confirm-${note.id}`" class="card-delete-confirm" :data-delete-note-id="note.id" :style="deleteConfirmationStyle" role="dialog" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -1336,10 +1423,10 @@ onMounted(() => void loadPins())
           <div class="reader-resizer reader-directory-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="小记目录宽度" :aria-valuemin="readerWidths.minimum.directory" :aria-valuemax="readerWidths.limit('directory')" :aria-valuenow="readerWidths.widths.value.directory" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('directory', $event)" @keydown="readerWidths.keydown('directory', $event)" @dblclick="readerWidths.reset('directory')"><span></span></div>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
-              <div class="reader-columns"><div class="reader-article"><NoteComposer v-if="readerEditing" ref="readingComposer" :key="`${session.currentUser.id}:${readingNote.id}:reading`" :note="readingNote" inline contained expanded autofocus :initial-position="readingEditAnchor?.position" :initial-viewport-top="readingEditAnchor?.viewportTop" :tag-options="availableTags" @draft-change="onDraftChange(readingNote.id, $event)" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="finishReadingEdit($event)" @image-reference="locateReadingImage" @close="finishReadingEdit()" @exit-cancelled="afterReadingEdit = undefined" /><NoteOriginalReader v-else-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ noteAuthorName(readingNote) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
+              <div class="reader-columns"><div class="reader-article"><NoteComposer v-if="readerEditing" ref="readingComposer" :key="`${session.currentUser.id}:${readingNote.id}:reading`" :note="readingNote" inline contained expanded autofocus :initial-position="readingEditAnchor?.position" :initial-viewport-top="readingEditAnchor?.viewportTop" :tag-options="availableTags" @draft-change="onDraftChange(readingNote.id, $event)" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="finishReadingEdit($event)" @image-reference="locateReadingImage" @close="finishReadingEdit()" @exit-cancelled="afterReadingEdit = undefined" /><NoteOriginalReader v-else-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ noteAuthorName(readingNote) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span v-if="noteCounts[readingNote.id] !== undefined">{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
-              <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
+              <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="onNoteCharacterCount(readingNote.id, $event); restoreReaderPosition()" /></div></div></template></div>
               <div class="reader-resizer reader-images-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="图片清单宽度" :aria-valuemin="readerWidths.minimum.images" :aria-valuemax="readerWidths.limit('images')" :aria-valuenow="readerWidths.widths.value.images" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('images', $event)" @keydown="readerWidths.keydown('images', $event)" @dblclick="readerWidths.reset('images')"><span></span></div>
               <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @question="continueThinking" @return="returnToImageReference" @fullscreen="(image, event, index) => openImage(image, event, readerImages, index)" /></div>
             </article>
@@ -1358,6 +1445,16 @@ onMounted(() => void loadPins())
 </template>
 
 <style scoped>
+.saved-note-notice { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); padding:var(--wao-space-1) var(--wao-space-2); color:var(--wao-text-2); background:var(--wao-bg-sub); border-radius:var(--wao-radius-control); font-size:var(--wao-font-help); }
+.saved-note-notice button,.note-card-text-action { color:var(--wao-primary-text); background:transparent; border:0; font-size:var(--wao-font-help); padding:var(--wao-space-1); cursor:pointer; white-space:nowrap; }
+.focus-note-duration { margin:0; font-weight:600; font-size:var(--wao-font-body); }
+.focus-note-time { margin:0; color:var(--wao-text-3); font-size:var(--wao-font-caption); }
+.focus-note-excerpt { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:var(--wao-font-reading); line-height:var(--wao-line-body); overflow-wrap:anywhere; }
+.focus-note-excerpt :deep(p) { margin:var(--wao-space-1) 0; }
+.focus-note-excerpt :deep(img) { max-width:100%; height:auto; }
+.focus-note-excerpt :deep(pre),.focus-note-excerpt :deep(table) { max-width:100%; overflow:auto; }
+.focus-note-preview > button { padding-left:0; }
+
 .notes-page { width: 100%; max-width: none; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
 .page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .heading-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
@@ -1810,4 +1907,27 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .search input { font-size:16px; }
   .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height:270px; }
 }
+/* Card actions remain explicit on mouse, keyboard and touch surfaces. */
+.note-meta .card-action-slot { display:flex; flex-direction:column; align-items:flex-start; }
+.note-card .card-identity,.note-card:hover .card-identity,.note-card:focus-within .card-identity { display:flex; visibility:visible; opacity:1; }
+.card-identity .author { max-width:12em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.note-card .card-hover-actions { display:none; }
+.note-card.mobile-actions-open .card-hover-actions { display:flex; flex-wrap:wrap; visibility:visible; opacity:1; pointer-events:auto; }
+.note-card.mobile-actions-open .stage-list { display:flex; position:static; flex-wrap:wrap; }
+.note-card .note-touch-ai { display:none; }
+.note-meta-trailing { flex-wrap:wrap; }
+.note-meta-trailing > .card-action-slot { flex:1 1 220px; }
+@media(max-width:760px) {
+  .note-meta { grid-template-columns:minmax(0,1fr); }
+  .note-meta-trailing { justify-content:flex-start; }
+  .note-meta-trailing > .card-action-slot { flex-basis:100%; }
+  .note-card-text-action,.saved-note-notice button { min-height:44px; }
+  .note-card .card-identity { font-size:var(--wao-font-caption); }
+}
+.focus-note-summary { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--wao-space-1); }
+.note-card.compact-focus { padding:var(--wao-space-2); }
+.compact-focus .note-meta { gap:0; margin-bottom:var(--wao-space-1); }
+.compact-focus .note-card-footer { padding:0; min-height:0; }
+.compact-focus .note-card-footer .card-tags { justify-content:flex-end; }
+@media(min-width:761px) { .compact-focus .note-card-text-action { padding-top:0; padding-bottom:0; } }
 </style>
