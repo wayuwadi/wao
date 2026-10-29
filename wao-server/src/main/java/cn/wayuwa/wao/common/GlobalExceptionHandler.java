@@ -116,6 +116,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
     public ResponseEntity<ApiResponse<Void>> responseStatus(org.springframework.web.server.ResponseStatusException ex) {
         return ResponseEntity.status(ex.getStatusCode())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(ApiResponse.fail(ex.getStatusCode().value() * 100,
                         ex.getReason() == null ? "请求暂不可用" : ex.getReason()));
     }

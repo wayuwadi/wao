@@ -237,6 +237,7 @@ describe('AiAssistantPanel', () => {
       yield ''
     })
     typeDraft('稍后继续的问题')
+    await flushPromises()
     document.querySelector<HTMLButtonElement>('.send-btn')!.click()
     await flushPromises()
     expect(signal?.aborted).toBe(false)
