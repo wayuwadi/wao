@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTaskViewMemory, useTaskScrollMemory } from '@/composables/taskViewMemory'
 import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { computed, defineAsyncComponent, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMemberPreference } from '@/composables/memberPreference'
@@ -54,8 +55,8 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
-const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
+const props = defineProps<{ stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
 const labels = useTaskLabelsStore()
 const tagsFor = (id: string) => { const ref = props.itemRefs[id]; return labels.get(ref?.taskId ?? id, ref?.subId).tags }
@@ -170,7 +171,8 @@ onMounted(() => {
 })
 watch(() => useSessionStore().userId, () => endSplit(false))
 onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
-const selectedId = ref('')
+const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => ({ selectedId: '' }))
+const selectedId = computed({ get: () => viewMemory.value.selectedId, set: value => { viewMemory.value.selectedId = value } })
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
   const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id))))
@@ -193,10 +195,12 @@ function drop(target: string | null, event: DragEvent) {
   dragging.value = null; over.value = null
 }
 watch(rows, value => {
+  if (!value.length && data.taskLoadState !== 'loaded') return
   if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
   const visibleMatches = value.filter(row => matches.value.some(t => t.id === row.task.id))
   if (!visibleMatches.some(row => row.task.id === selectedId.value)) selectedId.value = visibleMatches[0]?.task.id ?? value[0]?.task.id ?? ''
 }, { immediate: true })
+const rememberScroll = useTaskScrollMemory(layout, () => `${props.stateKey ?? 'checklist'}:scroll`, () => `${rows.value.length}:${selectedId.value}`)
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
 const propertyMenu = ref<'group' | 'status' | 'priority' | null>(null)
@@ -222,7 +226,7 @@ async function selectChild(id: string) {
   const row = Array.from(layout.value?.querySelectorAll<HTMLElement>('.checklist-row') ?? []).find(row => row.dataset.taskId === id)
   row?.scrollIntoView?.({ block:'nearest', behavior:'smooth' })
 }
-async function changePriority(priority: Priority) {
+async function changePriority(priority: Priority | undefined) {
   propertyMenu.value = null
   if (selected.value) await actions.priority(selected.value.id, priority)
 }
@@ -364,8 +368,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 
 <template>
   <div v-if="split.error.value" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
-  <div ref="layout" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact }" :style="splitStyle">
-    <WaoCard class="checklist-tasks">
+  <div ref="layout" @scroll.capture="rememberScroll" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact }" :style="splitStyle">
+    <WaoCard class="checklist-tasks" data-task-scroll="list">
 
       <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
       <div v-if="dragging" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
@@ -379,7 +383,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
-        <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
+        <input v-if="selectionMode" type="checkbox" :checked="selectedIds?.includes(task.id)" :disabled="!matches.some(item=>item.id===task.id)" :aria-label="`选择任务 ${task.title}`" @change="emit('select', task.id)" />
+        <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
           <span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
           <span v-if="tagsFor(task.id).length" class="task-meta" :title="tagsFor(task.id).join('，')"># {{ tagsFor(task.id)[0] }}</span><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : '截止日期'">{{ task.due }}</span>
@@ -388,7 +393,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </div></section>
     </WaoCard>
     <div class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.395)"></div>
-    <WaoCard class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
+    <WaoCard :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
         <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span>{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
@@ -400,7 +405,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           </span>
           <TaskDueDate :key="selected.id" :due="selected.due" :today="today" :completed="selected.status === '已完成'" :disabled="actions.busy(selected.id)" :missing-count="deadlineDefaults.missingCount.value" :bulk-busy="deadlineDefaults.busy.value" @fill-missing="deadlineDefaults.fill" @change="changeDue" /><span ref="priorityAnchor" class="priority-anchor">
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
-            <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
+            <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
         <RouterLink :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>

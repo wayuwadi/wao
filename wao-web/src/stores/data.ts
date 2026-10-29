@@ -1,7 +1,8 @@
 import { useTaskLabelsStore } from '@/stores/taskLabels'
 import { quickDraftRecoveryId, isRecoveredQuickDraft, sameQuickDraftContent } from '@/utils/quickDraftRecovery'
 import type { IdentitySelection } from '@/api/digitalMembers'
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, onScopeDispose } from 'vue'
+import { connectTaskChanges } from '@/api/taskChanges'
 import { PreviousTodoWriteRecovered } from '@/api/dayWorkspace'
 import { cancelCompanionResponse, captureCompanionTicket, respondWithCompanion, type CompanionTicket } from '@/composables/quietCompanions'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -402,6 +403,8 @@ export const useDataStore = defineStore('data', () => {
    */
   let syncTimer: ReturnType<typeof setTimeout> | null = null
   let syncing = false
+  let syncRequested = false
+  let closeTaskStream: (() => void) | undefined
   let unchangedSyncRounds = 0
   let lastServerSyncFingerprint = ''
 
@@ -410,7 +413,7 @@ export const useDataStore = defineStore('data', () => {
   }
 
   function scheduleSync() {
-    if (syncTimer || !apiLive.value) return
+    if (syncTimer || !apiLive.value || !useSessionStore().userId) return
     syncTimer = setTimeout(() => {
       syncTimer = null
       void syncFromServer()
@@ -418,17 +421,21 @@ export const useDataStore = defineStore('data', () => {
   }
 
   async function syncFromServer() {
-    if (!apiLive.value || syncing) return
+    if (!apiLive.value || !useSessionStore().userId) return
+    if (syncing) { syncRequested = true; return }
     if (document.hidden) {
       scheduleSync()
       return
     }
     syncing = true
+    const requestIdentity = `${useSessionStore().account?.accountId}:${useSessionStore().userId}`
+    const requestedAt = Date.now()
     try {
       const labels = useTaskLabelsStore()
       // 标签独立保存，不在任务快照中；复用同一可见性/焦点同步周期。
-      if (labels.ready && !labels.loading) void labels.load()
+      if (labels.ready || labels.loading) void labels.load()
       const [p, t] = await Promise.all([fetchProjects(), fetchTasks()])
+      if (requestIdentity !== `${useSessionStore().account?.accountId}:${useSessionStore().userId}`) return
       const fingerprint = serverSyncFingerprint(p, t)
       unchangedSyncRounds = fingerprint === lastServerSyncFingerprint
         ? unchangedSyncRounds + 1
@@ -436,7 +443,7 @@ export const useDataStore = defineStore('data', () => {
       lastServerSyncFingerprint = fingerprint
       if (Array.isArray(p)) mergeList(projects.value, p)
       if (Array.isArray(t)) {
-        const protectedIds = taskProtectedIds()
+        const protectedIds = taskProtectedIds(requestedAt)
         mergeList(tasks.value, t.filter(task => !taskDeletionBlocked(task.id)), protectedIds)
         rememberSubBases(t, protectedIds)
       }
@@ -445,7 +452,8 @@ export const useDataStore = defineStore('data', () => {
       /* 网络抖动时静默跳过，下个周期重试 */
     } finally {
       syncing = false
-      scheduleSync()
+      if (syncRequested) { syncRequested = false; void syncFromServer() }
+      else scheduleSync()
     }
   }
 
@@ -462,11 +470,25 @@ export const useDataStore = defineStore('data', () => {
   }
 
   function startSync() {
+    closeTaskStream?.()
+    closeTaskStream = connectTaskChanges(syncImmediately)
     if (syncTimer) return
     scheduleSync()
     window.addEventListener('focus', syncImmediately)
     document.addEventListener('visibilitychange', syncImmediately)
   }
+
+  watch(() => useSessionStore().account?.accountId, () => {
+    closeTaskStream?.(); closeTaskStream = undefined
+    if (syncTimer) clearTimeout(syncTimer)
+    syncTimer = null
+  }, { flush: 'sync' })
+  onScopeDispose(() => {
+    closeTaskStream?.()
+    if (syncTimer) clearTimeout(syncTimer)
+    window.removeEventListener('focus', syncImmediately)
+    document.removeEventListener('visibilitychange', syncImmediately)
+  })
 
   /**
    * 把 AI Run 的服务端状态投影到任务列表，不触发任务自动保存。
@@ -1406,9 +1428,9 @@ export const useDataStore = defineStore('data', () => {
    */
   const EDIT_GUARD_MS = 20_000
 
-  function taskProtectedIds() {
+  function taskProtectedIds(requestedAt?: number) {
     const now = Date.now()
-    const recent = Object.keys(taskTouchedAt).filter((id) => now - (taskTouchedAt[id] ?? 0) < EDIT_GUARD_MS)
+    const recent = Object.keys(taskTouchedAt).filter((id) => requestedAt === undefined ? now - (taskTouchedAt[id] ?? 0) < EDIT_GUARD_MS : (taskTouchedAt[id] ?? 0) >= requestedAt)
     return new Set([
       ...Object.keys(taskDrafts.value),
       ...Object.keys(taskPersisting).filter((id) => taskPersisting[id]),
@@ -1461,6 +1483,7 @@ export const useDataStore = defineStore('data', () => {
         if (pendingTaskIds.has(id)) Object.assign(task, saved)
         clearTaskDraft(id)
         taskSaveStates[id] = 'saved'
+        taskTouchedAt[id] = Date.now()
         taskSavedAts[id] = nowIso()
         const responseTicket = completionResponses.get(id)
         completionResponses.delete(id)
@@ -1889,6 +1912,7 @@ export const useDataStore = defineStore('data', () => {
     if (taskDeletionBlocked(id)) return
     const t = taskById(id)
     if (!t) return
+    taskTouchedAt[id] = Date.now()
     storeTaskDraft(t)
     taskPersistVersions[id] = (taskPersistVersions[id] ?? 0) + 1
     taskSaveStates[id] = taskConflicts[id] ? 'error' : 'saving'
