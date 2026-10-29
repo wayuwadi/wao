@@ -13,11 +13,12 @@ function Test-Endpoint([string]$Url, [string]$Kind) {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 8
         if ($response.StatusCode -ne 200) { return $false }
+        $content = if ($response.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($response.Content) } else { $response.Content }
         if ($Kind -eq 'edge') {
-            $payload = $response.Content | ConvertFrom-Json
+            $payload = $content | ConvertFrom-Json
             return ($payload.code -eq 0 -and $payload.data.protocol -eq 1)
         }
-        if ($Kind -eq 'actuator') { return (($response.Content | ConvertFrom-Json).status -eq 'UP') }
+        if ($Kind -eq 'actuator') { return (($content | ConvertFrom-Json).status -eq 'UP') }
         return $true
     } catch { return $false }
 }

@@ -9,7 +9,7 @@ $global:waoMonitorTestHealthy=$false
 function Invoke-WebRequest {
     param($Uri,$TimeoutSec,[switch]$UseBasicParsing)
     if (!$global:waoMonitorTestHealthy) { throw 'Synthetic outage' }
-    return @{StatusCode=200; Content='{"code":0,"data":{"protocol":1}}'}
+    return @{StatusCode=200; Content=[Text.Encoding]::UTF8.GetBytes('{"code":0,"data":{"protocol":1}}')}
 }
 function Assert-Count($Expected) {
     $count=@(Get-ChildItem "$root/inbox" -Filter '*.json').Count
