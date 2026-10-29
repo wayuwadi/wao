@@ -1,0 +1,23 @@
+{
+  "id": "fixed-navigation-2026-10-29",
+  "publishedOn": "2026-10-29",
+  "sourceSubject": "feat(navigation): 固定统一菜单并迁移设置入口",
+  "title": "所有账号使用统一菜单",
+  "intro": "常用功能按固定顺序排列，能力中心和 Jenkins 移到设置。",
+  "highlights": [
+    {
+      "featureId": "navigation",
+      "eyebrow": "统一导航",
+      "title": "菜单位置保持一致",
+      "summary": "首页到全部功能共十二项按统一顺序展示，不再提供改名、隐藏、拖拽和自定义配置。",
+      "points": [
+        "旧个人菜单配置不再影响入口，项目与知识库收藏仍保留。",
+        "能力中心和 Jenkins 部署中心可在设置的管理与连接中打开。"
+      ],
+      "steps": [
+        "从左侧菜单打开番茄钟、倒数日或习惯打卡。",
+        "点击左下角设置，进入管理与连接，打开能力中心或 Jenkins。"
+      ]
+    }
+  ]
+}

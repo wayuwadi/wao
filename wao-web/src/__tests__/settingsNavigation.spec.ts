@@ -21,7 +21,7 @@ vi.mock('@/api/codexModels', () => ({
   fetchCodexModels: vi
     .fn()
     .mockResolvedValue({
-      models: [{ id: 'gpt-6-astra', label: 'GPT-6-Astra', reasoningEfforts: ['medium', 'high'] }],
+      models: [{ id: 'gpt-6-astra', label: 'GPT-6-Astra', reasoningEfforts: ['medium', 'high'] }, { id: 'gpt-6-luna', label: 'GPT-6-Luna', reasoningEfforts: ['low', 'medium', 'high'] }],
     }),
 }))
 vi.mock('@/api/noteDiscoveries', () => ({
@@ -69,6 +69,7 @@ describe('常用优先的设置分类', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/settings', component: { template: '<div />' } },
+        { path: '/capabilities', component: { template: '<div />' } },
         { path: '/other', component: { template: '<div />' } },
       ],
     })
@@ -111,7 +112,8 @@ describe('常用优先的设置分类', () => {
 
   it.each([
     ['prefs', 'appearance', 'appearance'],
-    ['quick-links', 'navigation', 'personal'],
+    ['quick-links', 'management', 'management'],
+    ['navigation', 'management', 'management'],
     ['pet', 'pet', 'appearance'],
     ['members', 'members', 'management'],
     ['notifications', 'notification-policy', 'reminders'],
@@ -137,6 +139,19 @@ describe('常用优先的设置分类', () => {
     expect(router.currentRoute.value.fullPath).toBe('/settings')
   })
 
+  it('管理与连接提供能力中心和 Jenkins，旧菜单设置链接回到管理页', async () => {
+    await router.replace('/settings?tab=navigation'); await flushPromises()
+    expect(wrapper.text()).not.toContain('我的导航')
+    const entries = wrapper.findAll('.settings-entry')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    await entries.find(b => b.text().includes('Jenkins'))!.trigger('click')
+    expect(open).toHaveBeenCalledWith('/jenkins/job/wao-main-cd/', '_blank', 'noopener,noreferrer')
+    open.mockRestore()
+    await entries.find(b => b.text().includes('能力中心') && !b.text().includes('Webhook'))!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/capabilities')
+  })
+
   it('提醒干净表单随最新配置刷新，未保存草稿不被刷新覆盖', async () => {
     await notes()
     const preferences = usePreferenceStore()
@@ -159,6 +174,7 @@ describe('常用优先的设置分类', () => {
     const reminder = wrapper.get('[aria-label="小记全屏提醒间隔"]')
     await reminder.setValue(5)
     const ai = wrapper.get('.note-ai-settings-form')
+    await ai.get('[aria-label="保存后润色标题"]').setValue(true)
     await ai.get('footer button.primary').trigger('click')
     await flushPromises()
     expect(saveNoteAiSettings).toHaveBeenCalledOnce()

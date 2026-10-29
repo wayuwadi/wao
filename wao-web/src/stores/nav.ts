@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   DEFAULT_EXTERNAL_APPS,
   DEFAULT_BUILTIN_MENUS,
+  FIXED_BUILTIN_MENUS,
   MODULES,
   RETIRED_MODULE_IDS,
   RETIRED_EXTERNAL_APP_IDS,
@@ -13,7 +14,6 @@ import {
   normalizeBuiltinMenu,
   normalizeExternalApp,
   normalizeMobileNavItems,
-  resolveDockItems,
   type ExternalAppConfig,
   type BuiltinMenuConfig,
   type MobileNavItemId,
@@ -21,11 +21,10 @@ import {
   type BuiltinMenuGroupCode,
   type MenuPlacement,
 } from '@/config/nav'
-import { fetchPreference, savePreference } from '@/api/favorites'
-import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
+import { fetchExternalAppRegistry } from '@/api/system'
 import type { ModuleId } from '@/types'
 import { useSessionStore } from './session'
-import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
+import { saveNavigationLayout } from '@/api/navigationLayout'
 import {
   LEGACY_NAVIGATION_GROUPS,
   resolveLayoutGroups,
@@ -34,11 +33,9 @@ import {
   type NavigationLayout,
 } from '@/config/navigationLayout'
 
-/** 导航 store：侧栏整栏折叠态 + 各分组折叠态 + 「个人」组自定义顺序。 */
+/** 统一导航：主菜单随代码发布；保留旧方法签名供历史组件兼容，写入始终禁用。 */
 
 const NAV_KEY = 'wao-nav-v1'
-const PERSONAL_ORDER_PREF = 'nav-personal-order'
-const MOBILE_NAV_PREF = 'mobile-bottom-nav-v1'
 
 interface Persisted {
   collapsed: boolean
@@ -76,7 +73,7 @@ export const useNavStore = defineStore('nav', () => {
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
   /** 外部应用注册表为全局配置；接口失败时保留安全默认项，不能让现有入口凭空消失。 */
   const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
-  const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
+  const builtinMenus = ref<BuiltinMenuConfig[]>(FIXED_BUILTIN_MENUS.map(normalizeBuiltinMenu))
   const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
   const externalAppsError = ref('')
   const builtinMenusState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
@@ -86,7 +83,7 @@ export const useNavStore = defineStore('nav', () => {
   const mobileItemsError = ref('')
   const menuMutationState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const menuMutationError = ref('')
-  const globalBuiltin = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
+  const globalBuiltin = ref<BuiltinMenuConfig[]>(FIXED_BUILTIN_MENUS.map(normalizeBuiltinMenu))
   const globalExternal = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
   const personalLayout = ref<NavigationLayout | null>(null)
   const layoutRevision = ref('none')
@@ -95,89 +92,21 @@ export const useNavStore = defineStore('nav', () => {
   const layoutError = ref('')
   const layoutConflict = ref(false)
   const pendingLayout = ref<NavigationLayout | null>(null)
-  const layoutGroups = computed(() => personalLayout.value?.groups ?? LEGACY_NAVIGATION_GROUPS)
-  const layoutLocked = computed(() => personalLayout.value?.locked ?? false)
-  const groups = computed(() =>
-    resolveLayoutGroups(builtinMenus.value, externalApps.value, layoutGroups.value),
-  )
+  const layoutGroups = computed(() => [{ id: 'ROOT', label: '' }])
+  const layoutLocked = computed(() => true)
+  const groups = computed(() => resolveLayoutGroups(builtinMenus.value, [], layoutGroups.value))
   const draggedMenuId = ref<NavItemId | null>(null)
-  const topItems = computed(() => resolveDockItems(externalApps.value, builtinMenus.value, 'TOP'))
-  const dockItems = computed(() => resolveDockItems(externalApps.value, builtinMenus.value))
-  const canEditLayout = computed(
-    () =>
-      layoutLoaded.value &&
-      !layoutLoading.value &&
-      builtinMenusState.value === 'loaded' &&
-      externalAppsState.value === 'loaded' &&
-      menuMutationState.value !== 'saving',
-  )
-  const canMoveMenus = computed(
-    () => canEditLayout.value && !layoutLocked.value && !layoutConflict.value,
-  )
+  const topItems = computed<NavItemId[]>(() => [])
+  const dockItems = computed<NavItemId[]>(() => [])
+  const canEditLayout = computed(() => false)
+  const canMoveMenus = computed(() => false)
   let generation = 0
   let loadPromise: Promise<void> | null = null
 
   function rebuildLayout() {
-    const overrides = new Map(personalLayout.value?.items.map((item) => [item.id, item]) ?? [])
-    const known = new Set(globalBuiltin.value.map((item) => item.id))
-    const extra = Object.values(MODULES)
-      .filter(
-        (item) =>
-          item.id !== 'settings' &&
-          item.id !== 'chat' &&
-          item.id !== 'chat-reviews' &&
-          !RETIRED_MODULE_IDS.has(item.id as ModuleId) &&
-          !known.has(item.id as BuiltinMenuConfig['id']),
-      )
-      .map(
-        (item) =>
-          ({
-            id: item.id,
-            label: item.label,
-            icon: item.icon,
-            group: 'PERSONAL',
-            order: 1000,
-            visible: false,
-            openMode: 'TAB',
-            placement: 'MENU',
-          }) as BuiltinMenuConfig,
-      )
-    builtinMenus.value = [...globalBuiltin.value, ...extra].map((item) => {
-      const own = overrides.get(item.id)
-      // 前端 V1 新入口不依赖后端菜单发布；已有个人显隐、位置和名称仍优先。
-      const changelogDefault = item.id === 'changelog' && !own
-        ? {
-            ...DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'changelog'),
-            group: layoutGroups.value.some((group) => group.id === 'PUBLIC') ? 'PUBLIC' : 'ROOT',
-          }
-        : {}
-      const legacyCapability = overrides.get('skills') ?? overrides.get('skill-connections')
-      const capabilityDefault = item.id === 'capabilities' && !own
-        ? {
-            visible: true,
-            group: layoutGroups.value.some(group => group.id === legacyCapability?.group)
-              ? legacyCapability!.group : layoutGroups.value.some(group => group.id === 'TOOLS') ? 'TOOLS' : 'ROOT',
-            order: legacyCapability?.order ?? item.order,
-            placement: legacyCapability?.placement ?? 'MENU',
-          }
-        : {}
-      return normalizeBuiltinMenu({
-        ...item,
-        ...(personalLayout.value ? { visible: false } : {}),
-        ...changelogDefault,
-        ...capabilityDefault,
-        ...own,
-      } as BuiltinMenuConfig)
-    })
-    externalApps.value = globalExternal.value.filter((app) => !RETIRED_EXTERNAL_APP_IDS.has(app.id)).map((app) => {
-      const own = overrides.get(externalAppItemId(app.id))
-      return normalizeExternalApp({
-        ...app,
-        ...(personalLayout.value ? { visible: false } : {}),
-        ...own,
-        id: app.id,
-      } as ExternalAppConfig)
-    })
+    builtinMenus.value = FIXED_BUILTIN_MENUS.map(normalizeBuiltinMenu)
+    externalApps.value = globalExternal.value.filter((app) => !RETIRED_EXTERNAL_APP_IDS.has(app.id))
+      .map((app) => normalizeExternalApp({ ...app, visible: false }))
   }
 
   watch(
@@ -242,68 +171,15 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   /** 从服务端拉取跨设备的「个人」组顺序；没存过或后端不可用时保持本地值。 */
-  async function loadPersonalOrder() {
-    const token = generation
-    try {
-      const raw = await fetchPreference(PERSONAL_ORDER_PREF)
-      if (token !== generation) return
-      if (raw) {
-        personalOrder.value = normalizeOrder(JSON.parse(raw))
-        persist()
-      }
-    } catch {
-      /* 本地顺序照常可用 */
-    }
+  async function loadPersonalOrder() { personalOrder.value = normalizeOrder(null) }
+  function setPersonalOrder(_order: ModuleId[]) { throw new Error('菜单由开发人员统一维护') }
+  async function loadMobileItems(_force = false) {
+    mobileItems.value = normalizeMobileNavItems(null)
+    mobileItemsState.value = 'loaded'
   }
+  async function saveMobileItems(_items: MobileNavItemId[]) { throw new Error('菜单由开发人员统一维护') }
 
-  /** 拖拽后的新顺序：本地立即生效，服务端异步落库。 */
-  function setPersonalOrder(order: ModuleId[]) {
-    personalOrder.value = normalizeOrder(order)
-    persist()
-    void savePreference(PERSONAL_ORDER_PREF, JSON.stringify(personalOrder.value)).catch(() => {
-      /* 落库失败下次进来会回到旧顺序，但本次会话内保持用户拖出的样子 */
-    })
-  }
-
-  /** 从成员级偏好恢复手机底栏；未配置、损坏或暂时离线时保留安全默认入口。 */
-  async function loadMobileItems(force = false) {
-    if (mobileItemsState.value === 'loading' || mobileItemsState.value === 'saving') return
-    if (!force && ['loaded', 'saved'].includes(mobileItemsState.value)) return
-    const token = generation
-    mobileItemsState.value = 'loading'
-    mobileItemsError.value = ''
-    try {
-      const raw = await fetchPreference(MOBILE_NAV_PREF)
-      if (token !== generation) return
-      mobileItems.value = normalizeMobileNavItems(raw ? JSON.parse(raw) : null)
-      mobileItemsState.value = 'loaded'
-    } catch (error) {
-      if (token !== generation) return
-      mobileItemsState.value = 'error'
-      mobileItemsError.value = error instanceof Error ? error.message : '手机底栏读取失败'
-    }
-  }
-
-  /** 保存当前成员的手机底栏，供直接拖拽和工作台编辑共同复用。 */
-  async function saveMobileItems(items: MobileNavItemId[]) {
-    const token = generation
-    const normalized = normalizeMobileNavItems(items)
-    mobileItems.value = normalized
-    mobileItemsState.value = 'saving'
-    mobileItemsError.value = ''
-    try {
-      await savePreference(MOBILE_NAV_PREF, JSON.stringify(normalized))
-      if (token !== generation) return
-      mobileItemsState.value = 'saved'
-    } catch (error) {
-      if (token !== generation) return
-      mobileItemsState.value = 'error'
-      mobileItemsError.value = error instanceof Error ? error.message : '手机底栏保存失败'
-      throw error
-    }
-  }
-
-  /** 同批读取全局来源和个人布局，避免顶部、侧栏先后加载造成位置跳变。 */
+  /** 仅加载全部功能使用的外部应用；主菜单不依赖网络或个人偏好。 */
   async function loadMenus(force = false): Promise<void> {
     if (loadPromise) return loadPromise
     if ((!force && layoutLoaded.value) || menuMutationState.value === 'saving') return
@@ -314,19 +190,9 @@ export const useNavStore = defineStore('nav', () => {
     externalAppsState.value = 'loading'
     const operation = (async () => {
       try {
-        const [builtin, external, personal] = await Promise.all([
-          fetchBuiltinMenuRegistry(),
-          fetchExternalAppRegistry(),
-          fetchNavigationLayout(),
-        ])
+        const external = await fetchExternalAppRegistry()
         if (token !== generation) return
-        const parsed = personal.layout ? validateNavigationLayout(personal.layout) : null
-        globalBuiltin.value = builtin.menus
-          .filter((menu) => !RETIRED_MODULE_IDS.has(menu.id))
-          .map(normalizeBuiltinMenu)
         globalExternal.value = external.apps.map(normalizeExternalApp)
-        personalLayout.value = parsed
-        layoutRevision.value = personal.revision
         layoutLoaded.value = true
         builtinMenusState.value = 'loaded'
         externalAppsState.value = 'loaded'
@@ -335,7 +201,7 @@ export const useNavStore = defineStore('nav', () => {
         rebuildLayout()
       } catch (error) {
         if (token !== generation) return
-        layoutError.value = error instanceof Error ? error.message : '个人导航读取失败，请重试'
+        layoutError.value = error instanceof Error ? error.message : '外部应用读取失败，请重试'
         builtinMenusError.value = layoutError.value
         externalAppsError.value = layoutError.value
         builtinMenusState.value = 'error'
@@ -380,7 +246,7 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   async function saveLayout(next: NavigationLayout, expectedRevision = layoutRevision.value) {
-    if (!canEditLayout.value) throw new Error('导航尚未读取完成或正在保存，请稍后重试')
+    if (!canEditLayout.value) throw new Error('菜单由开发人员统一维护')
     if (layoutConflict.value)
       throw new Error('另一设备已修改导航，请先读取最新布局再调整；当前草稿仍保留')
     if (expectedRevision !== layoutRevision.value)

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
 import { useBrowsingState, validSearch, validPage } from '@/composables/browsingState'
 import { useClientPagination } from '@/composables/clientPagination'
@@ -19,7 +18,6 @@ const ui = useUiStore()
 const session = useSessionStore()
 const layout = useProjectListLayoutStore()
 const route = useRoute()
-const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const { decoProj } = useDeco()
 
@@ -232,7 +230,6 @@ function startProjectDrag(event: DragEvent, project: Project) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', `project:${project.id}`)
   }
-  shortcuts.start(resourceShortcut('project', project.id, project.name), event)
 }
 
 function startGroupDrag(event: DragEvent, groupId: string) {
@@ -381,7 +378,7 @@ onBeforeUnmount(() => {
             <div v-for="p in g.items" :key="p.id" class="proj-card" :class="{ dragging: dragProjectId === p.id, 'card-drop-target': dragProjectId && dragProjectId !== p.id }" :draggable="layout.state.loaded"
               @contextmenu.stop="onProjectContextMenu($event, p.id)"
               @dragstart.stop="startProjectDrag($event, p)"
-              @dragend="dragProjectId = null; dragGroupId = null; groupHoverId = null; shortcuts.end"
+              @dragend="dragProjectId = null; dragGroupId = null; groupHoverId = null"
               @dragover.prevent.stop="groupHoverId = g.id"
               @drop.prevent.stop="dropOnProject($event, p.id, g.id)"
               @click="onProjectCardClick(p.id)">

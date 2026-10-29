@@ -164,7 +164,7 @@ public class SettingController {
     @PutMapping("/navigation/builtin-menus")
     public ApiResponse<BuiltinMenuRegistryDto> saveBuiltinMenuRegistry(
             @Valid @RequestBody SaveBuiltinMenuRegistryRequest request) {
-        return ApiResponse.ok(builtinMenus.saveRegistry(request));
+        throw new cn.wayuwa.wao.common.BadRequestException("菜单由开发人员统一维护，不再支持在线配置");
     }
 
     @PutMapping("/feishu-webhook")

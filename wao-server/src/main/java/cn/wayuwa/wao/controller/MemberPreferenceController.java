@@ -52,8 +52,9 @@ public class MemberPreferenceController {
         if (cn.wayuwa.wao.service.NoteDiscoveryService.PREFERENCE_KEY.equals(key)) {
             throw new BadRequestException("请使用自动发现设置接口保存，以保护暂停及跨设备修改");
         }
-        if (cn.wayuwa.wao.service.NavigationLayoutService.PREFERENCE_KEY.equals(key)) {
-            throw new BadRequestException("请使用个人导航接口保存布局，以保护跨设备修改");
+        if (cn.wayuwa.wao.service.NavigationLayoutService.PREFERENCE_KEY.equals(key)
+                || java.util.Set.of("nav-personal-order", "mobile-bottom-nav-v1", "nav-top-shortcuts-v1", "quick-links").contains(key)) {
+            throw new BadRequestException("菜单由开发人员统一维护，不再支持个人配置");
         }
         int limit = key.startsWith("task-order-v1:") || key.startsWith("project-layout-v1:")
                 ? 60_000 : MAX_VALUE_LENGTH;

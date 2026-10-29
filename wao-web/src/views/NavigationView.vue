@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAVIGATION_CATALOG, matchesFunction, menuLocation } from '@/config/navigationCatalog'
+import { NAVIGATION_CATALOG, matchesFunction } from '@/config/navigationCatalog'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useNavStore } from '@/stores/nav'
-import { useTopShortcutsStore } from '@/stores/topShortcuts'
-import { useMenuDrag } from '@/composables/menuDrag'
-import { toast } from '@/composables/toast'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 const Governance = defineAsyncComponent(() => import('@/components/nav/NavigationGovernance.vue'))
@@ -16,13 +13,8 @@ const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
 const links = useQuickLinks()
-const shortcuts = useTopShortcutsStore()
-const drag = useMenuDrag()
 const query = ref('')
 const selected = ref('today')
-const actionError = ref('')
-const customizing = ref(false)
-const layout = computed(() => nav.currentLayout())
 const governance = computed(() => route.query.view === 'governance')
 const sections = computed(() =>
   NAVIGATION_CATALOG.map((section) => ({
@@ -45,7 +37,7 @@ const visibleApps = computed(() =>
   ),
 )
 const visibleLinks = computed(() =>
-  links.links.value.filter(
+  links.links.value.filter(link => link.id !== 'wao-jenkins').filter(
     (link) =>
       !query.value.trim() ||
       [link.label, link.subtitle, link.url, ...link.keywords]
@@ -86,26 +78,6 @@ function openLink(link: QuickLink) {
   if (link.openMode === 'TAB') void router.push(quickLinkPath(link.id))
   else window.open(link.url, '_blank', 'noopener,noreferrer')
 }
-function position(id: NavItemId) {
-  const item = layout.value.items.find((item) => item.id === id)
-  return item?.visible ? item.placement : 'HIDDEN'
-}
-async function place(id: NavItemId, event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  const next = nav.currentLayout()
-  const item = next.items.find((item) => item.id === id)
-  if (!item) return
-  item.visible = value !== 'HIDDEN'
-  if (value === 'MENU' || value === 'TOP' || value === 'DOCK') item.placement = value
-  actionError.value = ''
-  try {
-    await nav.saveLayout(next)
-    toast('个人导航已更新', 'ri-check-line')
-  } catch (error) {
-    actionError.value = error instanceof Error ? error.message : '导航未保存'
-    ;(event.target as HTMLSelectElement).value = position(id)
-  }
-}
 async function retry() {
   await nav.loadMenus(true)
   await links.load(true)
@@ -117,7 +89,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="navigation-center wao-page-frame" :class="{ customizing }">
+  <main class="navigation-center wao-page-frame">
     <header class="hero">
       <div>
         <span class="eyebrow">WAO / 导航</span>
@@ -130,20 +102,13 @@ onMounted(() => {
       </div>
       <div class="header-actions">
         <button v-if="!governance" @click="router.push('/features')"><i class="ri-compass-discover-line" aria-hidden="true"></i>版本更新</button>
-        <button v-if="!governance" class="customize-toggle" :aria-pressed="customizing" :disabled="nav.menuMutationState === 'saving'" @click="customizing = !customizing">
-          <i class="ri-layout-line" aria-hidden="true"></i>{{ customizing ? '完成整理' : '自定义导航' }}
-        </button>
-        <button v-if="customizing && !governance" class="more-settings" @click="router.push('/settings?tab=navigation')">更多导航设置</button>
-        <button v-if="customizing || governance" @click="router.replace({ path: '/navigation', query: governance ? {} : { view: 'governance' } })">
+        <button v-if="governance" @click="router.replace({ path: '/navigation', query: governance ? {} : { view: 'governance' } })">
           {{ governance ? '返回全部功能' : '功能治理' }}
         </button>
       </div>
     </header>
     <Governance v-if="governance" />
     <template v-else>
-      <p v-if="customizing" class="status" role="status">
-        {{ nav.menuMutationState === 'saving' ? '正在保存导航位置…' : '选择常用功能的展示位置，或拖到左侧、顶部、底部。每次调整会自动保存到你的账号；完成整理后返回浏览。' }}
-      </p>
       <label class="search"
         ><i class="ri-search-line"></i
         ><input
@@ -174,19 +139,12 @@ onMounted(() => {
       <div v-if="nav.layoutError || links.loadError.value" role="alert" class="status error">
         {{
           nav.layoutError
-            ? nav.layoutError + '。当前展示已知目录，个人位置暂无法确认。'
+            ? nav.layoutError + '。当前展示已知目录，外部应用暂无法确认。'
             : '快捷链接读取失败：' + links.loadError.value
         }}<button @click="retry">重试读取</button>
       </div>
       <div v-else-if="nav.layoutLoading || links.loading.value" class="status" role="status">
-        正在同步你的导航…
-      </div>
-      <div v-if="actionError || nav.menuMutationError" class="status error" role="alert">
-        {{ actionError || nav.menuMutationError }}。原布局已恢复，草稿保留。<button
-          @click="router.push('/settings?tab=navigation')"
-        >
-          处理保存问题
-        </button>
+        正在读取功能目录…
       </div>
       <section v-for="section in pagedSections" :key="section.id" class="catalog-section">
         <header>
@@ -198,18 +156,6 @@ onMounted(() => {
         </header>
         <div class="function-list">
           <article v-for="item in section.items" :key="item.id" class="function-row">
-            <button
-              v-if="customizing && nav.menuConfig(item.id)"
-              class="drag"
-              :draggable="nav.canMoveMenus"
-              :disabled="!nav.canMoveMenus"
-              :aria-label="'拖动' + nav.itemMeta(item.id)?.label"
-              title="可直接拖到左侧、顶部或底部"
-              @dragstart="drag.onDragStart(item.id, $event)"
-              @dragend="drag.onDragEnd"
-            >
-              <i class="ri-draggable"></i></button
-            ><span v-else-if="customizing" class="drag"></span>
             <button class="function-open" @click="open(item.id)">
               <i :class="nav.itemMeta(item.id)?.icon"></i
               ><span
@@ -227,21 +173,6 @@ onMounted(() => {
                 "
               ></i>
             </button>
-            <div v-if="customizing" class="position">
-              <small>{{ nav.layoutLoaded ? menuLocation(item.id, layout) : '位置同步中' }}</small
-              ><select
-                v-if="nav.menuConfig(item.id)"
-                :value="position(item.id)"
-                :disabled="!nav.canEditLayout || nav.layoutConflict"
-                :aria-label="nav.itemMeta(item.id)?.label + '展示位置'"
-                @change="place(item.id, $event)"
-              >
-                <option value="HIDDEN">不固定</option>
-                <option value="MENU">左侧菜单</option>
-                <option value="TOP">顶部菜单</option>
-                <option value="DOCK">底部停靠</option>
-              </select>
-            </div>
           </article>
         </div>
       </section>
@@ -252,17 +183,7 @@ onMounted(() => {
         </header>
         <div class="function-list">
           <article v-for="app in pagedApps" :key="app.id" class="function-row">
-            <button
-              v-if="customizing"
-              class="drag"
-              :draggable="nav.canMoveMenus"
-              :disabled="!nav.canMoveMenus"
-              :aria-label="'拖动' + app.label"
-              @dragstart="drag.onDragStart(externalAppItemId(app.id), $event)"
-              @dragend="drag.onDragEnd"
-            >
-              <i class="ri-draggable"></i></button
-            ><button class="function-open" @click="open(externalAppItemId(app.id))">
+            <button class="function-open" @click="open(externalAppItemId(app.id))">
               <i :class="app.icon"></i
               ><span
                 ><b>{{ app.label }}</b
@@ -271,47 +192,18 @@ onMounted(() => {
                 }}</small></span
               ><i class="ri-arrow-right-line"></i>
             </button>
-            <div v-if="customizing" class="position">
-              <small>{{ menuLocation(externalAppItemId(app.id), layout) }}</small
-              ><select
-                :value="position(externalAppItemId(app.id))"
-                :disabled="!nav.canEditLayout || nav.layoutConflict"
-                :aria-label="app.label + '展示位置'"
-                @change="place(externalAppItemId(app.id), $event)"
-              >
-                <option value="HIDDEN">不固定</option>
-                <option value="MENU">左侧菜单</option>
-                <option value="TOP">顶部菜单</option>
-                <option value="DOCK">底部停靠</option>
-              </select>
-            </div>
           </article>
         </div>
       </section>
       <section v-if="dynamicVisible && pagedLinks.length" class="catalog-section">
         <header>
           <h2>我的快捷链接</h2>
-          <span v-if="customizing">可拖到顶部收藏</span>
         </header>
         <div class="function-list">
           <button
             v-for="link in pagedLinks"
             :key="link.id"
             class="link-row"
-            :draggable="customizing"
-            @dragstart="
-              customizing && shortcuts.start(
-                {
-                  key: 'link:' + link.id,
-                  label: link.label,
-                  icon: link.icon,
-                  path: quickLinkPath(link.id),
-                  quickLinkId: link.id,
-                },
-                $event,
-              )
-            "
-            @dragend="shortcuts.end"
             @click="openLink(link)"
           >
             <i :class="link.icon"></i

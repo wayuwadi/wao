@@ -148,7 +148,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
-  focus: { id: 'focus', label: '番茄专注', icon: 'ri-timer-line', path: '/focus' },
+  focus: { id: 'focus', label: '番茄钟', icon: 'ri-timer-line', path: '/focus' },
   countdowns: { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', path: '/countdowns' },
   habits: { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', path: '/habits' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
@@ -307,6 +307,16 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   ledger: { id: 'ledger', label: '账务本', icon: 'ri-money-cny-circle-line', path: '/ledger' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
+/** 全体用户共用的主菜单；顺序和名称只随代码发布变更。 */
+export const FIXED_NAV_IDS = [
+  'home', 'notes', 'todo', 'projects', 'knowledge', 'drawings', 'vault',
+  'calendar', 'focus', 'countdowns', 'habits', 'navigation',
+] as const satisfies readonly ModuleId[]
+export const FIXED_BUILTIN_MENUS: BuiltinMenuConfig[] = FIXED_NAV_IDS.map((id, index) => ({
+  id, label: MODULES[id].label, icon: MODULES[id].icon,
+  group: 'ROOT', order: (index + 1) * 10, visible: true, openMode: 'TAB', placement: 'MENU',
+}))
+
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
   [
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
@@ -359,7 +369,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'focus', label: '番茄专注', icon: 'ri-timer-line', group: 'PERSONAL', order: 15, visible: true,
+      id: 'focus', label: '番茄钟', icon: 'ri-timer-line', group: 'PERSONAL', order: 15, visible: true,
     },
     { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', group: 'PERSONAL', order: 16, visible: true },
     { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', group: 'PERSONAL', order: 17, visible: true },

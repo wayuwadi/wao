@@ -6,183 +6,38 @@ import { useSessionStore } from '@/stores/session'
 import type { AuthSession } from '@/api/auth'
 import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
-import { DEFAULT_BUILTIN_MENUS, DEFAULT_EXTERNAL_APPS } from '@/config/nav'
-import { snapshotNavigation } from '@/config/navigationLayout'
-import { recommendedLayout } from '@/config/navigationCatalog'
-vi.mock('@/api/navigationLayout', () => ({
-  fetchNavigationLayout: vi.fn(),
-  saveNavigationLayout: vi.fn(),
-}))
-vi.mock('@/api/system', () => ({
-  fetchBuiltinMenuRegistry: vi.fn(),
-  fetchExternalAppRegistry: vi.fn(),
-}))
-vi.mock('@/api/favorites', () => ({
-  fetchPreference: vi.fn().mockResolvedValue(''),
-  savePreference: vi.fn(),
-}))
-const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
-const customMenus = DEFAULT_BUILTIN_MENUS.map((menu) =>
-  menu.id === 'projects'
-    ? {
-        ...menu,
-        label: '我的项目',
-        placement: 'TOP' as const,
-        order: 13,
-        openMode: 'NEW_PAGE' as const,
-      }
-    : menu,
-)
-const customApps = DEFAULT_EXTERNAL_APPS.map((app) => ({
-  ...app,
-  placement: 'DOCK' as const,
-  order: app.order + 3,
-}))
-function login(id: string) {
-  useSessionStore().account = { member: { id } } as AuthSession
-}
-describe('个人导航快照', () => {
-  it('旧个人布局获得能力中心入口，并尊重新版显隐选择', async () => {
-    const old = snapshotNavigation(clone(customMenus), clone(customApps))
-    old.items = old.items.filter(item => item.id !== 'capabilities')
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({revision:'old',layout:old})
-    const nav = useNavStore(); await nav.loadMenus()
-    expect(nav.menuConfig('capabilities')?.visible).toBe(true)
-    expect(nav.builtinMenus.some(item => ['skills','skill-connections'].includes(item.id))).toBe(false)
-    old.items.push({id:'capabilities',label:'能力中心',icon:'ri-box-3-line',group:'TOOLS',order:15,visible:false,openMode:'TAB',placement:'MENU'})
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({revision:'new',layout:old})
-    await nav.loadMenus(true)
-    expect(nav.menuConfig('capabilities')?.visible).toBe(false)
-  })
-  beforeEach(() => {
-    vi.resetAllMocks()
-    localStorage.clear()
-    setActivePinia(createPinia())
-    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: clone(customMenus) })
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: clone(customApps) })
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'none', layout: null })
-    vi.mocked(saveNavigationLayout).mockImplementation(async (_revision, layout) => ({
-      revision: 'saved',
-      layout: clone(layout),
-    }))
-  })
-  it('首次读取无损继承名称、位置、打开方式及非整十顺序，保存不带系统地址', async () => {
+import { FIXED_NAV_IDS } from '@/config/nav'
+vi.mock('@/api/navigationLayout', () => ({ fetchNavigationLayout: vi.fn(), saveNavigationLayout: vi.fn() }))
+vi.mock('@/api/system', () => ({ fetchBuiltinMenuRegistry: vi.fn(), fetchExternalAppRegistry: vi.fn() }))
+vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
+describe('开发人员管理的固定导航', () => {
+  beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); setActivePinia(createPinia()) })
+  it('不读取旧个人布局和全局菜单，加载失败也保持完整菜单', async () => {
+    vi.mocked(fetchExternalAppRegistry).mockRejectedValue(new Error('offline'))
     const nav = useNavStore()
     await nav.loadMenus()
-    expect(saveNavigationLayout).not.toHaveBeenCalled()
-    expect(nav.menuConfig('projects')).toMatchObject(
-      customMenus.find((menu) => menu.id === 'projects')!,
-    )
-    await nav.renameMenu('calendar', '我的日历')
-    const saved = vi.mocked(saveNavigationLayout).mock.calls[0]![1]
-    expect(saved.items.find((item) => item.id === 'projects')).toMatchObject({
-      label: '我的项目',
-      placement: 'TOP',
-      order: 13,
-      openMode: 'NEW_PAGE',
-    })
-    expect(saved.items.find((item) => item.id === 'external:getnote')).not.toHaveProperty('appUrl')
-  })
-
-  it('功能探索默认收进全部功能，个人仍可主动固定入口', async () => {
-    const oldMenus = clone(customMenus).filter((item) => item.id !== 'changelog')
-    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: oldMenus })
-    const layout = snapshotNavigation(oldMenus, [])
-    layout.items = layout.items.map((item) => ({ ...item, group: 'ROOT' }))
-    layout.groups = [
-      { id: 'ROOT', label: '' },
-      { id: 'PERSONAL', label: '自定义' },
-      { id: 'TOOLS', label: '工具' },
-    ]
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: [] })
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'old', layout })
-    const nav = useNavStore()
-    await nav.loadMenus()
-    expect(nav.groups.find((group) => group.id === 'ROOT')?.items).not.toContain('changelog')
-    expect(saveNavigationLayout).not.toHaveBeenCalled()
-    await nav.setMenuVisibility('changelog', true)
-    expect(nav.menuConfig('changelog')?.visible).toBe(true)
-    await nav.setMenuVisibility('changelog', false)
-    expect(nav.menuConfig('changelog')?.visible).toBe(false)
-  })
-  it('推荐分类只做草稿，不重置顶部停靠、隐藏项、自定义名称；原快照可撤销', async () => {
-    const nav = useNavStore()
-    await nav.loadMenus()
-    const before = nav.currentLayout()
-    const recommended = recommendedLayout(before)
-    expect(nav.currentLayout()).toEqual(before)
-    expect(recommended.items.filter((item) => item.placement !== 'MENU')).toEqual(
-      before.items.filter((item) => item.placement !== 'MENU'),
-    )
-    await nav.saveLayout(recommended)
-    await nav.saveLayout(before)
-    expect(nav.currentLayout()).toEqual(before)
-  })
-  it('冲突保留本地意图，禁止旧快照重放；读取后可以重新编辑', async () => {
-    const nav = useNavStore()
-    await nav.loadMenus()
-    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(
-      Object.assign(new Error('版本冲突'), { status: 409 }),
-    )
-    await expect(nav.moveMenu('projects', 'DOCK', 'TOOLS')).rejects.toThrow('版本冲突')
-    expect(nav.layoutConflict).toBe(true)
-    expect(nav.menuConfig('projects')?.placement).toBe('TOP')
-    expect(nav.pendingLayout?.items.find((item) => item.id === 'projects')?.placement).toBe('DOCK')
-    await expect(nav.retryLayout()).rejects.toThrow('另一设备')
-    expect(saveNavigationLayout).toHaveBeenCalledTimes(1)
-    await nav.discardLayoutDraft()
-    expect(nav.layoutConflict).toBe(false)
-  })
-  it('普通失败可重试同一快照，锁定只禁止日常拖拽', async () => {
-    const nav = useNavStore()
-    await nav.loadMenus()
-    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(new Error('离线'))
-    await expect(nav.moveMenu('projects', 'DOCK', 'TOOLS')).rejects.toThrow('离线')
-    await nav.retryLayout()
-    expect(nav.menuConfig('projects')?.placement).toBe('DOCK')
-    await nav.setLayoutLocked(true)
+    expect(nav.groups.flatMap(g => g.items)).toEqual(FIXED_NAV_IDS)
+    expect(fetchNavigationLayout).not.toHaveBeenCalled()
+    expect(fetchBuiltinMenuRegistry).not.toHaveBeenCalled()
+    expect(nav.canEditLayout).toBe(false)
     expect(nav.canMoveMenus).toBe(false)
-    expect(nav.canEditLayout).toBe(true)
+    expect(nav.topItems).toEqual([])
+    expect(nav.dockItems).toEqual([])
+    await expect(nav.saveLayout(nav.currentLayout())).rejects.toThrow('统一维护')
+    await expect(nav.saveMobileItems(['vault'])).rejects.toThrow('统一维护')
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
   })
-  it('旧账号延迟返回不得污染新账号布局', async () => {
-    login('alice')
+  it('切换账号丢弃迟到的外部应用，固定菜单保持一致', async () => {
+    let resolveOld!: (value: { version: number; apps: [] }) => void
+    vi.mocked(fetchExternalAppRegistry).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
     const nav = useNavStore()
-    let resolveOld!: (value: Awaited<ReturnType<typeof fetchNavigationLayout>>) => void
-    vi.mocked(fetchNavigationLayout).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveOld = resolve
-        }),
-    )
-    const oldLoad = nav.loadMenus()
-    const bob = snapshotNavigation(
-      customMenus.map((menu) => ({
-        ...menu,
-        label: menu.id === 'projects' ? 'Bob 项目' : menu.label,
-      })),
-      customApps,
-    )
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'bob', layout: bob })
-    login('bob')
+    const old = nav.loadMenus()
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: [] })
+    useSessionStore().account = { member: { id: 'new' } } as AuthSession
     await flushPromises()
-    resolveOld({ revision: 'alice', layout: snapshotNavigation(customMenus, customApps) })
-    await oldLoad
-    expect(nav.menuConfig('projects')?.label).toBe('Bob 项目')
-    expect(nav.layoutRevision).toBe('bob')
-  })
-  it('新增能力不占用已定制位置，移除应用不能由个人快照复活', async () => {
-    const own = snapshotNavigation(
-      customMenus.filter((menu) => menu.id !== 'calendar'),
-      customApps,
-    )
-    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'own', layout: own })
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
-      version: 2,
-      apps: customApps.filter((app) => app.id !== 'getnote'),
-    })
-    const nav = useNavStore()
-    await nav.loadMenus()
-    expect(nav.menuConfig('calendar')?.visible).toBe(false)
-    expect(nav.menuConfig('external:getnote')).toBeUndefined()
+    resolveOld({ version: 1, apps: [] }); await old
+    expect(nav.groups.flatMap(g => g.items)).toEqual(FIXED_NAV_IDS)
+    expect(nav.layoutLoaded).toBe(true)
+    expect(nav.externalApps).toEqual([])
   })
 })

@@ -34,6 +34,13 @@ class SettingControllerTest {
             mock(FeishuWebhookNotifier.class), webhooks, networkOutageWindow);
 
     @Test
+    void builtinMenuWritesAreRetired() {
+        assertThatThrownBy(() -> controller.saveBuiltinMenuRegistry(null))
+                .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class)
+                .hasMessageContaining("统一维护");
+    }
+
+    @Test
     void siteInfoUsesPublicDefaultsBeforeFirstSave() {
         when(settings.get(SettingService.SITE_NAME, "WAO Life OS")).thenReturn("WAO Life OS");
         when(settings.get(SettingService.SITE_DESCRIPTION, "个人事务与 AI 协作系统")).thenReturn("个人事务与 AI 协作系统");
