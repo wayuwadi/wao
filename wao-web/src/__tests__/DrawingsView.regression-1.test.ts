@@ -7,6 +7,7 @@ import {
   fetchDrawings,
   fetchDrawingVersions,
   saveDrawing,
+  renameDrawing,
   type DrawingFile,
 } from '@/api/drawings'
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils/drawingDrafts'
@@ -188,6 +189,7 @@ describe('草图保存与文件管理回归', () => {
       updatedAt: 1,
     })
     const w = await open()
+    expect(removeDrawingDraft).toHaveBeenCalledWith('member-a', 'a')
     change(w, scene('next'))
     await w.vm.$nextTick()
     await w.get('.save-button').trigger('click')
@@ -255,5 +257,22 @@ describe('草图保存与文件管理回归', () => {
     w.findComponent({ name: 'DrawingCanvas' }).vm.$emit('save')
     await flushPromises()
     expect(saveDrawing).toHaveBeenCalledWith('a', scene('shortcut'), 1)
+  })
+
+  it('场景保存的迟到响应不回退已经完成的改名', async () => {
+    const pending = deferred<DrawingFile>()
+    vi.mocked(saveDrawing).mockReturnValueOnce(pending.promise)
+    vi.mocked(renameDrawing).mockResolvedValue(file('a', { title: '新名称' }))
+    const w = await open()
+    change(w, scene('edit')); await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await w.get('.title-trigger').trigger('click')
+    await w.get('[aria-label="草图名称"]').setValue('新名称')
+    await w.get('[aria-label="草图名称"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    pending.resolve(file('a', { sceneJson: scene('edit'), revision: 2 }))
+    await flushPromises()
+    expect(w.get('.title-trigger').text()).toContain('新名称')
+    expect(w.findAll('.file-main strong').some(node => node.text() === '新名称')).toBe(true)
   })
 })

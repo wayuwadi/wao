@@ -202,6 +202,8 @@ async function openFile(id: string) {
     dirty.value = !!draft && draft.sceneJson !== remote.sceneJson
     revision.value = dirty.value ? draft!.revision : remote.revision
     draftScene.value = draft?.sceneJson ?? ''
+    if (draft && !dirty.value) await clearDraft(id)
+    if (token !== loadToken || !sameOwner()) return
     canvasKey.value = `${id}:${++canvasGeneration}`
     updateSummary(remote)
     void loadVersions(id)
