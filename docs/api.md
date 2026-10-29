@@ -28,11 +28,13 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 清单主任务标题/截止日期沿用任务 title/due；内嵌子事项沿用 text/due，使用既有任务版本与草稿保存。浏览器新建未指定截止日期时默认上海当天，执行时段独立保留；HTTP/MCP/CLI 请求字段契约不变，不自动扩大令牌权限。
 
 文档关联沿用任务或子事项 docs ID 列表。归档复用 POST /api/docs，提交 kbId、folderId、title、content（version 1 的 Markdown）和兼容 blocks，成功后将文档 ID 写回任务。原详情保留；文档创建与任务关联是两个请求，已收到的创建回执用于关联失败重试，不代表服务端跨请求事务或创建请求幂等。
-# 小记图文整理（2026-10-28）
+
+## 小记图文整理（2026-10-28）
 
 `GET /api/docs/notes/{docId}/visual-recap` 返回本人小记最近整理；`POST` 接收 `expectedRev` 和 32 位小写十六进制 `requestId`。返回 `status`（EMPTY/RUNNING/SUCCEEDED/FAILED），已创建结果带 `sourceRev/sourceText/stale/id`，成功带 `html`，失败带 `message`。响应为 ApiResponse，禁止缓存。
 
-复用本机 AI 队列；来源版本不一致为 409，非本人或删除/归档来源为 404；正文限制 24000 字符。HTML 仅作为私有 JSON 数据返回，浏览器必须经白名单和沙箱渲染。只读结果不覆盖正文。此能力当前限浏览器，MCP 与 CLI 不新增权限或命令。
+复用本机 AI 队列；来源版本不一致为 409，非本人或删除/归档来源为 404；正文限制 24000 字符。HTML 仅作为私有 JSON 数据返回，浏览器必须经白名单和沙箱渲染。只读结果不覆盖正文。此能力当前限浏览器，MCP 与 CLI 不新增权限或命令。流程与保留规则见 [小记图文整理](specs/notes-visual-recap-2026-10-28.md)。
+
 ## 文档限时分享（2026-10-28）
 
 知识库文档与小记共用作者管理的 `GET/POST /api/docs/{id}/public-shares` 和 `DELETE /api/docs/{id}/public-shares/{shareId}`。POST 使用 `{ "durationHours": 1 | 24 | 168 }`，返回随机 token 一次；匿名读取只接受 `/api/share/notes/{token}`、`{token}.md` 与快照内图片。旧 `/api/share/docs/{id}[.md]` 一律失效，不能凭文档 ID 免登录读取。完整权限、快照与迁移边界见 [文档限时分享](specs/document-share-tokens-2026-10-28.md)。

@@ -1205,7 +1205,7 @@ onMounted(() => void loadPins())
         <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
       <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复默认宽度；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
-      <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
+      <section ref="notesList" class="notes-list" aria-label="小记清单" :aria-busy="loading || refreshing" @scroll.passive="onNotesScroll">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"><button v-if="query" type="button" aria-label="清除小记查找" @click="query = ''">清除</button></label>
           <div ref="filterControl" class="filter-control">
@@ -1222,7 +1222,7 @@ onMounted(() => void loadPins())
             </div>
           </div>
           <button class="reader-toggle" type="button" aria-label="阅读模式" :disabled="!matching.length" @click="startReading(undefined, $event)"><i class="ri-book-open-line" aria-hidden="true"></i><span>阅读模式</span></button>
-          <button class="refresh" :disabled="loading || refreshing" :aria-busy="refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
+          <button class="refresh" :disabled="loading || refreshing" :aria-busy="loading || refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="loading || refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
         </div>
         <NoteDiscoverySavedList v-if="discoveryMode !== 'notes'" :mode="discoveryMode" :member-id="session.currentUser.id" @source="openDiscoverySource" />
         <template v-else>
@@ -1242,8 +1242,7 @@ onMounted(() => void loadPins())
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
         <div class="list-summary"><span>{{ matching.length }} 条小记</span><span>{{ filterSummary }}</span></div>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
-        <p v-if="loading" class="empty" role="status">正在读取小记…</p>
-        <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
+        <p v-if="!loading && !loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated && noteDisplay.settings.value.distinguishSystem }" :style="{ '--note-system-color': noteDisplay.settings.value.systemColor }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"

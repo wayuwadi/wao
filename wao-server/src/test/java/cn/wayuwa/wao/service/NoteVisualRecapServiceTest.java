@@ -19,15 +19,26 @@ class NoteVisualRecapServiceTest {
     @BeforeEach void setup() throws Exception {
         var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE","sa","");
         db=new JdbcTemplate(ds);
-        db.execute("CREATE TABLE doc(id VARCHAR(32),author_id VARCHAR(32),kb_id VARCHAR(32),deleted_at TIMESTAMP,archived_at TIMESTAMP)");
+        db.execute("CREATE TABLE member(id VARCHAR(32) PRIMARY KEY)");
+        db.update("INSERT INTO member VALUES('m')");
+        db.execute("CREATE TABLE doc(id VARCHAR(32) PRIMARY KEY,author_id VARCHAR(32),kb_id VARCHAR(32),deleted_at TIMESTAMP,archived_at TIMESTAMP)");
         db.update("INSERT INTO doc VALUES('n','m','kb-notes',NULL,NULL)");
-        try(var c=ds.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V194__note_visual_recaps.sql"));}
+        try(var c=ds.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V196__note_visual_recaps.sql"));}
         knowledge=mock(KnowledgeService.class);ai=mock(LocalNoteAiService.class);runs=mock(AiAssistantRunMapper.class);
         service=new NoteVisualRecapService(db,knowledge,ai,mock(NoteAiSettingsService.class,RETURNS_DEEP_STUBS),runs);
         current=new DocDto("n","标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,"原文"),List.of(),"kb-notes",null,1,List.of());
         when(knowledge.getDoc("n")).thenAnswer(c->current);
     }
     void queued(){db.update("INSERT INTO note_visual_recap(id,member_id,doc_id,source_rev,source_text,run_id) VALUES('r','m','n',1,'原文','run')");}
+    @Test void permanentlyDeletingSourceOrMemberRemovesPrivateRecap(){
+        queued();
+        db.update("DELETE FROM doc WHERE id='n'");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM note_visual_recap",Integer.class)).isZero();
+        db.update("INSERT INTO doc VALUES('n','m','kb-notes',NULL,NULL)");
+        queued();
+        db.update("DELETE FROM member WHERE id='m'");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM note_visual_recap",Integer.class)).isZero();
+    }
     @Test void rejectsAnotherMemberAndDeletedSource(){
         assertThatThrownBy(()->service.latest("other","n")).isInstanceOf(NotFoundException.class);
         db.update("UPDATE doc SET deleted_at=CURRENT_TIMESTAMP");

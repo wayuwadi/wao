@@ -29,6 +29,57 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('右键父任务添加子任务，键盘及详情子项可继续添加下级并展开父级', async () => {
+    const { data, wrapper } = setup()
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue()
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const add = vi.spyOn(data, 'addSub')
+    await wrapper.setProps({ collapsed: ['parent'] })
+    await wrapper.get('[data-task-id="parent"]').trigger('contextmenu', { clientX: 100, clientY: 100 })
+    await flushPromises()
+    const chooseAdd = async () => {
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(b => b.textContent === '添加子任务')!
+      expect(button).toBeTruthy()
+      button.click(); await flushPromises()
+    }
+    await chooseAdd()
+    await wrapper.get('[aria-label="子任务名称"]').setValue('新子任务')
+    await wrapper.get('.child-composer').trigger('submit')
+    await flushPromises()
+    expect(add).toHaveBeenCalledWith('parent', '新子任务', undefined)
+    expect(flush).toHaveBeenCalledWith('parent')
+    expect(wrapper.emitted('toggle')).toContainEqual(['parent'])
+    expect(data.tasks[0]!.subs.some(sub => sub.text === '新子任务')).toBe(true)
+    await wrapper.get('.detail-subtask .child-title').trigger('keydown', { key:'F10', shiftKey:true })
+    await chooseAdd()
+    await wrapper.get('[aria-label="子任务名称"]').setValue('再下一层')
+    await wrapper.get('.child-composer').trigger('submit'); await flushPromises()
+    expect(add).toHaveBeenLastCalledWith('parent', '再下一层', 'child')
+    expect(data.tasks[0]!.subs.find(sub => sub.text === '再下一层')?.parentId).toBe('child')
+  })
+
+  it('添加输入草稿按父级恢复，空白不提交，失败保留新增项且不重复创建', async () => {
+    const { data, wrapper } = setup()
+    const add = vi.spyOn(data, 'addSub')
+    vi.spyOn(data, 'flushTask').mockRejectedValue(new Error('离线'))
+    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
+    await wrapper.get('[aria-label="子任务名称"]').setValue('未完成输入')
+    await wrapper.findAll('.task-select')[1]!.trigger('click')
+    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
+    expect((wrapper.get('[aria-label="子任务名称"]').element as HTMLInputElement).value).toBe('')
+    await wrapper.findAll('.task-select')[0]!.trigger('click')
+    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
+    expect((wrapper.get('[aria-label="子任务名称"]').element as HTMLInputElement).value).toBe('未完成输入')
+    await wrapper.get('[aria-label="子任务名称"]').setValue('  ')
+    await wrapper.get('.child-composer').trigger('submit')
+    expect(add).not.toHaveBeenCalled()
+    await wrapper.get('[aria-label="子任务名称"]').setValue('保留的子任务')
+    await wrapper.get('.child-composer').trigger('submit'); await flushPromises()
+    await wrapper.get('.child-composer').trigger('submit'); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(data.tasks[0]!.subs.some(sub => sub.text === '保留的子任务')).toBe(true)
+  })
+
   it('真实清单编辑器支持斜线、标题层级及随编辑更新的目录跳转', async () => {
     const { data, wrapper } = setup(false, true)
     await vi.dynamicImportSettled(); await flushPromises()
