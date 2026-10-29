@@ -927,7 +927,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </style>
 
 <style scoped>
-.content:has(.matrix-workspace) { overflow:hidden; }
-.page-stage:has(.matrix-workspace) { flex:1 1 0; min-height:0; overflow:hidden; align-items:stretch; }
-.page-body:has(.matrix-workspace) { display:flex; min-height:0; overflow:hidden; }
+.content:has(.matrix-workspace, .detail-quadrant) { overflow:hidden; }
+.page-stage:has(.matrix-workspace, .detail-quadrant) { flex:1 1 0; min-height:0; overflow:hidden; align-items:stretch; }
+.page-body:has(.matrix-workspace, .detail-quadrant) { display:flex; min-height:0; overflow:hidden; }
 </style>

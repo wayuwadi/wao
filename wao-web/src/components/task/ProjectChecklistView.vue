@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { computed, defineAsyncComponent, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMemberPreference } from '@/composables/memberPreference'
 import { useSessionStore } from '@/stores/session'
@@ -287,6 +288,7 @@ function finishTitle() {
 }
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
 const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
+const quickAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const addingChild = ref(false)
 const childDraft = ref('')
@@ -348,7 +350,8 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   event.stopPropagation()
   void contextMenu.value?.openAt(event, task.title || '未命名任务', [
     { id: 'add-child', label: '添加子任务', disabled: props.busy || actions.busy(id), run: () => startChild(id) },
-    { id: 'tags', label: '设置标签', run: () => { selectedId.value = id; detailOnlySelection.value = true } },
+    { id: 'tags', label: '设置标签', run: () => { quickAction.value={...actions.source(id),mode:'tags'} } },
+    { id:'priority',label:'修改优先级',disabled:actions.busy(id),run:()=>{quickAction.value={...actions.source(id),mode:'priority'}} },
     { id: 'open', label: '打开任务详情', run: () => actions.open(id) },
   ])
 }
@@ -437,7 +440,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <p v-else class="empty">选择左侧任务，在这里查看详情</p>
     </WaoCard>
   </div>
-  <ContextActionMenu ref="contextMenu" />
+  <TaskQuickActionDialog v-if="quickAction" v-bind="quickAction" @close="quickAction=null" /><ContextActionMenu ref="contextMenu" />
 </template>
 
 <style scoped>

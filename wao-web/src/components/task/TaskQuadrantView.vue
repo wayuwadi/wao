@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
 import { taskTreeRows } from '@/utils/taskHierarchy'
@@ -48,6 +49,7 @@ function locateParent(id: string) {
   }
   else openItem(key)
 }
+const quickAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 const { begin, cancel, isSettling } = useSettle()
@@ -146,7 +148,7 @@ function createTask(priority: Priority) {
 }
 function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
   const ref = itemActions.source(id)
-  const task = props.tasks.find(t => t.id === id)
+  const task = (props.contextTasks ?? props.tasks).find(t => t.id === id)
   if (!task) return
   if (event instanceof KeyboardEvent) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
@@ -155,6 +157,9 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
     if (event.target instanceof Element && event.target.closest('input:not([type=checkbox]), textarea, [contenteditable="true"]')) return
   }
   contextMenu.value?.openAt(event, `任务：${task.title}`, [
+    { id:'tags',label:'设置标签',run:()=>{quickAction.value={...ref,mode:'tags'}} },
+    { id:'child',label:'添加子任务',disabled:busy(id),run:()=>{quickAction.value={...ref,mode:'child'}} },
+    { id:'priority',label:'修改优先级',disabled:busy(id),run:()=>{quickAction.value={...ref,mode:'priority'}} },
     { id: 'open', label: '打开任务', run: () => openItem(id) },
     { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(ref.taskId, ref.subId), '任务分享链接已复制') },
     { id: 'id', label: '复制任务编号', run: () => copyText(String(task.number ?? ref.subId ?? ref.taskId), '任务编号已复制') },
@@ -237,7 +242,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
  <div class="rule-field rule-priorities" role="group" aria-label="优先级"><span>优先级</span><div><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></div></div>
  <p>清单、标签、优先级留空表示所有；日期匹配执行安排或截止日期。</p>
  <footer><button type="button" @click="resetRule">恢复默认</button><button type="button" @click="editingRule=null">取消</button><button type="submit">保存</button></footer>
- </form></SettingsDialogShell><ContextActionMenu ref="contextMenu" />
+ </form></SettingsDialogShell><TaskQuickActionDialog v-if="quickAction" v-bind="quickAction" @close="quickAction=null" /><ContextActionMenu ref="contextMenu" />
   </div>
 </template>
 
