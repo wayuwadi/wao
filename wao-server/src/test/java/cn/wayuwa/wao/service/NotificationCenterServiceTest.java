@@ -144,4 +144,20 @@ class NotificationCenterServiceTest {
         event.setOccurredAt(LocalDateTime.of(2026, 8, 28, 10, 0));
         return event;
     }
+
+    @Test
+    void operationsEventsAppearAndRespectPersonalMasterSwitch() {
+        var event = aiEvent("ops:incident", "INFO", "服务异常");
+        event.setEventType("INTERNAL");
+        when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
+        when(center.recentEvents(120, "wd")).thenReturn(List.of(event));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), eq("wd"))).thenReturn(List.of(event));
+        when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        assertThat(service.get("wd").events()).extracting("id").containsExactly("ops:incident");
+        assertThat(service.get("wd").unreadCount()).isEqualTo(1);
+        when(notificationSettings.personalPolicy("wd")).thenReturn(
+                new cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy(false, true, true, true, true, true));
+        assertThat(service.get("wd").events()).isEmpty();
+        assertThat(service.get("wd").unreadCount()).isZero();
+    }
 }

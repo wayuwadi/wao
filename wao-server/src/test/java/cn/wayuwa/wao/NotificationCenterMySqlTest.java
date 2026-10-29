@@ -22,6 +22,8 @@ class NotificationCenterMySqlTest {
              var s = c.createStatement()) {
             s.execute("CREATE TABLE member (id VARCHAR(64), name VARCHAR(64))");
             s.execute("INSERT INTO member VALUES ('wg','娃哥'),('wd','娃弟')");
+            s.execute("CREATE TABLE internal_notification (id VARCHAR(64) PRIMARY KEY, member_id VARCHAR(64), title VARCHAR(255), body TEXT, target_path TEXT, created_at DATETIME)");
+            s.execute("INSERT INTO internal_notification VALUES ('ops:mine','wg','服务异常','检查失败',NULL,NOW()),('ops:other','wd','服务异常','检查失败',NULL,NOW()),('legacy','wg','旧通知','不再显示',NULL,NOW()),('ops:shared',NULL,'共享','不应显示',NULL,NOW())");
             s.execute("CREATE TABLE shared_chat_message (id VARCHAR(64), source VARCHAR(16), member_id VARCHAR(64), content TEXT, created_at DATETIME, deleted BOOLEAN)");
             s.execute("INSERT INTO shared_chat_message VALUES ('yes','WAO','wd','@娃哥 请看',NOW(),0),('self','WAO','wg','@娃哥 自己',NOW(),0),('other','WAO','wd','@娃哥哥',NOW(),0),('deleted','WAO','wd','@娃哥',NOW(),1),('normal','WAO','wd','普通聊天',NOW(),0)");
             s.execute("CREATE TABLE project (id VARCHAR(64), owner_id VARCHAR(64), detail_json JSON)");
@@ -34,7 +36,7 @@ class NotificationCenterMySqlTest {
                 for (int i = 1; i <= p.getParameterMetaData().getParameterCount(); i++) p.setString(i, "wg");
                 var ids = new ArrayList<String>();
                 try (var r = p.executeQuery()) { while (r.next()) ids.add(r.getString("event_id")); }
-                assertThat(ids).containsExactlyInAnyOrder("mention-chat:yes", "mention-comment:visible:1", "ai-run:own");
+                assertThat(ids).containsExactlyInAnyOrder("ops:mine", "mention-chat:yes", "mention-comment:visible:1", "ai-run:own");
             }
         }
     }
