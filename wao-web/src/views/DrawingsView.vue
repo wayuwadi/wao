@@ -329,11 +329,14 @@ async function saveNow() {
     while (sameOwner() && current.value?.id === id && dirty.value && !conflict.value) {
       const capturedScene = sceneJson.value
       const capturedRevision = revision.value
+      const capturedTitle = current.value.title
       syncState.value = 'saving'
       error.value = ''
       try {
         const saved = await saveDrawing(id, capturedScene, capturedRevision)
         if (!sameOwner() || activeId.value !== id || !current.value) return
+        // A rename may finish while the scene response is in flight.
+        if (current.value.title !== capturedTitle) saved.title = current.value.title
         updateSummary(saved)
         current.value = saved
         revision.value = saved.revision
@@ -594,7 +597,7 @@ async function useCloudVersion() {
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return
+  if (!dirty.value && (!editingTitle.value || titleDraft.value === current.value?.title)) return
   event.preventDefault()
   event.returnValue = ''
 }
