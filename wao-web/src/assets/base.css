@@ -8,6 +8,8 @@ body {
 
 body {
   font-family: var(--wao-font);
+  font-size: var(--wao-font-body);
+  line-height: var(--wao-line-body);
   color: var(--wao-text);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -27,10 +29,6 @@ body {
   }
   body {
     min-width: 320px;
-    font-size: 11px;
-  }
-  #app {
-    font-size: 11px;
   }
   button,
   input,
@@ -56,6 +54,7 @@ a:hover {
 
 input,
 textarea,
+select,
 button {
   font-family: inherit;
 }
@@ -111,6 +110,7 @@ button:disabled {
 .wao-mono {
   font-family: var(--wao-font-mono);
 }
+
 /* 极简风格只收起已由控件值自述用途的标签；文本仍留给辅助技术。 */
 [data-control-style='minimal'] .compactible-control-label {
   position: absolute !important;

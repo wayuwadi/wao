@@ -9,6 +9,7 @@ const sampleDate={...newRoutine('countdown','2026-12-31'),name:'迎接新年 · 
 const sampleDateSummary={id:sampleDate.id,occurrence:'2026-12-31',days:30,lunarLabel:'',age:null,total:0,monthCount:0,monthRate:0,streak:0,bestStreak:0,streakUnit:'天',weekCount:0,scheduledDates:[]}
 const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
 const clipboardExample = ref('- demo.fact_sales 新增goods_type\n\n1. dws\\demo\\fact_sales.py\n2. ads\\demo\\fact_sales.py\n\nhttps://example.com/docs?field=goods_type')
+const typographyExample = '# 阅读标题\n\n正文以 16px 阅读字号展示。\n\n## 二级小节\n\n标题随正文同比缩放。\n\n### 三级小节\n\n层级保持清楚，不会小于正文。'
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
@@ -298,10 +299,16 @@ const detailDemoComment = ref('')
               <h2>文字与留白</h2>
               <span class="eyebrow">阅读优先</span>
               <h3 class="type-example">给一个念头留个位置</h3>
+              <p class="section-type-example">小节标题 · 清楚区分内容</p>
+              <p class="card-type-example">卡片标题 · 一段具体的记录</p>
               <p class="body-example">随手写下来，稍后再慢慢整理。</p>
               <p>辅助信息不抢主内容，也不能淡到难读。</p>
               <p>四象限任务标题与项目单行排列，长标题省略并提供完整提示；保存失败允许展开重试。项目拖拽的浅底表示移为子任务，行边缘插入线表示前后排序，更多菜单保留键盘入口。</p>
-              <p class="measurements">标题 20–24 · 正文 14 · 辅助 12–13</p>
+              <p class="help-type-example">说明 13px · 需要读懂的操作提示</p>
+              <p class="measurements">页面 22（手机 20）· 小节 18 · 卡片 16 · 正文 14 · 说明 13 · 元信息 12</p>
+              <div class="reading-type-example" aria-label="阅读字号与标题层级示例">
+                <MarkdownEditor :model-value="typographyExample" readonly bare allow-h1 :min-height="0" />
+              </div>
               <div class="spacing-examples">
                 <div v-for="(space, index) in [8, 16, 24, 32]" :key="space">
                   <i :style="{ width: `var(--wao-space-${index + 1})` }"></i
@@ -924,9 +931,16 @@ small {
   color: var(--wao-text-3);
 }
 .type-example {
-  font-size: 20px;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
   margin-top: var(--wao-space-2);
 }
+.section-type-example { font-size: var(--wao-font-section); font-weight: var(--wao-weight-heading); }
+.card-type-example { font-size: var(--wao-font-card-title); font-weight: var(--wao-weight-heading); }
+.help-type-example { font-size: var(--wao-font-help); color: var(--wao-text-3); }
+.reading-type-example { margin-top: var(--wao-space-3); }
+.reading-type-example :deep(.md-body .tiptap) { font-size: var(--wao-font-reading); }
 .body-example {
   color: var(--wao-text);
   font-size: var(--wao-font-body);

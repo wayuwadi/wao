@@ -483,8 +483,9 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 .ptitle {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .ptip {
   font-size: 12px;
@@ -740,7 +741,7 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 .pc-name {
-  font-size: 14px;
+  font-size: var(--wao-font-card-title);
   font-weight: 600;
   color: var(--wao-text);
   white-space: nowrap;
@@ -749,17 +750,17 @@ onBeforeUnmount(() => {
 }
 .pc-sub {
   margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .pc-status {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   border-radius: 999px;
   padding: 2px 9px;
   flex-shrink: 0;
 }
 .pc-goal {
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   line-height: 1.7;
   min-height: 40px;
@@ -773,8 +774,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .pc-m {
   display: inline-flex;

@@ -833,9 +833,10 @@ function goHome() { router.push('/') }
 }
 .dash-head h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
   color: var(--wao-text);
+  line-height: var(--wao-line-heading);
 }
 .dash-head p {
   margin: 4px 0 0;

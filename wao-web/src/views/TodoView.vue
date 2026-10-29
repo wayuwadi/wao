@@ -93,7 +93,7 @@ button:hover { background:var(--wao-bg-hover); }
 .nav-footer { border-top:1px solid var(--wao-line); margin-top:var(--wao-space-2); padding-top:var(--wao-space-2); }
 .workspace-main { min-width:0; padding:var(--wao-space-3); }
 header { display:flex; align-items:center; gap:var(--wao-space-1); margin-bottom:var(--wao-space-2); }
-h1 { margin:0; font-size:22px; }
+h1 { margin:0; font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
 .count { color:var(--wao-text-3); }
 .layout-switch { display:flex; gap:var(--wao-space-1); flex-shrink:0; }
 .layout-switch button,.workspace-tools button { padding:var(--wao-space-1); }

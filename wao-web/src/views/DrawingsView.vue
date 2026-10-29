@@ -1064,7 +1064,9 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 .canvas-empty h1 {
   margin: 5px 0 0;
   color: var(--wao-text);
-  font-size: 22px;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .canvas-empty p {
   max-width: 430px;

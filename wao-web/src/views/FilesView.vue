@@ -977,8 +977,9 @@ function onFileSettingsSaved(settings: FileSettings) {
   flex-wrap: wrap;
 }
 .ftitle {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .seg {
   display: flex;

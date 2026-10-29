@@ -471,8 +471,9 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   flex-wrap: wrap;
 }
 .ktitle {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .ktip {
   font-size: 12px;
@@ -725,9 +726,9 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 }
 .kb-name {
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--wao-font-card-title);
   line-height: 1.5;
-  font-weight: 650;
+  font-weight: var(--wao-weight-heading);
   color: var(--wao-text);
   white-space: normal;
   overflow-wrap: anywhere;
@@ -771,7 +772,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   font-size: 14px;
 }
 .kb-desc {
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   line-height: 1.6;
   min-height: 36px;

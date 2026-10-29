@@ -92,7 +92,7 @@
 
   /* 字体 */
   --wao-font:
-    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
     'Noto Sans SC', sans-serif;
   --wao-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
@@ -109,8 +109,16 @@
   --wao-space-3: 24px;
   --wao-space-4: 32px;
   --wao-font-body: 14px;
+  --wao-font-help: 13px;
   --wao-font-caption: 12px;
-  --wao-font-title: 24px;
+  --wao-font-card-title: 16px;
+  --wao-font-section: 18px;
+  --wao-font-title: 22px;
+  --wao-font-reading: 16px;
+  --wao-font-stat: 24px;
+  --wao-line-body: 1.7;
+  --wao-line-heading: 1.4;
+  --wao-weight-heading: 600;
   --wao-control-height: 40px;
   --wao-mask-bg: #12223c70;
   --wao-shadow-dialog: var(--wao-shadow-modal);
@@ -132,6 +140,10 @@
 }
 
 @media (max-width: 760px) {
+  :root,
+  [data-wao-theme='light'] {
+    --wao-font-title: 20px;
+  }
   :root {
     --wao-header-h: 36px;
     --wao-tabbar-h: 29px;

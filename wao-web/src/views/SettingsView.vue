@@ -830,8 +830,9 @@ async function bindFeishu() {
 .notification-settings-stack { display: grid; gap: 14px; }
 .s-h1 {
   margin: 0;
-  font-size: 24px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .s-intro { margin: 8px 0 24px; color: var(--wao-text-weak); font-size: 13px; line-height: 1.7; }
 .section-label { margin: 24px 0 8px; font-size: 13px; color: var(--wao-text-3); }
@@ -1498,7 +1499,7 @@ async function bindFeishu() {
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
-  .s-h1 { font-size: 22px; }
+  .s-h1 { font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
   .settings-shortcuts { gap: 8px; }
   .settings-shortcut { padding: 13px 10px; gap: 7px; }
   .pref-row { flex-wrap: wrap; }
