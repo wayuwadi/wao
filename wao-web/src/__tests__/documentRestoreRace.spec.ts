@@ -25,6 +25,6 @@ describe('文档异步恢复保护', () => {
     const pending = data.restoreDocumentDraft('d')
     useSessionStore().$patch({ account: { member: { id: 'new-member' } } } as never)
     done({ id: 'd', memberId: 'anonymous', title: '旧稿', content: content('旧稿'), baseRev: 1, updatedAt: 1 })
-    expect(await pending).toBe(false); expect(data.docOf('d').text).toBe('基线')
+    expect(await pending).toBe(false); expect(data.docs.d).toBeUndefined()
   })
 })

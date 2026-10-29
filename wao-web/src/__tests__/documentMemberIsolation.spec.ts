@@ -12,12 +12,14 @@ describe('文档兼容草稿成员隔离', () => {
   afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks() })
   it('换账号不恢复上一成员草稿，切回原账号仍能恢复', async () => {
     const session = useSessionStore(); session.$patch({ account: { member: { id: 'A' } } } as never)
-    const data = useDataStore(); data.docs.d = { ...Object.values(DOCS)[0]!, id: 'd', rev: 1, content: content('基线') }
+    const data = useDataStore(); const base = { ...Object.values(DOCS)[0]!, id: 'd', rev: 1, content: content('基线') }; data.docs.d = base
     data.setDocEdit('d', { content: content('A 的私人草稿') })
     session.$patch({ account: { member: { id: 'B' } } } as never)
-    expect(data.docOf('d').text).toBe('基线')
+    expect(data.docs.d).toBeUndefined()
     expect(await data.restoreDocumentDraft('d')).toBe(false)
     session.$patch({ account: { member: { id: 'A' } } } as never)
+    expect(data.docs.d).toBeUndefined()
+    data.docs.d = base // 原成员重新取得有权读取的服务器正文后，仍能恢复自己的草稿。
     expect(data.docOf('d').text).toBe('A 的私人草稿')
   })
   it('未知归属旧草稿保留原处，不自动赋给当前成员', async () => {
@@ -36,7 +38,7 @@ describe('文档兼容草稿成员隔离', () => {
     rejectWrite(new Error('旧账号存储失败'))
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
     expect(data.docDraftErrors.d).toBeUndefined()
-    expect(data.docOf('d').text).toBe('基线')
+    expect(data.docs.d).toBeUndefined()
   })
   it('读取冲突版本期间切换账号，迟到结果不能回填新账号', async () => {
     const session = useSessionStore(); session.$patch({ account: { member: { id: 'A' } } } as never)
