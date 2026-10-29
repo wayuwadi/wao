@@ -3,14 +3,14 @@ import { toast } from '@/composables/toast'
 
 const storageKey = 'wao-notes-writing-width-v1'
 const defaultRatio = 1 / 3
-const defaultWidth = 'clamp(33.333333%, 600px, 60%)'
+const defaultWidth = 'clamp(25%, 440px, 40%)'
 const clamp = (ratio: number) => Math.max(.25, Math.min(.6, ratio))
 
 /** 浏览器内记住记录区比例，拖拽只改变布局，不重新创建编辑器。 */
 export function useNotesPaneWidth(workspace: Ref<HTMLElement | null>) {
   const preferredRatio = ref<number | null>(null)
   const workspaceWidth = ref(0)
-  const ratio = computed(() => preferredRatio.value ?? (workspaceWidth.value ? clamp(Math.max(defaultRatio, 600 / workspaceWidth.value)) : defaultRatio))
+  const ratio = computed(() => preferredRatio.value ?? (workspaceWidth.value ? Math.max(.25, Math.min(.4, 440 / workspaceWidth.value)) : defaultRatio))
   try {
     const stored = localStorage.getItem(storageKey)
     const value = stored === null ? NaN : Number(stored)

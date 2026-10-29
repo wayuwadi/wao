@@ -43,11 +43,11 @@ async function retry() { focus.error = ''; await focus.load() }
     <p v-if="focus.draftError" class="focus-error" role="alert">{{ focus.draftError }}</p>
     <p v-if="!focus.ready" role="status">正在读取专注记录…</p>
     <div v-else class="focus-columns">
-      <WaoCard class="timer-panel">
+      <WaoCard class="timer-panel" :class="{ 'timer-idle': !focus.active }">
         <div class="focus-modes" aria-label="计时模式"><WaoButton v-for="option in ([['pomodoro','番茄计时'],['stopwatch','正计时'],['break','短休息']] as const)" :key="option[0]" :variant="(focus.active?.mode ?? mode) === option[0] ? 'primary' : 'ghost'" :disabled="!!focus.active || !!focus.pendingStart" @click="chooseMode(option[0])">{{ option[1] }}</WaoButton></div>
         <FocusDial :time="display" :progress="progress" :label="caption" />
         <div v-if="focus.active" class="current-task"><i class="ri-link" aria-hidden="true"></i><button v-if="focus.active.taskId && data.taskById(focus.active.taskId)" @click="ui.openTask(focus.active.taskId, focus.active.subId || undefined)">{{ focus.active.taskTitle }}</button><span v-else>{{ focus.active.taskTitle || '自由专注' }}</span></div>
-        <div v-else class="focus-setup">
+        <div v-else class="focus-setup" :class="{ 'setup-stopwatch': mode === 'stopwatch' }">
           <WaoField v-if="mode !== 'stopwatch'" label="时长（分钟）" v-slot="field"><input :id="field.id" v-model.number="minutes" type="number" min="1" max="180" :disabled="!!focus.pendingStart" /></WaoField>
           <p v-if="habitId">关联习惯：{{habit?.name||(routines.state?'习惯不存在或不可用':'正在读取…')}} <RouterLink to="/focus">取消关联</RouterLink><span v-if="routines.error" role="alert">{{routines.error}}</span></p>
           <WaoField v-else label="关联任务" hint="可以选择你有权查看的主任务或子任务" v-slot="field"><input :id="field.id" v-model="search" placeholder="搜索任务…" :disabled="!!focus.pendingStart" /><select v-model="task" aria-label="选择关联任务" :disabled="!!focus.pendingStart"><option value="">不关联任务 · 自由专注</option><option v-for="item in choices" :key="item.id" :value="item.id">{{ items.refs[item.id]?.subId ? '子任务 · ' : '' }}{{ item.title }}</option></select></WaoField>
@@ -68,20 +68,29 @@ async function retry() { focus.error = ''; await focus.load() }
   </div>
 </template>
 <style scoped>
-.focus-page { max-width: 1200px; margin: 0 auto; padding: var(--wao-space-3); color: var(--wao-text); }
+.focus-page { container: focus-workspace / inline-size; max-width: 1200px; margin: 0 auto; padding: var(--wao-space-3); color: var(--wao-text); }
 .focus-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-2); margin-bottom: var(--wao-space-3); }
 h1 { font-size: var(--wao-font-title); margin: 0; } h2 { font-size: var(--wao-font-section); } h1,h2 { font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); } p { line-height: var(--wao-line-body); }
 .focus-heading p { margin: var(--wao-space-1) 0 0; font-size: var(--wao-font-help); }
 .focus-heading a { font-size: var(--wao-font-help); }
 .focus-heading p,.timer-hint,small,.note-status { color: var(--wao-text-3); } small { font-size: var(--wao-font-caption); } a { color: var(--wao-primary-text); text-decoration: none; }
 .focus-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--wao-space-3); }
-.timer-panel { padding: var(--wao-space-3); } .focus-modes,.focus-actions { display: flex; justify-content: center; gap: var(--wao-space-1); flex-wrap: wrap; }
+.timer-panel { container: focus-timer / inline-size; padding: var(--wao-space-3); } .focus-modes,.focus-actions { display: flex; justify-content: center; gap: var(--wao-space-1); flex-wrap: wrap; }
+.timer-idle :deep(.focus-dial) { width: min(100%, 240px); margin: var(--wao-space-2) auto; }
+.timer-idle .focus-actions { margin-top: var(--wao-space-2); }
 .focus-setup,.focus-side { display: grid; gap: var(--wao-space-2); align-content: start; } .focus-side>.wao-card { padding: var(--wao-space-3); }
+.focus-setup { align-items: start; }
 input,select,textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-page); color: var(--wao-text); font: inherit; }
 textarea { resize: vertical; line-height: var(--wao-line-body); } .focus-actions { margin-top: var(--wao-space-3); } .timer-hint { text-align: center; font-size: var(--wao-font-help); margin: var(--wao-space-1) 0 0; }
 .current-task { display: flex; justify-content: center; gap: var(--wao-space-1); overflow-wrap: anywhere; } .current-task button { background: none; border: 0; color: var(--wao-primary); font: inherit; cursor: pointer; }
 .note-status { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-top: var(--wao-space-1); font-size: var(--wao-font-caption); }
 .focus-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--wao-space-2); } .focus-stats>div { background: var(--wao-bg-sub); border-radius: var(--wao-radius-card); padding: var(--wao-space-2); display: grid; gap: var(--wao-space-1); min-width: 0; } .focus-stats strong { font-size: var(--wao-font-stat); font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } .focus-stats strong span { font-size: var(--wao-font-help); font-weight: 400; color: var(--wao-text-3); } .focus-stats small { font-size: var(--wao-font-help); }
 .focus-history { margin-top: var(--wao-space-4); } .focus-history h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); } h2 small { font-size: var(--wao-font-caption); font-weight: normal; } .focus-history > p { color: var(--wao-text-3); } ol { list-style: none; padding: 0; } li { display: flex; gap: var(--wao-space-2); border-bottom: 1px solid var(--wao-line); padding: var(--wao-space-2) 0; align-items: baseline; } li>div { min-width: 0; flex: 1; overflow-wrap: anywhere; } li small { display: block; margin-top: var(--wao-space-1); } li p { white-space: pre-wrap; max-height: 5em; overflow: auto; margin-bottom: 0; } .focus-error { color: var(--wao-danger); }
-@media(max-width: 760px) { .focus-page { padding: var(--wao-space-2); } .focus-columns { grid-template-columns: minmax(0,1fr); } .timer-panel,.focus-side>.wao-card { padding: var(--wao-space-2); } input,select,textarea { font-size: 16px; } .focus-heading { align-items: start; } .focus-heading a { flex-shrink: 0; } li { flex-wrap: wrap; } }
+@container focus-workspace (max-width: 800px) { .focus-columns { grid-template-columns: minmax(0,1fr); } }
+@container focus-timer (min-width: 400px) {
+  .focus-setup:not(.setup-stopwatch) { grid-template-columns: 120px minmax(0,1fr); }
+  .focus-setup > [role="alert"] { grid-column: 1 / -1; }
+}
+@container focus-workspace (max-width: 480px) { .timer-panel,.focus-side>.wao-card { padding: var(--wao-space-2); } .focus-heading { align-items: start; } .focus-heading a { flex-shrink: 0; } li { flex-wrap: wrap; } }
+@media(max-width: 760px) { .focus-page { padding: var(--wao-space-2); } .focus-columns { grid-template-columns: minmax(0,1fr); } input,select,textarea { font-size: 16px; } }
 </style>
