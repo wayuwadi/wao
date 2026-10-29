@@ -152,9 +152,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
     event.preventDefault()
   } else {
-    if (event.target instanceof Element && event.target.closest('select, input, textarea, a, img, [contenteditable="true"]')) return
-    const selection = window.getSelection()
-    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+    if (event.target instanceof Element && event.target.closest('input:not([type=checkbox]), textarea, [contenteditable="true"]')) return
   }
   contextMenu.value?.openAt(event, `任务：${task.title}`, [
     { id: 'open', label: '打开任务', run: () => openItem(id) },
@@ -268,7 +266,8 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
 .quadrant-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
-.quadrant-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin: 4px 0 6px; font-size: 12px; color: var(--wao-text-weak); }
+.quadrant-toolbar:not(:has(*)) { display:none; }
+.quadrant-toolbar { flex-shrink:0; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; margin: 0 0 6px; font-size: 12px; color: var(--wao-text-weak); }
 .quadrant-toolbar > span { display: inline-flex; align-items: center; gap: 6px; }
 button, select { font: inherit; color: var(--wao-text); }
 button { cursor: pointer; }
@@ -276,7 +275,7 @@ button:disabled { opacity: .5; cursor: wait; }
 button:focus-visible, .quadrant-move:focus-within { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .quadrant-toolbar button, .quadrant-save button, .quadrant-empty button { border: 0; border-radius: 5px; background: transparent; padding: 5px 6px; color: var(--wao-text-weak); }
 .quadrant-toolbar button:hover, .quadrant-empty button:hover { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
-.quadrants { min-height:calc(100dvh - 330px); display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.quadrants { display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .quadrants.expanded { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .quadrant { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .quadrant.drop-target { border-color: var(--quadrant-color); box-shadow: inset 0 0 0 2px var(--quadrant-color); }
@@ -317,7 +316,7 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 12px 0; color: var(--wao-text-faint); font-size: 12px; }
 .quadrant-empty > i { color: color-mix(in srgb, var(--quadrant-color) 35%, var(--wao-bg-card)); font-size: 26px; }
 @media (max-width: 760px) {
-  .quadrant-view { min-height: 300px; }
+  .quadrant-view { min-height: 0; }
   .quadrants { gap: 7px; }
   header { gap: 4px; padding: 5px 7px; flex-wrap: wrap; }
   h2 { font-size: 12px; }
