@@ -22,6 +22,32 @@ import { deadlineInfo } from '@/utils/taskDeadline'
 import { todayIso } from '@/utils/time'
 import { useTaskDeadlineDefaults } from '@/composables/taskDeadlineDefaults'
 
+const descriptionHost = ref<HTMLElement | null>(null)
+const outline = ref<{ text: string; level: number }[]>([])
+const outlineOpen = ref(false)
+let outlineObserver: MutationObserver | null = null
+function refreshOutline() {
+  outline.value = Array.from(descriptionHost.value?.querySelectorAll('.tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4') ?? []).map(node => ({ text: node.textContent?.trim() || '未命名标题', level: Number(node.tagName.slice(1)) }))
+}
+watch(descriptionHost, host => {
+  outlineObserver?.disconnect()
+  outlineOpen.value = false
+  refreshOutline()
+  if (!host) return
+  outlineObserver = new MutationObserver(refreshOutline)
+  outlineObserver.observe(host, { childList: true, subtree: true, characterData: true })
+}, { flush: 'post' })
+onBeforeUnmount(() => outlineObserver?.disconnect())
+function jumpToHeading(index: number) {
+  const heading = descriptionHost.value?.querySelectorAll<HTMLElement>('.tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4')[index]
+  const panel = descriptionHost.value?.closest<HTMLElement>('.checklist-detail')
+  if (heading && panel) {
+    if (panel.scrollHeight > panel.clientHeight) panel.scrollTop += heading.getBoundingClientRect().top - panel.getBoundingClientRect().top - 48
+    else heading.scrollIntoView({ block: 'start' })
+  }
+  outlineOpen.value = false
+}
+
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
@@ -302,7 +328,15 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
-        <MarkdownEditor :key="selected.id" v-model="description" bare :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情…" @upload-image="uploadImage" />
+        <div class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
+          <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @focus="outlineOpen = true" @click="outlineOpen = true"><i class="ri-list-unordered"></i></button>
+          <nav v-if="outlineOpen && outline.length" class="description-outline" aria-label="任务描述目录">
+            <button v-for="(heading, index) in outline" :key="index" :style="{ paddingInlineStart: `calc(var(--wao-space-1) * ${heading.level})` }" @click="jumpToHeading(index)">{{ heading.text }}</button>
+          </nav>
+        </div>
+        <div ref="descriptionHost" :key="selected.id" class="checklist-description">
+          <MarkdownEditor v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" />
+        </div>
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
           <div v-for="child in directChildren" :key="child.id" class="detail-subtask">
             <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
@@ -325,6 +359,17 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 </template>
 
 <style scoped>
+.description-outline-anchor { position: sticky; top: var(--wao-space-1); height: 0; z-index: 3; margin-left: auto; width: fit-content; }
+.outline-trigger { position: absolute; right: 0; width: 44px; height: 44px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.description-outline { position: absolute; right: 0; top: 44px; width: min(280px, 65vw); max-height: 50vh; overflow: auto; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
+.description-outline button { display: block; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--wao-text); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.description-outline button:hover { background: var(--wao-primary-soft); }
+.checklist-description { padding-right: var(--wao-space-3); }
+.checklist-description :deep(.tiptap h1) { font-size: calc(var(--wao-font-body) * 1.85); }
+.checklist-description :deep(.tiptap h2) { font-size: calc(var(--wao-font-body) * 1.55); }
+.checklist-description :deep(.tiptap h3) { font-size: calc(var(--wao-font-body) * 1.3); }
+.checklist-description :deep(.tiptap h4) { font-size: calc(var(--wao-font-body) * 1.1); }
+
 .tree-toggle,.task-select { border:0; background:transparent; font:inherit; color:inherit; cursor:pointer; }
 .split-sync { display:flex; gap:var(--wao-space-1); color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
 .split-sync button { border:0; background:transparent; color:var(--wao-primary-text); cursor:pointer; }

@@ -12,7 +12,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
-function setup(error = false) {
+function setup(error = false, realEditor = false) {
   const data = useDataStore()
   data.tasks = [{ ...data.tasks[0]!, id: 'parent', title: '父任务', desc: '父正文', status: '待办', subs: [
     { id: 'child', text: '子任务', desc: '子正文', done: false },
@@ -24,11 +24,41 @@ function setup(error = false) {
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { stubs: { TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('真实清单编辑器支持斜线、标题层级及随编辑更新的目录跳转', async () => {
+    const { data, wrapper } = setup(false, true)
+    await vi.dynamicImportSettled(); await flushPromises()
+    const component = wrapper.findComponent((await import('@/components/ui/MarkdownEditor.vue')).default)
+    const editor = (component.vm as unknown as { editor: import('@tiptap/core').Editor }).editor
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 100, bottom: 120, left: 100, right: 100 })
+    editor.commands.setContent('<p></p>')
+    editor.commands.insertContent('/h1')
+    await flushPromises()
+    expect(wrapper.find('.slash-menu').exists() || document.querySelector('.slash-menu') !== null).toBe(true)
+    await wrapper.get('.tiptap').trigger('keydown', { key: 'Enter' })
+    editor.commands.insertContent('一级验收')
+    await flushPromises()
+    expect(wrapper.get('.tiptap h1').text()).toBe('一级验收')
+    expect(data.tasks[0]!.desc).toContain('# 一级验收')
+    editor.commands.setContent('<h1>重复标题</h1><h2>重复标题</h2>')
+    await flushPromises()
+    await wrapper.get('[aria-label="任务描述目录"]').trigger('mouseenter')
+    const links = wrapper.findAll('nav[aria-label="任务描述目录"] button')
+    expect(links.map(link => link.text())).toEqual(['重复标题', '重复标题'])
+    const target = wrapper.get('.tiptap h2').element as HTMLElement
+    target.scrollIntoView = vi.fn()
+    await links[1]!.trigger('click')
+    expect(target.scrollIntoView).toHaveBeenCalled()
+    expect(wrapper.find('nav[aria-label="任务描述目录"]').exists()).toBe(false)
+    editor.commands.setContent('<p>没有标题</p>')
+    await flushPromises()
+    expect(wrapper.find('[aria-label="任务描述目录"]').exists()).toBe(false)
+  }, 30000)
+
   it('右侧标题实时同步列表，子事项编辑正确落点，空标题不覆盖内容', async () => {
     const { data, wrapper } = setup()
     vi.spyOn(data, 'flushTask').mockResolvedValue()
