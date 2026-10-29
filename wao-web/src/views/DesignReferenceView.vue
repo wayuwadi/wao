@@ -3,6 +3,7 @@ import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
+const clipboardExample = ref('- demo.fact_sales 新增goods_type\n\n1. dws\\demo\\fact_sales.py\n2. ads\\demo\\fact_sales.py\n\nhttps://example.com/docs?field=goods_type')
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
@@ -251,6 +252,11 @@ const detailDemoComment = ref('')
             <h2>代码块 · 示例数据</h2>
             <p>输入 /代码 或 /code 插入代码块，可选择语言、复制与自动换行。</p>
             <MarkdownEditor v-model="codeExample" slash-commands />
+          </section>
+          <section class="reference-section clipboard-example">
+            <h2>复制与链接 · 示例数据</h2>
+            <p>普通复制保留文字与路径；粘贴完整网址后可单击打开。</p>
+            <MarkdownEditor v-model="clipboardExample" slash-commands />
           </section>
         <section class="reference-section">
             <h3>可调侧栏 · 演示</h3>

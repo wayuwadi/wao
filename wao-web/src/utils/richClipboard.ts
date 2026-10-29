@@ -19,13 +19,42 @@ export function portableClipboardHtml(html: string): string {
   return root.innerHTML
 }
 
-/** 支持富文本的目标读取 HTML；纯文本目标读取有层级的 Markdown。 */
+/** 纯文本保留可见字符与列表层级，不泄漏 Markdown 转义或链接标记。 */
+export function plainClipboardText(html: string): string {
+  const root = document.createElement('div')
+  root.innerHTML = sanitizeContentHtml(html)
+  function render(node: Node, depth = 0): string {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+    if (!(node instanceof Element)) return ''
+    const children = () => Array.from(node.childNodes).map(child => render(child, depth)).join('')
+    if (node.tagName === 'BR') return '\n'
+    if (node.tagName === 'IMG') return node.getAttribute('alt') ?? ''
+    if (node.tagName === 'PRE') return `${node.textContent ?? ''}\n`
+    if (node.tagName === 'UL' || node.tagName === 'OL') {
+      const start = Number(node.getAttribute('start')) || 1
+      return '\n' + Array.from(node.children).map((item, index) => {
+        const content = Array.from(item.childNodes).map(child => render(child, depth + 1)).join('').trim()
+        const marker = node.getAttribute('data-type') === 'taskList'
+          ? (item.getAttribute('data-checked') === 'true' ? '[x]' : '[ ]')
+          : node.tagName === 'OL' ? `${start + index}.` : '-'
+        return `${'  '.repeat(depth)}${marker} ${content}\n`
+      }).join('')
+    }
+    if (node.tagName === 'TR') return Array.from(node.children).map(cell => render(cell, depth).trim()).join('\t') + '\n'
+    if (/^(P|DIV|H[1-6]|BLOCKQUOTE|TABLE)$/.test(node.tagName)) return children() + '\n'
+    return children()
+  }
+  return Array.from(root.childNodes).map(node => render(node)).join('').replace(/^\n+|\n+$/g, '')
+}
+
+/** 富文本目标读取 HTML；纯文本目标读取原文，不读取 Markdown 源码。 */
 export async function copyRichContent(html: string, markdown: string): Promise<boolean> {
+  const text = plainClipboardText(html) || markdown
   try {
     if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
       await navigator.clipboard.write([new ClipboardItem({
         'text/html': new Blob([portableClipboardHtml(html)], { type: 'text/html' }),
-        'text/plain': new Blob([markdown], { type: 'text/plain' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
       })])
       return true
     }
@@ -33,13 +62,13 @@ export async function copyRichContent(html: string, markdown: string): Promise<b
   const listener = (event: ClipboardEvent) => {
     event.preventDefault()
     event.clipboardData?.setData('text/html', portableClipboardHtml(html))
-    event.clipboardData?.setData('text/plain', markdown)
+    event.clipboardData?.setData('text/plain', text)
   }
   const active = document.activeElement as HTMLElement | null
   const selection = window.getSelection()
   const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : []
   const area = document.createElement('textarea')
-  area.value = markdown
+  area.value = text
   area.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
   document.body.appendChild(area)
   document.addEventListener('copy', listener)
