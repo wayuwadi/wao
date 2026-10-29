@@ -230,38 +230,45 @@ class LocalNoteAiServiceTest {
         assertThat(LocalNoteAiService.instanceCapability(Files.createDirectory(directory.resolve("another")))).isNotEqualTo(first);
     }
 
-    @Test void twentyIndependentJobsStartBeforeAnyJobFinishesAndDuplicateDispatchIsIgnored() throws Exception {
+    @Test void fullExecutorLeavesJobsUnclaimedAndRetriesAfterCapacityReturns() throws Exception {
         ReflectionTestUtils.setField(service, "ready", true);
-        var template = run();
-        var started = new java.util.concurrent.CountDownLatch(20);
+        run();
+        var started = new java.util.concurrent.CountDownLatch(2);
         var release = new java.util.concurrent.CountDownLatch(1);
-        var completed = new java.util.concurrent.CountDownLatch(20);
-        when(runs.claimQueued(anyString(), isNull(), anyString(), eq("secure_queued"), eq("provider_running"))).thenReturn(1);
+        var completed = new java.util.concurrent.CountDownLatch(3);
+        var claimed = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        when(runs.claimQueued(anyString(), isNull(), anyString(), eq("secure_queued"), eq("provider_running")))
+                .thenAnswer(call -> claimed.add(call.getArgument(0)) ? 1 : 0);
         doAnswer(call -> {
             started.countDown();
-            if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("测试未释放任务");
+            if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("测试未释放任务");
             return new LocalNoteCodexProcess.Result("独立结果", null);
         }).when(service).execute(any(), anyString(), any());
-        when(runs.completeProviderSucceeded(anyString(), anyString(), anyString())).thenAnswer(call -> { completed.countDown(); return 1; });
+        when(runs.completeProviderSucceeded(anyString(), anyString(), anyString()))
+                .thenAnswer(call -> { completed.countDown(); return 1; });
+        var jobs = new java.util.ArrayList<AiAssistantRunEntity>();
+        for (int i = 0; i < 3; i++) {
+            var job = new AiAssistantRunEntity(); job.setId("parallel-" + i);
+            job.setAiCapabilityId("local-notes-test"); jobs.add(job);
+        }
         try {
-            for (int i = 0; i < 20; i++) {
-                var job = new AiAssistantRunEntity();
-                job.setId("parallel-" + i); job.setAiCapabilityId(template.getAiCapabilityId());
-                job.setMemberId("same-member"); job.setUsagePurpose(i % 2 == 0 ? "ARTICLE_IMAGE" : "POLISH");
-                service.dispatch(job); service.dispatch(job);
-            }
-            assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-            verify(runs, never()).completeProviderSucceeded(anyString(), anyString(), anyString());
+            service.dispatch(jobs.get(0)); service.dispatch(jobs.get(0)); service.dispatch(jobs.get(1));
+            assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            service.dispatch(jobs.get(2));
+            verify(runs, never()).claimQueued(eq("parallel-2"), any(), anyString(), anyString(), anyString());
+            verify(runs, never()).completeProviderFailed(anyString(), anyString(), anyString());
             release.countDown();
-            assertThat(completed.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-            verify(service, times(20)).execute(any(), anyString(), any());
-            verify(runs, times(20)).claimQueued(anyString(), isNull(), anyString(), anyString(), anyString());
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            while (completed.getCount() != 0 && System.nanoTime() < deadline) {
+                service.dispatch(jobs.get(2)); Thread.sleep(10);
+            }
+            assertThat(completed.getCount()).isZero();
+            verify(service, times(3)).execute(any(), anyString(), any());
         } finally { release.countDown(); service.stop(); }
     }
-
     @Test void shutdownInterruptsAllParallelJobsAndLeavesUnclaimedJobsPersistent() throws Exception {
         ReflectionTestUtils.setField(service, "ready", true); run();
-        var started = new java.util.concurrent.CountDownLatch(20);
+        var started = new java.util.concurrent.CountDownLatch(2);
         var blocked = new java.util.concurrent.CountDownLatch(1);
         when(runs.claimQueued(anyString(), isNull(), anyString(), anyString(), anyString())).thenReturn(1);
         doAnswer(call -> { started.countDown(); blocked.await(); return null; }).when(service).execute(any(), anyString(), any());
@@ -272,7 +279,7 @@ class LocalNoteAiServiceTest {
             }
             assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             service.stop();
-            verify(runs, times(20)).completeProviderFailed(anyString(), anyString(), contains("原文已保留"));
+            verify(runs, times(2)).completeProviderFailed(anyString(), anyString(), contains("原文已保留"));
             var pending = new AiAssistantRunEntity(); pending.setId("unclaimed"); service.dispatch(pending);
             verify(runs, never()).claimQueued(eq("unclaimed"), any(), anyString(), anyString(), anyString());
         } finally { blocked.countDown(); service.stop(); }

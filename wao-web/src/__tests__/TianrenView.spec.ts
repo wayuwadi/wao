@@ -193,7 +193,7 @@ describe('TianrenView', () => {
     await flushPromises()
 
     expect(createTodayTianrenReading).toHaveBeenCalledTimes(1)
-    expect(streamTianrenInterpretation).toHaveBeenCalledWith('')
+    expect(streamTianrenInterpretation).toHaveBeenCalledWith('', expect.any(AbortSignal))
     expect(wrapper.text()).toContain('第 11 卦 · 泰')
     expect(wrapper.text()).toContain('泰 → 升')
     expect(wrapper.text()).toContain('自动解读')
@@ -236,7 +236,7 @@ describe('TianrenView', () => {
     await flushPromises()
 
     expect(fetchTianrenAiStatus).toHaveBeenCalledTimes(2)
-    expect(streamTianrenInterpretation).toHaveBeenCalledWith('')
+    expect(streamTianrenInterpretation).toHaveBeenCalledWith('', expect.any(AbortSignal))
   })
 
   it('本地 Codex 离线时仍展示卦象但禁用 AI 解读', async () => {

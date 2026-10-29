@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.SynchronousQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -57,10 +59,7 @@ public class LocalNoteAiService {
     });
     // 调度只负责短事务推进；每个独立任务拥有自己的 CLI 进程与工作目录。
     private final AtomicInteger executionSequence = new AtomicInteger();
-    private final ExecutorService executions = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "wao-local-note-ai-job-" + executionSequence.incrementAndGet());
-        t.setDaemon(true); return t;
-    });
+    private final ExecutorService executions;
     private final Set<String> dispatched = ConcurrentHashMap.newKeySet();
     private volatile boolean ready;
     private String unavailable = "本机小记 AI 尚未启用，请在服务主机启用已登录的 Codex";
@@ -88,6 +87,14 @@ public class LocalNoteAiService {
             ObjectProvider<NoteAiWorkflowService> workflowService, Environment environment) {
         this.runs = runs; this.images = images; this.workflows = workflows;
         this.workflowService = workflowService; this.environment = environment;
+        int concurrency = environment.getProperty("wao.ai.local-notes.max-concurrency", Integer.class, 2);
+        if (concurrency < 1 || concurrency > 16)
+            throw new IllegalArgumentException("本机 AI 并发数必须为 1–16");
+        executions = new ThreadPoolExecutor(0, concurrency, 60, TimeUnit.SECONDS,
+                new SynchronousQueue<>(), r -> {
+                    Thread t = new Thread(r, "wao-local-note-ai-job-" + executionSequence.incrementAndGet());
+                    t.setDaemon(true); return t;
+                });
     }
 
     /** 只在管理员显式配置本机执行时替代小记的 API 路径。 */
@@ -194,7 +201,7 @@ public class LocalNoteAiService {
                 finally { dispatched.remove(run.getId()); }
             });
         } catch (RejectedExecutionException stopped) {
-            // 停机期间未领取的任务留在持久队列，下一实例接续。
+            // 满载或停机时不领取、不失败任务；下一轮从持久队列重试。
             dispatched.remove(run.getId());
         }
     }

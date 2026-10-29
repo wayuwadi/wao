@@ -7,6 +7,25 @@ on:
 permissions:
   contents: read
 jobs:
+  web-stability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            wao-web/package-lock.json
+            wao-game/package-lock.json
+      - run: npm ci
+        working-directory: wao-game
+      - run: npm ci
+        working-directory: wao-web
+      - run: npm run type-check
+        working-directory: wao-web
+      - run: npm run test:stability
+        working-directory: wao-web
   secrets:
     runs-on: ubuntu-latest
     steps:

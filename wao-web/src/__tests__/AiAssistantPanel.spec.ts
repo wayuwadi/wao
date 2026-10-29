@@ -199,7 +199,7 @@ describe('AiAssistantPanel', () => {
         dateFrom: '2026-07-01',
         dateTo: '2026-07-31',
       }),
-      '',
+      '', undefined, expect.any(AbortSignal),
     )
     expect(document.body.textContent).toContain('找到了')
     wrapper.unmount()
@@ -227,6 +227,27 @@ describe('AiAssistantPanel', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     return textarea
   }
+
+  it('隐藏仍挂载的面板会取消等待并保留问题草稿', async () => {
+    const wrapper = await openPanel()
+    let signal: AbortSignal | undefined
+    vi.mocked(streamChat).mockImplementation(async function* (...args) {
+      signal = args[7]
+      await new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }))
+      yield ''
+    })
+    typeDraft('稍后继续的问题')
+    document.querySelector<HTMLButtonElement>('.send-btn')!.click()
+    await flushPromises()
+    expect(signal?.aborted).toBe(false)
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+    expect(signal?.aborted).toBe(true)
+    await wrapper.setProps({ modelValue: true })
+    await flushPromises()
+    expect(document.querySelector('textarea')!.value).toBe('稍后继续的问题')
+    wrapper.unmount()
+  })
 
   it('会话草稿独立，刷新后恢复当前历史与未发送输入', async () => {
     let wrapper = await openPanel()

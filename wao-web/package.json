@@ -8,6 +8,7 @@
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
+    "test:stability": "vitest run src/__tests__/streamLifecycle.spec.ts src/__tests__/http.spec.ts src/__tests__/assistant.spec.ts src/__tests__/AiAssistantPanel.spec.ts src/__tests__/TianrenView.spec.ts src/__tests__/ReferenceImagesView.spec.ts --maxWorkers=2",
     "test:drafts": "vitest run src/__tests__/documentDraftLifecycle.spec.ts src/__tests__/documentDraftRecovery.spec.ts src/__tests__/documentDrafts.spec.ts src/__tests__/KbDetailView.spec.ts src/__tests__/docPresenceVisibility.spec.ts --maxWorkers=2",
     "test:acceptance-tools": "node --test scripts/acceptance/*.node.mjs",
     "test:edge-static": "node --test scripts/edge-static.node.mjs",
