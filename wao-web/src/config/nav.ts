@@ -149,7 +149,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   focus: { id: 'focus', label: '番茄专注', icon: 'ri-timer-line', path: '/focus' },
-  countdowns: { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-heart-line', path: '/countdowns' },
+  countdowns: { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', path: '/countdowns' },
   habits: { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', path: '/habits' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
@@ -361,7 +361,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     {
       id: 'focus', label: '番茄专注', icon: 'ri-timer-line', group: 'PERSONAL', order: 15, visible: true,
     },
-    { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-heart-line', group: 'PERSONAL', order: 16, visible: true },
+    { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', group: 'PERSONAL', order: 16, visible: true },
     { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', group: 'PERSONAL', order: 17, visible: true },
     {
       id: 'todo',

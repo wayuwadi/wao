@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 49;
+    private static final int VERSION = 50;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -41,7 +41,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("capabilities", "能力中心", "ri-box-3-line", "TOOLS", 15, true, "TAB"),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
             new BuiltinMenuConfigDto("focus", "番茄专注", "ri-timer-line", "PERSONAL", 15, true, "TAB"),
-            new BuiltinMenuConfigDto("countdowns", "倒数日", "ri-calendar-heart-line", "PERSONAL", 16, true, "TAB"),
+            new BuiltinMenuConfigDto("countdowns", "倒数日", "ri-calendar-event-line", "PERSONAL", 16, true, "TAB"),
             new BuiltinMenuConfigDto("habits", "习惯打卡", "ri-seedling-line", "PERSONAL", 17, true, "TAB"),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),

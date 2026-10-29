@@ -134,6 +134,21 @@ class NotificationCenterServiceTest {
         assertThat(service.get("wd").unreadCount()).isZero();
     }
 
+    @Test
+    void personalRoutineRemindersReachFeedAndUnreadWithoutRestoringLegacyCards() {
+        when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
+        var reminder = aiEvent("routine:date", "INFO", "日期提醒");
+        reminder.setEventType("INTERNAL");
+        var legacy = aiEvent("internal:old", "INFO", "旧系统通知");
+        legacy.setEventType("INTERNAL");
+        when(center.recentEvents(120, "wd")).thenReturn(List.of(reminder, legacy));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), eq("wd"))).thenReturn(List.of(reminder, legacy));
+        when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        assertThat(service.get("wd").events()).extracting("id").containsExactly("routine:date");
+        assertThat(service.get("wd").unreadCount()).isEqualTo(1);
+        assertThat(service.get("wd", false).events()).isEmpty();
+    }
+
     private static NotificationEventRow aiEvent(String id, String severity, String detail) {
         NotificationEventRow event = new NotificationEventRow();
         event.setEventId(id);
