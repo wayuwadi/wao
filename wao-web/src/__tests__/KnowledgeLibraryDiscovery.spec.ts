@@ -36,6 +36,7 @@ describe('知识库真实资料检索', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    data.loadStates.knowledge = 'loaded'
     data.myGroups = [{ id: 'g1', name: '我的知识库' }]
     data.kbs = [
       knowledgeBase({ id: 'kb-project', name: 'WAO 项目档案', desc: '工程记忆与验收记录', project: 'p1', perm: '成员可编辑' }),
@@ -129,9 +130,9 @@ describe('知识库真实资料检索', () => {
     expect(wrapper.text()).not.toContain('复制邀请链接')
 
     await wrapper.find('.kb-search input').setValue('不存在的内容')
-    expect(wrapper.find('.kb-filter-empty').text()).toContain('没有匹配的真实资料')
+    expect(wrapper.get('.wao-empty-state').text()).toContain('没有匹配的资料')
 
-    await wrapper.find('.kb-filter-empty button').trigger('click')
+    await wrapper.get('.wao-empty-state button').trigger('click')
     expect(wrapper.findAll('.kb-card')).toHaveLength(3)
   })
 })

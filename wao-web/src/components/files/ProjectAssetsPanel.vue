@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 import { computed, onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
@@ -185,32 +188,20 @@ async function saveHtml() {
 }
 
 async function removeFile(id: string | undefined, name: string) {
-  if (!id || !window.confirm(`删除项目文件“${name}”？`)) return
-  try {
-    await data.deleteFile(id)
-  } catch {
-    toast('文件删除失败，请重试', 'ri-error-warning-line')
-  }
+  if (!id) return
+  confirmAction({ title: '删除项目文件', description: `确认删除「${name}」？此操作不可恢复，原下载链接将无法使用。`, run: () => data.deleteFile(id) })
 }
 async function removeImage(id: string | undefined, name: string) {
-  if (!id || !window.confirm(`删除项目图片“${name}”？`)) return
-  try {
-    await data.deleteImage(id)
-  } catch {
-    toast('图片删除失败，请重试', 'ri-error-warning-line')
-  }
+  if (!id) return
+  confirmAction({ title: '删除项目图片', description: `确认删除「${name}」？此操作不可恢复，引用这张图片的内容可能无法继续显示它。`, run: () => data.deleteImage(id) })
 }
 async function removePage(page: HostedPage) {
-  if (!window.confirm(`删除托管页面“${page.title}”？公网链接将立即失效。`)) return
-  try {
-    await data.deleteHostedPage(page.id)
-  } catch {
-    toast('页面删除失败，请重试', 'ri-error-warning-line')
-  }
+  confirmAction({ title: '删除托管页面', description: `删除「${page.title}」后，公开链接将立即失效，此操作不可恢复。`, run: () => data.deleteHostedPage(page.id) })
 }
 </script>
 
 <template>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <section class="project-assets">
     <div class="asset-toolbar">
       <div class="asset-tabs" role="tablist" aria-label="项目文件类型">

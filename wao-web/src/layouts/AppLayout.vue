@@ -9,6 +9,8 @@ import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
 import SideNav from '@/components/nav/SideNav.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
+import DataLoadStatus from '@/components/ui/DataLoadStatus.vue'
+import { pageDataDomains } from '@/utils/pageDataDomains'
 import MobileShellMenu from '@/components/nav/MobileShellMenu.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -116,12 +118,7 @@ const TRACKED_FEATURES = new Set([
 const contentRef = ref<HTMLElement | null>(null)
 const pageBodyRef = ref<HTMLElement | null>(null)
 
-const loadingDomainCount = computed(
-  () => Object.values(data.loadStates).filter((state) => state === 'loading').length,
-)
-const loadErrorMessages = computed(() => [
-  ...new Set(Object.values(data.loadErrors).filter(Boolean)),
-])
+const visibleDataDomains = computed(() => pageDataDomains(String(route.meta.module || ''), !!ui.openTaskId, ui.searchOpen))
 
 // 登录成员切换时先清掉上一名成员的内存偏好，再按当前会话重新读取。
 watch(() => session.currentUser.id, (memberId) => {
@@ -216,14 +213,6 @@ function ensureVisibleHeavyDomains() {
 watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, {
   immediate: true,
 })
-
-async function reloadAll() {
-  await data.hydrate()
-  void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
-    resumeAutoNoteEnrichment(session.currentUser.id),
-  )
-  ensureVisibleHeavyDomains()
-}
 
 watch(
   () => nav.builtinMenus.map((menu) => `${menu.id}|${menu.label}|${menu.icon}`).join('\n'),
@@ -365,20 +354,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </Teleport>
 
       <div ref="contentRef" class="content">
-        <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
-          <i class="ri-error-warning-line"></i>
-          <span>
-            部分数据加载失败：{{ loadErrorMessages.join('；') }}
-            <template v-if="loadingDomainCount">（其余数据仍在加载）</template>
-          </span>
-          <button v-if="!loadingDomainCount" type="button" @click="reloadAll">
-            <i class="ri-refresh-line"></i>重新加载
-          </button>
-        </div>
-        <div v-else-if="loadingDomainCount" class="data-status" role="status" aria-live="polite">
-          <i class="ri-loader-4-line spin"></i>
-          正在加载业务数据…
-        </div>
+        <DataLoadStatus :states="data.loadStates" :errors="data.loadErrors" :active-domains="visibleDataDomains" @retry="data.retryDomain" />
         <!-- 页面主体撑满剩余高度；复杂页面可用本页锚点，首页留给主要内容。 -->
         <div class="page-stage">
           <PageSectionNav v-if="route.path !== '/'" :root="pageBodyRef" :scroll-container="contentRef" />

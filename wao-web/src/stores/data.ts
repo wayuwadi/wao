@@ -239,26 +239,47 @@ export const useDataStore = defineStore('data', () => {
    * 其余域仍正常接管，且不会拖垮写路径。只要任一已鉴权的启动读路径可达即判定后端在线
    * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
-  async function hydrate() {
+  async function hydrate(domains?: DataDomain[]) {
+    const requested = new Set(domains ?? EAGER_DATA_DOMAINS)
     const requestMember = useSessionStore().userId
     if (taskDataMember !== requestMember) {
+      for (const domain of DATA_DOMAINS) {
+        loadStates[domain] = EAGER_DATA_DOMAINS.includes(domain) ? 'loading' : 'idle'
+        delete loadErrors[domain]
+      }
+      for (const domain of EAGER_DATA_DOMAINS) requested.add(domain)
       tasks.value = []
       projects.value = []
       areas.value = []
+      kbs.value = []
+      myGroups.value = []
+      autos.value = []
+      files.value = []
+      imgs.value = []
+      vault.value = []
+      schedule.value = []
+      suggestions.value = []
+      goals.value = []
+      apiLive.value = false
       taskDrafts.value = loadTaskDrafts()
       taskDataMember = requestMember
     }
     // 已经进入过知识库 / 图床后，手动“重新加载”要继续刷新这些可见数据；首次启动仍保持按需。
-    const reloadDocs = loadStates.docs === 'loaded'
-    const reloadImages = loadStates.images === 'loaded'
-    const reloadAutomation = loadStates.automation === 'loaded'
-    const settle = async <T>(domain: DataDomain, p: Promise<T>): Promise<T | null> => {
+    const reloadDocs = !domains && loadStates.docs === 'loaded'
+    const reloadImages = !domains && loadStates.images === 'loaded'
+    const reloadAutomation = !domains && loadStates.automation === 'loaded'
+    const settle = async <T>(domain: DataDomain, load: () => Promise<T>, apply: (value: T) => void): Promise<T | null> => {
+      if (!requested.has(domain)) return null
       try {
-        const result = await p
+        const result = await load()
+        if (requestMember !== useSessionStore().userId) return null
+        apply(result)
         loadStates[domain] = 'loaded'
         delete loadErrors[domain]
+        apiLive.value = true
         return result
       } catch (cause: unknown) {
+        if (requestMember !== useSessionStore().userId) return null
         loadStates[domain] = 'error'
         loadErrors[domain] = cause instanceof Error && cause.message
           ? cause.message
@@ -266,33 +287,19 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
-    for (const domain of EAGER_DATA_DOMAINS) {
+    for (const domain of requested) {
       loadStates[domain] = 'loading'
       delete loadErrors[domain]
     }
-    taskLoadState.value = 'loading'
-    taskLoadError.value = ''
-    fileLoadState.value = 'loading'
-    fileLoadError.value = ''
-    apiLive.value = false
-    vaultError.value = false
-    // 保留已加载的项目，避免重新加载触发表单自动更换所属项目。
-    // 重新加载期间继续保留真实任务与未保存输入。
-    kbs.value = []
-    myGroups.value = []
-    // 重载目录期间保留已经打开的正文和草稿基线，成功后再按目录合并。
-    autos.value = []
-    files.value = []
-    imgs.value = []
-    vault.value = []
-    schedule.value = []
-    suggestions.value = []
-    goals.value = []
+    if (requested.has('tasks')) { taskLoadState.value = 'loading'; taskLoadError.value = '' }
+    if (requested.has('files')) { fileLoadState.value = 'loading'; fileLoadError.value = '' }
+    if (requested.has('vault')) vaultError.value = false
+    // 同账号刷新保留上次读取的内容；只在成功后替换对应域，失败不伪装成空列表。
     const docsReloadRequest = reloadDocs ? refreshDocs() : null
     const imagesReloadRequest = reloadImages ? refreshImages() : null
     const automationReloadRequest = reloadAutomation ? refreshAutomation() : null
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
-    const taskRequest = fetchTasks()
+    const taskRequest = requested.has('tasks') ? fetchTasks()
       .then((loadedTasks) => {
         if (requestMember !== useSessionStore().userId) return loadedTasks
         loadedTasks = loadedTasks.filter(task => !taskDeletionBlocked(task.id))
@@ -335,9 +342,11 @@ export const useDataStore = defineStore('data', () => {
         }
         taskLoadState.value = 'loaded'
         loadStates.tasks = 'loaded'
+        apiLive.value = true
         return loadedTasks
       })
       .catch((cause: unknown) => {
+        if (requestMember !== useSessionStore().userId) return null
         // 失败不能清掉本机真实输入；错误状态由页面明确展示。
         taskLoadState.value = 'error'
         taskLoadError.value = cause instanceof Error && cause.message
@@ -346,16 +355,18 @@ export const useDataStore = defineStore('data', () => {
         loadStates.tasks = 'error'
         loadErrors.tasks = taskLoadError.value
         return null
-      })
-    const fileRequest = fetchFiles()
+      }) : Promise.resolve(null)
+    const fileRequest = requested.has('files') ? fetchFiles()
       .then((loadedFiles) => {
+        if (requestMember !== useSessionStore().userId) return null
         files.value = loadedFiles
         fileLoadState.value = 'loaded'
         loadStates.files = 'loaded'
+        apiLive.value = true
         return loadedFiles
       })
       .catch((cause: unknown) => {
-        files.value = []
+        if (requestMember !== useSessionStore().userId) return null
         fileLoadState.value = 'error'
         fileLoadError.value = cause instanceof Error && cause.message
           ? cause.message
@@ -363,37 +374,43 @@ export const useDataStore = defineStore('data', () => {
         loadStates.files = 'error'
         loadErrors.files = fileLoadError.value
         return null
-      })
-    const knowledgeRequest = settle('knowledge', Promise.all([fetchKbs(), fetchKbGroups()]))
+      }) : Promise.resolve(null)
+    const knowledgeRequest = settle('knowledge', () => Promise.all([fetchKbs(), fetchKbGroups()]), ([kb, groups]) => {
+      kbs.value = kb
+      myGroups.value = groups
+    })
     const [a, p, t, knowledge, fl, va, sc, sg, gl] = await Promise.all([
-      settle('areas', fetchAreas()), settle('projects', fetchProjects()), taskRequest,
+      settle('areas', fetchAreas, value => { areas.value = value }),
+      settle('projects', fetchProjects, value => { projects.value = value }), taskRequest,
       knowledgeRequest, fileRequest,
-      settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
-      settle('suggestions', fetchSuggestions()), settle('goals', fetchGoals()),
+      settle('vault', fetchVault, value => { vault.value = value }),
+      settle('schedule', fetchSchedule, value => { schedule.value = value }),
+      settle('suggestions', fetchSuggestions, value => { suggestions.value = value }),
+      settle('goals', fetchGoals, value => { goals.value = value }),
     ])
     if (requestMember !== useSessionStore().userId) return
-    const [kb, kg] = knowledge ?? [null, null]
-    if (a !== null) areas.value = a
-    if (p !== null) projects.value = p
-    if (kb !== null) kbs.value = kb
-    if (kg !== null) myGroups.value = kg
-    if (fl !== null) files.value = fl
-    if (va !== null) vault.value = va
-    if (sc !== null) schedule.value = sc
-    if (sg !== null) suggestions.value = sg
-    if (gl !== null) goals.value = gl
     // 任一已鉴权读路径成功即可证明会话和后端可达；单个慢域不能拖死小记等独立写路径。
-    apiLive.value = [a, p, t, knowledge, fl, va, sc, sg, gl].some(result => result !== null)
-    vaultError.value = va === null
+    apiLive.value = apiLive.value || [a, p, t, knowledge, fl, va, sc, sg, gl].some(result => result !== null)
+    if (requested.has('vault')) vaultError.value = va === null
     if (apiLive.value) {
       // 项目/任务都拿到真实快照后才启动合并轮询；其一失败时保留当前数据，等待手工重试。
-      if (p !== null && t !== null) {
-        lastServerSyncFingerprint = serverSyncFingerprint(p, t)
+      if (loadStates.projects === 'loaded' && loadStates.tasks === 'loaded') {
+        lastServerSyncFingerprint = serverSyncFingerprint(p ?? projects.value, t ?? tasks.value)
         startSync()
       }
-      Object.keys(taskDrafts.value).forEach(persistTask)
+      if (t !== null) Object.keys(taskDrafts.value).forEach(persistTask)
     }
     await Promise.all([docsReloadRequest, imagesReloadRequest, automationReloadRequest])
+  }
+
+  /** 只重试用户选择的模块，避免文件或密码库失败时刷新全部工作区。 */
+  async function retryDomain(domain: DataDomain): Promise<boolean> {
+    if (loadStates[domain] === 'loading') return false
+    if (domain === 'docs') return refreshDocs()
+    if (domain === 'images') return refreshImages()
+    if (domain === 'automation') return refreshAutomation()
+    await hydrate([domain])
+    return loadStates[domain] === 'loaded'
   }
 
   /**
@@ -2252,22 +2269,27 @@ export const useDataStore = defineStore('data', () => {
   /** 普通文件业务硬上限 200MiB；服务端还会按文件与图床设置执行更低的真实上限。 */
   const MAX_FILE_BYTES = 200 * 1024 * 1024
   async function refreshFiles(): Promise<boolean> {
-    if (!apiLive.value) {
-      fileLoadState.value = 'error'
-      fileLoadError.value = '服务暂不可用，请稍后重试'
-      return false
-    }
+    const member = useSessionStore().userId
     fileLoadState.value = 'loading'
     fileLoadError.value = ''
+    loadStates.files = 'loading'
+    delete loadErrors.files
     try {
-      files.value = await fetchFiles()
+      const loaded = await fetchFiles()
+      if (member !== useSessionStore().userId) return false
+      files.value = loaded
       fileLoadState.value = 'loaded'
+      loadStates.files = 'loaded'
+      apiLive.value = true
       return true
     } catch (cause: unknown) {
+      if (member !== useSessionStore().userId) return false
       fileLoadState.value = 'error'
       fileLoadError.value = cause instanceof Error && cause.message
         ? cause.message
-        : '暂时无法读取音乐库，请稍后重试'
+        : '暂时无法读取文件，请稍后重试'
+      loadStates.files = 'error'
+      loadErrors.files = fileLoadError.value
       return false
     }
   }
@@ -2294,8 +2316,10 @@ export const useDataStore = defineStore('data', () => {
     return updated
   }
   async function deleteFile(id: string) {
-    if (!apiLive.value) return
+    if (!apiLive.value) throw new Error('服务暂不可用，文件尚未删除，请稍后重试。')
+    const member = useSessionStore().userId
     await apiDeleteFile(id)
+    if (member !== useSessionStore().userId) return
     files.value = files.value.filter((file) => file.id !== id)
   }
   async function refreshHostedPages() {
@@ -2325,7 +2349,9 @@ export const useDataStore = defineStore('data', () => {
     return updated
   }
   async function deleteHostedPage(id: string) {
+    const member = useSessionStore().userId
     await apiDeleteHostedPage(id)
+    if (member !== useSessionStore().userId) return
     hostedPages.value = hostedPages.value.filter((page) => page.id !== id)
   }
 
@@ -2363,14 +2389,11 @@ export const useDataStore = defineStore('data', () => {
    * @param id 图片 id
    */
   async function deleteImage(id: string) {
+    if (!apiLive.value) throw new Error('服务暂不可用，图片尚未删除，请稍后重试。')
+    const member = useSessionStore().userId
+    await apiDeleteImage(id)
+    if (member !== useSessionStore().userId) return
     imgs.value = imgs.value.filter((i) => i.id !== id)
-    if (apiLive.value) {
-      try {
-        await apiDeleteImage(id)
-      } catch {
-        /* 后端删除失败时不回滚，避免残留幽灵条目困扰 UI */
-      }
-    }
   }
 
   /** 人类可读文件大小，与后端 ImageService.humanSize 口径一致。 */
@@ -2487,13 +2510,22 @@ export const useDataStore = defineStore('data', () => {
    * @returns 是否拉到了真实数据
    */
   async function reloadVault(): Promise<boolean> {
+    const member = useSessionStore().userId
+    loadStates.vault = 'loading'
+    delete loadErrors.vault
     try {
-      vault.value = await fetchVault()
+      const loaded = await fetchVault()
+      if (member !== useSessionStore().userId) return false
+      vault.value = loaded
       vaultError.value = false
+      loadStates.vault = 'loaded'
+      apiLive.value = true
       return true
-    } catch {
-      vault.value = []
+    } catch (cause) {
+      if (member !== useSessionStore().userId) return false
       vaultError.value = true
+      loadStates.vault = 'error'
+      loadErrors.vault = cause instanceof Error ? cause.message : DOMAIN_ERROR_MESSAGES.vault
       return false
     }
   }
@@ -2524,14 +2556,11 @@ export const useDataStore = defineStore('data', () => {
 
   /** 删除密钥库分组。 */
   async function deleteVaultGroup(id: string) {
+    if (!apiLive.value) throw new Error('服务暂不可用，分组尚未删除，请稍后重试。')
+    const member = useSessionStore().userId
+    await apiDeleteVaultGroup(id)
+    if (member !== useSessionStore().userId) return
     vault.value = vault.value.filter((g) => g.id !== id)
-    if (apiLive.value) {
-      try {
-        await apiDeleteVaultGroup(id)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
   }
 
   /** 保存用户拖拽后的密钥库分组顺序。 */
@@ -2590,14 +2619,11 @@ export const useDataStore = defineStore('data', () => {
 
   /** 删除密钥库条目。 */
   async function deleteVaultItem(id: string) {
+    if (!apiLive.value) throw new Error('服务暂不可用，条目尚未删除，请稍后重试。')
+    const member = useSessionStore().userId
+    await apiDeleteVaultItem(id)
+    if (member !== useSessionStore().userId) return
     for (const g of vault.value) g.items = g.items.filter((i) => i.id !== id)
-    if (apiLive.value) {
-      try {
-        await apiDeleteVaultItem(id)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
   }
 
   /** 解密并返回一次密码明文（仅 apiLive 时可用；离线演示态没有真实密码可查看）。 */
@@ -2614,7 +2640,7 @@ export const useDataStore = defineStore('data', () => {
   return {
     today, areas, projects, tasks, kbs, docs, archivedDocIds, autos, files, imgs, vault,
     schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError,
-    fileLoadState, fileLoadError, loadStates, loadErrors, hydrate,
+    fileLoadState, fileLoadError, loadStates, loadErrors, hydrate, retryDomain,
     areaById, projectById, taskById, tasksByProject, kbById, docById,
     isDocArchived, archivedDocsOf, areaColor,
     docEdits, docConflicts, docDraftErrors, setDocEdit, persistDocNow, restoreDocumentDraft, docOf, docPending, saveState, markSaving, markSaved,

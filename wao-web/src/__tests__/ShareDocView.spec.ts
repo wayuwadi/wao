@@ -24,10 +24,11 @@ describe('ShareDocView', () => {
     expect(apiShareDoc).not.toHaveBeenCalled()
     expect(readPublicNote).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('此旧分享链接已停用')
+    expect(wrapper.find('.state.err button').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('小记使用令牌快照，失效清空正文并显示可重试状态', async () => {
+  it('小记使用令牌快照，失效清空正文并引导获取新链接', async () => {
     route.params.token = 'ns_' + 'a'.repeat(43)
     vi.mocked(readPublicNote).mockResolvedValueOnce({ doc: { id: 'private', title: '快照标题', note: true, kbId: 'kb-notes', updated: '', md: '私有分享快照' }, expiresAt: new Date(Date.now() + 60_000).toISOString() })
     const wrapper = mount(ShareDocView)
@@ -39,6 +40,8 @@ describe('ShareDocView', () => {
     document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
     expect(wrapper.find('.doc-body').exists()).toBe(false)
     expect(wrapper.text()).toContain('已撤销或已到期')
+    expect(wrapper.find('.state.err button').exists()).toBe(false)
+    expect(wrapper.text()).toContain('获取新链接')
     wrapper.unmount()
   })
 
@@ -59,6 +62,7 @@ describe('ShareDocView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('分享内容加载失败，请重试')
     expect(wrapper.text()).not.toContain('已撤销或已到期')
+    expect(wrapper.get('.state.err button').text()).toBe('重新加载')
     wrapper.unmount()
   })
 

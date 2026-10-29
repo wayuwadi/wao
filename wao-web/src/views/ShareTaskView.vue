@@ -26,6 +26,7 @@ const openOnly = computed(() => route.query.openOnly === 'true')
 const shared = ref<SharedTask | null>(null)
 const loading = ref(true)
 const error = ref('')
+const canRetry = ref(false)
 let loadSequence = 0
 
 async function load() {
@@ -35,16 +36,22 @@ async function load() {
   const requestedOpenOnly = openOnly.value
   loading.value = true
   error.value = ''
+  canRetry.value = false
   try {
     const result = requestedSubId
       ? await apiShareSub(requestedTaskId, requestedSubId)
       : await apiShareTask(requestedTaskId, requestedOpenOnly)
     if (sequence !== loadSequence) return
     shared.value = result
-  } catch {
+  } catch (cause) {
     if (sequence !== loadSequence) return
     shared.value = null
-    error.value = '可能是网络暂时不可用，也可能对应的任务已被删除或取消分享。'
+    const failure = cause as { status?: number; response?: { status?: number } }
+    const status = failure?.status ?? failure?.response?.status
+    canRetry.value = status !== 404 && status !== 410
+    error.value = canRetry.value
+      ? '可能是网络暂时不可用，请稍后重新加载。'
+      : '任务已删除或分享链接已失效，请联系分享者确认并获取新链接。'
   } finally {
     if (sequence === loadSequence) loading.value = false
   }
@@ -80,9 +87,9 @@ async function copyMd() {
       </div>
       <div v-else-if="error" class="state err" role="alert">
         <i class="ri-link-unlink-m state-icon" aria-hidden="true"></i>
-        <strong>任务暂时没读出来</strong>
+        <strong>{{ canRetry ? '任务暂时没读出来' : '暂时无法访问这条分享' }}</strong>
         <span>{{ error }}</span>
-        <button type="button" class="retry-btn" @click="load">
+        <button v-if="canRetry" type="button" class="retry-btn" @click="load">
           <i class="ri-refresh-line" aria-hidden="true"></i>重新加载
         </button>
       </div>

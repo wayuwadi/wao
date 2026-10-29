@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
@@ -345,9 +348,7 @@ async function savePage() {
   }
 }
 async function removePage(page: HostedPage) {
-  if (!window.confirm(`删除托管页面“${page.title}”？公开链接将立即失效。`)) return
-  await data.deleteHostedPage(page.id)
-  toast(`已删除「${page.title}」`, 'ri-delete-bin-line')
+  confirmAction({ title: '删除托管页面', description: `删除「${page.title}」后，公开链接将立即失效，此操作不可恢复。`, run: () => data.deleteHostedPage(page.id) })
 }
 
 async function uploadAttachments(files: FileList | File[]) {
@@ -429,14 +430,11 @@ async function removeImage(id: string | undefined, name: string) {
     toast('内置示例图不可删除', 'ri-information-line')
     return
   }
-  if (!window.confirm(`删除图片“${name}”？此操作不可恢复。`)) return
-  await data.deleteImage(id)
-  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+  confirmAction({ title: '删除图片', description: `确认删除「${name}」？此操作不可恢复，引用这张图片的内容可能无法继续显示它。`, run: () => data.deleteImage(id) })
 }
 async function removeFile(id: string | undefined, name: string) {
-  if (!id || !window.confirm(`删除文件“${name}”？`)) return
-  await data.deleteFile(id)
-  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+  if (!id) return
+  confirmAction({ title: '删除文件', description: `确认删除「${name}」？此操作不可恢复，原下载链接将无法使用。`, run: () => data.deleteFile(id) })
 }
 
 function onFileSettingsSaved(settings: FileSettings) {
@@ -447,6 +445,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 </script>
 
 <template>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="files wao-page-frame">
     <DemoBanner
       icon="ri-hard-drive-2-line"

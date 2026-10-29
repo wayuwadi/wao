@@ -9,30 +9,50 @@ const props = withDefaults(
     height?: string
     embedded?: boolean
     theme?: 'light' | 'dark'
+    icon?: string
+    closeDisabled?: boolean
   }>(),
-  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false },
+  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false, icon: 'ri-sparkling-2-line', closeDisabled: false },
 )
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLElement>()
 const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const dismiss = useOverlayDismiss(
   () => !props.embedded,
-  () => emit('close'),
+  () => { if (!props.closeDisabled) emit('close') },
 )
 function outside() {
-  if (dismiss.isTopmost()) emit('close')
+  if (!props.closeDisabled && dismiss.isTopmost()) emit('close')
 }
 function trap(event: KeyboardEvent) {
   if (props.embedded) return
   if (event.key !== 'Tab') return
   const items = [
     ...(dialog.value?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+      'a[href], button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex]',
     ) ?? []),
-  ].filter((item) => !item.closest('[hidden]'))
+  ].filter((item) => {
+    if (item.tabIndex < 0 || item.matches(':disabled') || item.closest('[hidden], [inert]')) return false
+    for (let node: HTMLElement | null = item; node && node !== dialog.value; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+    }
+    return true
+  }).sort((a, b) => {
+    const aOrder = a.tabIndex > 0 ? a.tabIndex : Infinity
+    const bOrder = b.tabIndex > 0 ? b.tabIndex : Infinity
+    if (aOrder !== bOrder) return aOrder - bOrder
+    return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+  })
   const first = items[0],
     last = items[items.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
+  if (!first) {
+    event.preventDefault()
+    dialog.value?.focus()
+  } else if (!items.includes(document.activeElement as HTMLElement)) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first)?.focus()
+  } else if (event.shiftKey && document.activeElement === first) {
     event.preventDefault()
     last?.focus()
   } else if (!event.shiftKey && document.activeElement === last) {
@@ -69,7 +89,7 @@ onBeforeUnmount(() => {
         @keydown="trap"
       >
         <header class="dialog-heading">
-          <div class="title-icon"><i class="ri-sparkling-2-line" aria-hidden="true"></i></div>
+          <div class="title-icon"><i :class="icon" aria-hidden="true"></i></div>
           <div>
             <h2>{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
@@ -79,6 +99,7 @@ onBeforeUnmount(() => {
             class="dialog-close"
             type="button"
             :aria-label="`关闭${title}`"
+            :disabled="closeDisabled"
             @click="emit('close')"
           >
             <i class="ri-close-line" aria-hidden="true"></i>
@@ -162,6 +183,10 @@ p {
   color: var(--wao-text-weak);
   cursor: pointer;
   font-size: 20px;
+}
+.dialog-close:disabled { opacity: 0.5; cursor: wait; }
+@media (pointer: coarse) {
+  .dialog-close { min-width: 44px; min-height: 44px; }
 }
 .dialog-content {
   flex: 1;

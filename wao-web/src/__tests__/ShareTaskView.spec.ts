@@ -108,6 +108,14 @@ describe('ShareTaskView', () => {
     expect(wrapper.get('.title').text()).toBe('新地址对应的任务')
   })
 
+  it('服务端确认不存在的分享不提供无效重试入口', async () => {
+    vi.mocked(apiShareTask).mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
+    const wrapper = mount(ShareTaskView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('获取新链接')
+    expect(wrapper.find('.retry-btn').exists()).toBe(false)
+  })
+
   it('子任务地址走子任务接口并保持成功状态', async () => {
     route.params.subId = 's1'
     vi.mocked(apiShareSub).mockResolvedValue({ ...shared, kind: 'sub', subId: 's1' })

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
@@ -89,9 +92,10 @@ function commitGroupName(id: string, event: Event) {
 async function removeGroup(id: string) {
   const group = data.vault.find((g) => g.id === id)
   if (!group || group.isDefault) return
-  if (!window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
-  await data.deleteVaultGroup(id)
-  if (groupId.value === id) groupId.value = 'all'
+  confirmAction({ title: '删除密码库分组', description: `确认删除「${group.group}」及其中 ${group.items.length} 个条目？此操作不可恢复。`, run: async () => {
+    await data.deleteVaultGroup(id)
+    if (groupId.value === id) groupId.value = 'all'
+  } })
 }
 async function dropGroup(targetId: string) {
   const sourceId = draggedGroupId.value
@@ -229,11 +233,11 @@ async function saveItem() {
 }
 async function deleteItem() {
   if (!sel.value) return
-  if (!window.confirm(`删除条目“${sel.value.name}”？此操作不可恢复。`)) return
   const id = sel.value.id
-  selId.value = null
-  await data.deleteVaultItem(id)
-  toast('已删除条目', 'ri-delete-bin-line')
+  confirmAction({ title: '删除密码库条目', description: `确认删除「${sel.value.name}」？此操作不可恢复。`, run: async () => {
+    await data.deleteVaultItem(id)
+    if (selId.value === id) selId.value = null
+  } })
 }
 async function closeItem() {
   if (savingItem.value) return
@@ -252,6 +256,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 </script>
 
 <template>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="vault wao-page-frame">
     <div class="vtop">
       <div class="vtitle">密码库</div>
