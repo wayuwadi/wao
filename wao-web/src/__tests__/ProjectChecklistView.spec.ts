@@ -11,7 +11,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 
 vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
 enableAutoUnmount(afterEach)
-beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
 function setup(error = false, realEditor = false) {
   const data = useDataStore()
   data.tasks = [{ ...data.tasks[0]!, id: 'parent', title: '父任务', desc: '父正文', status: '待办', subs: [

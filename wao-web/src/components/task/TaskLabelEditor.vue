@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { labelFeedback } from '@/composables/taskChangeFeedback'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
 const props = defineProps<{ taskId: string; subId?: string; autoOpen?: boolean; inline?: boolean }>()
 const emit=defineEmits<{done:[]}>()
@@ -29,9 +30,10 @@ async function save() {
  const identity = key.value, draftKey = key.value
  saving.value = true; error.value = ''; protect()
  try {
-  await labels.save({ taskId: props.taskId, subId: props.subId ?? '', revision: revision.value, tags: [...new Set(draft.value.split(/[,，]/).map(s => s.trim()).filter(Boolean))] })
+  const before={...current.value,tags:[...current.value.tags]}
+  const after=await labels.save({ taskId: props.taskId, subId: props.subId ?? '', revision: revision.value, tags: [...new Set(draft.value.split(/[,，]/).map(s => s.trim()).filter(Boolean))] })
   localStorage.removeItem(draftKey)
-  if (key.value === identity) { editing.value = false; emit('done') }
+  if (key.value === identity) { labelFeedback(before,after); editing.value = false; emit('done') }
  } catch (e: any) { if (key.value === identity) error.value = e.response?.data?.message || '标签未保存，草稿已保留，请重试' }
  finally { if (key.value === identity) saving.value = false }
 }

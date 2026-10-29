@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useToastHost, dismissToast, pauseToast } from '@/composables/toast'
+import { useToastHost, dismissToast, pauseToast, runToastAction } from '@/composables/toast'
 const host = useToastHost()
 </script>
 
@@ -11,6 +11,7 @@ const host = useToastHost()
       @focusin="pauseToast(t.id, 'focus', true)" @focusout="pauseToast(t.id, 'focus', false)">
       <i :class="t.icon" aria-hidden="true"></i>
       <span><b v-if="t.tone === 'error'">需要处理：</b>{{ t.text }}</span>
+      <button v-if="t.action" class="toast-action" :disabled="t.busy" @click="runToastAction(t.id)">{{ t.busy ? '处理中…' : t.action.label }}</button>
       <button type="button" aria-label="关闭这条操作提示" @click="dismissToast(t.id)"><span aria-hidden="true">×</span></button>
     </div>
   </div>
@@ -25,5 +26,6 @@ const host = useToastHost()
 .toast button { flex: none; display: grid; place-items: center; border: 0; border-radius: 6px; width: 28px; height: 28px; font-size: 20px; background: transparent; color: inherit; cursor: pointer; }
 .toast button:hover { background: #ffffff24; }
 .toast button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.toast .toast-action { width:auto; min-height:32px; height:auto; padding-inline:var(--wao-space-1); font:inherit; text-decoration:underline; }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 </style>

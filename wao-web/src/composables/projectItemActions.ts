@@ -1,3 +1,4 @@
+import { priorityFeedback } from './taskChangeFeedback'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { toast } from './toast'
@@ -19,9 +20,12 @@ export function useProjectItemActions(refs: () => ProjectItemRefs | undefined) {
     change?.()
     await data.flushTask(ref.taskId)
   }
-  async function priority(id: string, pr: Priority) {
+  async function priority(id: string, pr: Priority | undefined) {
     const ref = source(id)
-    await save(id, () => ref.subId ? data.updateSub(ref.taskId, ref.subId, { pr }) : data.patchTask(ref.taskId, { pr }))
+    if(busy(id) || (!ref.subId && !pr)) return
+    const before=ref.subId?data.subById(ref.taskId,ref.subId)?.pr:data.taskById(ref.taskId)?.pr
+    await save(id, () => ref.subId ? data.updateSub(ref.taskId, ref.subId, { pr }) : data.patchTask(ref.taskId, { pr: pr! }))
+    if(data.taskSaveState(ref.taskId)!=='error') priorityFeedback(ref.taskId,ref.subId,before,pr)
   }
   async function status(id: string, status: TaskStatus) {
     const ref = source(id)
