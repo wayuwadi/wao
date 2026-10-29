@@ -38,6 +38,7 @@ import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
+import TaskQuickActionDialog from '@/components/task/TaskQuickActionDialog.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -297,6 +298,7 @@ const dragId = ref<string | null>(null)
 const draggedSub = ref<{ taskId: string; subId: string } | null>(null)
 const hierarchyOver = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
 const rootDropOver = ref(false)
+const quickTaskAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
 const taskMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const operationError = ref('')
 const deletion = ref<{ id: string; subId?: string; title: string } | null>(null)
@@ -823,21 +825,21 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string, subId?: str
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
     event.preventDefault()
   } else if (event.type === 'contextmenu') {
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, a, [contenteditable="true"]')) return
-    const selection = window.getSelection()
-    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+    if (event.target instanceof Element && event.target.closest('input:not([type=checkbox]), textarea, [contenteditable="true"]')) return
   }
   const task = data.taskById(id), sub = subId ? data.subById(id, subId) : null
   if (!task || subId && !sub) return
   const title = sub?.text ?? task.title, disabled = operationBusy.value
   const actions: ContextAction[] = [
+    {id:'tags',label:'设置标签',run:()=>{quickTaskAction.value={taskId:id,subId,mode:'tags'}}},
+    {id:'add',label:'添加子任务',disabled,run:()=>{quickTaskAction.value={taskId:id,subId,mode:'child'}}},
+    {id:'priority',label:'修改优先级',disabled,run:()=>{quickTaskAction.value={taskId:id,subId,mode:'priority'}}},
     { id: 'open', label: '打开任务', run: () => ui.openTask(id, subId) },
     { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id, subId), '分享链接已复制') },
     { id: 'number', label: '复制任务编号', run: () => copyText(String(sub?.number ?? task.number ?? (subId || id)), '任务编号已复制') },
   ]
   if (subId) actions.push({ id: 'promote', label: '提升为主任务', disabled, separatorBefore: true, run: () => promoteSub(id, subId) })
   else {
-    actions.push({ id: 'add', label: '添加子任务', disabled, run: () => startAddSub(id, null) })
     if (task.parentTaskId) actions.push({ id: 'detach', label: '移回主任务', disabled, run: () => moveUnder(id, null) })
   }
   actions.push({ id: 'delete', label: subId ? '删除子任务' : '删除任务', danger: true, separatorBefore: true, disabled,
@@ -1452,7 +1454,7 @@ watch(visibleTaskIds, (ids) => {
       @deleted="onProjectDeleted"
     />
   </div>
-  <ContextActionMenu ref="taskMenu" />
+  <TaskQuickActionDialog v-if="quickTaskAction" v-bind="quickTaskAction" @close="quickTaskAction=null" /><ContextActionMenu ref="taskMenu" />
   <SettingsDialogShell v-if="deletion" :title="deletion.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" @close="!deleting && (deletion = null)">
     <div class="task-delete-body">
     <p class="task-delete-title">确定删除「{{ deletion.title }}」？</p>
