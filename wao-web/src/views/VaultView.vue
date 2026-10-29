@@ -1017,4 +1017,11 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   .f-icon i { font-size: 16px; }
 }
 @media (max-width: 760px) { .vault .group-col { flex: 0 0 auto; max-height: 25%; } .vault .item-col { flex: 1; min-height: 0; } }
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .group-action, .f-icon, .f-btn, .dp-back, .icon-btn, .group-manage, .btn-primary, .retry {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .group-edit-row { flex-wrap: wrap; }
+}
 </style>

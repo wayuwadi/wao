@@ -12,6 +12,28 @@ vi.mock('@/api/system', () => ({
 }))
 
 describe('FilesView', () => {
+  it('大型图床按页渲染，跳到末页和删除末页后不会显示全部卡片', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.loadStates.images = 'loaded'
+    data.imgs = Array.from({ length: 301 }, (_, i) => ({ id: `image-${i}`, name: `图片 ${i + 1}`, url: `/api/images/image-${i}/raw`, size: '1 KB', time: '', from: '', c1: '', c2: '' }))
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } } })
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.img-card')).toHaveLength(15)
+    await wrapper.get('[aria-label="图床分页"] [aria-label="第 21 页"]').trigger('click')
+    expect(wrapper.findAll('.img-card')).toHaveLength(1)
+    expect(wrapper.find('.img-card').text()).toContain('图片 301')
+    data.imgs = data.imgs.slice(0, 300)
+    await flushPromises()
+    expect(wrapper.findAll('.img-card')).toHaveLength(15)
+    expect(wrapper.get('[aria-label="第 20 页"]').attributes('aria-current')).toBe('page')
+    wrapper.unmount()
+  })
+
   it('读取中和读取失败不显示空列表，重试成功后才提供首个文件入口', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)

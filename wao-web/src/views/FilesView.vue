@@ -19,8 +19,10 @@ import FileDisplayNameEditor from '@/components/files/FileDisplayNameEditor.vue'
 import AssetReplaceModal, { type ReplacementTarget } from '@/components/files/AssetReplaceModal.vue'
 import { fileDisplayName } from '@/utils/files'
 import { useSessionStore } from '@/stores/session'
+import { useClientPagination } from '@/composables/clientPagination'
 
 const data = useDataStore()
+const session = useSessionStore()
 const tab = ref<'files' | 'img' | 'pages'>('files')
 const pageDialog = ref(false)
 const editingPage = ref<HostedPage | null>(null)
@@ -71,20 +73,15 @@ const visibleHostedPages = computed(() =>
   ),
 )
 
-/** 图床默认只铺三排（网格是 5 列，即 15 张），其余点开再看。 */
+/** 图床每页三排，避免一次展开数千张卡片阻塞页面。 */
 const IMG_PAGE = 15
-const showAllImages = ref(false)
-const visibleImages = computed(() =>
-  showAllImages.value ? data.imgs : data.imgs.slice(0, IMG_PAGE),
-)
-const hiddenCount = computed(() =>
-  showAllImages.value ? 0 : Math.max(0, data.imgs.length - IMG_PAGE),
+const { page: imagePage, pageCount: imagePageCount, visible: visibleImages } = useClientPagination(
+  computed(() => data.imgs), [() => session.userId], IMG_PAGE,
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
 const uploading = ref(0)
-const session = useSessionStore()
 type UploadAttempt = {
   id: number
   file: File
@@ -703,16 +700,7 @@ function onFileSettingsSaved(settings: FileSettings) {
             </div>
           </div>
         </div>
-        <button v-if="hiddenCount" class="img-more" @click="showAllImages = true">
-          <i class="ri-arrow-down-s-line"></i>展开其余 {{ hiddenCount }} 张
-        </button>
-        <button
-          v-else-if="showAllImages && data.imgs.length > IMG_PAGE"
-          class="img-more"
-          @click="showAllImages = false"
-        >
-          <i class="ri-arrow-up-s-line"></i>收起，只看最近 {{ IMG_PAGE }} 张
-        </button>
+        <WaoPagination v-if="data.loadStates.images === 'loaded' && imagePageCount > 1" v-model:page="imagePage" :page-count="imagePageCount" :total="data.imgs.length" aria-label="图床分页" />
 
         <div v-if="data.loadStates.images === 'loaded' && !data.imgs.length" class="img-empty">
           <i class="ri-image-add-line"></i>
@@ -1571,5 +1559,12 @@ function onFileSettingsSaved(settings: FileSettings) {
   .unified-drop button {
     margin-left: 39px;
   }
+}
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .copy-btn, .dl-btn, .img-copy, .img-del, .seg-btn, .btn-primary, .btn-ghost {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .img-del { opacity: 1; }
 }
 </style>

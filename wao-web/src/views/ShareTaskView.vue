@@ -92,6 +92,7 @@ async function copyMd() {
         <button v-if="canRetry" type="button" class="retry-btn" @click="load">
           <i class="ri-refresh-line" aria-hidden="true"></i>重新加载
         </button>
+        <a v-else class="locate" href="/">返回 WAO</a>
       </div>
 
       <template v-else-if="shared">
