@@ -52,6 +52,13 @@ describe('知识库详情目录体验', () => {
     localStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
+    // 目录属于登录成员；先登录再装载样本，不能沿用匿名阶段的目录。
+    useSessionStore(pinia).accept({
+      accountId: 'account-m1',
+      member: { id: 'm1', name: 'm1', initial: 'm', color: '#64748b', role: '' },
+      identities: [],
+      createdAt: '2026-08-01T00:00:00',
+    })
     seedDataStore()
     vi.mocked(fetchDocTemplates).mockReset()
     vi.mocked(fetchDoc).mockReset()
