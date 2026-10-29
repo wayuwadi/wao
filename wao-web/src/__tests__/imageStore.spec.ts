@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { absoluteUrl } from '@/utils/share'
 import { apiDeleteImage } from '@/api/board'
-vi.mock('@/api/board', async original => ({ ...await original<object>(), apiDeleteImage: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/api/board', async original => ({ ...await original<object>(), apiDeleteImage: vi.fn<typeof apiDeleteImage>().mockResolvedValue(undefined) }))
 
 /** 图床：所有上传口子的图都要能在「文件与图床」里看到。 */
 describe('data store · 图床', () => {

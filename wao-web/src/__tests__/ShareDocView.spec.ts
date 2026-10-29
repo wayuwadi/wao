@@ -12,7 +12,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/api/board', () => ({
   apiShareDoc: vi.fn<(typeof import('@/api/board'))['apiShareDoc']>(),
 }))
-vi.mock('@/api/notePublicShare', async original => ({ ...await original<object>(), readPublicNote: vi.fn() }))
+vi.mock('@/api/notePublicShare', async original => ({ ...await original<object>(), readPublicNote: vi.fn<typeof readPublicNote>() }))
 
 describe('ShareDocView', () => {
   beforeEach(() => { vi.clearAllMocks(); route.params.token = 'ns_' + 'a'.repeat(43) })

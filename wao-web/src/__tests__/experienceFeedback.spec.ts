@@ -27,7 +27,7 @@ describe('确认操作的可恢复反馈', () => {
   })
   it('确认前不执行；失败保留原因；重试期间禁止重复提交和关闭', async () => {
     let finish!: () => void
-    const run = vi.fn().mockRejectedValueOnce(new Error('删除失败，文件仍保留')).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    const run = vi.fn<() => Promise<void>>().mockRejectedValueOnce(new Error('删除失败，文件仍保留')).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
     const wrapper = mount(ConfirmActionDialog, { props: { action: { title: '删除文件', description: '删除示例.txt，不可恢复。', run } }, attachTo: document.body })
     const button = () => document.querySelector<HTMLButtonElement>('.confirmation-actions .wao-button--danger')!
     expect(run).not.toHaveBeenCalled()
@@ -50,7 +50,7 @@ describe('确认操作的可恢复反馈', () => {
   })
 
   it('取消不执行删除', async () => {
-    const run = vi.fn()
+    const run = vi.fn<() => void>()
     const wrapper = mount(ConfirmActionDialog, { props: { action: { title: '删除文件', description: '示例', run } }, attachTo: document.body })
     document.querySelector<HTMLButtonElement>('.confirmation-actions .wao-button--secondary')!.click()
     await flushPromises()

@@ -7,8 +7,14 @@ import { PROJECTS } from '@/data/fixtures'
 import type { FileItem, ImageItem, VaultGroup } from '@/types'
 
 const api = vi.hoisted(() => ({
-  fetchFiles: vi.fn(), fetchVault: vi.fn(), fetchProjects: vi.fn(), fetchTasks: vi.fn(),
-  apiDeleteImage: vi.fn(), apiDeleteFile: vi.fn(), apiDeleteVaultItem: vi.fn(), apiDeleteVaultGroup: vi.fn(),
+  fetchFiles: vi.fn<(typeof import('@/api/board'))['fetchFiles']>(),
+  fetchVault: vi.fn<(typeof import('@/api/board'))['fetchVault']>(),
+  fetchProjects: vi.fn<(typeof import('@/api/board'))['fetchProjects']>(),
+  fetchTasks: vi.fn<(typeof import('@/api/board'))['fetchTasks']>(),
+  apiDeleteImage: vi.fn<(typeof import('@/api/board'))['apiDeleteImage']>(),
+  apiDeleteFile: vi.fn<(typeof import('@/api/board'))['apiDeleteFile']>(),
+  apiDeleteVaultItem: vi.fn<(typeof import('@/api/board'))['apiDeleteVaultItem']>(),
+  apiDeleteVaultGroup: vi.fn<(typeof import('@/api/board'))['apiDeleteVaultGroup']>(),
 }))
 vi.mock('@/api/board', async original => ({ ...await original<object>(), ...api }))
 
