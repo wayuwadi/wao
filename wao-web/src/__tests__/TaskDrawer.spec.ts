@@ -471,17 +471,38 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.find('.comment-input input').setValue('只发送一次')
+    await w.find('.comment-input textarea').setValue('只发送一次')
     await w.find('.comment-input .send').trigger('click')
     await w.find('.comment-input .send').trigger('click')
 
     expect(addComment).toHaveBeenCalledTimes(1)
     expect(w.find('.comment-input .send').attributes('aria-label')).toBe('发送中')
-    // 评论已挪到右侧属性栏
-    expect(w.find('.props .comment-input').exists()).toBe(true)
+    // 收起属性不会隐藏主栏评论
+    expect(w.find('.detail-scroll .comment-input').exists()).toBe(true)
+    expect(w.find('.props .comment-input').exists()).toBe(false)
     resolveComment(true)
     await flushPromises()
-    expect(w.find('.comment-input input').attributes('disabled')).toBeUndefined()
+    expect(w.find('.comment-input textarea').attributes('disabled')).toBeUndefined()
+  })
+
+  it('多行评论保留换行，中文输入确认和 Shift+Enter 不触发发送，失败保留草稿', async () => {
+    const addComment = vi.spyOn(data, 'addTaskComment').mockResolvedValue(false)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+    const editor = w.get('.comment-input textarea')
+    await editor.setValue('第一行\n第二行')
+    await editor.trigger('keydown', { key: 'Enter', isComposing: true })
+    await editor.trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(addComment).not.toHaveBeenCalled()
+    await w.get('.properties-toggle').trigger('click')
+    expect(editor.isVisible()).toBe(true)
+    await w.get('[data-section="description"]').trigger('click')
+    expect(w.get('.comment-input textarea').element).toBe(editor.element)
+    await editor.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(addComment).toHaveBeenCalledWith(taskId, '第一行\n第二行')
+    expect((editor.element as HTMLTextAreaElement).value).toBe('第一行\n第二行')
   })
 
   it('在任务内保存并展示 AI 执行过程', async () => {
@@ -659,36 +680,25 @@ describe('TaskDrawer', () => {
     expect(w.findAll('.crumb-item')).toHaveLength(2)
     expect(w.find('.props').text()).toContain('子任务属性')
     expect(w.find('.props').text()).not.toContain('自定义属性')
-    const subActions = w.findAll('.sub-detail-actions .sub-detail-action')
-    expect(subActions).toHaveLength(2)
-    expect(subActions[0]!.text()).toContain('复制该子任务分享链接')
-    expect(subActions[1]!.classes()).toContain('danger')
-    expect(subActions[1]!.text()).toContain('删除子任务')
+    expect(w.find('[aria-label="删除当前子任务"]').exists()).toBe(true)
+    expect(w.find('.share-wrap').exists()).toBe(true)
+    expect(w.find('.sub-detail-actions').exists()).toBe(false)
     expect(data.subById(taskId, subId)).toBeDefined()
   })
 
 
-  it('删除子任务必须二次确认，取消时保留原数据', async () => {
+  it('取消顶部子任务删除确认时保留原数据', async () => {
     const subId = data.addSub(taskId, '不能误删的子任务')!
-    const confirm = vi.spyOn(window, 'confirm')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-    ui.openTask(taskId)
+    ui.openTask(taskId, subId)
     const w = mountDrawer()
-    await w.vm.$nextTick()
-    await w.find('.inline-sub .sub-open').trigger('click')
-    const button = w.find('.sub-detail-action.danger')
-
-    await button.trigger('click')
+    await flushPromises()
+    await w.get('[aria-label="删除当前子任务"]').trigger('click')
     expect(data.subById(taskId, subId)).toBeDefined()
-    await button.trigger('click')
-
-    expect(confirm.mock.calls[0]?.[0]).toContain('执行记录关联也会一并移除')
-    expect(data.subById(taskId, subId)).toBeUndefined()
-    // 删完回到主任务
-    expect(w.find('.type-line').text()).not.toContain('子任务')
-    confirm.mockRestore()
-    w.unmount()
+    document.querySelector<HTMLButtonElement>('.settings-dialog-shell .wao-button--secondary')!.click()
+    await flushPromises()
+    expect(data.subById(taskId, subId)).toBeDefined()
+    expect(ui.openTaskSubId).toBe(subId)
+    expect(document.querySelector('.settings-dialog-shell')).toBeNull()
   })
 
   it('子任务详情里改名会写回 store', async () => {
@@ -728,7 +738,7 @@ describe('TaskDrawer', () => {
     expect(w.find('.props').text()).toContain('自定义属性')
   })
 
-  it('子任务在属性栏里有自己的评论和关联文档', async () => {
+  it('子任务在主栏展示自己的评论，关联文档保留在属性栏', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     const docId = Object.keys(data.docs)[0]
     ui.openTask(taskId, subId)
@@ -737,12 +747,12 @@ describe('TaskDrawer', () => {
 
     const props = w.get('.props')
     expect(props.text()).toContain('关联')
-    expect(props.text()).toContain('评论')
-    await props.get('.comment-input input').setValue('子任务上的讨论')
-    await props.get('.comment-input .send').trigger('click')
+    expect(w.get('.task-comments').text()).toContain('评论')
+    await w.get('.comment-input textarea').setValue('子任务上的讨论')
+    await w.get('.comment-input .send').trigger('click')
     expect(data.subById(taskId, subId)?.comments?.map((item) => item.text)).toEqual(['子任务上的讨论'])
     expect(data.taskById(taskId)!.comments.some((item) => item.text === '子任务上的讨论')).toBe(false)
-    expect(w.get('.props').text()).toContain('子任务上的讨论')
+    expect(w.get('.task-comments').text()).toContain('子任务上的讨论')
 
     expect(docId).toBeTruthy()
     data.updateSub(taskId, subId, { docs: [docId!] })
