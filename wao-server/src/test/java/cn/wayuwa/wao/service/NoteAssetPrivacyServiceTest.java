@@ -16,17 +16,23 @@ class NoteAssetPrivacyServiceTest {
         db.execute("CREATE TABLE note_ai_workflow(image_run_id VARCHAR(32))");
         db.execute("CREATE TABLE note_ai_transformation(task_id VARCHAR(32))");
         db.execute("CREATE TABLE doc(kb_id VARCHAR(32),content_markdown LONGTEXT,content_json LONGTEXT,blocks_json LONGTEXT)");
-        db.update("INSERT INTO image_blob VALUES ('draft','小记 · 草稿'),('task','任务 · 可公开')");
+        db.update("INSERT INTO image_blob VALUES ('draft','小记 · 草稿'),('doc-draft','文档 · 草稿'),('task','任务 · 可公开')");
         db.update("INSERT INTO note_source_asset_ref VALUES ('files','original-file')");
         db.update("INSERT INTO doc(kb_id,content_markdown) VALUES ('kb-notes','![配图](/api/images/saved/raw)')");
+        db.update("INSERT INTO doc(kb_id,content_markdown) VALUES ('knowledge','![配图](/api/images/doc-image/raw) [附件](/api/files/doc-file/download)')");
         var privacy=new NoteAssetPrivacyService(db,new ObjectMapper());
         assertThat(privacy.isPrivate("images","draft")).isTrue();
         assertThat(privacy.isPrivate("files","original-file")).isTrue();
         assertThat(privacy.isPrivate("images","saved")).isTrue();
         assertThat(privacy.isPrivate("images","task")).isFalse();
+        assertThat(privacy.isPrivate("images","doc-draft")).isTrue();
+        assertThat(privacy.isPrivate("images","doc-image")).isTrue();
+        assertThat(privacy.isPrivate("files","doc-file")).isTrue();
         db.update("DELETE FROM doc");db.update("DELETE FROM note_source_asset_ref");db.update("DELETE FROM image_blob WHERE id='draft'");
         assertThat(privacy.isPrivate("images","draft")).isTrue();
         assertThat(privacy.isPrivate("files","original-file")).isTrue();
         assertThat(privacy.isPrivate("images","saved")).isTrue();
+        assertThat(privacy.isPrivate("images","doc-image")).isTrue();
+        assertThat(privacy.isPrivate("files","doc-file")).isTrue();
     }
 }

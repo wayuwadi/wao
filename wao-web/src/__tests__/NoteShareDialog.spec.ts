@@ -12,6 +12,17 @@ function button(text: string) { return body().findAll('button').find(value => va
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(listNoteShares).mockResolvedValue([]); vi.mocked(createNoteShare).mockResolvedValue(entry); vi.mocked(copyToClipboard).mockResolvedValue(true) })
 afterEach(() => { document.body.innerHTML = '' })
 describe('小记主动限时分享', () => {
+  it('知识库文档复用限时分享，不生成无令牌的 ID 地址', async () => {
+    mount(NoteShareDialog, { props: { noteId: 'knowledge-doc', note: false, title: '文档标题' } })
+    await flushPromises()
+    expect(body().text()).toContain('文档分享设置')
+    expect(body().text()).toContain('文档默认需要登录访问')
+    await body().get('input[type=checkbox]').setValue(true)
+    await button('生成限时分享链接').trigger('click'); await flushPromises()
+    expect(createNoteShare).toHaveBeenCalledWith('knowledge-doc', 168)
+    expect(body().findAll<HTMLInputElement>('input[readonly]').map(input => input.element.value))
+      .toEqual([`${window.location.origin}/s/n/${entry.token}`, `${window.location.origin}/api/share/notes/${entry.token}.md`])
+  })
   it('默认私有，打开和读取状态不会创建链接，确认后才分享七天快照', async () => {
     mount(NoteShareDialog, { props: { noteId: 'private-note', title: '私人标题' } })
     await flushPromises()

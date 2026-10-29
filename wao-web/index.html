@@ -2,6 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8">
+    <script>
+      // 分享页面在加载应用和外部配图之前关闭收录与来源地址传递。
+      if (location.pathname.startsWith('/s/')) {
+        for (const [name, content] of [['robots', 'noindex, nofollow, noarchive'], ['referrer', 'no-referrer']]) {
+          const meta = document.createElement('meta')
+          meta.name = name
+          meta.content = content
+          document.head.appendChild(meta)
+        }
+      }
+    </script>
     <link rel="icon" type="image/png" sizes="64x64" href="/brand/wao-soft-loop-64-v4.png">
     <link rel="icon" type="image/svg+xml" sizes="any" href="/brand/wao-soft-loop-small-v4.svg">
     <link rel="apple-touch-icon" sizes="180x180" href="/brand/wao-soft-loop-180-v4.png">

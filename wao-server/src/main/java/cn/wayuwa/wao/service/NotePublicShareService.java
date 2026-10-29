@@ -15,7 +15,7 @@ import java.time.*;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** 作者明确授权的限时小记快照；令牌只返回一次，数据库保存不可逆摘要。 */
+/** 作者明确授权的限时文档/小记快照；沿用已有存储和链接，令牌只返回一次。 */
 @Service
 public class NotePublicShareService {
     private final JdbcTemplate db;
@@ -55,7 +55,7 @@ public class NotePublicShareService {
         // 与正文更新互斥，避免生成混合版本，并串行检查活动链接数量。
         db.queryForObject("SELECT id FROM doc WHERE id=? FOR UPDATE",String.class,doc);
         if(list(member,doc).size()>=20) throw new BadRequestException("请先撤销不再使用的分享链接");
-        var snapshot=shares.noteSnapshot(doc,member);
+        var snapshot=shares.documentSnapshot(doc,member);
         byte[] bytes=new byte[32];random.nextBytes(bytes);
         String token="ns_"+Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         String id=UUID.randomUUID().toString().replace("-","");
@@ -76,7 +76,7 @@ public class NotePublicShareService {
         Snapshot snapshot=resolve(token);
         String mapped=IMAGE.matcher(localImages(snapshot.json())).replaceAll(m->java.util.regex.Matcher.quoteReplacement("/api/share/notes/"+token+"/images/"+m.group(1)+"/raw"));
         try { return new PublicNote(json.readValue(mapped,SharedDocDto.class),snapshot.expiresAt()); }
-        catch(Exception e) { throw new IllegalStateException("小记分享快照无法读取",e); }
+        catch(Exception e) { throw new IllegalStateException("分享快照无法读取",e); }
     }
 
     /** 只允许读取同一有效分享快照内出现的配图，不接受任意图床 ID。 */
@@ -88,15 +88,15 @@ public class NotePublicShareService {
 
     private Snapshot resolve(String token) {
         if(token==null || !token.matches("ns_[A-Za-z0-9_-]{43}")) throw missing();
-        var rows=db.query("SELECT s.snapshot_json,s.expires_at FROM note_public_share s JOIN doc d ON d.id=s.doc_id AND d.author_id=s.owner_id AND d.kb_id='kb-notes' AND d.deleted_at IS NULL WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?",
+        var rows=db.query("SELECT s.snapshot_json,s.expires_at FROM note_public_share s JOIN doc d ON d.id=s.doc_id AND d.author_id=s.owner_id AND d.deleted_at IS NULL WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?",
                 (r,n)->new Snapshot(r.getString(1),instant(r.getObject(2,LocalDateTime.class))),hash(token),timestamp(clock.instant()));
         if(rows.isEmpty()) throw missing();
         return rows.get(0);
     }
     private void requireOwner(String member,String doc) {
         if(member==null) throw new UnauthorizedException("请先登录");
-        Integer count=db.queryForObject("SELECT COUNT(*) FROM doc WHERE id=? AND kb_id='kb-notes' AND author_id=? AND deleted_at IS NULL",Integer.class,doc,member);
-        if(count==null || count==0) throw new ForbiddenException("只有小记作者可以管理分享");
+        Integer count=db.queryForObject("SELECT COUNT(*) FROM doc WHERE id=? AND author_id=? AND deleted_at IS NULL",Integer.class,doc,member);
+        if(count==null || count==0) throw new ForbiddenException("只有文档或小记作者可以管理分享");
     }
     private String encode(Object value) { try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException("无法保存分享快照",e);} }
     private String localImages(String value) {

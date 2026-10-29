@@ -533,9 +533,9 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
   })
 
-  it('知识库入口编辑私人小记时，保存前的图片和附件也使用私有上传', async () => {
+  it.each(['kb-notes', 'k3'])('知识库入口编辑 %s 时，保存前的图片和附件也使用私有上传', async kbId => {
     const data = useDataStore(pinia)
-    data.docs.d7!.kbId = 'kb-notes'
+    data.docs.d7!.kbId = kbId
     const wrapper = await mountView('/kb/k3?doc=d7')
     const image = vi.spyOn(data, 'uploadImage').mockResolvedValue(null)
     const attachment = vi.spyOn(data, 'uploadFile').mockResolvedValue(null)
@@ -546,7 +546,7 @@ describe('知识库详情目录体验', () => {
     }
     await instance.onUploadImage(file, vi.fn())
     await instance.onUploadFile(file, vi.fn())
-    expect(image).toHaveBeenCalledWith(file, expect.stringMatching(/^小记 · /), { requirePersisted: true })
+    expect(image).toHaveBeenCalledWith(file, expect.stringMatching(kbId === 'kb-notes' ? /^小记 · / : /^文档 · /), { requirePersisted: true })
     expect(attachment).toHaveBeenCalledWith(file, undefined, true)
     wrapper.unmount()
   })

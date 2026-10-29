@@ -100,15 +100,22 @@ public class ShareService {
     }
 
     /**
-     * 取一篇文档（或小记）的公开分享视图。
+     * 拒绝旧文档 ID 分享；所有外部读取须通过限时令牌。
      *
      * @param docId 文档 id
-     * @return 分享视图；正文已转成标准 Markdown（提示块、引用块用 blockquote 表达）
-     * @throws NotFoundException 文档不存在或已在回收站时
+     * @return 不返回正文，保留方法仅供旧入口安全降级
+     * @throws NotFoundException 对所有旧 ID 分享统一返回失效
      */
     public SharedDocDto shareDoc(String docId) {
+        // 旧 ID 地址不能继续作为另一条免鉴权出口（包括链接预览）。
+        throw new NotFoundException("分享链接无效或已失效，请作者生成限时分享链接");
+    }
+
+    /** 提取作者主动授权的已保存文档快照；仅由限时分享创建流程调用。 */
+    public SharedDocDto documentSnapshot(String docId, String memberId) {
         DocDto d = knowledge.getDoc(docId);
-        if (KnowledgeService.NOTES_KB_ID.equals(d.kbId())) throw new NotFoundException("分享链接无效或已失效");
+        if (memberId == null || !Objects.equals(memberId, d.author()))
+            throw new cn.wayuwa.wao.common.ForbiddenException("只有文档作者可以管理分享");
         return projectDoc(d);
     }
 

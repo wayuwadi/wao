@@ -73,14 +73,14 @@ const router = createRouter({
       component: () => import('@/views/ShareTaskView.vue'),
       meta: { public: true },
     },
-    // 小记仅通过作者明确生成的限时令牌分享。
+    // 文档与小记共用作者明确生成的限时令牌分享。
     {
       path: '/s/n/:token',
       name: 'share-note',
       component: () => import('@/views/ShareDocView.vue'),
       meta: { public: true },
     },
-    // 普通知识库文档分享页。
+    // 旧文档 ID 分享页仅显示迁移提示，不再读取正文。
     {
       path: '/s/d/:id',
       name: 'share-doc',

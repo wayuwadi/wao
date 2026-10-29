@@ -34,46 +34,18 @@ class FeishuShareCardsAcceptanceTest {
     @Autowired TianrenVisualService visuals;
 
     @Test
-    void savedNotePublicProjectionAndCallbackKeepTitleTextAndDetailsLink() throws Exception {
-        var ids = jdbc.queryForList("SELECT id FROM doc WHERE kb_id='kb-notes' "
-                + "AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1", String.class);
-        org.junit.jupiter.api.Assumptions.assumeFalse(ids.isEmpty(), "既有数据库没有小记");
-        String id = ids.get(0);
-        var projection = share.shareDoc(id);
-        JsonNode page = json.readTree(mvc.perform(get("/api/share/docs/" + id)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
-        assertThat(page.path("data").path("md").asText().equals(projection.md())).isTrue();
-        JsonNode card = preview("http://localhost/s/d/" + id);
-        assertThat(card.path("inline").path("i18n_title").path("zh_cn").asText()).startsWith("WAO 小记 · ");
-        JsonNode elements = card.path("card").path("data").path("elements");
-        assertThat(elements.get(elements.size() - 1).path("actions").get(0).path("url").asText())
-                .isEqualTo("http://localhost/s/d/" + id);
-        System.out.println("小记真实数据链路通过：公开正文与飞书回调卡片、原链接跳转；未向会话发送消息");
-    }
-
-    @Test
-    void savedNoteThroughPublicPageAndVerifiedCallbackUsesRealFeishuImage() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(
-                org.springframework.util.StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_ID, ""))
-                && org.springframework.util.StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")),
-                "既有数据库未配置飞书应用凭据，真实图片上传未验证");
-        var ids = jdbc.queryForList("SELECT id FROM doc WHERE kb_id='kb-notes' "
-                + "AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100", String.class);
-        String id = ids.stream().filter(candidate -> share.shareDoc(candidate).md().contains("/api/images/"))
-                .findFirst().orElseThrow(() -> new IllegalStateException("既有数据库无可验收的有图小记"));
-        var projection = share.shareDoc(id);
-        JsonNode page = json.readTree(mvc.perform(get("/api/share/docs/" + id)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
-        assertThat(page.path("data").path("md").asText().equals(projection.md())).isTrue();
-
-        // 首次上传可能超出回调预算；第二次只能复用前一次已完成的图片，不能主动发送消息。
-        preview("http://localhost/s/d/" + id);
-        JsonNode card = preview("http://localhost/api/share/docs/" + id + ".md");
-        assertThat(card.path("card").path("data").path("elements").get(0).path("img_key").asText())
-                .startsWith("img_");
-        assertThat(card.path("inline").path("i18n_title").path("zh_cn").asText()).startsWith("WAO 小记 · ");
-        assertThat(card.toString()).doesNotContain("![", "/api/images/", "更新于：");
-        System.out.println("小记验收通过：真实公开投影、校验回调、真实飞书图片上传及 Markdown 链接卡片；未发送会话消息");
+    void legacyDocumentIdsNeverPublishSavedTextOrPreviewCards() throws Exception {
+        var ids = jdbc.queryForList("SELECT id FROM doc WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 10", String.class);
+        org.junit.jupiter.api.Assumptions.assumeFalse(ids.isEmpty(), "既有数据库没有文档或小记");
+        for (String id : ids) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> share.shareDoc(id))
+                    .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+            mvc.perform(get("/api/share/docs/" + id)).andExpect(status().isNotFound());
+            mvc.perform(get("/api/share/docs/" + id + ".md")).andExpect(status().isNotFound());
+            assertThat(preview("http://localhost/s/d/" + id).isEmpty()).isTrue();
+            assertThat(preview("http://localhost/api/share/docs/" + id + ".md").isEmpty()).isTrue();
+        }
+        System.out.println("旧文档 ID 不再返回正文或预览卡片；未创建分享、上传图片或发送消息");
     }
 
     @Test
