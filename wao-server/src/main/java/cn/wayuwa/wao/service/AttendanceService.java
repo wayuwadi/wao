@@ -87,10 +87,15 @@ public class AttendanceService {
 
     /** 从 Moka 拉取一段日期并以幂等 upsert 落库；过期会话只重登一次，绝不强制踢人。 */
     public AttendanceDto sync(String memberId, LocalDate from, LocalDate to) {
+        return sync(memberId, from, to, false);
+    }
+
+    /** 用户手动确认只用于本次初始登录，不持久保存，也不授权后续重登。 */
+    public AttendanceDto sync(String memberId, LocalDate from, LocalDate to, boolean confirmSessionReplacement) {
         validateRange(from,to,62); AttendanceConnectorEntity connector=requireEnabled(memberId);
         connector.setStatus("SYNCING"); connector.setLastError(null); connector.setUpdatedAt(LocalDateTime.now(ZONE)); connectors.updateById(connector);
         try {
-            MokaAttendanceClient.Session session=session(connector); String employeeId=connector.getRemoteEmployeeId(); boolean relogged=false;
+            MokaAttendanceClient.Session session=confirmSessionReplacement?login(memberId,connector,true):session(connector); String employeeId=confirmSessionReplacement?null:connector.getRemoteEmployeeId(); boolean relogged=false;
             try { if (!StringUtils.hasText(employeeId)) employeeId=moka.employeeId(session); }
             catch (MokaAttendanceClient.SessionExpiredException ex) {
                 session=login(memberId,connector); relogged=true;
@@ -112,6 +117,8 @@ public class AttendanceService {
             }
             LocalDateTime now=LocalDateTime.now(ZONE); connector.setStatus("OK"); connector.setLastSyncedAt(now); connector.setLastError(null); connector.setUpdatedAt(now); connectors.updateById(connector);
             return attendance(memberId,from,to);
+        } catch (MokaAttendanceClient.SessionConfirmationRequiredException ex) {
+            fail(connector,"NEEDS_CONFIRMATION",ex.getMessage()); throw ex;
         } catch (MokaAttendanceClient.AuthenticationRequiredException ex) {
             fail(connector,"NEEDS_LOGIN",ex.getMessage()); throw ex;
         } catch (RuntimeException ex) {
@@ -200,9 +207,10 @@ public class AttendanceService {
     private AttendanceDto.Config configDto(AttendanceConnectorEntity value){LocalDate target=historyTarget(LocalDate.now(ZONE));if(value==null)return new AttendanceDto.Config(false,null,null,"UNCONFIGURED",null,null,null,target,false);LocalDate synced=value.getHistorySyncedFrom();return new AttendanceDto.Config(Boolean.TRUE.equals(value.getEnabled()),value.getUsername(),value.getVaultItemId(),value.getStatus(),string(value.getLastSyncedAt()),value.getLastError(),synced,target,synced!=null&&!synced.isAfter(target));}
     private AttendanceConnectorEntity requireEnabled(String memberId){AttendanceConnectorEntity value=connectors.selectById(memberId); if(value==null||!Boolean.TRUE.equals(value.getEnabled()))throw new BadRequestException("请先在考勤设置中启用 Moka 同步"); if(!StringUtils.hasText(value.getVaultItemId()))throw new BadRequestException("请先选择 Moka 密码本条目"); return value;}
     private MokaAttendanceClient.Session session(AttendanceConnectorEntity value){if(value.getSessionCiphertext()==null||value.getSessionNonce()==null)return login(value.getMemberId(),value); try{return json.readValue(crypto.decrypt(value.getSessionCiphertext(),value.getSessionNonce()),MokaAttendanceClient.Session.class);}catch(Exception ex){return login(value.getMemberId(),value);}}
-    private MokaAttendanceClient.Session login(String memberId,AttendanceConnectorEntity value){String password=vault.revealSecret(value.getVaultItemId(),memberId); if(!StringUtils.hasText(password))throw new MokaAttendanceClient.AuthenticationRequiredException("密码本里的 Moka 条目还没有密码"); MokaAttendanceClient.Session session=moka.login(value.getUsername(),password); try{VaultCryptoService.Encrypted encrypted=crypto.encrypt(json.writeValueAsString(session));value.setSessionCiphertext(encrypted.ciphertext());value.setSessionNonce(encrypted.nonce());connectors.updateById(value);return session;}catch(Exception ex){throw new IllegalStateException("Moka 会话保存失败",ex);}}
+    private MokaAttendanceClient.Session login(String memberId,AttendanceConnectorEntity value){return login(memberId,value,false);}
+    private MokaAttendanceClient.Session login(String memberId,AttendanceConnectorEntity value,boolean confirmSessionReplacement){String password=vault.revealSecret(value.getVaultItemId(),memberId); if(!StringUtils.hasText(password))throw new MokaAttendanceClient.AuthenticationRequiredException("密码本里的 Moka 条目还没有密码"); MokaAttendanceClient.Session session=confirmSessionReplacement?moka.login(value.getUsername(),password,true):moka.login(value.getUsername(),password); try{VaultCryptoService.Encrypted encrypted=crypto.encrypt(json.writeValueAsString(session));value.setSessionCiphertext(encrypted.ciphertext());value.setSessionNonce(encrypted.nonce());connectors.updateById(value);return session;}catch(Exception ex){throw new IllegalStateException("Moka 会话保存失败",ex);}}
     private void fail(AttendanceConnectorEntity value,String status,String message){value.setStatus(status);value.setLastError(message);value.setUpdatedAt(LocalDateTime.now(ZONE));connectors.updateById(value);}
-    private boolean automaticSyncAllowed(AttendanceConnectorEntity value){return value!=null&&Boolean.TRUE.equals(value.getEnabled())&&!"NEEDS_LOGIN".equals(value.getStatus());}
+    private boolean automaticSyncAllowed(AttendanceConnectorEntity value){return value!=null&&Boolean.TRUE.equals(value.getEnabled())&&!Set.of("NEEDS_LOGIN","NEEDS_CONFIRMATION").contains(value.getStatus()==null?"":value.getStatus());}
     private MokaAttendanceClient.AuthenticationRequiredException repeatedSessionExpiry(){return new MokaAttendanceClient.AuthenticationRequiredException("Moka 会话反复失效，已停止自动登录；请先在浏览器完成一次登录后手动重试");}
     private LocalDateTime effectiveIn(AttendanceDayEntity value){return value==null?null:Boolean.TRUE.equals(value.getManualOverride())?value.getManualClockInAt():value.getRemoteClockInAt();}
     private LocalDateTime effectiveOut(AttendanceDayEntity value){return value==null?null:Boolean.TRUE.equals(value.getManualOverride())?value.getManualClockOutAt():value.getRemoteClockOutAt();}

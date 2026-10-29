@@ -23,8 +23,43 @@ class MokaAttendanceClientTest {
     @Test void loginNeverSendsForceAndStopsWhenMokaRequestsIt() {
         AtomicReference<String> body=new AtomicReference<>();server.createContext("/api/outer/moka-unified-account/mokaUid/login",exchange->{body.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));reply(exchange,"{\"code\":0,\"data\":{\"step\":4}}");});
         MokaAttendanceClient client=client();
-        assertThatThrownBy(()->client.login("me@example.com","secret")).isInstanceOf(MokaAttendanceClient.AuthenticationRequiredException.class).hasMessageContaining("不会强制");
+        assertThatThrownBy(()->client.login("me@example.com","secret")).isInstanceOf(MokaAttendanceClient.SessionConfirmationRequiredException.class).hasMessageContaining("不会自动接管");
         assertThat(body.get()).doesNotContain("force");
+    }
+
+    @Test void confirmedLoginUsesFreshRidOnlyAfterMokaRequestsConfirmation() {
+        java.util.List<String> requests = new java.util.ArrayList<>();
+        server.createContext("/api/outer/moka-unified-account/mokaUid/login", exchange -> {
+            requests.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            reply(exchange, requests.size() == 1
+                    ? "{\"code\":0,\"data\":{\"step\":4,\"rid\":\"confirmation-1\"}}"
+                    : "{\"code\":0,\"data\":{\"step\":0,\"ticket\":\"ticket-1\"}}");
+        });
+        server.createContext("/api/outer/moka-unified-account/mokaUid/uniLogin", exchange -> reply(exchange,
+                "{\"code\":0,\"data\":{\"moka-uid\":\"uid-1\",\"moka-jwt\":\"jwt-1\"}}"));
+        assertThat(client().login("me@example.com", "secret", true)).isEqualTo(new MokaAttendanceClient.Session("uid-1", "jwt-1"));
+        assertThat(requests).hasSize(2);
+        assertThat(requests.get(0)).doesNotContain("force", "rid");
+        assertThat(requests.get(1)).contains("\"force\":true", "\"rid\":\"confirmation-1\"");
+    }
+
+    @Test void confirmedLoginStillStopsForCaptchaAndDoesNotRetryMissingRid() {
+        AtomicReference<String> response = new AtomicReference<>("{\"code\":0,\"data\":{\"step\":3}}");
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        server.createContext("/api/outer/moka-unified-account/mokaUid/login", exchange -> { calls.incrementAndGet(); reply(exchange, response.get()); });
+        assertThatThrownBy(() -> client().login("me@example.com", "secret", true)).hasMessageContaining("验证码");
+        response.set("{\"code\":0,\"data\":{\"step\":4}}");
+        assertThatThrownBy(() -> client().login("me@example.com", "secret", true)).hasMessageContaining("确认凭据");
+        assertThat(calls.get()).isEqualTo(2);
+    }
+
+    @Test void confirmedLoginNeverLoopsWhenMokaStillRequiresConfirmation() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        server.createContext("/api/outer/moka-unified-account/mokaUid/login", exchange -> {
+            calls.incrementAndGet(); reply(exchange, "{\"code\":0,\"data\":{\"step\":4,\"rid\":\"confirmation-1\"}}");
+        });
+        assertThatThrownBy(() -> client().login("me@example.com", "secret", true)).isInstanceOf(MokaAttendanceClient.SessionConfirmationRequiredException.class);
+        assertThat(calls.get()).isEqualTo(2);
     }
 
     @Test void parsesNestedPunchTimesAndAnomaly() {

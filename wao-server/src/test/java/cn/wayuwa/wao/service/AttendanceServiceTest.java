@@ -127,6 +127,35 @@ class AttendanceServiceTest {
                 org.mockito.ArgumentMatchers.eq(LocalDate.of(2026,8,1)),any(),any());
     }
 
+    @Test void confirmationRequiredPausesAutomaticSyncUntilExplicitManualRecovery() {
+        AttendanceConnectorEntity connector=connector("READY");
+        when(connectors.selectById("wg")).thenReturn(connector);
+        when(connectors.selectList(any())).thenReturn(List.of(connector));
+        when(vault.revealSecret("vault-1","wg")).thenReturn("secret");
+        when(moka.login(connector.getUsername(),"secret")).thenThrow(new MokaAttendanceClient.SessionConfirmationRequiredException());
+        LocalDate date=LocalDate.now(AttendanceService.ZONE);
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->service.sync("wg",date,date))
+                .isInstanceOf(MokaAttendanceClient.SessionConfirmationRequiredException.class);
+        assertThat(connector.getStatus()).isEqualTo("NEEDS_CONFIRMATION");
+        service.refreshTodayIfStale("wg",date);
+        service.refreshBeforeReminder("wg",date,date.atTime(19,30));
+        service.backfillNextPeriod("wg",date);
+        assertThat(service.enabledMembers()).isEmpty();
+        verify(moka,times(1)).login(connector.getUsername(),"secret");
+        when(moka.login(connector.getUsername(),"secret",true)).thenReturn(new MokaAttendanceClient.Session("u","j"));
+        when(crypto.encrypt(any())).thenReturn(new VaultCryptoService.Encrypted(new byte[]{1},new byte[]{2}));
+        when(moka.employeeId(any())).thenReturn("e");
+        when(moka.day(any(),any(),any())).thenReturn(new MokaAttendanceClient.RemoteDay(date,date.atTime(9,0),date.atTime(19,30),"WORKDAY",""));
+        service.sync("wg",date,date,true);
+        assertThat(connector.getStatus()).isEqualTo("OK");
+        verify(moka,times(1)).login(connector.getUsername(),"secret",true);
+        // 此次确认不传递到后续自动重登。
+        when(moka.day(any(),any(),any())).thenThrow(new MokaAttendanceClient.SessionExpiredException());
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->service.sync("wg",date,date))
+                .isInstanceOf(MokaAttendanceClient.SessionConfirmationRequiredException.class);
+        verify(moka,times(1)).login(connector.getUsername(),"secret",true);
+    }
+
     @Test void failedHistoryBackfillReleasesLeaseWithoutAdvancingCursor() {
         LocalDate today=LocalDate.of(2026,9,3); AttendanceConnectorEntity connector=connector("OK");
         connector.setHistorySyncedFrom(LocalDate.of(2026,9,1));
