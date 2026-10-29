@@ -213,6 +213,15 @@ defineExpose({ selectSection, openProperties })
 </template>
 
 <style scoped>
+/* Keep every detail region scrollable without displaying scrollbar tracks. */
+.task-detail-layout,
+.task-detail-layout :deep(*) {
+  scrollbar-width: none;
+}
+.task-detail-layout::-webkit-scrollbar,
+.task-detail-layout :deep(*::-webkit-scrollbar) {
+  display: none;
+}
 .overview-description {
   max-height: min(360px, 42vh);
   overflow: auto;
