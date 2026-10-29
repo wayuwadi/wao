@@ -1579,8 +1579,9 @@ watch(visibleTaskIds, (ids) => {
   flex-wrap: wrap;
 }
 .phead-name {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .phead-sub {
   margin-top: 3px;
@@ -2527,7 +2528,7 @@ watch(visibleTaskIds, (ids) => {
   .phead-icon { grid-column: 1; width: 36px; height: 36px; border-radius: 10px; font-size: 17px; }
   .phead-name-wrap { grid-column: 2; }
   .phead-name-row { flex-wrap: nowrap; gap: 6px; }
-  .phead-name { min-width: 0; overflow: hidden; font-size: 17px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+  .phead-name { min-width: 0; overflow: hidden; font-size: var(--wao-font-title); line-height: var(--wao-line-heading); text-overflow: ellipsis; white-space: nowrap;  font-weight: var(--wao-weight-heading);}
   .phead-sub { margin-top: 2px; overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
   .phead > .spacer { display: none; }
   .phead-avs { grid-column: 3; margin: 0; padding-left: 5px; }
@@ -2587,7 +2588,7 @@ watch(visibleTaskIds, (ids) => {
 .phead { margin-top: 0; gap: 8px; }
 .phead .back { padding: 2px 4px; }
 .phead-icon { width: 24px; height: 24px; font-size: 13px; border-radius: 6px; }
-.phead-name { font-size: 17px; overflow-wrap: anywhere; }
+.phead-name { font-size: var(--wao-font-title); overflow-wrap: anywhere;  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
 .phead-name-wrap { flex: 0 1 auto; }
 .phead-name-row { gap: 7px; }
 .phead-av { width: 22px; height: 22px; font-size: 10px; }
@@ -2620,7 +2621,7 @@ watch(visibleTaskIds, (ids) => {
 @media (max-width: 760px) {
   .phead-name-wrap { flex: 1; }
   .phead .phead-avs { display: none; }
-  .phead-name { font-size: 16px; }
+  .phead-name { font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
   .phead { gap: 6px; }
   .ptabs { margin: 9px 0 0; padding: 0 0 6px; }
   .task-view-toolbar { margin-left: 0; flex-basis: 100%; }

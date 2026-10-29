@@ -264,16 +264,20 @@ onMounted(() => {
 }
 h1 {
   margin: 8px 0;
-  font-size: 27px;
+  font-size: var(--wao-font-title);
   letter-spacing: -0.5px;
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--wao-font-section);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 p {
-  color: var(--wao-text-weak);
-  font-size: 13px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
   line-height: 1.7;
   margin: 4px 0;
 }
@@ -444,13 +448,13 @@ button:disabled {
 }
 b {
   display: block;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 small {
   display: block;
-  font-size: 11px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
   margin-top: 5px;
   line-height: 1.5;
 }
@@ -466,7 +470,7 @@ small {
 }
 .position small {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 select {
   font-size: 11px;

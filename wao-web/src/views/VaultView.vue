@@ -432,8 +432,9 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   gap: 10px;
 }
 .vtitle {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .group-manage {
   border: 0;

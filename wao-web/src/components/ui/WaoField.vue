@@ -33,8 +33,8 @@ label {
 }
 p {
   margin: 0;
-  font-size: var(--wao-font-caption);
-  line-height: 1.6;
+  font-size: var(--wao-font-help);
+  line-height: var(--wao-line-body);
 }
 .field-hint {
   color: var(--wao-text-3);
@@ -66,7 +66,7 @@ p {
 .wao-field--error :deep([aria-invalid='true']) {
   border-color: var(--wao-danger-strong);
 }
-@media (max-width: 650px) {
+@media (max-width: 760px) {
   .wao-field :deep(input),
   .wao-field :deep(select),
   .wao-field :deep(textarea) {

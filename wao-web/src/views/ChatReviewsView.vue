@@ -942,7 +942,9 @@ onBeforeUnmount(() => {
 }
 .hero h1 {
   margin: 5px 0 3px;
-  font-size: 27px;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .hero p {
   max-width: 720px;
@@ -1739,8 +1741,8 @@ button {
     align-items: flex-start;
   }
   .hero h1 {
-    font-size: 23px;
-  }
+    font-size: var(--wao-font-title);
+   font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
   .hero p {
     max-width: 290px;
   }

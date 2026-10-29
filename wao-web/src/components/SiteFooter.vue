@@ -53,7 +53,7 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 6px;
   color: var(--wao-text-faint, #979baa);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   line-height: 1.5;
 }
 .site-footer a {
@@ -76,7 +76,7 @@ onMounted(async () => {
 @media (max-width: 760px) {
   .site-footer {
     padding: 12px 8px calc(12px + env(safe-area-inset-bottom));
-    font-size: 9px;
+    font-size: var(--wao-font-caption);
   }
   .site-footer.reserve-mobile-actions {
     padding: 12px 52px calc(58px + env(safe-area-inset-bottom)) 8px;

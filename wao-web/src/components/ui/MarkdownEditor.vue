@@ -3592,8 +3592,8 @@ onBeforeUnmount(() => {
 .md-body :deep(.tiptap) {
   outline: none;
   padding: 7px 9px;
-  font-size: 13.5px;
-  line-height: 1.8;
+  font-size: var(--wao-font-body);
+  line-height: var(--wao-line-body);
   color: var(--wao-text-2);
   min-height: inherit;
 }
@@ -3621,22 +3621,22 @@ onBeforeUnmount(() => {
 .md-body :deep(h1),
 .md-body :deep(h3),
 .md-body :deep(h4) {
-  margin: 14px 0 6px;
-  font-weight: 700;
+  margin: 1.4em 0 0.5em;
+  font-weight: var(--wao-weight-heading);
   color: var(--wao-text);
-  line-height: 1.4;
+  line-height: var(--wao-line-heading);
 }
 .md-body :deep(h1) {
-  font-size: 18px;
+  font-size: 1.5em;
 }
 .md-body :deep(h2) {
-  font-size: 15px;
+  font-size: 1.25em;
 }
 .md-body :deep(h3) {
-  font-size: 14px;
+  font-size: 1.125em;
 }
 .md-body :deep(h4) {
-  font-size: 13.5px;
+  font-size: 1em;
 }
 .md-body :deep(ul),
 .md-body :deep(ol) {

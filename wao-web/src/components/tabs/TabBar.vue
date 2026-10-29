@@ -528,7 +528,7 @@ function mCloseUnpinned() {
     margin-top: 3px;
     padding: 0 5px 0 6px;
     border-radius: 6px 6px 0 0;
-    font-size: 9px;
+    font-size: var(--wao-font-caption);
   }
   .tab i {
     font-size: 11px;

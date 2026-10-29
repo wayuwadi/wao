@@ -1035,8 +1035,9 @@ onBeforeUnmount(() => {
 }
 h1 {
   font-size: var(--wao-font-title);
-  font-weight: 500;
+  font-weight: var(--wao-weight-heading);
   margin: 6px 0 8px;
+  line-height: var(--wao-line-heading);
 }
 h2 {
   overflow-wrap: anywhere;

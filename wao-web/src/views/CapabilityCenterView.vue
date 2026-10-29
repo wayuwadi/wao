@@ -886,8 +886,10 @@ onBeforeUnmount(() => {
   margin-bottom: 20px;
 }
 .cap-center-header h1 {
-  font-size: 27px;
+  font-size: var(--wao-font-title);
   margin: 4px 0;
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .cap-center-header p {
   font-size: 13px;
