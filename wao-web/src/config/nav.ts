@@ -148,6 +148,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
+  focus: { id: 'focus', label: '番茄专注', icon: 'ri-timer-line', path: '/focus' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   'reference-images': {
@@ -356,6 +357,9 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
+      id: 'focus', label: '番茄专注', icon: 'ri-timer-line', group: 'PERSONAL', order: 15, visible: true,
+    },
+    {
       id: 'todo',
       label: '待办',
       icon: 'ri-checkbox-multiple-line',
@@ -495,6 +499,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = [
+  'focus',
   'todo',
   'workday-rhythm',
   'action-plans',

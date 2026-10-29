@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui'
 import { clearToasts } from '@/composables/toast'
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
+import FocusDock from '@/components/focus/FocusDock.vue'
 import SessionRecovery from '@/components/login/SessionRecovery.vue'
 import { SESSION_EXPIRED_EVENT } from '@/utils/sessionRecovery'
 import { restJourneyRequested } from '@/composables/restJourney'
@@ -69,6 +70,7 @@ onBeforeUnmount(() => {
     <RouterView />
     <SessionRecovery v-if="useSessionStore().recoveryRequired" />
     <ToastHost />
+    <FocusDock />
     <RestEntryTransition v-if="restJourneyRequested" />
     <WritingEntryTransition v-if="writingJourneyRequested" :journey="writingJourneyRequested" />
   </ConfigProvider>

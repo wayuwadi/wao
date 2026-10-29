@@ -44,3 +44,8 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 `GET /api/task-labels` 返回当前成员可见任务及有效子任务的标签记录 `{taskId, subId, revision, tags}`。`PUT /api/task-labels/{taskId}` 接收 `{subId, revision, tags}`，空 subId 表示主任务；需登录并有源任务可见权限，锁后复核。版本冲突返回 409，相同结果重试幂等；tags 空数组明确清空。每项最多 20 个标签，名称 1–40 字符且无控制字符。标签独立保存，普通任务 PUT 不修改标签。
 
 个人收集箱使用 task.project 空串，只有 owner 可见；列表、详情及锁后写入均校验。浏览器待办提供任务/子任务标签筛选与成员级象限配置。详见 [任务工作台规范](specs/task-workspace-labels-2026-10-29.md)。
+# 番茄专注
+
+浏览器会话接口（按当前成员隔离）：`GET /api/focus` 返回服务端时间、当前计时、最近 200 条历史与今日/累计统计；`PUT /api/focus/{id}` 开始，id 为 32 位小写十六进制稳定重试编号，body 为 `{mode: pomodoro|stopwatch|break, minutes: 1..180, taskId, subId, note}`；`POST /api/focus/{id}` 操作，body 为 `{revision, action: pause|resume|save|finish, note}`。省略 note 视为空笔记，客户端每次携带当前草稿。
+
+开始时检查关联任务权限，返回自身已存在的同 id 记录，已有其它进行中记录返回 409。修改版本过期返回 409；完成事务同步创建带「番茄钟」标签的小记，重复完成返回同一结果。休息不创建小记。详情见 [番茄专注规范](specs/pomodoro-focus.md)。不增加 CLI/MCP 或工作区令牌授权。

@@ -2,6 +2,7 @@
 import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import FocusDial from '@/components/focus/FocusDial.vue'
 const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
 const clipboardExample = ref('- demo.fact_sales 新增goods_type\n\n1. dws\\demo\\fact_sales.py\n2. ads\\demo\\fact_sales.py\n\nhttps://example.com/docs?field=goods_type')
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
@@ -253,6 +254,7 @@ const detailDemoComment = ref('')
             <p>输入 /代码 或 /code 插入代码块，可选择语言、复制与自动换行。</p>
             <MarkdownEditor v-model="codeExample" slash-commands />
           </section>
+          <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>时间戳驱动的计时视图；示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
           <section class="reference-section clipboard-example">
             <h2>复制与链接 · 示例数据</h2>
             <p>普通复制保留文字与路径；粘贴完整网址后可单击打开。</p>
