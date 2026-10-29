@@ -24,11 +24,19 @@ function setup(error = false, realEditor = false) {
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { stubs: { RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' }, TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('专注入口使用独立关联参数，避免触发全局任务抽屉', async () => {
+    const { wrapper } = setup()
+    await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')
+    const link = wrapper.findComponent({ name: 'RouterLink' })
+    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: undefined } })
+    await wrapper.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
+    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: 'child' } })
+  })
   it('右键父任务添加子任务，键盘及详情子项可继续添加下级并展开父级', async () => {
     const { data, wrapper } = setup()
     const flush = vi.spyOn(data, 'flushTask').mockResolvedValue()
