@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import cn.wayuwa.wao.common.BadRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -27,7 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-/** Moka 员工端考勤读取客户端；不使用强制登录，也不上传、记录或返回密码。 */
+/** Moka 员工端考勤读取客户端；接管会话须由用户单次确认，不记录或返回密码。 */
 @Component
 public class MokaAttendanceClient {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -50,13 +51,25 @@ public class MokaAttendanceClient {
 
     /** 使用邮箱密码获得员工端会话；遇到验证码或强制登录要求时停止并交给用户处理。 */
     public Session login(String username, String password) {
-        JsonNode login = post(passportUrl + "/api/outer/moka-unified-account/mokaUid/login",
-                json.createObjectNode().put("email", username).put("password", password)
-                        .put("isMobile", false).put("type", "login").put("bus", 20), null);
+        return login(username, password, false);
+    }
+
+    /** 仅本次手动连接可确认接管已有会话；使用 Moka 返回的 rid 完成一次确认。 */
+    public Session login(String username, String password, boolean confirmSessionReplacement) {
+        ObjectNode request = json.createObjectNode().put("email", username).put("password", password)
+                .put("isMobile", false).put("type", "login").put("bus", 20);
+        String loginUrl = passportUrl + "/api/outer/moka-unified-account/mokaUid/login";
+        JsonNode login = post(loginUrl, request, null);
         JsonNode data = data(login);
         int step = data.path("step").asInt(-1);
+        if (step == 4 && confirmSessionReplacement) {
+            String rid = text(data, "rid");
+            if (!StringUtils.hasText(rid)) throw new AuthenticationRequiredException("Moka 未返回登录确认凭据，请稍后重试");
+            data = data(post(loginUrl, request.put("rid", rid).put("force", true), null));
+            step = data.path("step").asInt(-1);
+        }
         if (step == 3) throw new AuthenticationRequiredException("Moka 要求验证码，请先在浏览器完成一次登录");
-        if (step == 4) throw new AuthenticationRequiredException("Moka 检测到其他会话；WAO 不会强制挤下线，请先在浏览器退出旧会话");
+        if (step == 4) throw new SessionConfirmationRequiredException();
         if (step != 0) {
             String error = text(data, "errorMsg", "message", "msg");
             throw new AuthenticationRequiredException(StringUtils.hasText(error) ? error : "Moka 邮箱或密码不正确");
@@ -201,5 +214,8 @@ public class MokaAttendanceClient {
     public record RemoteDay(LocalDate date, LocalDateTime clockInAt, LocalDateTime clockOutAt, String dayType, String anomaly) { }
     public static class SessionExpiredException extends RuntimeException { }
     public static class AuthenticationRequiredException extends BadRequestException { public AuthenticationRequiredException(String message){super(message);} }
+    public static class SessionConfirmationRequiredException extends AuthenticationRequiredException {
+        public SessionConfirmationRequiredException(){super("Moka 检测到其他会话；WAO 不会自动接管，请点击重新同步并确认连接，或先退出其他设备上的 Moka");}
+    }
     public static class RemoteException extends BadRequestException { public RemoteException(String message){super(message);} }
 }
