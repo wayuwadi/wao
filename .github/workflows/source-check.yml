@@ -37,4 +37,7 @@ jobs:
         run: python -m unittest discover -s tests/deployment -p 'test_*.py'
       - name: Check production build isolation and history mapping
         shell: pwsh
-        run: ./tests/deployment/WindowsBuildInputs.Tests.ps1
+        run: |
+          ./tests/deployment/WindowsBuildInputs.Tests.ps1
+          ./tests/deployment/WindowsOperationsMonitor.Tests.ps1
+          ./tests/deployment/WindowsOperationDelivery.Tests.ps1
