@@ -2,7 +2,6 @@
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
-import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, onMounted, ref, watch } from 'vue'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import { useRouter } from 'vue-router'
@@ -21,7 +20,6 @@ import type { KnowledgeBase, TrashEntry } from '@/types'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 const knowledgeFavorites = useKnowledgeFavoritesStore()
 const data = useDataStore()
-const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const tabs = useTabsStore()
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -298,7 +296,6 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
           class="kb-card"
           tabindex="0"
           :aria-label="`知识库：${k.name}`"
-          draggable="true" @dragstart="shortcuts.start(resourceShortcut('kb', k.id, k.name), $event)" @dragend="shortcuts.end"
           :style="{ '--kb-cover': k.color }"
           @click="openKb(k.id)"
           @keydown.enter.self.prevent="openKb(k.id)"

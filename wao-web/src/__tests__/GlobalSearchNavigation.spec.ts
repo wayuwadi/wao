@@ -57,16 +57,15 @@ it('正文读取期间和失败不伪报无匹配，重试后显示真实空结�
   expect(w.get('.empty').text()).toContain('没有匹配结果')
   w.unmount()
 })
-it('全局搜索可用原名找到隐藏且改名的功能，并用 Enter 打开原路由', async () => {
+it('全局搜索忽略旧全局改名并打开原路由', async () => {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/notes')
   const wrapper = mount(GlobalSearch, { global: { plugins: [router] } })
   await flushPromises()
   await wrapper.get('input').setValue('项目')
-  const result = wrapper.findAll('.result').find(item => item.text().includes('研发空间'))!
-  expect(result.text()).toContain('未固定')
-  await wrapper.get('input').setValue('研发空间')
-  await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+  const result = wrapper.findAll('.result').find(item => item.find('.r-title').text() === '项目')!
+  expect(result.text()).not.toContain('研发空间')
+  await result.trigger('click')
   await flushPromises()
   expect(router.currentRoute.value.path).toBe('/projects')
   wrapper.unmount()

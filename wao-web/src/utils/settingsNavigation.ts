@@ -3,7 +3,7 @@ export const SETTINGS_CATEGORIES = [
   { id: 'appearance', label: '外观与陪伴', icon: 'ri-palette-line', description: '主题、伙伴和界面习惯。' },
   { id: 'notes', label: '小记与 AI', icon: 'ri-quill-pen-line', description: '记录之后，让 AI 按你的习惯帮忙。' },
   { id: 'reminders', label: '通知与提醒', icon: 'ri-notification-3-line', description: '先选提醒来源，再调整具体内容。' },
-  { id: 'personal', label: '个人与账号', icon: 'ri-user-smile-line', description: '资料、登录方式和我的导航。' },
+  { id: 'personal', label: '个人与账号', icon: 'ri-user-smile-line', description: '资料与登录方式。' },
   { id: 'management', label: '管理与连接', icon: 'ri-settings-4-line', description: '组织、AI 账号和外部连接。' },
   { id: 'about', label: '关于 WAO', icon: 'ri-information-line', description: '认识 WAO 与四位伙伴，了解品牌、使用方式和产品故事。' },
 ] as const
@@ -18,9 +18,10 @@ export const SETTINGS_ENTRIES = {
   personal: [
     ['profile', '个人资料', '名称与头像文字', 'ri-user-smile-line'],
     ['account', '账号与登录', '登录方式、邮箱与密码', 'ri-shield-user-line'],
-    ['navigation', '我的导航', '常用入口与外部链接', 'ri-compass-3-line'],
   ],
   management: [
+    ['capabilities', '能力中心', '能力、授权与外部连接', 'ri-box-3-line'],
+    ['jenkins', 'Jenkins 部署中心', '构建、部署记录与失败日志', 'ri-hammer-line'],
     ['members', '组织与成员', '组织资料与真实成员', 'ri-community-line'],
     ['ai-accounts', 'AI 账号', '已连接的 AI 服务', 'ri-robot-2-line'],
     ['webhook', 'Webhook 配置', '前往能力中心统一管理机器人', 'ri-links-line'],
@@ -36,7 +37,7 @@ const entryCategories = new Map<string, string>(Object.entries(SETTINGS_ENTRIES)
 export function normalizeSettingsTab(value: unknown, hash = ''): string {
   if (['network-outage', 'version', 'wao-ai-capabilities'].includes(value as string)) return 'members'
   if (value === 'prefs') return 'appearance'
-  if (value === 'quick-links') return 'navigation'
+  if (['quick-links', 'navigation', 'capabilities', 'jenkins'].includes(value as string)) return 'management'
   if (value === 'notifications') return hash === '#tianren-notifications' ? 'tianren-notifications' : 'notification-policy'
   if (typeof value === 'string' && (categoryIds.has(value) || entryCategories.has(value))) return value
   return 'common'

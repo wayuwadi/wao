@@ -26,7 +26,7 @@ import {
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
-import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
+import { DEVOPS_LINKS } from '@/config/quickLinks'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
 import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
 import TianrenNotificationSettingsPanel from '@/components/settings/TianrenNotificationSettingsPanel.vue'
@@ -41,7 +41,6 @@ const preferences = usePreferenceStore()
 const ui = useUiStore()
 const router = useRouter()
 const route = useRoute()
-const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
@@ -56,6 +55,8 @@ const isDetail = computed(() => tab.value !== category.value)
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
+  if (next === 'capabilities') { void router.push('/capabilities'); return }
+  if (next === 'jenkins') { window.open(DEVOPS_LINKS.find(link => link.id === 'wao-jenkins')!.url, '_blank', 'noopener,noreferrer'); return }
   if (next === 'webhook') {
     void router.push({ path: '/capabilities', query: { area: 'bots' } })
     return
@@ -82,8 +83,6 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
 })
 function confirmCurrentSettings(): boolean {
   if (['common','appearance'].includes(tab.value) && homeDateSettings.value && !homeDateSettings.value.confirmLeave()) return false
-  if (tab.value === 'navigation' && navigationPanel.value
-      && !navigationPanel.value.confirmLeave()) return false
   if (tab.value === 'tianren-notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
   if (tab.value === 'notification-policy' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return false
@@ -465,10 +464,6 @@ async function bindFeishu() {
         <ProjectNotificationSettingsPanel v-else-if="tab === 'project-notifications'" />
         <TianrenNotificationSettingsPanel v-else-if="tab === 'tianren-notifications'" ref="tianrenNotificationPanel" />
 
-        <!-- 系统 · 菜单配置 -->
-        <template v-else-if="tab === 'navigation'">
-          <NavigationLinkSettingsPanel :key="session.userId" ref="navigationPanel" />
-        </template>
 
         <!-- 系统 · 通用 Webhook 配置 -->
         <template v-else-if="tab === 'webhook'">

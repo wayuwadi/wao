@@ -31,6 +31,6 @@ public class NavigationLayoutController {
     @PutMapping
     public ApiResponse<NavigationLayoutDto.Snapshot> put(@RequestBody NavigationLayoutDto.Save body,
             HttpServletRequest request) {
-        return ApiResponse.ok(layouts.save(member.id(request), body));
+        throw new cn.wayuwa.wao.common.BadRequestException("菜单由开发人员统一维护，不再支持个人配置");
     }
 }

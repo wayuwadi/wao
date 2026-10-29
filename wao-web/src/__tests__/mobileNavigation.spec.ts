@@ -91,13 +91,11 @@ describe('手机按需完整导航', () => {
     const { wrapper } = await mountNavigation()
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
 
-    expect(wrapper.findAll('.group-label').map((item) => item.text())).toEqual(
-      expect.arrayContaining(['个人', '工具']),
-    )
+    expect(wrapper.findAll('.group-label')).toHaveLength(0)
     expect(labels).toEqual(expect.arrayContaining(['项目', '待办', '日历']))
     expect(wrapper.find('.mobile-more-item').exists()).toBe(false)
     expect(wrapper.get('.item.active').attributes('title')).toBe('日历')
-    expect(wrapper.get('.item.active').attributes('draggable')).toBe('false')
+    expect(wrapper.get('.item.active').attributes('draggable')).not.toBe('true')
     expect(scrollIntoView).toHaveBeenCalled()
     expect(JSON.parse(localStorage.getItem('wao-nav-v1')!).foldedGroups).toEqual({
       个人: true,
@@ -130,7 +128,7 @@ describe('手机按需完整导航', () => {
     wrapper.unmount()
   })
 
-  it('桌面继续应用保存的分组折叠偏好和菜单拖拽能力', async () => {
+  it('桌面忽略旧分组折叠偏好并禁用菜单拖拽', async () => {
     window.matchMedia = ((query: string) => ({
       matches: false,
       media: query,
@@ -141,14 +139,14 @@ describe('手机按需完整导航', () => {
 
     const { wrapper } = await mountNavigation('/')
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
-    expect(labels).not.toEqual(expect.arrayContaining(['待办', '自动化']))
-    expect(wrapper.get('[title="项目"]').attributes('draggable')).toBe('false')
+    expect(labels).toEqual(expect.arrayContaining(['待办', '番茄钟', '习惯打卡']))
+    expect(wrapper.get('[title="项目"]').attributes('draggable')).not.toBe('true')
     const nav = useNavStore()
     nav.builtinMenusState = 'loaded'
     nav.externalAppsState = 'loaded'
     nav.layoutLoaded = true
     await flushPromises()
-    expect(wrapper.get('[title="项目"]').attributes('draggable')).toBe('true')
+    expect(wrapper.get('[title="项目"]').attributes('draggable')).not.toBe('true')
     wrapper.unmount()
   })
 })

@@ -163,9 +163,7 @@ describe('全量导航页', () => {
     while (wrapper.get('button[aria-label="上一页"]').attributes('disabled') === undefined) {
       await wrapper.get('button[aria-label="上一页"]').trigger('click')
     }
-    await wrapper.get('.customize-toggle').trigger('click')
-    expect(wrapper.findAll('.position select option').map(option => option.text()))
-      .toEqual(expect.arrayContaining(['不固定', '左侧菜单', '顶部菜单', '底部停靠']))
+    expect(wrapper.find('.customize-toggle').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -239,10 +237,9 @@ describe('全量导航页', () => {
     expect(wrapper.text()).not.toContain('30 天真实打开')
     await router.replace('/navigation?view=governance')
     await flushPromises()
-    await vi.waitFor(() => expect(wrapper.text()).toContain('当前账号近 30 天真实打开'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('当前账号近 30 天在用功能打开'))
     expect(fetchFunctionHealth).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('40')
-    expect(wrapper.text()).toContain('优先缩短高频操作路径')
+    expect(wrapper.text()).toContain('日历')
     wrapper.unmount()
   })
 
@@ -283,62 +280,14 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('隐藏菜单仍可发现，恢复外部应用及跨位置只保存个人快照', async () => {
+  it('全部功能仍可搜索打开，但不再提供自定义入口', async () => {
     const { wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('隐藏应用')
-    await wrapper.get('.customize-toggle').trigger('click')
-    expect(wrapper.text()).toContain('未固定')
-    await wrapper.get('.position select').setValue('TOP')
-    await flushPromises()
-    expect(saveNavigationLayout).toHaveBeenCalledWith(
-      'none',
-      expect.objectContaining({
-        items: expect.arrayContaining([
-          expect.objectContaining({ id: 'external:hidden-app', visible: true, placement: 'TOP' }),
-        ]),
-      }),
-    )
-    expect(wrapper.text()).toContain('顶部菜单')
-    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
-    expect(saveExternalAppRegistry).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('菜单保存失败恢复位置，并保留可重试的草稿', async () => {
-    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(new Error('网络不可用'))
-    const { wrapper } = await mountNavigation()
-    await wrapper.get('.customize-toggle').trigger('click')
-    await wrapper.get('.search input').setValue('隐藏应用')
-    await wrapper.get('.position select').setValue('TOP')
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('网络不可用')
-    expect((wrapper.get('.position select').element as HTMLSelectElement).value).toBe('HIDDEN')
-    await useNavStore().retryLayout()
-    await flushPromises()
-    expect(useNavStore().menuConfig('external:hidden-app')).toMatchObject({
-      placement: 'TOP',
-      visible: true,
-    })
-    wrapper.unmount()
-  })
-
-  it('整理入口直达个人菜单设置', async () => {
-    const { router, wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('日历')
     expect(wrapper.text()).toContain('日历')
+    expect(wrapper.find('.customize-toggle').exists()).toBe(false)
     expect(wrapper.find('.position').exists()).toBe(false)
-    expect(wrapper.find('.drag').exists()).toBe(false)
-    await wrapper.get('.customize-toggle').trigger('click')
-    expect(wrapper.find('.position').exists()).toBe(true)
-    expect(wrapper.text()).toContain('每次调整会自动保存')
-    await wrapper.get('.customize-toggle').trigger('click')
-    expect(wrapper.find('.position').exists()).toBe(false)
-    expect((wrapper.get('.search input').element as HTMLInputElement).value).toBe('日历')
+    expect(wrapper.find('[draggable="true"]').exists()).toBe(false)
     expect(saveNavigationLayout).not.toHaveBeenCalled()
-    await wrapper.get('.customize-toggle').trigger('click')
-    await wrapper.get('.more-settings').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=navigation')
     wrapper.unmount()
   })
 })

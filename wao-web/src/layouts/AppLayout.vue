@@ -7,7 +7,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
-import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import MobileShellMenu from '@/components/nav/MobileShellMenu.vue'
@@ -347,7 +346,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <RouterLink v-if="nav.collapsed && !isMobile && !desktopToolbar" class="header-brand" to="/" aria-label="WAO 首页">
           <WaoLogo wordmark />
         </RouterLink>
-        <TopMenuBar />
         <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
