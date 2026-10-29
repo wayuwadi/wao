@@ -59,3 +59,9 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 - `PUT /api/focus/{id}` 可增加可选 `habitId`，不能同时关联任务；结束小记包含习惯链接，不自动打卡。
 
 跨成员返回不存在，过期版本返回 409；详情与日期/连续统计定义见 [倒数日与习惯打卡](specs/countdowns-habits.md)。
+
+## Moka 考勤连接恢复（2026-10-29）
+
+`POST /api/attendance/sync?from=YYYY-MM-DD&to=YYYY-MM-DD` 增加可选 `confirmSessionReplacement`，默认 `false`。仅当前成员在浏览器明确确认可能使其他设备上的 Moka 登录失效后，本次手动请求才传 `true`。服务端先普通登录，遇到 Moka 的 `step=4` 时使用其返回的 `rid` 确认一次；授权不落库，不传给后续重登、定时同步或历史回填。验证码仍须本人在 Moka 处理。
+
+连接状态新增 `NEEDS_CONFIRMATION`，表示等待用户确认接管已有会话；该状态与 `NEEDS_LOGIN` 都暂停自动登录。浏览器兼容旧版保存的“其他会话”错误，重试时给出明确确认。不会新增 CLI/MCP 能力或扩大工作区令牌权限。

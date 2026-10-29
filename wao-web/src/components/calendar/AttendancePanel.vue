@@ -63,7 +63,40 @@ const attendanceGoals=computed(()=>{
 
 async function load(){if(!props.active)return;loading.value=true;error.value='';try{view.value=await fetchAttendance(props.from,props.to);emit('loaded',view.value.days)}catch(e){view.value=null;emit('loaded',[]);error.value=e instanceof Error?e.message:'读取考勤失败'}finally{loading.value=false}}
 function localIso(value:Date){return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`}
-async function sync(){if(!canSync.value)return;syncing.value=true;error.value='';try{const start=new Date(`${props.from}T00:00:00`);const end=new Date(`${props.to}T00:00:00`);let from=props.from;let to=props.to;if((end.getTime()-start.getTime())/86400000>62){const pivot=new Date();const year=start.getFullYear();const month=year===pivot.getFullYear()?pivot.getMonth():0;from=localIso(new Date(year,month,1));to=localIso(new Date(year,month+1,0))}await syncAttendance(from,to);await load();toast(`Moka 考勤已同步${from===props.from?'':'（当前月）'}`,'ri-refresh-line')}catch(e){error.value=e instanceof Error?e.message:'同步失败'}finally{syncing.value=false}}
+async function sync() {
+  if (!canSync.value) return
+  const needsConfirmation = view.value?.config.status === 'NEEDS_CONFIRMATION'
+    || (view.value?.config.status === 'NEEDS_LOGIN' && Boolean(view.value.config.lastError?.includes('其他会话')))
+  if (needsConfirmation && !window.confirm('Moka 检测到其他登录会话。确认由 WAO 重新连接并同步考勤？这可能使其他设备上的 Moka 登录失效。本次确认不会用于以后的自动登录。')) return
+  syncing.value = true
+  error.value = ''
+  try {
+    const start = new Date(`${props.from}T00:00:00`)
+    const end = new Date(`${props.to}T00:00:00`)
+    let from = props.from
+    let to = props.to
+    if ((end.getTime() - start.getTime()) / 86400000 > 62) {
+      const pivot = new Date()
+      const year = start.getFullYear()
+      const month = year === pivot.getFullYear() ? pivot.getMonth() : 0
+      from = localIso(new Date(year, month, 1))
+      to = localIso(new Date(year, month + 1, 0))
+    }
+    await syncAttendance(from, to, needsConfirmation)
+    await load()
+    toast(`Moka 考勤已同步${from === props.from ? '' : '（当前月）'}`, 'ri-refresh-line')
+  } catch (e) {
+    // 刷新后端的登录状态，让下一次手动重试能展示确认；保留本次错误。
+    try {
+      view.value = await fetchAttendance(props.from, props.to)
+      emit('loaded', view.value.days)
+    } catch { /* 保留已经显示的数据和原始同步错误 */ }
+    error.value = e instanceof Error ? e.message : '同步失败'
+    toast(error.value, 'ri-error-warning-line')
+  } finally {
+    syncing.value = false
+  }
+}
 defineExpose({ sync, syncing, loading, canSync })
 function openConfig(){configError.value='';const stored=localStorage.getItem(configDraftKey.value);if(stored){try{Object.assign(configDraft,JSON.parse(stored))}catch{copyConfig()}}else copyConfig();if(view.value?.config.status==='UNCONFIGURED')configDraft.enabled=true;showConfig.value=true}
 function copyConfig(){configDraft.enabled=view.value?.config.status==='UNCONFIGURED'||(view.value?.config.enabled??true);configDraft.username=view.value?.config.username||'';configDraft.vaultItemId=view.value?.config.vaultItemId||''}
@@ -74,7 +107,7 @@ async function submitDay(){if(!editing.value)return;savingDay.value=true;dayErro
 async function restoreDay(){if(!editing.value)return;savingDay.value=true;dayError.value='';try{const saved=await clearAttendanceDay(editing.value.date);replace(saved);localStorage.removeItem(dayDraftKey.value);editing.value=null;emit('close-day');toast('已恢复 Moka 原始考勤','ri-refresh-line')}catch(e){dayError.value=e instanceof Error?e.message:'恢复失败'}finally{savingDay.value=false}}
 function replace(day:AttendanceDay){if(!view.value)return;const index=view.value.days.findIndex(item=>item.date===day.date);if(index>=0)view.value.days[index]=day;emit('loaded',[...view.value.days]);load()}
 function closeDay(){if(savingDay.value)return;editing.value=null;emit('close-day')}
-function statusText(){const s=view.value?.config.status;return s==='OK'?'同步正常':s==='READY'?'等待首次同步':s==='SYNCING'?'同步中':s==='NEEDS_LOGIN'?'需要重新登录':s==='ERROR'?'同步异常':s==='DISABLED'?'自动同步已关闭':'尚未配置'}
+function statusText(){const s=view.value?.config.status;return s==='OK'?'同步正常':s==='READY'?'等待首次同步':s==='SYNCING'?'同步中':s==='NEEDS_CONFIRMATION'?'等待确认连接':s==='NEEDS_LOGIN'?'需要重新登录':s==='ERROR'?'同步异常':s==='DISABLED'?'自动同步已关闭':'尚未配置'}
 function historyText(){const config=view.value?.config;if(!config?.enabled)return '';if(config.historyComplete)return `近 12 个月已补齐 · ${config.historyTargetFrom} 起`;if(config.historySyncedFrom)return `历史自动补齐中 · 已回溯至 ${config.historySyncedFrom}，目标 ${config.historyTargetFrom}`;return `历史自动补齐准备中 · 将逐月回溯至 ${config.historyTargetFrom}`}
 function dayTypeText(v:AttendanceDayType){return v==='LEAVE'?'请假':v==='REST'?'休息日':'工作日'}
 watch(()=>[props.active,props.from,props.to],load)
