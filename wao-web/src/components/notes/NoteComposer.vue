@@ -723,7 +723,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-main :deep(img.md-img) { max-height: min(38vh, 320px); object-fit: contain; }
 .composer-editor-main :deep(.note-image-node img.md-img) { max-height: none; }
-.composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
+.composer-footer > span { color: var(--wao-text-3); font-size: 12px; }
 .composer-footer { border-top: 1px solid var(--wao-line); padding-top: 12px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; line-height: 1.6; overflow-wrap: anywhere; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
@@ -768,7 +768,7 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 .composer-tags button, .tag-picker button { padding: 5px 8px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
 .tag-chip, .tag-picker button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
 .tag-picker { padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; max-height: 150px; overflow: auto; }
-.tag-picker span { color: var(--wao-text-faint); font-size: 12px; }
+.tag-picker span { color: var(--wao-text-3); font-size: 12px; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
 .note-composer.fullscreen.writing-narrow { padding-inline: max(24px, calc((100vw - 650px) / 2)); }
 .note-composer.fullscreen.has-image-rail { padding-inline: max(24px, calc((100vw - 1440px) / 2)); }

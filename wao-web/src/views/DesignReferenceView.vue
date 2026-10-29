@@ -259,7 +259,7 @@ const detailDemoComment = ref('')
             <p>输入 /代码 或 /code 插入代码块，可选择语言、复制与自动换行。</p>
             <MarkdownEditor v-model="codeExample" slash-commands />
           </section>
-          <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>时间戳驱动的计时视图；示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
+          <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>内容区不超过 800px 时按计时、笔记、统计顺序叠放；准备时使用紧凑表盘，开始后显示大表盘。示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
           <section class="reference-section"><h2>倒数日 · 示例数据</h2><p>日期卡片复用主题颜色、简洁/浅底/描边样式；示例不创建提醒。</p><DateCounterCard :item="sampleDate" :summary="sampleDateSummary" /></section>
           <section class="reference-section clipboard-example">
             <h2>复制与链接 · 示例数据</h2>
@@ -302,7 +302,7 @@ const detailDemoComment = ref('')
               <p class="section-type-example">小节标题 · 清楚区分内容</p>
               <p class="card-type-example">卡片标题 · 一段具体的记录</p>
               <p class="body-example">随手写下来，稍后再慢慢整理。</p>
-              <p>辅助信息不抢主内容，也不能淡到难读。</p>
+              <p>草稿状态、筛选结果与阅读元信息使用辅助文字色，在明暗背景上保持清晰可读；禁用控件单独弱化。</p>
               <p>四象限任务标题与项目单行排列，长标题省略并提供完整提示；保存失败允许展开重试。项目拖拽的浅底表示移为子任务，行边缘插入线表示前后排序，更多菜单保留键盘入口。</p>
               <p class="help-type-example">说明 13px · 需要读懂的操作提示</p>
               <p class="measurements">页面 22（手机 20）· 小节 18 · 卡片 16 · 正文 14 · 说明 13 · 元信息 12</p>
