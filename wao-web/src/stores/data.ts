@@ -425,6 +425,9 @@ export const useDataStore = defineStore('data', () => {
     }
     syncing = true
     try {
+      const labels = useTaskLabelsStore()
+      // 标签独立保存，不在任务快照中；复用同一可见性/焦点同步周期。
+      if (labels.ready && !labels.loading) void labels.load()
       const [p, t] = await Promise.all([fetchProjects(), fetchTasks()])
       const fingerprint = serverSyncFingerprint(p, t)
       unchangedSyncRounds = fingerprint === lastServerSyncFingerprint

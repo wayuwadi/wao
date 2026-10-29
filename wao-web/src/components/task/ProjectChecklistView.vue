@@ -173,7 +173,7 @@ onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
 const selectedId = ref('')
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
-  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || data.taskSaveState(actions.sourceId(t.id)) === 'error')
+  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id))))
   const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found

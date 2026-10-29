@@ -1,3 +1,7 @@
+import {computed,defineComponent,h,ref} from 'vue'
+import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
+import {projectWorkItems} from '@/utils/projectWorkItems'
+import {useTaskLabelsStore} from '@/stores/taskLabels'
 import { beforeEach,describe,expect,it,vi } from 'vitest'
 import { mount,flushPromises } from '@vue/test-utils'
 import { createPinia,setActivePinia } from 'pinia'
@@ -12,7 +16,7 @@ vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[{taskId:'parent
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
 const options={global:{stubs:{MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
 beforeEach(()=>{
- vi.clearAllMocks()
+ vi.restoreAllMocks();vi.clearAllMocks()
  localStorage.clear();sessionStorage.clear();setActivePinia(createPinia())
  useSessionStore().accept({accountId:'workspace-test',member:{id:'wg',name:'成员',initial:'测',role:'',color:''},identities:[],createdAt:''})
  const data=seedDataStore();data.taskLoadState='loaded';data.apiLive=false
@@ -20,6 +24,42 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('项目与待办共用更新：子项优先级、标签筛选、新增与完成即时响应',async()=>{
+  const data=useDataStore(),labels=useTaskLabelsStore()
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  data.tasks[0]!.pr='P3'
+  const project=mount(defineComponent({setup(){const p=computed(()=>projectWorkItems(data.tasks));return()=>h(TaskQuadrantView,{tasks:p.value.items,contextTasks:p.value.items,itemRefs:p.value.refs,selectedIds:[],showDone:false,projectId:'sync-project'})}}),options)
+  const todo=mount(TodoView,options);await flushPromises()
+  await todo.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  const section=(w:any,n:number)=>w.findAll('.quadrant')[n].text()
+  expect(section(project,3)).toContain('独立子任务');expect(section(todo,3)).toContain('独立子任务')
+  data.updateSub('parent','child',{pr:'P0'});await flushPromises()
+  expect(section(project,0)).toContain('独立子任务');expect(section(todo,0)).toContain('独立子任务')
+  expect(section(project,3)).not.toContain('独立子任务');expect(section(todo,3)).not.toContain('独立子任务')
+  await todo.findAll('.task-navigation button').find(b=>b.text()==='联调')!.trigger('click');await flushPromises()
+  expect(todo.findAll('.quadrant-task').some((r:any)=>r.text().includes('独立子任务'))).toBe(true)
+  await labels.save({taskId:'parent',subId:'child',revision:1,tags:['已交接']});await flushPromises()
+  expect(todo.findAll('.quadrant-task')).toHaveLength(0)
+  await todo.findAll('.task-navigation button').find(b=>b.text()==='所有')!.trigger('click')
+  data.addSub('parent','新增同步子项');await flushPromises()
+  expect(project.text()).toContain('新增同步子项');expect(todo.text()).toContain('新增同步子项')
+  data.setSubState('parent','child','已完成');await flushPromises()
+  expect(project.text()).not.toContain('独立子任务');expect(todo.findAll('.quadrant-task').some((r:any)=>r.text().includes('独立子任务'))).toBe(false)
+  project.unmount();todo.unmount()
+ })
+ it('完成保存失败时保留待办及重试线索，成功后才移出',async()=>{
+  const data=useDataStore(),state=ref<'saving'|'error'|'saved'>('saving')
+  vi.spyOn(data,'taskSaveState').mockImplementation(()=>state.value)
+  const wrapper=mount(TodoView,options);await flushPromises()
+  data.tasks[1]!.status='已完成';await flushPromises()
+  expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(true)
+  state.value='error';await flushPromises()
+  expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(true)
+  state.value='saved';await flushPromises()
+  expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(false)
+  wrapper.unmount()
+ })
+
  it('标签浮层可取消勾选，失败保留草稿并允许重试',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
   await wrapper.findAll('.task-navigation>button').find(b=>b.text().includes('联调'))!.trigger('click');await flushPromises()
