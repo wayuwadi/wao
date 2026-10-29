@@ -9,14 +9,6 @@ import org.apache.ibatis.annotations.Param;
 public interface InternalNotificationMapper {
     @Insert("""
             INSERT INTO internal_notification (id, member_id, title, body, target_path, created_at)
-            VALUES (#{id}, #{memberId}, #{title}, #{body}, NULL, NOW(6))
-            ON DUPLICATE KEY UPDATE id = id
-            """)
-    int insertOperation(@Param("id") String id, @Param("memberId") String memberId,
-            @Param("title") String title, @Param("body") String body);
-
-    @Insert("""
-            INSERT INTO internal_notification (id, member_id, title, body, target_path, created_at)
             VALUES (#{id}, #{memberId}, #{title}, #{body}, #{target}, NOW(6))
             """)
     int insert(@Param("id") String id, @Param("memberId") String memberId, @Param("title") String title,

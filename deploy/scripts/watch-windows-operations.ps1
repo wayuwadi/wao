@@ -24,7 +24,7 @@ function Test-Endpoint([string]$Url, [string]$Kind) {
 }
 function Add-Event([string]$Status, [string]$Title, [string]$Body) {
     $script:state.pending = @($script:state.pending) + @(@{
-        id=[guid]::NewGuid().ToString(); status=$Status; title=$Title; body=$Body;
+        id=[guid]::NewGuid().ToString(); status=$Status; title=$Title; body=($env:COMPUTERNAME+"`n"+$Body);
         occurredAt=[DateTimeOffset]::UtcNow.ToString('o')
     })
 }
@@ -42,7 +42,7 @@ try {
         }
     } else { $script:state = @{ checks=@{}; pending=@(); lastBuild='' } }
     if ($TestNotification) {
-        Add-Event 'TEST' '运维通知链路测试' '这是明确标记的测试通知。用于验证 Windows 监控到 WAO 通知中心的持久化投递，不代表服务故障。'
+        Add-Event 'TEST' 'WAO 运维通知链路测试' '这是明确标记的测试通知。用于验证 Windows 监控到既有告警群的持久化投递，不代表服务故障。'
     } else {
         $checks = @{}
         foreach ($name in $config.services) {
@@ -101,3 +101,6 @@ try {
     $script:state.pending=@()
     Write-AtomicJson $statePath $script:state
 } finally { if ($lock) { $lock.Dispose() } }
+if ($config.webhookCredentialPath) {
+    & (Join-Path $PSScriptRoot 'send-windows-operation-alerts.ps1') -ConfigPath $ConfigPath
+}

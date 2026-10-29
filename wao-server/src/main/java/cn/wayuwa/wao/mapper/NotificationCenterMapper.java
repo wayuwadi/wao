@@ -12,12 +12,6 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface NotificationCenterMapper {
     String EVENT_UNION = """
-            SELECT n.id AS event_id, 'INTERNAL' AS event_type, n.title, n.body AS detail,
-                   '系统运维' AS actor_name, n.created_at AS occurred_at,
-                   n.target_path, 'INFO' AS severity
-              FROM internal_notification n
-             WHERE n.member_id = #{memberId} AND n.id LIKE 'ops:%'
-            UNION ALL
             SELECT CONCAT('mention-chat:', c.id) AS event_id, 'INTERNAL' AS event_type,
                    '聊天中有人 @ 你' AS title, c.content AS detail, sender.name AS actor_name,
                    c.created_at AS occurred_at, '/?chat=1' AS target_path, 'INFO' AS severity

@@ -40,3 +40,4 @@ jobs:
         run: |
           ./tests/deployment/WindowsBuildInputs.Tests.ps1
           ./tests/deployment/WindowsOperationsMonitor.Tests.ps1
+          ./tests/deployment/WindowsOperationDelivery.Tests.ps1
