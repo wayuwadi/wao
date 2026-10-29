@@ -6,7 +6,7 @@ import { useFocusStore } from '@/stores/focus'
 import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
 import { fetchFocus } from '@/api/focus'
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: { task: 'shared', sub: 'child' } }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: { focusTask: 'shared', focusSub: 'child' } }) }))
 vi.mock('@/api/focus', async original => ({ ...await original<object>(), fetchFocus: vi.fn(), startFocus: vi.fn(), changeFocus: vi.fn() }))
 beforeEach(() => {
  localStorage.clear(); setActivePinia(createPinia())

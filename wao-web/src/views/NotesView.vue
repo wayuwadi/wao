@@ -1074,13 +1074,17 @@ useReleaseNoteExperience({
     return true
   },
 })
-watch([() => route.query.findRequest, () => route.query.note, () => route.query.find, () => data.loadStates.docs, () => data.loadStates.knowledge], () => {
+watch([() => route.query.findRequest, () => route.query.note, () => route.query.find, () => data.loadStates.docs, () => data.loadStates.knowledge], async () => {
   const id = typeof route.query.note === 'string' ? route.query.note : ''
   const term = typeof route.query.find === 'string' ? route.query.find : ''
   const key = `${id}:${term}:${route.query.findRequest ?? ''}`
-  if (id && term && data.loadStates.docs === 'loaded' && data.loadStates.knowledge === 'loaded' && key !== lastSearchRoute) {
+  if (id && data.loadStates.docs === 'loaded' && data.loadStates.knowledge === 'loaded' && key !== lastSearchRoute) {
     lastSearchRoute = key
-    void locateSearchNote(id, term, route.query.match !== 'title')
+    const member = session.currentUser.id
+    const loaded = await data.ensureDocLoaded(id)
+    if (member !== session.currentUser.id || route.query.note !== id || lastSearchRoute !== key) return
+    if (!loaded) { lastSearchRoute = ''; refreshError.value = data.docLoadErrors[id] || '小记读取失败，请重试'; return }
+    await locateSearchNote(id, term, route.query.match !== 'title')
   }
 }, { immediate: true })
 

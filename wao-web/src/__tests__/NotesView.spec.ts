@@ -75,6 +75,17 @@ function composer(note?: Doc) {
 }
 async function triggerFour(wrapper: ReturnType<typeof mount>) { wrapper.getComponent(NoteAiStageButton).vm.$emit('four'); await flushPromises() }
 describe('小记集中记录空间', () => {
+  it('专注结束后仅带小记编号的入口读取新建小记并展开定位', async () => {
+    const data = useDataStore()
+    data.loadStates.docs = 'loaded'; data.loadStates.knowledge = 'loaded'
+    vi.mocked(fetchDoc).mockResolvedValueOnce({ ...doc('focus-note', '专注验收笔记'), tags: ['番茄钟'] })
+    const wrapper = await view(undefined, { note: 'focus-note' })
+    await flushPromises()
+    expect(fetchDoc).toHaveBeenCalledWith('focus-note')
+    await setNoteBodyHeight(wrapper, 'focus-note', 500)
+    expect(wrapper.get('[data-note-id="focus-note"]').classes()).toContain('expanded')
+    expect(wrapper.get('[data-note-id="focus-note"]').text()).toContain('番茄钟')
+  })
   it('卡片编辑只保留首行可输入标题，标签位于正文之后且更多操作保留草稿', async () => {
     const data = useDataStore(); data.docs.one = { ...doc('one', '单行编辑标题'), tags: ['思考'] }
     const wrapper = await view(document.body)

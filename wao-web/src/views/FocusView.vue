@@ -14,9 +14,9 @@ const focus = useFocusStore(), data = useDataStore(), ui = useUiStore(), route =
 const mode = ref<FocusMode>('pomodoro'), minutes = ref(25), task = ref(''), search = ref('')
 const items = computed(() => projectWorkItems(data.tasks))
 const choices = computed(() => items.value.items.filter(item => item.id === task.value || !search.value || item.title.toLowerCase().includes(search.value.toLowerCase())))
-watch(() => [route.query.task, route.query.sub, focus.identity, items.value.items.length], () => {
+watch(() => [route.query.focusTask, route.query.focusSub, focus.identity, items.value.items.length], () => {
   if (focus.active) return
-  const match = Object.entries(items.value.refs).find(([, value]) => value.taskId === route.query.task && (value.subId || '') === (route.query.sub || ''))
+  const match = Object.entries(items.value.refs).find(([, value]) => value.taskId === route.query.focusTask && (value.subId || '') === (route.query.focusSub || ''))
   if (match) task.value = match[0]
 }, { immediate: true })
 watch(() => focus.identity, () => { task.value = ''; search.value = '' })
