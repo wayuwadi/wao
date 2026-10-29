@@ -6,11 +6,14 @@ export const EMPTY_RICH_DOCUMENT: RichDocNode = {
   content: [{ type: 'paragraph' }],
 }
 
-/** 兼容旧 JSON / Markdown 的段落内图片；当前编辑器图片是块节点，不能留在文本节点内。 */
+/** 兼容旧 JSON / Markdown 的段落内块节点，保留原文顺序与格式，不修改输入。 */
 export function editorBlockImages(document: RichDocNode): RichDocNode {
+  const blockTypes = new Set(['image', 'paragraph', 'heading', 'blockquote', 'bulletList',
+    'orderedList', 'taskList', 'codeBlock', 'horizontalRule', 'table', 'details', 'callout',
+    'columns', 'fileCard', 'mediaCard', 'linkCard', 'drawingCard', 'mermaid', 'blockMath'])
   function normalize(node: RichDocNode): RichDocNode[] {
     const content = node.content
-    if (!['paragraph', 'heading'].includes(node.type) || !content?.some(child => child.type === 'image')) return [node]
+    if (!['paragraph', 'heading'].includes(node.type) || !content?.some(child => blockTypes.has(child.type))) return [node]
     const result: RichDocNode[] = []
     let inline: RichDocNode[] = []
     function flush() {
@@ -22,7 +25,7 @@ export function editorBlockImages(document: RichDocNode): RichDocNode {
       inline = []
     }
     for (const child of content) {
-      if (child.type === 'image') { flush(); result.push(child) }
+      if (blockTypes.has(child.type)) { flush(); result.push(child) }
       else inline.push(child)
     }
     flush()
