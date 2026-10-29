@@ -67,7 +67,7 @@ describe('富文本剪贴板', () => {
     expect(html).toContain('<h2>标题</h2>'); expect(html).toContain('list-style-type:decimal')
     expect(html).toContain('list-style-type:disc'); expect(html).toContain('white-space:pre-wrap'); expect(html).not.toContain('script')
   })
-  it('旧浏览器复制事件同时写入 HTML 与 Markdown 并恢复焦点', async () => {
+  it('旧浏览器复制事件同时写入 HTML 与原文并恢复焦点', async () => {
     vi.stubGlobal('navigator', { clipboard: undefined })
     const input = document.createElement('input'); document.body.appendChild(input); input.focus()
     const values: Record<string, string> = {}
@@ -76,7 +76,7 @@ describe('富文本剪贴板', () => {
       document.dispatchEvent(event); return true
     }) })
     expect(await copyRichContent('<h2>标题</h2>', '## 标题')).toBe(true)
-    expect(values['text/html']).toBe('<h2>标题</h2>'); expect(values['text/plain']).toBe('## 标题')
+    expect(values['text/html']).toBe('<h2>标题</h2>'); expect(values['text/plain']).toBe('标题')
     expect(document.activeElement).toBe(input); input.remove()
   })
 })

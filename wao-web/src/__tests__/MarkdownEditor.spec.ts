@@ -2370,7 +2370,7 @@ describe('跨应用复制选区', () => {
     expect(e.getJSON()).toEqual(before)
     w.unmount()
   })
-  it('只复制选中的正文，HTML 保持标题语义，纯文本保留 Markdown', async () => {
+  it('只复制选中的正文，HTML 保持标题语义，纯文本不携带 Markdown 标记', async () => {
     const w = await mountEditor({ modelValue: '## 标题\n\n不要复制的后文' })
     const e = (w.vm as unknown as { editor: Editor }).editor
     e.commands.setTextSelection({ from: 1, to: 3 })
@@ -2379,7 +2379,7 @@ describe('跨应用复制选区', () => {
     Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, value: string) => values[type] = value } })
     w.get('.tiptap').element.dispatchEvent(event)
     expect(values['text/html']).toContain('<h2')
-    expect(values['text/plain']).toContain('## 标题')
+    expect(values['text/plain']).toBe('标题')
     expect(values['text/plain']).not.toContain('后文')
     expect(event.defaultPrevented).toBe(true)
     w.unmount()
@@ -2487,4 +2487,55 @@ it('简洁任务描述支持斜线搜索与键盘插入，取消保留原文', a
   expect(document.querySelector('.slash-menu')).toBeNull()
   expect(e.getText().trim()).toBe('/task')
   w.unmount()
+})
+
+describe('任务编辑器的路径和真实 URL', () => {
+  it('文件路径加载、输入和粘贴不误识别为链接', async () => {
+    const path = String.raw`dws\demo\fact_demo_sellin.py`
+    const w = await mountEditor({ modelValue: `1. ${path}` })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(w.find('.tiptap a').exists()).toBe(false)
+    e.commands.setContent('<p></p>')
+    e.commands.insertContent(`${path} `)
+    await nextTick()
+    expect(w.find('.tiptap a').exists()).toBe(false)
+    e.commands.setContent('<p></p>')
+    e.view.pasteText(path, new Event('paste') as ClipboardEvent)
+    await nextTick()
+    expect(w.find('.tiptap a').exists()).toBe(false)
+    expect(e.getText()).toBe(path)
+    w.unmount()
+  })
+
+  it('历史路径内的误链接恢复成原文，复制时不带 Markdown 转义', async () => {
+    const w = await mountEditor({ modelValue: String.raw`1. dws\demo\fact_demo_[sellin.py](http://sellin.py)` })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(w.find('.tiptap a').exists()).toBe(false)
+    e.commands.selectAll()
+    const values: Record<string, string> = {}
+    const event = new Event('copy', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, value: string) => values[type] = value } })
+    w.get('.tiptap').element.dispatchEvent(event)
+    expect(values['text/plain']).toBe(String.raw`1. dws\demo\fact_demo_sellin.py`)
+    expect(values['text/html']).not.toContain('<a')
+    w.unmount()
+  })
+
+  it('真实 URL 无需尾部空格即可粘贴成链接，任务默认模式可单击打开', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const w = await mountEditor({ modelValue: '' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const url = 'https://example.com/fact_demo_sellin.py?q=goods_type'
+    e.view.pasteText(url, new Event('paste') as ClipboardEvent)
+    await nextTick()
+    expect(w.get('.tiptap a').attributes('href')).toBe(url)
+    await w.get('.tiptap a').trigger('click')
+    expect(open).toHaveBeenCalledExactlyOnceWith(url, '_blank', 'noopener,noreferrer')
+    const markdown = e.getMarkdown()
+    w.unmount()
+    const restored = await mountEditor({ modelValue: markdown })
+    expect(restored.get('.tiptap a').attributes('href')).toBe(url)
+    restored.unmount()
+    open.mockRestore()
+  })
 })
