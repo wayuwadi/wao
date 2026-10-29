@@ -114,9 +114,10 @@ defineExpose({ openAt, close })
 </template>
 
 <style scoped>
-.wao-context-menu { position: fixed; z-index: 3000; min-width: 190px; max-width: min(280px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
-.wao-context-label { padding: 6px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wao-text-3); font-size: 12px; }
-.wao-context-menu button { display: block; width: 100%; min-height: 34px; border: 0; border-radius: 6px; padding: 6px 9px; background: transparent; color: var(--wao-text); font: inherit; text-align: left; cursor: pointer; }
+/* Teleport 到 body 后不再继承任务区域字号，浮层须明确使用同一正文基线。 */
+.wao-context-menu { position: fixed; z-index: 3000; min-width: 190px; max-width: min(280px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); font-family:var(--wao-font); font-size:var(--wao-font-body); font-weight:400; line-height:1.5; }
+.wao-context-label { padding: 6px var(--wao-space-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wao-text-3); font-size:var(--wao-font-caption); }
+.wao-context-menu button { display: block; width: 100%; min-height: 34px; border: 0; border-radius:var(--wao-radius-control); padding: 6px var(--wao-space-1); background: transparent; color: var(--wao-text); font: inherit; text-align: left; cursor: pointer; }
 .wao-context-menu button:hover, .wao-context-menu button:focus-visible { outline: none; background: var(--wao-bg-hover); }
 .wao-context-menu button:disabled { opacity: .5; cursor: not-allowed; }
 .wao-context-menu button.danger { color: var(--wao-danger-strong); }
