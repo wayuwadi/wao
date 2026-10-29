@@ -1912,7 +1912,7 @@ const slashActions = computed<SlashAction[]>(() => [
   { id: 'callout-warning', label: '警告提示块', hint: '风险与注意事项', icon: 'ri-alert-line', run: () => insertCallout('warning'), full: true },
   { id: 'callout-danger', label: '危险提示块', hint: '高风险或禁止事项', icon: 'ri-error-warning-line', run: () => insertCallout('danger'), full: true },
   { id: 'table', label: '表格', hint: '3 × 3 可调整表格', icon: 'ri-table-2', run: insertTable, full: true },
-  { id: 'code', label: '代码块', hint: '带语言与高亮', icon: 'ri-code-box-line', run: () => editor.value?.chain().focus().toggleCodeBlock().run(), full: true },
+  { id: 'code', label: '代码块', hint: '代码编辑 · 语言、高亮与复制', icon: 'ri-code-box-line', run: () => editor.value?.chain().focus().toggleCodeBlock().run() },
   { id: 'math-inline', label: '行内公式', hint: 'LaTeX 行内公式', icon: 'ri-functions', run: () => insertMath(false), full: true },
   { id: 'math-block', label: '块级公式', hint: '独立展示 LaTeX 公式', icon: 'ri-functions', run: () => insertMath(true), full: true },
   { id: 'diagram-flowchart', label: '流程图', hint: 'Mermaid 流程可视化', icon: 'ri-flow-chart', run: () => insertMermaid('flowchart'), full: true },
@@ -1935,6 +1935,11 @@ const filteredSlashActions = computed(() => {
 
 function updateSlashMenu(e: Editor) {
   if (!(props.advanced || props.slashCommands) || props.readonly || composing.value) return
+  if (e.isActive('codeBlock')) {
+    slashOpen.value = false
+    slashFromInput.value = false
+    return
+  }
   const { $from } = e.state.selection
   const text = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
   const match = /^\/([^\s/]*)$/.exec(text)

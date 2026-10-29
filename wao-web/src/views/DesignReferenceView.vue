@@ -249,7 +249,8 @@ const detailDemoComment = ref('')
           <section class="reference-section"><h2>小记 · 图文整理</h2><p>合成样例，只验证排版；不读取小记或调用模型。</p><iframe title="图文整理合成示例" sandbox="" referrerpolicy="no-referrer" :srcdoc="recapDocument(recapExample, theme === 'dark')" class="recap-example" /></section>
           <section class="reference-section">
             <h2>代码块 · 示例数据</h2>
-            <MarkdownEditor v-model="codeExample" :advanced="true" />
+            <p>输入 /代码 或 /code 插入代码块，可选择语言、复制与自动换行。</p>
+            <MarkdownEditor v-model="codeExample" slash-commands />
           </section>
         <section class="reference-section">
             <h3>可调侧栏 · 演示</h3>

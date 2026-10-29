@@ -2439,6 +2439,36 @@ describe('拖入文档附件', () => {
   })
 })
 
+it.each([false, true])('compact=%s 的斜线菜单支持代码编辑及保存回读', async (compact) => {
+  setActivePinia(createPinia())
+  const w = await mountEditor({ modelValue: '', slashCommands: true, compact })
+  const e = (w.vm as unknown as { editor: Editor }).editor
+  e.commands.insertContent(compact ? '/代码' : '/code')
+  await nextTick()
+  expect(document.querySelectorAll('.slash-menu button')).toHaveLength(1)
+  expect(document.querySelector('.slash-menu')?.textContent).toContain('代码块')
+  await w.get('.tiptap').trigger('keydown', { key: 'Enter' })
+  expect(e.isActive('codeBlock')).toBe(true)
+  expect(e.getText().trim()).toBe('')
+  await nextTick()
+  await w.get('select[aria-label="代码语言"]').setValue('javascript')
+  e.commands.insertContent('/code')
+  await nextTick()
+  expect(document.querySelector('.slash-menu')).toBeNull()
+  expect(e.getText().trim()).toBe('/code')
+  e.commands.insertContent('\nconst answer = 42;')
+  await nextTick()
+  const markdown = w.emitted('update:modelValue')!.slice(-1)[0]![0] as string
+  expect(markdown).toContain('```javascript')
+  expect(markdown).toContain('const answer = 42;')
+  w.unmount()
+  const restored = await mountEditor({ modelValue: markdown, slashCommands: true, compact })
+  const restoredEditor = (restored.vm as unknown as { editor: Editor }).editor
+  expect(restoredEditor.getJSON().content?.[0]?.attrs?.language).toBe('javascript')
+  expect(restoredEditor.getText()).toContain('const answer = 42;')
+  restored.unmount()
+})
+
 it('简洁任务描述支持斜线搜索与键盘插入，取消保留原文', async () => {
   setActivePinia(createPinia())
   const w = await mountEditor({ modelValue: '', slashCommands: true })
