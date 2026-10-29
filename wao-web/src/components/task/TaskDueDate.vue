@@ -45,7 +45,7 @@ function save() { emit('change', draft.value); close() }
   <button ref="anchor" class="due-trigger" :class="{ overdue:info.overdue > 0 }" aria-label="选择截止日期" aria-haspopup="dialog" :aria-expanded="open" :disabled="disabled" @click="show">
     <i class="ri-calendar-line" aria-hidden="true"></i><span>{{ info.label }}</span><span v-if="info.overdue" class="overdue-days">已延期 {{ info.overdue }} 天</span>
   </button>
-  <CellMenu v-if="open" :anchor="anchor" :min-width="280" custom-content style="max-height:calc(100dvh - 32px)" @close="close">
+  <CellMenu v-if="open" :anchor="anchor" :min-width="280" custom-content style="max-height:calc(100dvh - 32px)" @close="close" @ready="focusDay">
     <section ref="calendar" class="deadline-calendar" role="dialog" aria-label="选择截止日期">
       <div class="date-shortcuts"><WaoButton variant="ghost" @click="choose(today)"><i class="ri-sun-line"></i>今天</WaoButton><WaoButton variant="ghost" @click="choose(shiftDay(today, 1))">明天</WaoButton><WaoButton variant="ghost" @click="choose(shiftDay(today, 7))">一周后</WaoButton></div>
       <div class="month-nav"><strong>{{ month.slice(0,4) }}年{{ Number(month.slice(5,7)) }}月</strong><WaoButton variant="ghost" aria-label="上个月" @click="moveMonth(-1)"><i class="ri-arrow-left-s-line"></i></WaoButton><WaoButton variant="ghost" aria-label="下个月" @click="moveMonth(1)"><i class="ri-arrow-right-s-line"></i></WaoButton></div>

@@ -50,18 +50,19 @@ function cancel() { try { localStorage.removeItem(key.value); editing.value = fa
  </div>
 </template>
 <style scoped>
-.task-labels { position:relative; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font:inherit; }
+.task-labels { position:relative; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
 .label-chip { background:var(--wao-primary-soft); color:var(--wao-primary-text); border-radius:var(--wao-radius-pill); padding:2px var(--wao-space-1); font-size:var(--wao-font-caption); }
 button { border:0; background:transparent; color:var(--wao-primary-text); font:inherit; cursor:pointer; min-height:32px; }
 button:disabled { opacity:.5; cursor:default; }
 form { position:absolute; inset-inline-start:0; top:100%; z-index:20; display:flex; flex-direction:column; gap:var(--wao-space-1); width:min(320px,100%); padding:var(--wao-space-2); border:1px solid var(--wao-line); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); box-shadow:var(--wao-shadow-pop); }
 input { flex:1; min-width:150px; padding:var(--wao-space-1); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
 .suggestions { display:flex; flex-direction:column; width:100%; max-height:160px; overflow:auto; }
-.suggestions button { display:flex; align-items:center; gap:var(--wao-space-1); text-align:left; color:var(--wao-text); border-radius:var(--wao-radius-control); }
+.suggestions button { display:flex; align-items:center; gap:var(--wao-space-1); text-align:left; color:var(--wao-text); border-radius:var(--wao-radius-control); min-height:34px; padding:6px var(--wao-space-1); overflow-wrap:anywhere; }
 .suggestions button:hover { background:var(--wao-bg-hover); }
-.suggestions button[aria-pressed=true] { color:var(--wao-primary-text); }
+.suggestions button[aria-pressed=true] { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
 footer { display:flex; justify-content:flex-end; gap:var(--wao-space-1); border-top:1px solid var(--wao-line); padding-top:var(--wao-space-1); }
 .save-labels { background:var(--wao-primary-soft); border-radius:var(--wao-radius-control); padding-inline:var(--wao-space-2); }
 .label-error { color:var(--wao-danger-strong); width:100%; }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
+@media(pointer:coarse) { button { min-height:44px; } }
 </style>
