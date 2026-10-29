@@ -341,9 +341,11 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (event instanceof KeyboardEvent) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
     event.preventDefault()
-  } else if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')) return
-  const task = props.contextItems.find(t => t.id === id)
+  } else if (event.target instanceof Element && event.target.closest('input:not([type=checkbox]), textarea, [contenteditable="true"]')) return
+  const task = props.contextItems.find(t => t.id === id) ?? props.items.find(t => t.id === id)
   if (!task) return
+  event.preventDefault()
+  event.stopPropagation()
   void contextMenu.value?.openAt(event, task.title || '未命名任务', [
     { id: 'add-child', label: '添加子任务', disabled: props.busy || actions.busy(id), run: () => startChild(id) },
     { id: 'tags', label: '设置标签', run: () => { selectedId.value = id; detailOnlySelection.value = true } },
@@ -371,7 +373,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </div>
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
-      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
         <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
@@ -410,7 +412,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           <MarkdownEditor v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" />
         </div>
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
-          <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
+          <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu.capture="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
             <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
             <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
             <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>

@@ -927,3 +927,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .header .quick-actions :deep(.tools-trigger:not(.has-update)) { border-color: transparent; }
 }
 </style>
+
+<style scoped>
+.content:has(.matrix-workspace) { overflow:hidden; }
+.page-stage:has(.matrix-workspace) { flex:1 1 0; min-height:0; overflow:hidden; align-items:stretch; }
+.page-body:has(.matrix-workspace) { display:flex; min-height:0; overflow:hidden; }
+</style>

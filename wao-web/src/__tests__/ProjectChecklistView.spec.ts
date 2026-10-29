@@ -29,6 +29,17 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('任务复选框右键打开功能菜单，不切换完成状态', async () => {
+    const { wrapper, data } = setup()
+    const checkbox = wrapper.get('[data-task-id="parent"] input[type=checkbox]')
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    checkbox.element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.body.textContent).toContain('添加子任务')
+    expect(data.tasks[0]!.status).toBe('待办')
+  })
+
   it('专注入口使用独立关联参数，避免触发全局任务抽屉', async () => {
     const { wrapper } = setup()
     await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')

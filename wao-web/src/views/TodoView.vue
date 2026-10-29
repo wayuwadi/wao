@@ -58,7 +58,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
 function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUUID(),name:heading.value+(query.value?' · '+query.value:''),selection:selection.value,query:query.value}]) }
 </script>
 <template>
- <div class="task-workspace">
+ <div class="task-workspace" :class="{'matrix-workspace':layout==='quadrant' && !['review','legacy'].includes(selection)}">
   <nav class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <p>清单</p><button v-for="project in data.projects" :key="project.id" :class="{active:selection==='project:'+project.id}" @click="selection='project:'+project.id"><i class="ri-list-check"></i>{{ project.name }}</button>
@@ -72,9 +72,8 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <TodoLegacyView v-else-if="selection==='legacy'" />
    <template v-else>
-    <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button @click="ui.openNewTask()">新建任务</button></div></header>
     <TodayDates v-if="selection==='today'" />
-    <div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div>
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
     <ProjectChecklistView v-else-if="layout==='list'" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed'" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
@@ -96,15 +95,19 @@ button:hover { background:var(--wao-bg-hover); }
 header { display:flex; align-items:center; gap:var(--wao-space-1); margin-bottom:var(--wao-space-2); }
 h1 { margin:0; font-size:22px; }
 .count { color:var(--wao-text-3); }
-.layout-switch { display:flex; gap:var(--wao-space-1); margin-left:auto; }
+.layout-switch { display:flex; gap:var(--wao-space-1); flex-shrink:0; }
 .layout-switch button,.workspace-tools button { padding:var(--wao-space-1); }
-.workspace-tools { display:flex; gap:var(--wao-space-1); margin-bottom:var(--wao-space-2); }
+.workspace-tools { display:flex; gap:var(--wao-space-1); margin-left:auto; min-width:0; }
 input { min-width:0; color:var(--wao-text); background:var(--wao-bg-sub); font:inherit; padding:var(--wao-space-1); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); }
-.workspace-tools input { flex:1; }
+.workspace-tools input { width:200px; max-width:100%; }
 .quick-add { display:flex; align-items:center; gap:var(--wao-space-1); background:var(--wao-bg-sub); border-radius:var(--wao-radius-control); margin-bottom:var(--wao-space-2); padding:0 var(--wao-space-1); }
 .quick-add input { border:0; background:transparent; flex:1; }
 .quick-add button { color:var(--wao-primary-text); }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
+.matrix-workspace { flex:1; width:100%; min-height:0; overflow:hidden; }
+.matrix-workspace .workspace-main { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.matrix-workspace .workspace-main>header,.matrix-workspace .quick-add { flex-shrink:0; }
+.matrix-workspace .task-navigation { min-height:0; max-height:none; }
 @media(max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
-@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;}button {min-height:44px;} }
+@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .matrix-workspace {display:flex;flex-direction:column;} .matrix-workspace .task-navigation {max-height:120px;flex-shrink:0;} .matrix-workspace .workspace-main {flex:1;}button {min-height:44px;} }
 </style>
