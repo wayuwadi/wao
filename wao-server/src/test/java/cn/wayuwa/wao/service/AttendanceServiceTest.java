@@ -156,6 +156,51 @@ class AttendanceServiceTest {
         verify(moka,times(1)).login(connector.getUsername(),"secret",true);
     }
 
+    @Test void automaticSyncRenewsExpiredCachedSessionOnceWithoutTakeover() {
+        AttendanceConnectorEntity connector=connector("OK");
+        connector.setUsername("test@example.com");
+        connector.setSessionCiphertext(new byte[]{1}); connector.setSessionNonce(new byte[]{2});
+        connector.setRemoteEmployeeId("old-employee");
+        when(connectors.selectById("wg")).thenReturn(connector);
+        when(crypto.decrypt(any(),any())).thenReturn("{\"uid\":\"old-u\",\"jwt\":\"old-j\"}");
+        when(vault.revealSecret("vault-1","wg")).thenReturn("secret");
+        var fresh=new MokaAttendanceClient.Session("fresh-u","fresh-j");
+        when(moka.login("test@example.com","secret")).thenReturn(fresh);
+        when(crypto.encrypt(any())).thenReturn(new VaultCryptoService.Encrypted(new byte[]{3},new byte[]{4}));
+        when(moka.employeeId(fresh)).thenReturn("fresh-employee");
+        LocalDate date=LocalDate.now(AttendanceService.ZONE);
+        when(moka.day(any(),any(),any())).thenThrow(new MokaAttendanceClient.SessionExpiredException())
+                .thenReturn(new MokaAttendanceClient.RemoteDay(date,date.atTime(9,0),date.atTime(19,30),"WORKDAY",""));
+
+        service.refreshTodayIfStale("wg",date);
+
+        assertThat(connector.getStatus()).isEqualTo("OK");
+        assertThat(connector.getLastSyncedAt()).isNotNull();
+        assertThat(connector.getRemoteEmployeeId()).isEqualTo("fresh-employee");
+        verify(moka,times(1)).login("test@example.com","secret");
+        verify(moka,org.mockito.Mockito.never()).login(any(),any(),org.mockito.ArgumentMatchers.eq(true));
+    }
+
+    @Test void temporaryRemoteFailureRemainsEligibleAndRecoversOnNextAutomaticAttempt() {
+        AttendanceConnectorEntity connector=connector("OK");
+        connector.setSessionCiphertext(new byte[]{1}); connector.setSessionNonce(new byte[]{2});
+        connector.setRemoteEmployeeId("employee");
+        when(connectors.selectById("wg")).thenReturn(connector);
+        when(connectors.selectList(any())).thenReturn(List.of(connector));
+        when(crypto.decrypt(any(),any())).thenReturn("{\"uid\":\"u\",\"jwt\":\"j\"}");
+        LocalDate date=LocalDate.now(AttendanceService.ZONE);
+        when(moka.day(any(),any(),any())).thenThrow(new MokaAttendanceClient.RemoteException("temporary timeout"))
+                .thenReturn(new MokaAttendanceClient.RemoteDay(date,date.atTime(9,0),date.atTime(19,30),"WORKDAY",""));
+
+        service.refreshTodayIfStale("wg",date);
+        assertThat(connector.getStatus()).isEqualTo("ERROR");
+        assertThat(service.enabledMembers()).containsExactly("wg");
+        service.refreshTodayIfStale("wg",date);
+        assertThat(connector.getStatus()).isEqualTo("OK");
+        assertThat(connector.getLastError()).isNull();
+        verify(moka,org.mockito.Mockito.never()).login(any(),any());
+    }
+
     @Test void failedHistoryBackfillReleasesLeaseWithoutAdvancingCursor() {
         LocalDate today=LocalDate.of(2026,9,3); AttendanceConnectorEntity connector=connector("OK");
         connector.setHistorySyncedFrom(LocalDate.of(2026,9,1));
