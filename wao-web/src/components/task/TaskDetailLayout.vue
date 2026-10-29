@@ -144,7 +144,7 @@ defineExpose({ selectSection, openProperties })
       >
     </div>
     <div class="detail-body">
-      <div ref="scrollArea" class="detail-scroll" @scroll.passive="remember()">
+      <div ref="scrollArea" class="detail-scroll" tabindex="0" role="region" aria-label="任务正文" @scroll.passive="remember()">
         <section
           v-show="section === 'overview'"
           :id="`${id}-overview-panel`"
@@ -200,6 +200,7 @@ defineExpose({ selectSection, openProperties })
         v-show="propertiesOpen"
         :id="`${id}-properties`"
         class="detail-properties"
+        tabindex="0"
         aria-label="属性与关联"
       >
         <div class="properties-heading">
