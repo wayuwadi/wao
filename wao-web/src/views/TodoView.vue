@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { searchProjectTasks } from '@/utils/projectTaskSearch'
+import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
+import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import { useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -16,10 +19,19 @@ import TodoDayView from '@/components/todo/TodoDayView.vue'
 import TodoLegacyView from './TodoLegacyView.vue'
 import TodayDates from '@/components/routines/TodayDates.vue'
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), labels = useTaskLabelsStore(), route = useRoute()
-const selection = ref('all'), query = ref(''), layout = ref<'list' | 'quadrant'>('list'), collapsed = ref<string[]>([]), selectedDay = ref(data.today)
+const memory = useTaskViewMemory('todo', () => ({ selection: 'all', layout: 'list' as 'list'|'quadrant' }))
+const selection = computed({get:()=>memory.value.selection,set:v=>{memory.value.selection=v}})
+const layout = computed({get:()=>memory.value.layout,set:v=>{memory.value.layout=v}})
+const scopeMemory = useTaskViewMemory(() => `todo:${selection.value}`, () => ({query:'',collapsed:[] as string[]}))
+const query = computed({get:()=>scopeMemory.value.query,set:v=>{scopeMemory.value.query=v}})
+const collapsed = computed({get:()=>scopeMemory.value.collapsed,set:v=>{scopeMemory.value.collapsed=v}})
+const selectedDay = ref(data.today)
+const batch = ref(false), selectedIds = ref<string[]>([])
+const toggleSelection=(id:string)=>{selectedIds.value=selectedIds.value.includes(id)?selectedIds.value.filter(key=>key!==id):[...selectedIds.value,id]}
+watch([selection,query,()=>labels.identity],()=>{batch.value=false;selectedIds.value=[]})
 const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-2-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
 const saved = useMemberPreference<{id:string; name:string; selection:string; query:string}[]>('task-workspace-filters-v1', raw => { try { const v=JSON.parse(raw || '[]'); return Array.isArray(v) ? v.filter(x=>typeof x?.id==='string' && typeof x.name==='string' && typeof x.selection==='string' && typeof x.query==='string') : [] } catch { return [] } }, JSON.stringify)
-watch(() => labels.identity, () => { selection.value='all'; query.value=''; collapsed.value=[]; void labels.load() }, { immediate:true })
+watch(() => labels.identity, () => { void labels.load() }, { immediate:true })
 watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; selection.value='review' } }, {immediate:true})
 const projection = computed(() => projectWorkItems(data.tasks))
 // 共享权限决定能否打开项目，个人工作台另按归属收敛，避免将可见任务当成本人待办。
@@ -37,6 +49,7 @@ const filtered = computed(() => scope.value.filter(task => {
  if(['today','tomorrow','week'].includes(selection.value) && !matchesTaskDate(task,selection.value as TaskDateFilter,data.today)) return false
  return true
 }))
+const searched = computed(()=>query.value ? searchProjectTasks(filtered.value,query.value).map(hit=>hit.task) : filtered.value)
 const heading = computed(() => nav.find(x=>x.id===selection.value)?.name ?? (selection.value.startsWith('project:') ? data.projects.find(p=>p.id===selection.value.slice(8))?.name : selection.value.startsWith('tag:') ? '# '+selection.value.slice(4) : ({completed:'已完成',review:'每日回顾',legacy:'原待办视图'} as Record<string,string>)[selection.value]) ?? '任务')
 const quick = ref(''), quickError = ref(''), creating = ref(false), quickId = ref('')
 const draftKey = computed(() => `wao-todo-quick:${labels.identity}`)
@@ -73,12 +86,13 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <TodoLegacyView v-else-if="selection==='legacy'" />
    <template v-else>
-    <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button :aria-pressed="batch" @click="batch=!batch;selectedIds=[]">批量选择</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <div v-if="batch" class="batch-toolbar"><button @click="selectedIds=searched.map(t=>t.id)">全选当前筛选</button><button @click="selectedIds=[]">清空选择</button><span>已选 {{selectedIds.length}} 项</span><TaskBatchActions v-model:selected-ids="selectedIds" :items="projection.items" :item-refs="projection.refs" /></div>
     <TodayDates v-if="selection==='today'" />
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView v-else-if="layout==='list'" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed'" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
-    <TaskQuadrantView v-else :tasks="filtered.filter(t=>!query || t.title.toLowerCase().includes(query.toLowerCase()))" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="[]" :show-done="selection==='completed'" />
+    <ProjectChecklistView v-else-if="layout==='list'" :key="selection" :state-key="`todo:${selection}:list`" :selection-mode="batch" :selected-ids="selectedIds" @select="toggleSelection" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed'" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
+    <TaskQuadrantView v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :selection-mode="batch" @select="toggleSelection" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="selectedIds" :show-done="selection==='completed'" />
    </template>
   </main>
  </div>
@@ -93,6 +107,7 @@ button:hover { background:var(--wao-bg-hover); }
 .active,button[aria-pressed=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 .nav-footer { border-top:1px solid var(--wao-line); margin-top:var(--wao-space-2); padding-top:var(--wao-space-2); }
 .workspace-main { min-width:0; padding:var(--wao-space-3); }
+.batch-toolbar { display:flex; gap:var(--wao-space-1); align-items:center; flex-wrap:wrap; margin-bottom:var(--wao-space-1); flex-shrink:0; }
 header { display:flex; align-items:center; gap:var(--wao-space-1); margin-bottom:var(--wao-space-2); }
 h1 { margin:0; font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
 .count { color:var(--wao-text-3); }

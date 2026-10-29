@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
 import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
@@ -482,6 +483,7 @@ function toggleSelection(id: string) {
 }
 const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'list') return tableSections.value.flatMap(section => section.collapsed ? [] : tableRows(section).map(row => row.task.id))
+  if (['checklist','quadrant'].includes(pdTaskView.value)) return displayItems.value.filter(task=>showDone.value || !isFinished(task)).map(task=>task.id)
   if (pdTaskView.value === 'group') return groupViewSections.value.flatMap(group => collapsedGroups.value.includes(group.id) ? [] : groupRows(group.id).filter(row => !itemActions.isSub(row.task.id)).map(row => row.task.id))
   return displayItems.value.filter(task => !itemActions.isSub(task.id) && (showDone.value || !isFinished(task) || ['saving', 'error'].includes(data.taskSaveState(task.id)))).map(task => task.id)
 })
@@ -506,7 +508,8 @@ async function runSelectedWithAi(
   goalMode: boolean,
 ) {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
-  const taskIds = [...selectedTaskIds.value]
+  const taskIds = selectedTaskIds.value.filter(id=>!itemActions.isSub(id))
+  if (!taskIds.length) return
   const mergeTasks = aiBatchMode.value === 'merge'
   aiBatchStarting.value = true
   try {
@@ -887,7 +890,8 @@ async function onDropGroup(groupId: string, overId?: string) {
   if (overId && overId !== id && !itemActions.isSub(overId)) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
 }
 watch(visibleTaskIds, (ids) => {
-  selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id))
+  // Keep failed batch items selected even if their optimistic change leaves the filter.
+  selectedTaskIds.value = selectedTaskIds.value.filter((id) => decoratedItems.value.some(task=>task.id===id))
   aiBatchMode.value = null
 })
 </script>
@@ -901,7 +905,7 @@ watch(visibleTaskIds, (ids) => {
     <template v-else-if="data.loadStates.projects !== 'loaded'">正在加载项目信息…</template>
     <template v-else>项目不存在或当前账号无权访问。<button class="btn-ghost" @click="router.push('/projects')">返回全部项目</button></template>
   </div>
-  <div v-else class="detail wao-page-frame" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && pdTaskView !== 'checklist' && (batchSelectionOpen || selectedTaskIds.length) }">
+  <div v-else class="detail wao-page-frame" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
     <div v-if="data.loadStates.projects === 'error'" class="task-scope" role="alert">
       项目信息刷新失败，当前显示上次读取的项目信息。{{ data.loadErrors.projects }}
       <button @click="data.hydrate()">重新加载项目</button>
@@ -988,7 +992,7 @@ watch(visibleTaskIds, (ids) => {
           >{{ creator.name }}</button>
         </div>
       </div>
-      <button v-if="!searchQuery && pdTaskView !== 'list' && pdTaskView !== 'checklist' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
       <template v-if="pdTaskView === 'list' && !searchQuery">
         <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
           <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
@@ -1035,12 +1039,12 @@ watch(visibleTaskIds, (ids) => {
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
       <div v-show="pdTaskView === 'checklist' || (!searchQuery && !hideTaskViews)" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
-      <div v-if="pdTaskView !== 'list' && pdTaskView !== 'checklist' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
+      <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
         <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
         <span class="selection-count">已选 {{ selectedTaskIds.length }} 项</span>
         <button class="creator-filter-btn" :disabled="aiBatchStarting" @click="finishSelection">完成选择</button>
-        <div v-if="AI_RUN_ENABLED && selectedTaskIds.length" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
+        <div v-if="AI_RUN_ENABLED && selectedTaskIds.length && selectedTaskIds.every(id=>!itemActions.isSub(id))" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
           <button
             class="batch-ai separate"
             :disabled="aiBatchStarting"
@@ -1067,7 +1071,7 @@ watch(visibleTaskIds, (ids) => {
             @start="runSelectedWithAi"
           />
         </div>
-        <TaskBatchCopy :tasks="selectedCopyTasks" />
+        <TaskBatchCopy :tasks="selectedCopyTasks" /><TaskBatchActions v-model:selected-ids="selectedTaskIds" :items="decoratedItems" :item-refs="workProjection.refs" />
       </div>
       <template v-if="pdTaskView === 'list'">
       <div class="task-list-card task-table-scroll">
@@ -1311,7 +1315,7 @@ watch(visibleTaskIds, (ids) => {
         v-model:show-done="showDone" :tasks="displayItems" :context-tasks="decoratedItems" :item-refs="workProjection.refs" :project-id="pid"
         :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0"
         @select="toggleSelection" />
-      <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid"
+      <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid" :state-key="`project:${pid}:checklist`" :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0" @select="toggleSelection"
         :items="displayItems" :context-items="decoratedItems" :item-refs="workProjection.refs"
         :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" :query="searchQuery" @toggle="toggleSubtasks" @add="startQuickAdd" @reveal="id => { if (!displayItems.some(task => task.id === id)) clearTaskFilters() }">
         <template #group-add="{ section }">

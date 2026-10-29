@@ -20,7 +20,7 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 页面入口复用 ResourceMenu 和 ContextActionMenu，位于目录加号、目录行右键及目录空白处右键。小记不显示表格和画板创建选项。
 
-工作区 MCP/CLI 沿用既有文档正文接口与令牌范围，本次未增加草图授权或新的命令。独立表格/画板创建入口为浏览器与 HTTP API，不将画板权限赋予旧令牌。
+工作区 MCP/CLI 沿用既有文档正文接口与令牌范围，本次未增加草图授权或新的命令。独立表格/画板创建入口为浏览器与 HTTP API，不将画板权限赋予旧令牌。草图浏览器的串行保存、账号草稿隔离、失败恢复与文件管理行为见 [草图工作区](specs/drawings.md)，接口与令牌范围保持不变。
 
 
 ### 清单标题、截止日期与知识归档（2026-10-28）
@@ -65,3 +65,7 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 `POST /api/attendance/sync?from=YYYY-MM-DD&to=YYYY-MM-DD` 增加可选 `confirmSessionReplacement`，默认 `false`。仅当前成员在浏览器明确确认可能使其他设备上的 Moka 登录失效后，本次手动请求才传 `true`。服务端先普通登录，遇到 Moka 的 `step=4` 时使用其返回的 `rid` 确认一次；授权不落库，不传给后续重登、定时同步或历史回填。验证码仍须本人在 Moka 处理。
 
 连接状态新增 `NEEDS_CONFIRMATION`，表示等待用户确认接管已有会话；该状态与 `NEEDS_LOGIN` 都暂停自动登录。浏览器兼容旧版保存的“其他会话”错误，重试时给出明确确认。不会新增 CLI/MCP 能力或扩大工作区令牌权限。
+
+### 任务变更通知
+
+`GET /api/task-changes`：使用现有浏览器会话认证，返回 `text/event-stream`，仅包含 `ready`、`changed`、`heartbeat` 事件，data 为 `refresh`，不传输任务内容或标识。任务／标签成功写入后向同一成员的连接发送 `changed`。前端重新请求已有授权列表，重连时补读；一分钟连接超时后重新验证登录状态，最多保留 12 个同成员连接。未登录返回 401。该通知接口不开放给既有工作区 MCP 或 CLI 令牌，现有写接口和版本冲突协议保持不变。

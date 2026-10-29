@@ -140,13 +140,25 @@ watch([() => data.docs[docId.value ?? '']?.title, () => kb.value?.name, docId], 
 const archivedDocs = computed(() => data.archivedDocsOf(kbId.value))
 const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived(docId.value)))
 
+let archiveRequest = 0
+let archiveLoadingKb = ''
 async function loadArchivedDocs() {
-  if (!data.apiLive || archivedLoading.value) return
+  const targetKb = kbId.value
+  if (!data.apiLive || (archivedLoading.value && archiveLoadingKb === targetKb)) return
+  const request = ++archiveRequest
+  archiveLoadingKb = targetKb
   archivedLoading.value = true
   archivedError.value = false
-  archivedError.value = !(await data.refreshArchivedDocs(kbId.value))
-  archivedLoading.value = false
-  if (docId.value && data.isDocArchived(docId.value)) archivedOpen.value = true
+  try {
+    const loaded = await data.refreshArchivedDocs(targetKb)
+    if (request !== archiveRequest || kbId.value !== targetKb) return
+    archivedError.value = !loaded
+    if (docId.value && data.isDocArchived(docId.value)) archivedOpen.value = true
+  } catch {
+    if (request === archiveRequest && kbId.value === targetKb) archivedError.value = true
+  } finally {
+    if (request === archiveRequest) archivedLoading.value = false
+  }
 }
 watch([() => data.apiLive, kbId], ([live]) => {
   if (live) void loadArchivedDocs()
@@ -644,6 +656,10 @@ async function removeTemplate(template: DocTemplate) {
 // ---- 文档树拖拽 ----
 
 const treeQuery = ref('')
+// 列表只读取标题及草稿覆盖，避免搜索/排序时重复转换整篇富文本。
+function documentTitle(id: string): string {
+  return (data.docEdits[id]?.title ?? data.docById(id)?.title) || '未命名文档'
+}
 const noteTimeOrder = ref<'desc' | 'asc'>('desc')
 function compareNoteTime(leftId: string, rightId: string): number {
   const timeOf = (id: string) => {
@@ -661,7 +677,7 @@ const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-const mixedRows = computed(() => kb.value ? directoryRows(kb.value, id => data.docOf(id).title || '未命名文档', folderOpen, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderOpen, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
 const draggingNode = ref<string | null>(null)
 const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
 const directoryError = ref('')
@@ -960,6 +976,34 @@ function homeDocumentTime(value: string): string {
 }
 const homeFolderOpen = reactive<Record<string, boolean>>({})
 const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
+const homeOrder = ref<'directory' | 'updated' | 'title'>('directory')
+const homeSearch = computed(() => treeQuery.value.trim().toLocaleLowerCase())
+const homeGroups = computed(() => {
+  const groups = (kb.value?.folders ?? []).map(folder => ({
+    id: folder.id,
+    name: folder.name,
+    docs: homeDocIds(folder.docs).filter(id => !homeSearch.value
+      || folder.name.toLocaleLowerCase().includes(homeSearch.value)
+      || documentTitle(id).toLocaleLowerCase().includes(homeSearch.value)),
+  })).filter(folder => !homeSearch.value || folder.docs.length || folder.name.toLocaleLowerCase().includes(homeSearch.value))
+  if (homeOrder.value === 'directory') return groups
+  const ids = [...new Set(groups.flatMap(folder => folder.docs))]
+  const titleOf = documentTitle
+  const timeOf = (id: string) => Date.parse(data.docById(id)?.updated || data.docById(id)?.created || '') || 0
+  ids.sort((a, b) => homeOrder.value === 'updated'
+    ? timeOf(b) - timeOf(a) || titleOf(a).localeCompare(titleOf(b), 'zh-CN', { numeric: true })
+    : titleOf(a).localeCompare(titleOf(b), 'zh-CN', { numeric: true }))
+  return ids.length ? [{ id: `sorted:${homeOrder.value}`, name: homeOrder.value === 'updated' ? '最近更新' : '按名称', docs: ids }] : []
+})
+const homeResultCount = computed(() => homeGroups.value.reduce((total, group) => total + group.docs.length, 0))
+const allHomeGroupsOpen = computed(() => homeGroups.value.every(group => homeFolderOpen[group.id] !== false))
+function toggleHomeGroups() {
+  const expand = !allHomeGroupsOpen.value
+  for (const group of homeGroups.value) homeFolderOpen[group.id] = expand
+}
+watch(kbId, () => { treeQuery.value = ''; homeOrder.value = 'directory' })
+// 搜索结果始终可见，清空后恢复用户此前的折叠选择。
+function isHomeGroupOpen(id: string) { return !!homeSearch.value || homeFolderOpen[id] !== false }
 const kbSettingsOpen = ref(false)
 const kbIconPickerExpanded = ref(false)
 const kbSettings = reactive({ name: '', desc: '', icon: '' })
@@ -1150,9 +1194,9 @@ async function saveKbSettings() {
       </div>
 
       <div v-if="kb.auto" class="sync-bar">
-        <div class="sync-title"><span class="sync-dot"></span>飞书群聊 · 历史归档（同步已停用）</div>
+        <div class="sync-title"><i class="ri-archive-line" aria-hidden="true"></i>飞书群聊 · 历史归档</div>
         <div class="sync-sub">
-          上次 今天 06:12 · 新增 12 条 ·
+          同步状态请前往自动化查看 ·
           <button class="link" @click="router.push('/automation')">查看自动化</button>
         </div>
       </div>
@@ -1252,11 +1296,19 @@ async function saveKbSettings() {
           <section v-if="!docId" class="library-home">
             <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
             <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
-            <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
-            <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
-            <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
-              <button class="home-folder-title" :aria-expanded="homeFolderOpen[folder.id] !== false" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}</button>
-              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in homeDocIds(folder.docs)" :key="id" @pointerenter="preloadSheet(id)" @focus="preloadSheet(id)" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
+            <div class="home-tools">
+              <label class="home-search"><i class="ri-search-line" aria-hidden="true"></i><input v-model="treeQuery" type="search" aria-label="搜索首页文档" placeholder="搜索文件夹或文档标题" @keydown.esc="treeQuery = ''" /></label>
+              <select v-model="homeOrder" aria-label="首页文档排序"><option value="directory">按目录</option><option value="updated">最近更新</option><option value="title">按名称</option></select>
+              <button class="library-star" :disabled="creatingDoc" @click="createAction('doc')"><i class="ri-add-line" aria-hidden="true"></i>新建文档</button>
+            </div>
+            <div v-if="data.loadStates.docs === 'error'" class="home-load-error" role="alert"><span>目录加载失败：{{ data.loadErrors.docs || '请检查网络后重试' }}</span><button class="library-star" @click="data.refreshDocs()">重试</button></div>
+            <div v-else-if="data.loadStates.docs !== 'loaded'" class="doc-empty" role="status">正在加载目录…</div>
+            <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。</div>
+            <div v-if="docTotal" class="home-list-heading"><span class="home-result-count" role="status">{{ homeSearch ? `找到 ${homeResultCount} 篇文档` : `${docTotal} 篇文档` }}</span><button v-if="!homeSearch && homeGroups.length" class="home-collapse" :aria-expanded="allHomeGroupsOpen" @click="toggleHomeGroups">{{ allHomeGroupsOpen ? '折叠全部分组' : '展开全部分组' }}</button><button v-if="homeSearch" class="home-clear-search" @click="treeQuery = ''">清空搜索</button></div>
+            <p v-if="homeSearch && !homeGroups.length && data.loadStates.docs === 'loaded'" class="doc-empty">没有匹配的文件夹或文档，试试其他关键词。</p>
+            <section v-for="folder in homeGroups" :key="folder.id" class="home-folder">
+              <button class="home-folder-title" :aria-expanded="isHomeGroupOpen(folder.id)" :disabled="!!homeSearch" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="isHomeGroupOpen(folder.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" aria-hidden="true"></i><span>{{ folder.name }}</span><span class="home-folder-count">{{ folder.docs.length }}</span></button>
+              <div v-if="isHomeGroupOpen(folder.id)" class="home-documents"><button v-for="id in folder.docs" :key="id" @pointerenter="preloadSheet(id)" @focus="preloadSheet(id)" @click="selectDoc(id)"><i :class="pageIcon(id)" aria-hidden="true"></i><span class="home-document-name" :title="documentTitle(id)">{{ documentTitle(id) }}</span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button><p v-if="!folder.docs.length" class="folder-empty">此文件夹还没有文档</p></div>
             </section>
           </section>
           <template v-if="doc">
@@ -1488,35 +1540,49 @@ async function saveKbSettings() {
 .directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 /* 首页使用独立纸面与紧凑目录，不改变正文阅读宽度。 */
 .doc-scroll.library-home-scroll { background: var(--wao-bg-sub); }
-.library-home-scroll .doc-wrap { padding: 56px 40px 64px; }
+.library-home-scroll .doc-wrap { padding: var(--wao-space-4); }
 .library-home-scroll .doc-col { max-width: 1120px; min-width: 0; }
-.library-home { padding: 40px; margin: 0 auto; width: 100%; min-height: 560px; background: var(--wao-bg-card); border-radius: 12px; }
-.library-home header { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
-.library-cover-icon { padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 36px; line-height: 42px; flex-shrink: 0; }
+.library-home { padding: var(--wao-space-4); margin: 0 auto; width: 100%; min-height: 0; background: var(--wao-bg-card); border-radius: var(--wao-radius-card); }
+.library-home header { display: flex; align-items: center; gap: var(--wao-space-2); flex-wrap: wrap; }
+.library-cover-icon { padding: 0; border: 0; border-radius: var(--wao-radius-control); background: transparent; cursor: pointer; font-size: 32px; line-height: 44px; flex-shrink: 0; }
 .library-cover-icon:hover { background: var(--wao-bg-hover); }
 .library-cover-icon:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 4px; }
 .library-heading { flex: 1; min-width: 120px; }
-.library-heading h1 { font-size: 28px; line-height: 42px; margin: 0 0 8px; color: var(--wao-text); }
-.library-heading p { margin: 0; color: var(--wao-text-3); font-size: 15px; }
-.library-description { margin: 24px 0 0 56px; color: var(--wao-text-weak); font-size: 13px; white-space: pre-wrap; }
-.library-star { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--wao-line); border-radius: 6px; padding: 7px 10px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.library-heading h1 { font-size: var(--wao-font-title); line-height: 1.4; margin: 0 0 var(--wao-space-1); color: var(--wao-text); overflow-wrap: anywhere; }
+.library-heading p { margin: 0; color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.library-description { margin: var(--wao-space-2) 0 0; color: var(--wao-text-3); font-size: var(--wao-font-help); white-space: pre-wrap; overflow-wrap: anywhere; }
+.library-star { display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-height: 40px; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); padding: 7px 10px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; white-space: nowrap; }
+.library-star:hover { background: var(--wao-bg-hover); }
+.library-star:disabled { opacity: 0.6; cursor: wait; }
+.home-tools { display: flex; align-items: center; gap: var(--wao-space-1); flex-wrap: wrap; margin-top: var(--wao-space-3); }
+.home-search { display: flex; align-items: center; gap: var(--wao-space-1); flex: 1 1 200px; min-width: 0; min-height: 40px; padding: 0 var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); color: var(--wao-text-3); }
+.home-search:focus-within { border-color: var(--wao-primary); }
+.home-search input { width: 100%; min-width: 0; padding: var(--wao-space-1) 0; border: 0; outline: 0; background: transparent; color: var(--wao-text); font: inherit; }
+.home-tools select { min-height: 40px; max-width: 100%; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
+.home-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0 var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-help); border-bottom: 1px solid var(--wao-line); }
+.home-collapse, .home-clear-search { min-height: 36px; padding: 0 var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-primary-text); cursor: pointer; }
+.home-load-error { display: flex; align-items: center; gap: var(--wao-space-2); flex-wrap: wrap; padding: var(--wao-space-2) 0; color: var(--wao-danger); overflow-wrap: anywhere; }
+.library-home button:focus-visible, .home-tools select:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .home-folder { margin: 0; }
-.home-folder:first-of-type { margin-top: 64px; }
-.home-folder-title { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: 6px; background: none; color: var(--wao-text); font-size: 14px; text-align: left; cursor: pointer; }
+.home-folder-title { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 44px; padding: var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: none; color: var(--wao-text); font-size: var(--wao-font-body); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.home-folder-title > span:first-of-type { min-width: 0; }
+.home-folder-count { margin-left: auto; color: var(--wao-text-3); font-size: var(--wao-font-caption); font-variant-numeric: tabular-nums; }
 .home-folder-title:hover, .home-documents button:hover { background: var(--wao-bg-hover); }
 .home-folder-title i { color: var(--wao-text-3); font-size: 14px; }
 .home-documents { padding-left: 26px; }
-.home-documents button { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: 6px; background: none; color: var(--wao-text-2); font-size: 14px; text-align: left; cursor: pointer; }
-.home-document-name { min-width: 0; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.home-documents time { font-size: 13px; color: var(--wao-text-weak); white-space: nowrap; }
-.dot-leader { flex: 1; min-width: 16px; border-bottom: 1px dashed var(--wao-line-control); }
+.home-documents button { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 44px; padding: var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: none; color: var(--wao-text-2); font-size: var(--wao-font-body); text-align: left; cursor: pointer; }
+.home-documents button > i { flex-shrink: 0; color: var(--wao-text-3); }
+.home-document-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.home-documents time { flex-shrink: 0; font-size: var(--wao-font-help); color: var(--wao-text-3); white-space: nowrap; }
 @media (max-width: 760px) {
   .library-home-scroll .doc-wrap { padding: 16px 12px 32px; }
   .library-home { padding: 20px 14px; min-height: 0; }
   .library-home header { gap: 12px; }
-  .library-heading h1 { font-size: 23px; }
+  .library-heading h1 { font-size: var(--wao-font-title); }
   .library-description { margin-left: 0; }
-  .home-folder:first-of-type { margin-top: 32px; }
+  .home-tools .home-search { flex-basis: 100%; }
+  .home-search input { font-size: 16px; }
+  .home-tools select, .library-star, .home-collapse, .home-clear-search { min-height: 44px; }
   .home-documents { padding-left: 16px; }
   .home-document-name { max-width: none; }
   .home-documents time { display: none; }
