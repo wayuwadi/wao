@@ -15,6 +15,29 @@ import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 class FeishuCommentNotifierTest {
+    @Test
+    void privateInboxCommentsAndMentionsNeverReachTheWebhookUnderEnabledPolicies() {
+        FeishuWebhookNotifier webhook = mock(FeishuWebhookNotifier.class);
+        ProjectNotifyGate gate = mock(ProjectNotifyGate.class);
+        NotificationSettingsService settings = mock(NotificationSettingsService.class);
+        FeishuCommentNotifier notifier = new FeishuCommentNotifier(webhook, gate, settings);
+        when(gate.enabled(any())).thenReturn(true);
+        when(settings.allows(any())).thenReturn(true);
+        TaskDto task = mock(TaskDto.class);
+        when(task.id()).thenReturn("private"); when(task.title()).thenReturn("私人任务");
+        var comment = new CommentDto("c1", "member", "2026-10-29T12:00:00+08:00", "私人评论");
+        for (String project : java.util.Arrays.asList(null, "", "   ")) {
+            when(task.project()).thenReturn(project);
+            notifier.notifyComment(task, comment, "本人", "收集箱", List.of());
+            notifier.notifyComment(task, comment, "本人", "收集箱", List.of("ou_other"));
+        }
+        org.mockito.Mockito.verifyNoInteractions(webhook);
+        when(task.project()).thenReturn("p1");
+        notifier.notifyComment(task, comment, "本人", "共享清单", List.of());
+        notifier.notifyComment(task, comment, "本人", "共享清单", List.of("ou_other"));
+        verify(webhook, times(2)).notifyCard(any());
+    }
+
 
     @Test
     void explicitMentionUsesManualPolicyWhileAnOrdinaryCommentStaysSilent() {

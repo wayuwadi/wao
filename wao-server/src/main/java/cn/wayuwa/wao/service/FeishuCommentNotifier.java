@@ -41,7 +41,7 @@ public class FeishuCommentNotifier {
         boolean explicitlyMentioned = mentionOpenIds != null && !mentionOpenIds.isEmpty();
         boolean allowed = notificationSettings.allows(policy -> explicitlyMentioned
                 ? policy.manualTask() : policy.taskActivity());
-        if (!notifyGate.enabled(task.project()) || !allowed) {
+        if (!org.springframework.util.StringUtils.hasText(task.project()) || !notifyGate.enabled(task.project()) || !allowed) {
             return;
         }
         StringBuilder body = new StringBuilder();

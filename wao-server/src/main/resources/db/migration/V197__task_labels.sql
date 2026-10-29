@@ -1,0 +1,8 @@
+CREATE TABLE task_labels (
+ task_id VARCHAR(32) NOT NULL,
+ sub_id VARCHAR(128) NOT NULL DEFAULT '',
+ revision BIGINT NOT NULL DEFAULT 0,
+ labels_json TEXT NOT NULL,
+ PRIMARY KEY(task_id, sub_id),
+ FOREIGN KEY(task_id) REFERENCES task(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

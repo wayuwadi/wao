@@ -1,3 +1,4 @@
+import { useTaskLabelsStore } from '@/stores/taskLabels'
 import { quickDraftRecoveryId, isRecoveredQuickDraft, sameQuickDraftContent } from '@/utils/quickDraftRecovery'
 import type { IdentitySelection } from '@/api/digitalMembers'
 import { reactive, ref, watch } from 'vue'
@@ -2084,6 +2085,7 @@ export const useDataStore = defineStore('data', () => {
       lockedSubtaskIds.add(sourceId)
       lockedSubtaskIds.add(targetId)
       const saved = await apiMoveSubtask(clone(source), subId, clone(target), parentId)
+      void useTaskLabelsStore().load()
       if (member !== useSessionStore().userId) return
       for (const item of saved) {
         const local = taskById(item.id)
@@ -2120,6 +2122,7 @@ export const useDataStore = defineStore('data', () => {
       movingSubtasks.value = true
       lockedSubtaskIds.add(sourceId)
       const [saved, promoted] = await apiPromoteSubtask(clone(source), subId)
+      void useTaskLabelsStore().load()
       if (member !== useSessionStore().userId) throw new Error('成员已切换，请在原成员下核对结果')
       if (!saved || !promoted) throw new Error('提升结果不完整，请刷新后核对')
       const local = taskById(sourceId)

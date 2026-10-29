@@ -17,6 +17,8 @@ class SubtaskMoveServiceTest {
     final WorkItemNumberMapper numbers = mock(WorkItemNumberMapper.class);
     final ObjectMapper json = new ObjectMapper();
     final SubtaskMoveService service = new SubtaskMoveService(mapper, tasks, numbers, json);
+    final TaskLabelService labels = mock(TaskLabelService.class);
+    { org.springframework.test.util.ReflectionTestUtils.setField(service, "labels", labels); }
     Step sub(String id, String parent) { return new Step(id, false, id, "正文", List.of(), 7L, parent, "m1", "2026-09-18"); }
     TaskEntity task(String id, List<Step> subs) throws Exception {
         var task = new TaskEntity(); task.setId(id);
@@ -40,7 +42,11 @@ class SubtaskMoveServiceTest {
         assertThat(saved.path("subs").get(1).path("parentId").asText()).isEqualTo("z");
         assertThat(saved.path("subs").get(2).path("owner").asText()).isEqualTo("m1");
         assertThat(saved.path("subs").get(3).path("due").asText()).isEqualTo("2026-09-18");
-        for (String id : List.of("a", "b", "c")) verify(numbers).move("s/" + id, "t/" + id);
+        for (String id : List.of("a", "b", "c")) {
+            verify(numbers).move("s/" + id, "t/" + id);
+            verify(labels).move("s", id, "t", id);
+        }
+        verify(labels, never()).move(eq("s"), eq("d"), anyString(), anyString());
         verify(numbers, never()).move(eq("s/d"), anyString());
     }
     @Test void reparentsWithinTaskAndRejectsCycles() throws Exception {
@@ -48,7 +54,7 @@ class SubtaskMoveServiceTest {
         assertThatThrownBy(() -> service.move("s", "a", new MoveSubtaskRequest("s", "b", subs, subs), "m1")).isInstanceOf(BadRequestException.class);
         verify(mapper, never()).updateDetail(anyString(), anyString());
         service.move("s", "a", new MoveSubtaskRequest("s", "z", subs, subs), "m1");
-        verify(mapper, times(1)).updateDetail(eq("s"), anyString()); verifyNoInteractions(numbers);
+        verify(mapper, times(1)).updateDetail(eq("s"), anyString()); verifyNoInteractions(numbers, labels);
     }
     @Test void rejectsStaleSnapshotsAndActiveExecutionBeforeWriting() throws Exception {
         var subs = List.of(sub("a", null)); task("s", subs); task("t", List.of());
@@ -60,7 +66,7 @@ class SubtaskMoveServiceTest {
     @Test void checksTargetVisibilityBeforeLocksOrWrites() {
         when(tasks.get("t", "m1")).thenThrow(new BadRequestException("不可见"));
         assertThatThrownBy(() -> service.move("s", "a", new MoveSubtaskRequest("t", null, List.of(), List.of()), "m1")).hasMessageContaining("不可见");
-        verifyNoInteractions(mapper, numbers);
+        verifyNoInteractions(mapper, numbers, labels);
     }
     @Test void validatesMissingParentsDuplicatesAndDates() {
         assertThatThrownBy(() -> SubtaskTree.validate(List.of(sub("a", "missing")))).hasMessageContaining("不存在");
@@ -96,6 +102,10 @@ class SubtaskMoveServiceTest {
         assertThat(detail.path("subs").get(1).path("parentId").asText()).isEqualTo("b");
         assertThat(json.readTree(source.getDetailJson()).path("subs").get(0).path("id").asText()).isEqualTo("d");
         assertThat(json.readTree(source.getDetailJson()).path("unknownField").asText()).isEqualTo("保留");
+        verify(labels).move("s", "a", promoted.getId(), "");
+        verify(labels).move("s", "b", promoted.getId(), "b");
+        verify(labels).move("s", "c", promoted.getId(), "c");
+        verify(labels, never()).move(eq("s"), eq("d"), anyString(), anyString());
         verify(numbers).move("s/a", promoted.getId() + "/");
         verify(numbers).move("s/b", promoted.getId() + "/b");
         verify(numbers).move("s/c", promoted.getId() + "/c");
@@ -111,7 +121,7 @@ class SubtaskMoveServiceTest {
         assertThatThrownBy(() -> service.promote("s", "a", new PromoteSubtaskRequest(subs), "m1")).hasMessageContaining("不可见");
         verify(mapper, never()).insert(any(TaskEntity.class));
         verify(mapper, never()).updateDetail(anyString(), anyString());
-        verifyNoInteractions(numbers);
+        verifyNoInteractions(numbers, labels);
     }
 
     @Test void promotionReplayReturnsExistingTaskAndDeletedTargetIsNotRecreated() throws Exception {
@@ -123,6 +133,6 @@ class SubtaskMoveServiceTest {
         when(mapper.selectById(id)).thenReturn(null);
         assertThatThrownBy(() -> service.promote("s", "a", new PromoteSubtaskRequest(List.of(sub("a", null))), "m1")).hasMessageContaining("已有更新");
         verify(mapper, never()).insert(any(TaskEntity.class));
-        verifyNoInteractions(numbers);
+        verifyNoInteractions(numbers, labels);
     }
 }

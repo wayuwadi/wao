@@ -20,6 +20,8 @@ public class SubtaskMoveService {
     private final ObjectMapper json;
     @org.springframework.beans.factory.annotation.Autowired
     private TodoHistoryService todoHistory;
+    @org.springframework.beans.factory.annotation.Autowired
+    private TaskLabelService labels;
     public SubtaskMoveService(TaskMapper mapper, TaskService tasks, WorkItemNumberMapper numbers, ObjectMapper json) {
         this.mapper = mapper; this.tasks = tasks; this.numbers = numbers; this.json = json;
     }
@@ -60,7 +62,7 @@ public class SubtaskMoveService {
         writeSubs(source, from);
         if (!sourceId.equals(targetId)) {
             writeSubs(target, to);
-            for (String id : moving) numbers.move(sourceId + "/" + id, targetId + "/" + id);
+            for (String id : moving) { numbers.move(sourceId + "/" + id, targetId + "/" + id); if(labels!=null)labels.move(sourceId,id,targetId,id); }
         }
         if (todoHistory != null) {
             todoHistory.record(sourceBefore, source, memberId, "STEP_MOVED", null);
@@ -124,7 +126,8 @@ public class SubtaskMoveService {
         } catch (Exception ex) { throw new BadRequestException("子任务详情无法转换，未执行提升"); }
         mapper.insert(target);
         numbers.move(sourceId + "/" + subId, targetId + "/");
-        for (Step child : children) numbers.move(sourceId + "/" + child.id(), targetId + "/" + child.id());
+        if(labels!=null)labels.move(sourceId,subId,targetId,"");
+        for (Step child : children) { numbers.move(sourceId + "/" + child.id(), targetId + "/" + child.id()); if(labels!=null)labels.move(sourceId,child.id(),targetId,child.id()); }
         from.removeIf(sub -> moving.contains(sub.id()));
         writeSubs(source, from);
         if (todoHistory != null) {

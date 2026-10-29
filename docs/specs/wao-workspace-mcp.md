@@ -56,3 +56,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 机器人管理边界
 
 能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [当前架构](../architecture.md)。
+
+2026-10-29 任务标签与自定义象限仅开放浏览器会话接口，不新增 Workspace MCP 标签工具，不扩大旧令牌能力。个人收集箱的浏览器可见性不替代 MCP 原有项目范围校验。

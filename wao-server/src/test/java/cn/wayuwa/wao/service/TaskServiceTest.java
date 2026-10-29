@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -29,6 +30,32 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class TaskServiceTest {
+    @Test
+    void inboxWritesRecheckOwnershipAfterAcquiringTheRowLock() {
+        TaskEntity initial = todo(); initial.setProjectId(""); initial.setOwnerId("wg");
+        TaskEntity reassigned = todo(); reassigned.setProjectId(""); reassigned.setOwnerId("wd");
+        when(mapper.selectById("t1")).thenReturn(initial);
+        org.mockito.Mockito.doReturn(reassigned).when(mapper).lockById("t1");
+        assertThatThrownBy(() -> service.patch("t1", new PatchTaskRequest("changed", null, null, null, null, null, null), "wg"))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "s1", "已完成", "nonempty-version", "wg"))
+                .isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+        verify(mapper, never()).updateDetail(anyString(), anyString());
+    }
+
+    @Test
+    void inboxTaskIsVisibleOnlyToItsOwnerIncludingLockedReads() {
+        TaskEntity entity = todo(); entity.setProjectId(""); entity.setOwnerId("wg");
+        when(mapper.selectById("t1")).thenReturn(entity);
+        org.mockito.Mockito.doReturn(entity).when(mapper).lockById("t1");
+        assertThat(service.get("t1", "wg").id()).isEqualTo("t1");
+        assertThat(service.lockWorkspaceTask("t1", "wg").id()).isEqualTo("t1");
+        assertThatThrownBy(() -> service.get("t1", "wd")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.lockWorkspaceTask("t1", "wd")).isInstanceOf(NotFoundException.class);
+        org.mockito.Mockito.verifyNoInteractions(projects);
+    }
+
     @Test
     void workspaceScopeUsesLockedCurrentProjectAndStillChecksMemberVisibility() {
         TaskEntity entity = todo(); entity.setProjectId("moved-project");
@@ -466,12 +493,14 @@ class TaskServiceTest {
     }
 
     @Test
-    void listSkipsTaskTableWhenMemberHasNoVisibleProjects() {
+    void listRestrictsToPersonalInboxWhenMemberHasNoVisibleProjects() {
         when(projects.visibleProjectIds("wg")).thenReturn(Set.of());
-
         assertThat(service.list("wg")).isEmpty();
-
-        verify(mapper, never()).selectList(any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<TaskEntity>> query = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(mapper).selectList(query.capture());
+        assertThat(query.getValue().getTargetSql()).contains("project_id =").contains("owner_id =").doesNotContain(" OR ");
+        assertThat(query.getValue().getParamNameValuePairs().values()).contains("", "wg");
     }
 
     @Test
