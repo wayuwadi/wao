@@ -18,8 +18,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 function setup() {
-  const data = seedDataStore()
   useSessionStore().$patch({ account: { member: { id: 'wg', name: '娃哥' } } } as never)
+  const data = seedDataStore()
   vi.spyOn(data, 'ensureDocsLoaded').mockResolvedValue(true)
   vi.spyOn(data, 'ensureDocLoaded').mockResolvedValue(false)
   data.tasks = []

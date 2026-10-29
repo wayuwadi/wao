@@ -20,7 +20,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
-import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchDoc, fetchKbs } from '@/api/board'
+import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchDoc, fetchDocs, fetchKbs } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText, copyToClipboard } from '@/utils/clipboard'
@@ -39,7 +39,7 @@ vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mo
 
 vi.mock('@/api/noteOriginals', () => ({ freezeNoteAiInput: vi.fn().mockResolvedValue({ snapshotId: 'snapshot', overviewImageUrl: null }), retainNoteAiResult: vi.fn().mockResolvedValue(undefined), fetchNoteOriginals: vi.fn().mockResolvedValue({ before: null, initial: null, explanation: '', appliedRev: null }) }))
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
-vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
+vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchDoc: vi.fn(), fetchDocs: vi.fn().mockResolvedValue([]), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
   template: '<div><slot name="toolbar-options" /><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
@@ -692,6 +692,7 @@ describe('小记集中记录空间', () => {
     const reader = new DOMWrapper(document.body).get('.notes-reader')
     await reader.get('.reader-directory-resizer').trigger('keydown', { key: 'ArrowRight' })
     expect(reader.get('.reader-directory-resizer').attributes('aria-valuenow')).toBe('190')
+    vi.mocked(fetchDocs).mockResolvedValue([doc('otherWidth', '另一账号的宽度验收', undefined, 'width-other')])
     useSessionStore().accept({ member: { ...useSessionStore().currentUser, id: 'width-other' } } as never)
     await flushPromises()
     await wrapper.get('.reader-toggle').trigger('click'); await flushPromises()
@@ -1056,6 +1057,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(fetchDoc).mockImplementation(async id => useDataStore().docById(id)!)
     vi.mocked(fetchNoteTags).mockResolvedValue([])
     vi.mocked(fetchKbs).mockReset()
+    vi.mocked(fetchDocs).mockReset().mockImplementation(async () => Object.values(useDataStore().docs))
     vi.mocked(apiCreateNoteTag).mockReset()
     vi.mocked(fetchNotePolishVersions).mockResolvedValue([])
     localStorage.clear()
@@ -1470,7 +1472,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('保存即显示在原页面，清除旧筛选，并为下一条生成新的草稿 id', async () => {
+  it('保存后保留筛选，明确提示并定位新小记，下一条使用独立草稿 id', async () => {
     const data = useDataStore()
     vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => { data.docs[id!] = doc(id!, text); return id! })
     const wrapper = await view()
@@ -1479,12 +1481,76 @@ describe('小记集中记录空间', () => {
     const original = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
+    expect(wrapper.get('input[type="search"]').element).toHaveProperty('value', '找不到的词')
+    expect(wrapper.get('.saved-note-notice').text()).toContain('当前筛选未包含这条小记')
+    await wrapper.get('.saved-note-notice button').trigger('click')
+    await flushPromises()
     expect((wrapper.find('.note-card textarea').element as HTMLTextAreaElement).value).toBe('即时显示的想法')
+    expect(wrapper.find('.empty').exists()).toBe(false)
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
     expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     await wrapper.find('textarea').setValue('第二条')
     expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id).not.toBe(original)
     wrapper.unmount()
+  })
+
+  it('番茄钟摘要使用轻量预览，展开与搜索保留完整原文', async () => {
+    const data = useDataStore()
+    const text = '专注时长：25 分 0 秒\n开始：2026-10-29 21:25:46\n结束：2026-10-29 21:50:46\n\n关联任务：[打开任务](/s/t/task)\n\n本次专注笔记'
+    data.docs.focus = { ...doc('focus', text), title: '番茄钟 · 自由专注', tags: ['番茄钟'] }
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.get('.focus-note-preview').text()).toContain('专注 25 分 0 秒')
+    expect(wrapper.get('.focus-note-preview a').attributes('href')).toBe('/s/t/task')
+    expect(wrapper.find('.note-card textarea').exists()).toBe(false)
+    await wrapper.get('.compact-focus .note-card-footer > button').trigger('click')
+    expect(wrapper.get('.note-card textarea').element).toHaveProperty('value', text)
+    expect(data.docs.focus.blocks[0]?.p).toBe(text)
+    await wrapper.get('input[type="search"]').setValue('21:25:46')
+    expect(wrapper.findAll('.note-card')).toHaveLength(1)
+  })
+
+  it('空闲工作流降低轮询频率，隐藏页面停止轮询', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      vi.mocked(fetchNoteAiWorkflows).mockClear().mockResolvedValue([])
+      const wrapper = await view()
+      await flushPromises()
+      expect(fetchNoteAiWorkflows).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(fetchNoteAiWorkflows).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(100_000)
+      expect(fetchNoteAiWorkflows).toHaveBeenCalledTimes(2)
+      const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(240_000)
+      expect(fetchNoteAiWorkflows).toHaveBeenCalledTimes(2)
+      hidden.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(fetchNoteAiWorkflows).toHaveBeenCalledTimes(3)
+      wrapper.unmount()
+      hidden.mockRestore()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('首次发现已完成的新工作流也定点刷新正文，不重复刷新全库', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const data = useDataStore()
+      data.docs.one = doc('one', '旧标题')
+      const refresh = vi.spyOn(data, 'refreshDocs').mockResolvedValue(true)
+      vi.mocked(fetchNoteAiWorkflows).mockReset().mockResolvedValueOnce([]).mockResolvedValue([{ docId: 'one', title: 'DONE', image: 'SKIPPED', polish: 'SKIPPED', message: null }])
+      const wrapper = await view()
+      await flushPromises()
+      vi.mocked(fetchDoc).mockResolvedValueOnce(doc('one', 'AI 已生成新标题'))
+      await vi.advanceTimersByTimeAsync(120_000)
+      await flushPromises()
+      expect(fetchDoc).toHaveBeenCalledWith('one')
+      expect(data.docs.one.title).toBe('AI 已生成新标题')
+      expect(refresh).not.toHaveBeenCalled()
+      wrapper.unmount()
+    } finally { vi.useRealTimers() }
   })
 
   it('兼容旧草稿，保存失败保留正文，同 id 重试；断线拒绝内存假保存', async () => {
@@ -2321,6 +2387,7 @@ describe('小记集中记录空间', () => {
     await wrapper.get('[aria-label="小记排序"]').setValue('createdDesc')
     await wrapper.get('input[type="search"]').setValue('旧账号搜索')
     const firstPreference = localStorage.getItem('wao-note-list-preferences-v3:wg')
+    vi.mocked(fetchDocs).mockResolvedValue([doc('a', '我的记录'), doc('b', '同伴的记录', undefined, 'wd')])
     session.accept({ member: { ...firstMember, id: 'wd', name: '娃弟' } } as never)
     await flushPromises()
     expect(wrapper.get<HTMLInputElement>('input[type="search"]').element.value).toBe('')
@@ -2349,6 +2416,7 @@ describe('小记集中记录空间', () => {
     await openFilters(wrapper)
     await wrapper.get('[aria-label="小记排序"]').setValue('createdDesc')
     expect(localStorage.getItem('wao-note-list-preferences-v3:')).toBeNull()
+    vi.mocked(fetchDocs).mockResolvedValue([doc('a', '我的记录')])
     session.accept({ member } as never)
     await flushPromises()
     await openFilters(wrapper)

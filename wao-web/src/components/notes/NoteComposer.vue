@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { coalescedDraftWriter } from '@/utils/coalescedDraftWriter'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
 import type { IdentitySelection } from '@/api/digitalMembers'
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -402,7 +403,7 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId, identitySelection], () => {
+function persistCurrentDraft() {
   if (resetting) return
   error.value = ''
   if (props.note && !dirty.value) {
@@ -427,7 +428,15 @@ watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId,
     title: baseNote?.title === generatedTitle.value ? undefined : generatedTitle.value,
     tags: JSON.stringify(baseNote?.tags) === JSON.stringify(tags.value) ? undefined : [...tags.value],
   } : null)
+}
+const draftWriter = coalescedDraftWriter(persistCurrentDraft)
+watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId, identitySelection], () => {
+  if (!resetting) draftWriter.schedule()
 }, { flush: 'sync' })
+onBeforeUnmount(() => draftWriter.flush())
+function flushDraftWhenHidden() { if (document.hidden) draftWriter.flush() }
+onMounted(() => { window.addEventListener('pagehide', draftWriter.flush); document.addEventListener('visibilitychange', flushDraftWhenHidden) })
+onBeforeUnmount(() => { window.removeEventListener('pagehide', draftWriter.flush); document.removeEventListener('visibilitychange', flushDraftWhenHidden) })
 
 watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note) } : null, latest => {
   if (!latest || dirty.value || saving.value) return
@@ -443,6 +452,7 @@ watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note)
 }, { flush: 'sync' })
 
 async function save(explicit = false) {
+  draftWriter.flush()
   if (!canSave.value) return
   if (!props.note && !companionMessageId.value && identitySelection.value.mode === 'explicit' && (!identitySelection.value.subjectId || !identitySelection.value.versionId)) { error.value = '请选择成员与已确认的形象版本'; return }
   const responseTicket = explicit ? captureCompanionTicket(composerElement.value?.querySelector('.save-note')) : undefined
@@ -508,6 +518,7 @@ async function save(explicit = false) {
       status.value = '已保存提交内容 · 最新输入已保留，待保存'
       return
     }
+    draftWriter.cancel()
     if (!props.note) {
       resetting = true
       companionMessageId.value = ''

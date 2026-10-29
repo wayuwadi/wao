@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 import type { Doc } from '@/types'
 
 const api = vi.hoisted(() => ({ fetchDoc: vi.fn(), fetchDocs: vi.fn(), apiPatchDoc: vi.fn() }))
@@ -55,5 +56,28 @@ describe('文档目录和正文分开加载', () => {
     await data.refreshDocs()
     expect(data.docOf('d1').text).toBe('未保存的本机草稿')
     expect(data.docs.d1?.rev).toBe(3)
+  })
+  it('切换成员后旧目录响应和清理回调都不能覆盖新成员请求', async () => {
+    const session = useSessionStore()
+    const login = (id: string) => session.accept({ member: { id, name: id, initial: id, color: '', role: '成员' } } as never)
+    login('a')
+    const data = useDataStore()
+    let finishA!: (rows: Doc[]) => void
+    let finishB!: (rows: Doc[]) => void
+    api.fetchDocs.mockReturnValueOnce(new Promise<Doc[]>(resolve => { finishA = resolve }))
+      .mockReturnValueOnce(new Promise<Doc[]>(resolve => { finishB = resolve }))
+    const first = data.refreshDocs()
+    login('b')
+    const second = data.ensureDocsLoaded()
+    finishA([{ ...full(), id: 'private-a' }])
+    expect(await first).toBe(false)
+    expect(data.docs['private-a']).toBeUndefined()
+    expect(data.loadStates.docs).toBe('loading')
+    const third = data.ensureDocsLoaded()
+    expect(api.fetchDocs).toHaveBeenCalledTimes(2)
+    finishB([{ ...full(), id: 'private-b' }])
+    expect(await second).toBe(true)
+    expect(await third).toBe(true)
+    expect(Object.keys(data.docs)).toEqual(['private-b'])
   })
 })

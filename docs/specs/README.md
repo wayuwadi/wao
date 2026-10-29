@@ -8,6 +8,7 @@
 - [小记默认作者与记录区宽度](notes-default-authors-and-writing-width-2026-10-11.md)
 - [notes-thinking-image-2026-10-13](notes-thinking-image-2026-10-13.md)
 - [小记图文整理](notes-visual-recap-2026-10-28.md)
+- [小记阅读、保存反馈与性能](notes-experience-2026-10-29.md)
 - [项目清单与详情交互](project-checklist-local-2026-10-27.md)
 - [任务标签与待办工作台](task-workspace-labels-2026-10-29.md)
 - [project-list-direct-rename-2026-10-14](project-list-direct-rename-2026-10-14.md)
