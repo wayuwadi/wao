@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 import { computed, onMounted, ref, watch } from 'vue'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
@@ -250,7 +252,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
     <div class="kb-discovery">
       <label class="kb-search">
         <i class="ri-search-line"></i>
-        <input v-model="query" type="search" placeholder="搜索知识库、文件夹或文档标题" />
+        <input v-model="query" type="search" aria-label="搜索知识库、文件夹或文档标题" placeholder="搜索知识库、文件夹或文档标题" />
         <button v-if="query" type="button" aria-label="清空搜索" @click="query = ''"><i class="ri-close-line"></i></button>
       </label>
       <div class="kb-scopes" role="tablist" aria-label="资料范围">
@@ -326,13 +328,14 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
     </div>
     <WaoPagination v-if="knowledgePageCount > 1" v-model:page="knowledgePage" :page-count="knowledgePageCount" :total="visibleCount" aria-label="知识库查询结果分页" />
     <ContextActionMenu ref="contextMenu" />
-    <div v-if="trulyEmpty" class="kb-filter-empty"><span ref="emptySpace">还没有知识库，可以从新建知识库开始。</span></div>
-    <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
-      <i class="ri-search-eye-line"></i>
-      <b>没有匹配的真实资料</b>
-      <span>换个关键词或资料范围试试。</span>
-      <button @click="query = ''; scope = 'all'">查看全部资料</button>
+    <div v-if="trulyEmpty" ref="emptySpace">
+      <WaoEmptyState title="还没有知识库" description="创建一个知识库，把相关文档放在一起。" icon="ri-book-2-line">
+        <template #actions><WaoButton variant="primary" @click="openNewKb">新建知识库</WaoButton></template>
+      </WaoEmptyState>
     </div>
+    <WaoEmptyState v-if="data.loadStates.knowledge === 'loaded' && filtering && visibleCount === 0" title="没有匹配的资料" description="换个关键词或资料范围试试。" icon="ri-search-line">
+      <template #actions><WaoButton @click="query = ''; scope = 'all'">清除筛选</WaoButton></template>
+    </WaoEmptyState>
 
     <!-- 知识库设置弹层 -->
     <template v-if="cfgKb">

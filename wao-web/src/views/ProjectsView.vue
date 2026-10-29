@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } fr
 import { useBrowsingState, validSearch, validPage } from '@/composables/browsingState'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -307,7 +309,7 @@ onBeforeUnmount(() => {
         <div v-if="openDrop" class="drop-mask" @click="openDrop = null"></div>
         <div class="search">
           <i class="ri-search-line"></i>
-          <input v-model="q" placeholder="搜索项目名称或目标…" />
+          <input v-model="q" type="search" aria-label="搜索项目名称或目标" placeholder="搜索项目名称或目标…" />
         </div>
         <div class="drop-wrap">
           <button class="tool-btn" :disabled="!layout.state.loaded" @click="openDrop = openDrop === 'group' ? null : 'group'">
@@ -403,10 +405,14 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </section>
-      <div v-if="filteredProjects.length === 0" class="empty">
-          <i class="ri-filter-3-line"></i>
-          <div><span ref="emptySpace">{{ trulyEmpty ? '还没有项目，可以从右上角新建第一个' : '没有符合条件的项目——试试清除搜索' }}</span></div>
-        </div>
+      <div v-if="filteredProjects.length === 0" ref="emptySpace">
+        <WaoEmptyState :title="trulyEmpty ? '还没有项目' : '没有符合条件的项目'" :description="trulyEmpty ? '创建一个项目，整理目标和接下来要做的事。' : '换个关键词，或清除搜索查看全部项目。'" :icon="trulyEmpty ? 'ri-stack-line' : 'ri-search-line'">
+          <template #actions>
+            <WaoButton v-if="trulyEmpty" variant="primary" :disabled="!layout.state.loaded" @click="startCreateProject()">创建第一个项目</WaoButton>
+            <WaoButton v-else @click="q = ''">清除搜索</WaoButton>
+          </template>
+        </WaoEmptyState>
+      </div>
       </div>
       </div>
       <WaoPagination v-if="projectPageCount > 1" v-model:page="projectPage" :page-count="projectPageCount" :total="filteredProjects.length" aria-label="项目查询结果分页" />

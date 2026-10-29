@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DigitalProfileFacts from '@/components/settings/DigitalProfileFacts.vue'
+import SettingsSearch from '@/components/settings/SettingsSearch.vue'
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
 import PageLayoutPreference from '@/components/settings/PageLayoutPreference.vue'
 import HomeDateReminderSettings from '@/components/settings/HomeDateReminderSettings.vue'
@@ -368,6 +369,7 @@ async function bindFeishu() {
     <!-- 左侧分类 -->
     <nav class="snav" aria-label="设置分类">
       <div class="snav-title">设置<span>让 WAO 更顺手</span></div>
+      <SettingsSearch :current-tab="tab" @navigate="selectTab" />
       <div class="snav-items">
         <template v-for="(item, index) in SETTINGS_CATEGORIES" :key="item.id">
           <div v-if="index === 5" class="snav-divider">更多</div>

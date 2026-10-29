@@ -453,7 +453,7 @@ onMounted(load)
 .metric-grid span {
   display: block;
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .metric-grid strong {
   display: block;
@@ -521,7 +521,7 @@ td {
   border-top: 1px solid var(--wao-line);
   text-align: right;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 th {
   border-top: 0;
@@ -589,7 +589,7 @@ td code {
   color: var(--wao-text);
 }
 .state-card span {
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .inline-error {
   margin-top: 14px;
@@ -599,7 +599,7 @@ td code {
   color: var(--wao-danger-strong);
   display: flex;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .inline-error span {
   flex: 1;

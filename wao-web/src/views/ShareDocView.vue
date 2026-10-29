@@ -27,12 +27,14 @@ const shared = ref<SharedDoc | null>(null)
 const isWorkbook = computed(() => shared.value?.content?.document?.type === WORKBOOK_NODE)
 const loading = ref(true)
 const error = ref('')
+const canRetry = ref(false)
 
 async function load() {
   const request = ++requestId
   clearTimeout(expiryTimer)
   loading.value = true
   error.value = ''
+  canRetry.value = false
   shared.value = null
   try {
     if (token.value) {
@@ -40,7 +42,7 @@ async function load() {
       if (request !== requestId) return
       shared.value = result.doc
       expiresAt.value = result.expiresAt
-      expiryTimer = setTimeout(() => { shared.value = null; error.value = '分享链接已到期。' }, Math.max(0, new Date(result.expiresAt).getTime() - Date.now()))
+      expiryTimer = setTimeout(() => { shared.value = null; canRetry.value = false; error.value = '分享链接已到期，请联系作者获取新的分享链接。' }, Math.max(0, new Date(result.expiresAt).getTime() - Date.now()))
     } else {
       error.value = '此旧分享链接已停用，请文档作者生成限时分享链接。'
       expiresAt.value = ''
@@ -49,7 +51,9 @@ async function load() {
     if (request !== requestId) return
     shared.value = null
     const failure = cause as { status?: number; response?: { status?: number } }
-    error.value = (failure?.status ?? failure?.response?.status) === 404
+    const status = failure?.status ?? failure?.response?.status
+    canRetry.value = status !== 404 && status !== 410
+    error.value = !canRetry.value
       ? '分享链接无效、已撤销或已到期。文档和小记需要作者主动生成限时分享链接。'
       : '分享内容加载失败，请重试。'
   } finally {
@@ -77,8 +81,13 @@ async function copyMd() {
 <template>
   <div class="share-page">
     <div class="share-card" :class="{ 'workbook-card': isWorkbook }">
-      <div v-if="loading" class="state">正在加载…</div>
-      <div v-else-if="error" class="state err">{{ error }} <button type="button" @click="load">重试</button></div>
+      <div v-if="loading" class="state" role="status">正在加载…</div>
+      <div v-else-if="error" class="state err" role="alert">
+        <p>{{ error }}</p>
+        <button v-if="canRetry" type="button" @click="load">重新加载</button>
+        <p v-else>请联系分享者获取新链接。</p>
+        <a href="/">返回 WAO</a>
+      </div>
 
       <template v-else-if="shared">
         <div class="brand">

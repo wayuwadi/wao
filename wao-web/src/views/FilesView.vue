@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
@@ -6,6 +9,8 @@ import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
@@ -14,8 +19,10 @@ import FileDisplayNameEditor from '@/components/files/FileDisplayNameEditor.vue'
 import AssetReplaceModal, { type ReplacementTarget } from '@/components/files/AssetReplaceModal.vue'
 import { fileDisplayName } from '@/utils/files'
 import { useSessionStore } from '@/stores/session'
+import { useClientPagination } from '@/composables/clientPagination'
 
 const data = useDataStore()
+const session = useSessionStore()
 const tab = ref<'files' | 'img' | 'pages'>('files')
 const pageDialog = ref(false)
 const editingPage = ref<HostedPage | null>(null)
@@ -66,20 +73,15 @@ const visibleHostedPages = computed(() =>
   ),
 )
 
-/** 图床默认只铺三排（网格是 5 列，即 15 张），其余点开再看。 */
+/** 图床每页三排，避免一次展开数千张卡片阻塞页面。 */
 const IMG_PAGE = 15
-const showAllImages = ref(false)
-const visibleImages = computed(() =>
-  showAllImages.value ? data.imgs : data.imgs.slice(0, IMG_PAGE),
-)
-const hiddenCount = computed(() =>
-  showAllImages.value ? 0 : Math.max(0, data.imgs.length - IMG_PAGE),
+const { page: imagePage, pageCount: imagePageCount, visible: visibleImages } = useClientPagination(
+  computed(() => data.imgs), [() => session.userId], IMG_PAGE,
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
 const uploading = ref(0)
-const session = useSessionStore()
 type UploadAttempt = {
   id: number
   file: File
@@ -345,9 +347,7 @@ async function savePage() {
   }
 }
 async function removePage(page: HostedPage) {
-  if (!window.confirm(`删除托管页面“${page.title}”？公开链接将立即失效。`)) return
-  await data.deleteHostedPage(page.id)
-  toast(`已删除「${page.title}」`, 'ri-delete-bin-line')
+  confirmAction({ title: '删除托管页面', description: `删除「${page.title}」后，公开链接将立即失效，此操作不可恢复。`, run: () => data.deleteHostedPage(page.id) })
 }
 
 async function uploadAttachments(files: FileList | File[]) {
@@ -429,14 +429,11 @@ async function removeImage(id: string | undefined, name: string) {
     toast('内置示例图不可删除', 'ri-information-line')
     return
   }
-  if (!window.confirm(`删除图片“${name}”？此操作不可恢复。`)) return
-  await data.deleteImage(id)
-  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+  confirmAction({ title: '删除图片', description: `确认删除「${name}」？此操作不可恢复，引用这张图片的内容可能无法继续显示它。`, run: () => data.deleteImage(id) })
 }
 async function removeFile(id: string | undefined, name: string) {
-  if (!id || !window.confirm(`删除文件“${name}”？`)) return
-  await data.deleteFile(id)
-  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+  if (!id) return
+  confirmAction({ title: '删除文件', description: `确认删除「${name}」？此操作不可恢复，原下载链接将无法使用。`, run: () => data.deleteFile(id) })
 }
 
 function onFileSettingsSaved(settings: FileSettings) {
@@ -447,6 +444,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 </script>
 
 <template>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="files wao-page-frame">
     <DemoBanner
       icon="ri-hard-drive-2-line"
@@ -586,11 +584,14 @@ function onFileSettingsSaved(settings: FileSettings) {
         }}
       </div>
       <div class="file-drop" @dragover.prevent @drop.prevent="onDrop">
-        <div v-if="!data.files.length" class="img-empty">
-          <i class="ri-folder-line"></i>
-          <div>还没有文件——把文件拖到这里，或点右上角“上传文件”</div>
-        </div>
-        <div v-else class="file-list">
+        <WaoEmptyState v-if="!data.files.length && data.fileLoadState === 'loading'" title="正在读取文件…" icon="ri-loader-4-line" role="status" />
+        <WaoEmptyState v-else-if="data.fileLoadState === 'error'" title="文件读取失败" :description="data.files.length ? '以下为上次读取的文件，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert">
+          <template #actions><WaoButton @click="data.refreshFiles()">重新读取文件</WaoButton></template>
+        </WaoEmptyState>
+        <WaoEmptyState v-else-if="!data.files.length" title="还没有文件" description="把文件拖到这里，或直接选择要上传的文件。" icon="ri-folder-line">
+          <template #actions><WaoButton variant="primary" :disabled="uploading > 0" @click="unifiedInput?.click()">选择文件</WaoButton></template>
+        </WaoEmptyState>
+        <div v-if="data.files.length" class="file-list">
           <div v-for="(f, i) in data.files" :key="i" class="file-row">
             <div class="file-icon"><i :class="f.icon"></i></div>
             <div class="file-main">
@@ -699,16 +700,7 @@ function onFileSettingsSaved(settings: FileSettings) {
             </div>
           </div>
         </div>
-        <button v-if="hiddenCount" class="img-more" @click="showAllImages = true">
-          <i class="ri-arrow-down-s-line"></i>展开其余 {{ hiddenCount }} 张
-        </button>
-        <button
-          v-else-if="showAllImages && data.imgs.length > IMG_PAGE"
-          class="img-more"
-          @click="showAllImages = false"
-        >
-          <i class="ri-arrow-up-s-line"></i>收起，只看最近 {{ IMG_PAGE }} 张
-        </button>
+        <WaoPagination v-if="data.loadStates.images === 'loaded' && imagePageCount > 1" v-model:page="imagePage" :page-count="imagePageCount" :total="data.imgs.length" aria-label="图床分页" />
 
         <div v-if="data.loadStates.images === 'loaded' && !data.imgs.length" class="img-empty">
           <i class="ri-image-add-line"></i>
@@ -1086,7 +1078,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .unified-drop span {
   color: var(--wao-text-weak);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .unified-drop button {
   height: 30px;
@@ -1123,7 +1115,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 .page-source-bar > span {
   padding: 0 6px;
   color: var(--wao-text-weak);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   font-weight: 650;
 }
 .page-source-bar button {
@@ -1134,7 +1126,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   background: transparent;
   color: var(--wao-text-weak);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .page-source-bar button.active {
   border-color: var(--wao-primary-line);
@@ -1327,7 +1319,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .file-sub {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   white-space: nowrap;
   overflow: hidden;
@@ -1487,7 +1479,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 .drop-tip {
   margin-top: 10px;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .img-info {
@@ -1505,7 +1497,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   text-overflow: ellipsis;
 }
 .img-meta {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .img-copy {
@@ -1514,7 +1506,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -1567,5 +1559,12 @@ function onFileSettingsSaved(settings: FileSettings) {
   .unified-drop button {
     margin-left: 39px;
   }
+}
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .copy-btn, .dl-btn, .img-copy, .img-del, .seg-btn, .btn-primary, .btn-ghost {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .img-del { opacity: 1; }
 }
 </style>

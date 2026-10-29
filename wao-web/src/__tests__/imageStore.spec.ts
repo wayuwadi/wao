@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { absoluteUrl } from '@/utils/share'
+import { apiDeleteImage } from '@/api/board'
+vi.mock('@/api/board', async original => ({ ...await original<object>(), apiDeleteImage: vi.fn<typeof apiDeleteImage>().mockResolvedValue(undefined) }))
 
 /** 图床：所有上传口子的图都要能在「文件与图床」里看到。 */
 describe('data store · 图床', () => {
@@ -58,12 +60,14 @@ describe('data store · 图床', () => {
     expect(data.imgs[0]!.size).toBe('2 KB')
   })
 
-  it('删除按 id 生效', async () => {
+  it('服务器确认后按 id 移除图片', async () => {
     const seeded = data.imgs.length
     await data.uploadImage(png())
     data.imgs[0]!.id = 'img1'
+    data.apiLive = true
 
     await data.deleteImage('img1')
+    expect(apiDeleteImage).toHaveBeenCalledWith('img1')
 
     expect(data.imgs).toHaveLength(seeded)
     expect(data.imgs.every((i) => i.id !== 'img1')).toBe(true)

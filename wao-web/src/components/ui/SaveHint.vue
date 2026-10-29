@@ -22,31 +22,42 @@ const props = defineProps<{
   failed?: boolean
   /** 无法确认服务端结果时显示具体回执，不把超时说成确定未保存。 */
   errorMessage?: string
+  /** 本机草稿尚未开始同步；只有调用方确认草稿可恢复时才传入。 */
+  draft?: boolean
 }>()
 
 const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
 </script>
 
 <template>
-  <span v-if="saving" class="hint">
-    <i class="ri-loader-4-line spin"></i>保存中…
-  </span>
-  <span v-else-if="failed" class="hint bad" :title="savedAt ? `上次保存成功于 ${absoluteTime(savedAt)}` : ''">
-    <i class="ri-error-warning-line"></i>{{ errorMessage || '保存尚未确认，内容已留在本机' }}
-  </span>
-  <span v-else-if="okTime" class="hint ok" :title="absoluteTime(savedAt ?? '')">
-    <i class="ri-checkbox-circle-line"></i>自动保存成功 {{ okTime }}
+  <span class="save-feedback" role="status" aria-live="polite" aria-atomic="true">
+    <span v-if="saving" class="hint">
+      <i class="ri-loader-4-line spin" aria-hidden="true"></i>保存中…
+    </span>
+    <span v-else-if="failed" class="hint bad" :title="savedAt ? `上次保存成功于 ${absoluteTime(savedAt)}` : ''">
+      <i class="ri-error-warning-line" aria-hidden="true"></i>{{ errorMessage || '保存尚未确认，内容已留在本机' }}
+    </span>
+    <span v-else-if="draft" class="hint">
+      <i class="ri-draft-line" aria-hidden="true"></i>本机草稿 · 尚未同步
+    </span>
+    <span v-else-if="okTime" class="hint ok" :title="absoluteTime(savedAt ?? '')">
+      <i class="ri-checkbox-circle-line" aria-hidden="true"></i>自动保存成功 {{ okTime }}
+    </span>
   </span>
 </template>
 
 <style scoped>
+.save-feedback { min-width: 0; max-width: 100%; }
 .hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
-  white-space: nowrap;
+  gap: var(--wao-space-1);
+  max-width: 100%;
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
 }
 .hint.ok {
   color: var(--wao-success-strong);
@@ -55,7 +66,8 @@ const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
   color: var(--wao-danger-strong);
 }
 .hint i {
-  font-size: 12.5px;
+  flex-shrink: 0;
+  font-size: var(--wao-font-body);
 }
 .spin {
   animation: waoSpin 0.9s linear infinite;
@@ -64,5 +76,8 @@ const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
   to {
     transform: rotate(360deg);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
 }
 </style>

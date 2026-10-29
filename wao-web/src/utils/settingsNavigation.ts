@@ -46,3 +46,33 @@ export function normalizeSettingsTab(value: unknown, hash = ''): string {
 export function settingsCategory(tab: string): string {
   return entryCategories.get(tab) ?? normalizeSettingsTab(tab)
 }
+
+export interface SettingsSearchResult {
+  id: string
+  label: string
+  description: string
+  category: string
+  icon: string
+}
+
+const searchKeywords: Record<string, string> = {
+  common: '首页 日期 提醒 快捷键', appearance: '主题 深色 浅色 明暗 陪伴',
+  notes: '润色 提示词 标签 配图 发现 小记 AI', account: '密码 邮箱 登录 飞书',
+  'notification-policy': '消息 免打扰 通知', 'ai-accounts': '模型 Codex AI',
+}
+
+/** 搜索目录元数据，不读取设置值、凭据或用户草稿。 */
+export function searchSettings(query: string): SettingsSearchResult[] {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return []
+  const entries: SettingsSearchResult[] = SETTINGS_CATEGORIES.flatMap(category => [
+    { id: category.id, label: category.label, description: category.description, category: '设置分类', icon: category.icon },
+    ...(SETTINGS_ENTRIES[category.id as keyof typeof SETTINGS_ENTRIES] ?? []).map(entry => ({
+      id: entry[0], label: entry[1], description: entry[2], category: category.label, icon: entry[3],
+    })),
+  ])
+  return entries.filter(entry => {
+    const text = `${entry.label} ${entry.description} ${entry.category} ${searchKeywords[entry.id] ?? ''}`.toLocaleLowerCase()
+    return words.every(word => text.includes(word))
+  }).sort((a, b) => Number(words.every(word => b.label.toLocaleLowerCase().includes(word))) - Number(words.every(word => a.label.toLocaleLowerCase().includes(word))))
+}

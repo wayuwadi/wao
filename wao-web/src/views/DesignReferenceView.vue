@@ -20,6 +20,23 @@ import WaoLogo from '@/components/WaoLogo.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
+import SaveHint from '@/components/ui/SaveHint.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import DataLoadStatus from '@/components/ui/DataLoadStatus.vue'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import type { ConfirmAction } from '@/composables/confirmAction'
+import SettingsSearch from '@/components/settings/SettingsSearch.vue'
+import type { DataDomain, DataLoadState } from '@/stores/data'
+import { DATA_DOMAIN_LABELS } from '@/utils/pageDataDomains'
+const demoConfirmation = ref<ConfirmAction | null>(null)
+const demoDomainStates = ref(Object.fromEntries(Object.keys(DATA_DOMAIN_LABELS).map(domain => [domain, domain === 'docs' || domain === 'files' ? 'error' : 'loaded'])) as Record<DataDomain, DataLoadState>)
+function showConfirmExample() {
+  let attempt = 0
+  demoConfirmation.value = { title: '删除示例文件', description: '这是合成演示，不会删除任何真实文件。第一次操作演示网络失败，重试后完成。', run: async () => {
+    if (++attempt === 1) throw new Error('演示：网络暂不可用，示例文件仍保留，请重试。')
+    feedback.value = '确认流程演示完成，没有删除真实文件。'
+  } }
+}
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
@@ -539,6 +556,16 @@ const detailDemoComment = ref('')
           <p class="demonstration-note">
             冲突操作仅切换示例状态；真实功能需提供双方内容对比和版本检查。
           </p>
+          <WaoCard class="feedback-examples" padding="roomy">
+            <h2>公共反馈组件 · 合成演示</h2>
+            <SaveHint :saving="stateId === 'saving'" :draft="stateId === 'draft'" :failed="stateId === 'error'" :saved-at="stateId === 'saved' ? '2026-10-29T09:00:00+08:00' : null" />
+            <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
+            <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
+            <WaoButton @click="showConfirmExample">演示删除确认与失败重试</WaoButton>
+            <SettingsSearch current-tab="demo" @navigate="feedback = `演示找到设置入口：${$event}，没有离开本页。`" />
+            <p role="status">{{ feedback }}</p>
+          </WaoCard>
+          <ConfirmActionDialog v-if="demoConfirmation" :action="demoConfirmation" :theme="theme" @close="demoConfirmation = null" />
         </template>
 
         <template v-else>

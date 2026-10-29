@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
@@ -7,6 +10,8 @@ import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
@@ -89,9 +94,10 @@ function commitGroupName(id: string, event: Event) {
 async function removeGroup(id: string) {
   const group = data.vault.find((g) => g.id === id)
   if (!group || group.isDefault) return
-  if (!window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
-  await data.deleteVaultGroup(id)
-  if (groupId.value === id) groupId.value = 'all'
+  confirmAction({ title: '删除密码库分组', description: `确认删除「${group.group}」及其中 ${group.items.length} 个条目？此操作不可恢复。`, run: async () => {
+    await data.deleteVaultGroup(id)
+    if (groupId.value === id) groupId.value = 'all'
+  } })
 }
 async function dropGroup(targetId: string) {
   const sourceId = draggedGroupId.value
@@ -229,11 +235,11 @@ async function saveItem() {
 }
 async function deleteItem() {
   if (!sel.value) return
-  if (!window.confirm(`删除条目“${sel.value.name}”？此操作不可恢复。`)) return
   const id = sel.value.id
-  selId.value = null
-  await data.deleteVaultItem(id)
-  toast('已删除条目', 'ri-delete-bin-line')
+  confirmAction({ title: '删除密码库条目', description: `确认删除「${sel.value.name}」？此操作不可恢复。`, run: async () => {
+    await data.deleteVaultItem(id)
+    if (selId.value === id) selId.value = null
+  } })
 }
 async function closeItem() {
   if (savingItem.value) return
@@ -252,6 +258,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 </script>
 
 <template>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="vault wao-page-frame">
     <div class="vtop">
       <div class="vtitle">密码库</div>
@@ -265,7 +272,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 
     <div v-if="data.vaultError" class="banner error">
       <i class="ri-error-warning-line"></i>
-      <span>密码库读取失败，这里暂时是空的——你的条目仍在服务端，没有丢失。</span>
+      <span>{{ data.vault.length ? '密码库读取失败，以下为上次读取结果。请重试获取最新内容。' : '密码库读取失败，请检查连接后重试。' }}</span>
       <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
     </div>
 
@@ -310,7 +317,13 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
           </div>
           <i class="ri-arrow-right-s-line item-go"></i>
         </button>
-        <div v-if="filtered.length === 0" class="empty">这个分组还没有条目</div>
+        <WaoEmptyState v-if="!items.length && data.loadStates.vault === 'loading'" title="正在读取密码库…" icon="ri-loader-4-line" role="status" />
+        <WaoEmptyState v-else-if="filtered.length === 0 && !data.vaultError" :title="query.trim() ? '没有匹配的条目' : '这个分组还没有条目'" :description="query.trim() ? '试试其他名称、账号或网址。' : '添加条目后，可以在这里查看和复制。'">
+          <template #actions>
+            <WaoButton v-if="query.trim()" @click="query = ''">清除搜索</WaoButton>
+            <WaoButton v-else variant="primary" @click="openNewItem">添加第一个条目</WaoButton>
+          </template>
+        </WaoEmptyState>
         <WaoPagination v-if="vaultPageCount > 1" v-model:page="vaultPage" :page-count="vaultPageCount" :total="filtered.length" aria-label="密码条目查询结果分页" />
       </div>
 
@@ -526,7 +539,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .col-label {
   padding: 2px 8px 6px;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   letter-spacing: 1.5px;
 }
@@ -572,7 +585,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   text-align: left;
 }
 .gb-count {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .group-add {
@@ -588,7 +601,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   cursor: pointer;
   background: none;
   color: var(--wao-text-3);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .group-add:hover {
   border-color: var(--wao-primary);
@@ -648,7 +661,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .item-user {
   margin-top: 1px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   white-space: nowrap;
   overflow: hidden;
@@ -684,7 +697,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .d-sub {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .fields {
@@ -736,7 +749,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-2);
   cursor: pointer;
 }
@@ -1004,4 +1017,11 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   .f-icon i { font-size: 16px; }
 }
 @media (max-width: 760px) { .vault .group-col { flex: 0 0 auto; max-height: 25%; } .vault .item-col { flex: 1; min-height: 0; } }
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .group-action, .f-icon, .f-btn, .dp-back, .icon-btn, .group-manage, .btn-primary, .retry {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .group-edit-row { flex-wrap: wrap; }
+}
 </style>
