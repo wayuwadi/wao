@@ -12,19 +12,24 @@ try {
     $url=[Text.Encoding]::UTF8.GetString($plain)
     $uri=[uri]$url
     if ($uri.Scheme -ne 'https' -or $uri.Host -notin @('open.feishu.cn','open.larksuite.com') -or $uri.AbsolutePath -notmatch '^/open-apis/bot/v2/hook/[A-Za-z0-9_-]+$' -or $uri.Query -or $uri.UserInfo) { throw 'Invalid group webhook destination' }
-    foreach ($file in @(Get-ChildItem -LiteralPath $config.inbox -Filter '*.json' -File | Sort-Object LastWriteTimeUtc | Select-Object -First 10)) {
+    $policies=@{failure=$true;success=$false}
+    foreach($scene in @('failure','success')) {
+        try {
+            $policy=Invoke-RestMethod -Uri ($config.policyBaseUrl.TrimEnd('/')+'/jenkins-'+$scene) -TimeoutSec 5
+            if ($policy.code -eq 0 -and $policy.data.allowed -is [bool]) { $policies[$scene]=$policy.data.allowed }
+        } catch { }
+    }
+    $attempts=0
+    foreach ($file in @(Get-ChildItem -LiteralPath $config.inbox -Filter '*.json' -File | Sort-Object LastWriteTimeUtc)) {
         if ($file.Length -gt 16384 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
         $event=Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($event.status -notin @('FAILURE','RECOVERY','TEST')) { continue }
         if ($file.Name -ne ($event.id+'.json') -or $event.id -notmatch '^[0-9a-f-]{36}$') { continue }
         # Respect the current group policy. Failure notifications alone fail open if WAO is unavailable.
         $scene=if($event.status -eq 'FAILURE'){'failure'}else{'success'}
-        $allowed=$event.status -eq 'FAILURE'
-        try {
-            $policy=Invoke-RestMethod -Uri ($config.policyBaseUrl.TrimEnd('/')+'/jenkins-'+$scene) -TimeoutSec 5
-            if ($policy.code -eq 0 -and $policy.data.allowed -is [bool]) { $allowed=$policy.data.allowed }
-        } catch { }
-        if (!$allowed) { continue }
+        if (!$policies[$scene]) { continue }
+        if ($attempts -ge 3) { break }
+        $attempts++
         $body=@{msg_type='text';content=@{text=($event.title+"`n"+$event.body+"`n事件时间："+$event.occurredAt+"`n事件编号："+$event.id)}} | ConvertTo-Json -Depth 4 -Compress
         try {
             $reply=Invoke-RestMethod -Method Post -Uri $url -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 15
