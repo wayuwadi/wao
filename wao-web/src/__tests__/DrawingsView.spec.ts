@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import DrawingsView from '@/views/DrawingsView.vue'
+vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
   fetchDrawings,
@@ -64,7 +65,7 @@ describe('个人草图优化', () => {
     expect(fetchDrawing).not.toHaveBeenCalled()
     expect(fetchDrawingVersions).not.toHaveBeenCalled()
     expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(false)
-    await wrapper.get('.file-row').trigger('click')
+    await wrapper.get('.file-open').trigger('click')
     await flushPromises()
     expect(fetchDrawing).toHaveBeenCalledWith('dr1')
     wrapper.unmount()
@@ -144,5 +145,4 @@ describe('个人草图优化', () => {
     expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(true)
     wrapper.unmount()
   })
-
 })
