@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>试点讨论｜知识检索</title>
+<style>
+:root {
+  --page-bg: #f5f6f2;
+  --surface: #ffffff;
+  --surface-2: #eef2ed;
+  --text: #25362f;
+  --muted: #66756d;
+  --line: #d8e1d8;
+  --accent: #356b53;
+  --accent-soft: #e2eee5;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+}
+main { max-width: 808px; margin: 0 auto; padding: 52px 24px 48px; }
+header { margin-bottom: 32px; }
+.eyebrow { color: var(--accent); font-size: 12px; letter-spacing: .16em; font-weight: 700; margin: 0 0 14px; }
+h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.24; letter-spacing: -.035em; margin: 0 0 22px; }
+h2 { font-size: 22px; line-height: 1.4; margin: 0 0 16px; }
+h3 { font-size: 16px; line-height: 1.5; margin: 0 0 8px; }
+p { margin: 0; }
+.lead { color: var(--muted); }
+section { margin-top: 24px; padding: 26px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.label { color: var(--muted); font-size: 12px; letter-spacing: .08em; margin-bottom: 7px; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.feedback + .feedback { border-left: 1px solid var(--line); padding-left: 20px; }
+.boundary { margin-top: 20px; padding: 14px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; }
+figure { margin: 0; }
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px; margin: 22px 0; }
+.step { position: relative; min-width: 0; padding: 15px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow-wrap: anywhere; }
+.step:not(:last-child)::after { content: ""; position: absolute; top: 50%; left: 100%; width: 22px; border-top: 1px solid var(--accent); }
+.step:not(:last-child)::before { content: ""; position: absolute; top: calc(50% - 3px); left: calc(100% + 14px); width: 6px; height: 6px; border-top: 1px solid var(--accent); border-right: 1px solid var(--accent); transform: rotate(45deg); }
+.number { display: block; color: var(--accent); font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+.step p { font-size: 15px; }
+figcaption { padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.8; }
+.quote-label { display: block; font-weight: 700; margin-bottom: 6px; }
+.review { background: var(--accent-soft); }
+.review h2 { color: var(--accent); }
+.review p + p { margin-top: 12px; }
+.pending { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pending div { padding-top: 12px; border-top: 1px solid var(--line); }
+.pending strong { display: block; font-size: 20px; font-weight: 600; }
+footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
+@media (max-width: 600px) {
+  main { padding: 30px 16px; }
+  section { padding: 20px; }
+  .two-col { grid-template-columns: 1fr; gap: 16px; }
+  .feedback + .feedback { border-left: 0; border-top: 1px solid var(--line); padding: 16px 0 0; }
+  .flow { grid-template-columns: 1fr; gap: 24px; }
+  .step { padding: 16px; }
+  .step:not(:last-child)::after { top: 100%; left: 25px; width: 0; height: 24px; border-top: 0; border-left: 1px solid var(--accent); }
+  .step:not(:last-child)::before { top: calc(100% + 15px); left: 22px; transform: rotate(135deg); }
+  .number { margin-bottom: 5px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">试点讨论 / 知识检索</p>
+    <h1>先验证回答与出处，<br>再讨论是否扩大范围</h1>
+    <p class="lead">产品反馈找资料太慢、答案出处不清，研发评审支持先做小范围试点。<br>目前效果尚未验证，决定从十份代表资料、二十个常见问题开始，再邀请三个同事试用。</p>
+  </header>
+
+  <section aria-labelledby="context-title">
+    <p class="label">讨论背景 · 原文转述</p>
+    <h2 id="context-title">支持先试，但不扩到所有知识库</h2>
+    <div class="two-col" data-grid>
+      <div class="feedback">
+        <h3>产品反馈</h3>
+        <p>大家找资料太慢，而且不知道答案来自哪份文档。</p>
+      </div>
+      <div class="feedback">
+        <h3>研发评审意见</h3>
+        <p>支持先试一下，但不要扩到所有知识库。</p>
+      </div>
+    </div>
+    <p class="boundary"><strong>当前状态：</strong>还没验证过效果。</p>
+  </section>
+
+  <section aria-labelledby="plan-title">
+    <p class="label">已定安排 · 尚待执行</p>
+    <h2 id="plan-title">从代表资料到同事试用</h2>
+    <figure aria-labelledby="plan-title">
+      <div class="flow" data-grid>
+        <div class="step">
+          <span class="number">01 / 选资料</span>
+          <h3>十份代表资料</h3>
+          <p>先选定试点材料。</p>
+        </div>
+        <div class="step">
+          <span class="number">02 / 整理问题</span>
+          <h3>二十个常见问题</h3>
+          <p>整理用于验证的问题。</p>
+        </div>
+        <div class="step">
+          <span class="number">03 / 验证</span>
+          <h3>回答与出处</h3>
+          <p>验证回答和来源文档。</p>
+        </div>
+        <div class="step">
+          <span class="number">04 / 试用</span>
+          <h3>三个同事</h3>
+          <p>完成验证后，再邀请试用。</p>
+        </div>
+      </div>
+      <figcaption>
+        <span class="quote-label">原文依据 · 箭头表示计划顺序</span>
+        “决定先选十份代表资料，整理二十个常见问题，验证回答和出处，再请三个同事试用。”
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="review" aria-labelledby="review-title">
+    <p class="label">后续决策</p>
+    <h2 id="review-title">试用一周后收集反馈，扩围再议</h2>
+    <p>是否扩大到全部知识库，留待试用一周、收集反馈后再讨论。</p>
+    <p><strong>扩大范围尚未决定。</strong>原文没有设定扩围的具体判断标准。</p>
+  </section>
+
+  <section aria-labelledby="pending-title">
+    <p class="label">待明确</p>
+    <h2 id="pending-title">负责人和开始日期都未定</h2>
+    <div class="pending" data-grid data-keep-columns>
+      <div>
+        <p class="label">负责人</p>
+        <strong>未确定</strong>
+      </div>
+      <div>
+        <p class="label">具体开始日期</p>
+        <strong>未确定</strong>
+      </div>
+    </div>
+  </section>
+
+  <footer>整理自《试点讨论》｜保留讨论意见、计划安排与未决事项的区别。</footer>
+</main>
+</body>
+</html>

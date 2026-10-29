@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { recapDocument } from '@/utils/noteVisualRecap'
+import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 const codeExample = ref('```sql\n-- 示例数据，不连接数据库\nSELECT name, COUNT(*) AS total\nFROM demo_orders\nWHERE status = \'ready\'\nGROUP BY name;\n```')
 import ProjectSubtaskControls from '@/components/ui/ProjectSubtaskControls.vue'
@@ -244,6 +246,7 @@ const detailDemoComment = ref('')
             <h1>轻盈，有秩序。</h1>
             <p>蓝紫强调 · 清楚的文字 · 细线分隔 · 克制的圆角</p>
           </div>
+          <section class="reference-section"><h2>小记 · 图文整理</h2><p>合成样例，只验证排版；不读取小记或调用模型。</p><iframe title="图文整理合成示例" sandbox="" referrerpolicy="no-referrer" :srcdoc="recapDocument(recapExample, theme === 'dark')" class="recap-example" /></section>
           <section class="reference-section">
             <h2>代码块 · 示例数据</h2>
             <MarkdownEditor v-model="codeExample" :advanced="true" />
@@ -676,6 +679,7 @@ const detailDemoComment = ref('')
 </template>
 
 <style scoped>
+.recap-example { width:100%; height:640px; border:1px solid var(--wao-line); border-radius:var(--wao-radius-card); }
 .detail-demo-row input[type=checkbox] { appearance:none; width:14px; height:14px; border:1px solid var(--wao-primary); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:inline-grid; place-content:center; }
 .detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }
 .detail-demo-row input[type=checkbox]:checked::after { content:"✓"; color:var(--wao-on-primary); font-size:var(--wao-font-caption); }

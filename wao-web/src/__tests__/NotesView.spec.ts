@@ -1082,6 +1082,18 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('首次后台读取不插入占位文字，已有小记仍保持原位置', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '已有小记')
+    data.loadStates.docs = 'loading'
+    const wrapper = await view()
+    expect(wrapper.text()).not.toContain('正在读取小记')
+    expect(wrapper.find('[role="status"].empty').exists()).toBe(false)
+    expect(wrapper.get('[data-note-id="one"]').text()).toContain('已有小记')
+    expect(wrapper.get('[aria-label="刷新小记清单"]').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('[aria-label="小记清单"]').attributes('aria-busy')).toBe('true')
+  })
+
   it('清单删除失败保留小记和新建草稿，重试成功后移出清单', async () => {
     const data = useDataStore()
     data.docs.one = doc('one', '待删小记')
