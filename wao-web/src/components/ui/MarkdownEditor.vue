@@ -58,7 +58,8 @@ import { useSessionStore } from '@/stores/session'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
-import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
+import { copyRichContent, portableClipboardHtml, plainClipboardText } from '@/utils/richClipboard'
+import { DocumentLink, repairFilePathLinks, shouldAutoLink } from './editorLink'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
 import { noteMediaCopyText } from '@/utils/noteMediaClipboard'
 import { toast } from '@/composables/toast'
@@ -773,9 +774,9 @@ const DocumentMarkdown = Markdown.extend({
     const manager = this.editor.markdown
     if (!manager) return
     const parse = manager.parse.bind(manager)
-    manager.parse = source => editorBlockImages(parse(source) as RichDocNode)
+    manager.parse = source => repairFilePathLinks(editorBlockImages(parse(source) as RichDocNode))
     const content = this.editor.options.content
-    if (content && typeof content === 'object' && !Array.isArray(content)) this.editor.options.content = editorBlockImages(content as RichDocNode)
+    if (content && typeof content === 'object' && !Array.isArray(content)) this.editor.options.content = repairFilePathLinks(editorBlockImages(content as RichDocNode))
   },
 })
 
@@ -793,15 +794,17 @@ const editor = useEditor({
       orderedList: false,
       codeBlock: false,
       underline: false,
-      link: {
+      link: false,
+    }),
+    DocumentLink.configure({
         // 可编辑态由下方 handleClick 统一“选中整段 + 安全新开窗口”，避免插件与编辑菜单各开一次。
         openOnClick: false,
         enableClickSelection: false,
+        shouldAutoLink,
         protocols: ['codex'],
         isAllowedUri: (url, context) => /^codex:/i.test(url)
           ? isCodexThreadUrl(url) : context.defaultValidate(url),
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-      },
     }),
     IndentableHeading.configure({ levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] }),
     IndentableBulletList,
@@ -858,7 +861,7 @@ const editor = useEditor({
           return true
         }
         event.clipboardData.setData('text/html', portableClipboardHtml(dom.innerHTML))
-        event.clipboardData.setData('text/plain', markdown)
+        event.clipboardData.setData('text/plain', plainClipboardText(dom.innerHTML))
         event.preventDefault()
         return true
       },
@@ -1526,7 +1529,7 @@ function onEditorContentClick(event: MouseEvent) {
   }
   const link = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null
   const e = editor.value
-  if (!props.linkControls || !link || !e) return
+  if (!link || !e || props.readonly) return
   event.preventDefault()
   const href = normalizedLinkUrl(link.getAttribute('href') ?? '')
   if (!href) return
@@ -2305,7 +2308,7 @@ function applyExternalDocument(next: RichDocNode | null) {
     pendingExternalDocument = next
     return
   }
-  e.commands.setContent(editorBlockImages(next), { emitUpdate: false })
+  e.commands.setContent(repairFilePathLinks(editorBlockImages(next)), { emitUpdate: false })
 }
 /** 失焦时把输入期间错过的外部更新补灌回来。 */
 function flushExternal() {
@@ -2313,7 +2316,7 @@ function flushExternal() {
   pendingExternalDocument = null
   if (nextDocument && editor.value && JSON.stringify(nextDocument) === JSON.stringify(props.document)
     && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
-    editor.value.commands.setContent(editorBlockImages(nextDocument), { emitUpdate: false })
+    editor.value.commands.setContent(repairFilePathLinks(editorBlockImages(nextDocument)), { emitUpdate: false })
     pendingExternal = null
     return
   }
@@ -2346,7 +2349,7 @@ async function copyFormatted() {
     mediaTextCopied.value = false; mediaCopyContent.value = content; return
   }
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
-  toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
+  toast(ok ? '已复制，支持富文本与纯文本粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
 async function focusSearch(term: string) {
   findText.value = term
