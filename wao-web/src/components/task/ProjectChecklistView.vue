@@ -2,6 +2,9 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMemberPreference } from '@/composables/memberPreference'
 import { useSessionStore } from '@/stores/session'
+import { isTaskFinished } from '@/utils/projectCompletion'
+import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
+import { useTaskLabelsStore } from '@/stores/taskLabels'
 import CellMenu from '@/components/task/CellMenu.vue'
 import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS, projectStatusLabel } from '@/utils/projectStatusPresentation'
 import { selectableTaskStatuses } from '@/config/features'
@@ -50,9 +53,11 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const props = defineProps<{ items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
+const labels = useTaskLabelsStore()
+const tagsFor = (id: string) => { const ref = props.itemRefs[id]; return labels.get(ref?.taskId ?? id, ref?.subId).tags }
 const deadlineDefaults = useTaskDeadlineDefaults()
 const today = ref(todayIso())
 const refreshToday = () => { today.value = todayIso() }
@@ -167,7 +172,7 @@ onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
 const selectedId = ref('')
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
-  const items = props.items.filter(t => props.showDone || t.status !== '已完成' || pendingCompletion.value.has(t.id) || data.taskSaveState(actions.sourceId(t.id)) === 'error')
+  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || data.taskSaveState(actions.sourceId(t.id)) === 'error')
   const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
@@ -177,7 +182,7 @@ const groupedRows = computed(() => (props.sections ?? [{ id: '__all', name: '', 
 const dragging = ref<string | null>(null)
 const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
 function startDrag(id: string, event: DragEvent) {
-  if (props.busy) { event.preventDefault(); return }
+  if (props.busy || props.disableHierarchyDrag) { event.preventDefault(); return }
   dragging.value = id
   event.dataTransfer?.setData('text/plain', id)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
@@ -188,7 +193,8 @@ function drop(target: string | null, event: DragEvent) {
 }
 watch(rows, value => {
   if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
-  if (!value.some(row => row.task.id === selectedId.value)) selectedId.value = value[0]?.task.id ?? ''
+  const visibleMatches = value.filter(row => matches.value.some(t => t.id === row.task.id))
+  if (!visibleMatches.some(row => row.task.id === selectedId.value)) selectedId.value = visibleMatches[0]?.task.id ?? value[0]?.task.id ?? ''
 }, { immediate: true })
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
@@ -340,6 +346,7 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (!task) return
   void contextMenu.value?.openAt(event, task.title || '未命名任务', [
     { id: 'add-child', label: '添加子任务', disabled: props.busy || actions.busy(id), run: () => startChild(id) },
+    { id: 'tags', label: '设置标签', run: () => { selectedId.value = id; detailOnlySelection.value = true } },
     { id: 'open', label: '打开任务详情', run: () => actions.open(id) },
   ])
 }
@@ -364,13 +371,13 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </div>
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
-      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
         <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
           <span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
-          <span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : '截止日期'">{{ task.due }}</span>
+          <span v-if="tagsFor(task.id).length" class="task-meta" :title="tagsFor(task.id).join('，')"># {{ tagsFor(task.id)[0] }}</span><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : '截止日期'">{{ task.due }}</span>
         </button>
       </div>
       </div></section>
@@ -390,6 +397,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
+        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <div class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
           <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @focus="outlineOpen = true" @click="outlineOpen = true"><i class="ri-list-unordered"></i></button>

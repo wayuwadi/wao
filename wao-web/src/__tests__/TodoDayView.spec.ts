@@ -5,7 +5,7 @@ import { ref } from 'vue'
 const fetchDay = vi.hoisted(() => vi.fn())
 vi.mock('@/api/dayWorkspace', async importOriginal => ({ ...await importOriginal<typeof import('@/api/dayWorkspace')>(), fetchDayWorkspace: fetchDay }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }), useRoute: () => ({ query: {} }) }))
-import TodoView from '@/views/TodoView.vue'
+import TodoView from '@/views/TodoLegacyView.vue'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'

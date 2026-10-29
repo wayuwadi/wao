@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import TodoView from '@/views/TodoView.vue'
+import TodoView from '@/views/TodoLegacyView.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
-import todoViewSource from '@/views/TodoView.vue?raw'
+import todoViewSource from '@/views/TodoLegacyView.vue?raw'
 
 describe('TodoView', () => {
   let data: ReturnType<typeof useDataStore>

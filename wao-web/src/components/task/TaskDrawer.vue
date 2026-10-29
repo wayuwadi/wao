@@ -12,6 +12,7 @@ import { toast } from '@/composables/toast'
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
+import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -1092,6 +1093,7 @@ async function uploadAttachment(event: Event) {
       <div v-if="!openSub && parentTask" class="task-hierarchy-links">
         <div v-if="parentTask">父任务：<button @click="ui.openTask(parentTask.id)">#{{ parentTask.number ?? '…' }} {{ parentTask.title }}</button></div>
       </div>
+      <TaskLabelEditor :key="task.id + (openSubId ?? '')" :task-id="task.id" :sub-id="openSubId ?? undefined" />
       <TaskDetailLayout
         ref="detailLayout"
         :context-key="detailContextKey"

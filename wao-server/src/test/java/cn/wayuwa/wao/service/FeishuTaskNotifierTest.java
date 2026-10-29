@@ -36,6 +36,31 @@ class FeishuTaskNotifierTest {
     }
 
     @Test
+    void privateInboxNeverEmitsTaskCardsEvenWhenAllPoliciesAndProjectGateAreEnabled() {
+        when(gate.enabled(any())).thenReturn(true);
+        when(settings.get(SettingService.QUICK_COLLECT_MENTIONS, "")).thenReturn("");
+        for (String project : java.util.Arrays.asList(null, "", "   ")) {
+            assertThat(notifier.notifyTaskCreated("private", project, "私人标题", "收集箱", "本人", "私人正文")).isFalse();
+            assertThat(notifier.notifyStatusChanged("private", project, "私人标题", "收集箱", "待办", "进行中", "本人")).isFalse();
+            assertThat(notifier.notifySubtasksAdded("private", project, "私人标题", "收集箱", List.of("私人子项"), "本人", "本人", List.of("ou_other"))).isFalse();
+            assertThat(notifier.notifyCollecting("private", project, "私人标题", "收集箱", "私人正文", null)).isFalse();
+            assertThat(notifier.notifyRunSucceeded("private", project, "私人标题", "整个任务", "私人结果")).isFalse();
+            assertThat(notifier.notifyRunFailed("private", project, "私人标题", "整个任务", false, "私人错误")).isFalse();
+        }
+        org.mockito.Mockito.verifyNoInteractions(webhook);
+    }
+
+    @Test
+    void sharedProjectTaskActivityStillUsesItsEnabledPolicy() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyCard(any())).thenReturn(true);
+        assertThat(notifier.notifyTaskCreated("t1", "p1", "共享任务", "协作清单", "成员", "描述")).isTrue();
+        assertThat(notifier.notifyStatusChanged("t1", "p1", "共享任务", "协作清单", "待办", "进行中", "成员")).isTrue();
+        assertThat(notifier.notifySubtasksAdded("t1", "p1", "共享任务", "协作清单", List.of("子项"), "成员", "成员", List.of())).isTrue();
+        verify(webhook, org.mockito.Mockito.times(3)).notifyCard(any());
+    }
+
+    @Test
     void skipsEveryProjectScopedCardWhenTheProjectIsMuted() {
         when(gate.enabled("p2")).thenReturn(false);
 

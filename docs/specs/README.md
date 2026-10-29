@@ -9,6 +9,7 @@
 - [notes-thinking-image-2026-10-13](notes-thinking-image-2026-10-13.md)
 - [小记图文整理](notes-visual-recap-2026-10-28.md)
 - [项目清单与详情交互](project-checklist-local-2026-10-27.md)
+- [任务标签与待办工作台](task-workspace-labels-2026-10-29.md)
 - [project-list-direct-rename-2026-10-14](project-list-direct-rename-2026-10-14.md)
 - [project-list-empty-groups-2026-10-14](project-list-empty-groups-2026-10-14.md)
 - [project-members-management-2026-10-14](project-members-management-2026-10-14.md)

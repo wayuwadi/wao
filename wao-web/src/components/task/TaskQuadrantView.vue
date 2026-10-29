@@ -5,7 +5,13 @@ import { taskTreeRows } from '@/utils/taskHierarchy'
 import TaskOrderStatus from './TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useMemberPreference } from '@/composables/memberPreference'
+import { useTaskLabelsStore } from '@/stores/taskLabels'
+import { defaultQuadrantRules, decodeQuadrantRules, type QuadrantRule } from '@/utils/taskQuadrantRules'
+import { matchesTaskWorkspaceFilter } from '@/utils/taskWorkspaceFilter'
+import TaskFilterSelect from './TaskFilterSelect.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
@@ -66,11 +72,24 @@ const treeRows = computed(() => {
     return { ...decoTask(task), depth, quadrantPriority: priority }
   })
 })
-const sections = computed(() => TASK_QUADRANTS.map(quadrant => ({
-  ...quadrant,
-  tasks: treeRows.value.filter(task => task.quadrantPriority === quadrant.priority),
-  count: treeRows.value.filter(task => task.quadrantPriority === quadrant.priority && !task.depth).length,
-})))
+const labels = useTaskLabelsStore()
+watch(() => labels.identity, () => { if (!labels.ready && !labels.loading) void labels.load() }, {immediate:true})
+const rules = useMemberPreference(computed(()=>`task-quadrants-v1:${props.projectId ?? 'personal'}`),decodeQuadrantRules,JSON.stringify)
+const editingRule = ref<number|null>(null)
+const draftRule = ref<QuadrantRule>(defaultQuadrantRules()[0]!)
+watch([()=>labels.identity,()=>props.projectId],()=>{editingRule.value=null;draftRule.value=defaultQuadrantRules()[0]!})
+const customized = computed(()=>rules.value.value.some(r=>r.custom))
+function editRule(index:number) { draftRule.value=JSON.parse(JSON.stringify(rules.value.value[index]!)); editingRule.value=index }
+function saveRule() { if(editingRule.value===null)return; void rules.set(rules.value.value.map((r,i)=>i===editingRule.value?{...draftRule.value,custom:true}:r));editingRule.value=null }
+function resetRule() { if(editingRule.value===null)return; void rules.set(rules.value.value.map((r,i)=>i===editingRule.value?defaultQuadrantRules()[i]!:r));editingRule.value=null }
+const sections = computed(() => TASK_QUADRANTS.map((quadrant,index) => {
+ const rule=rules.value.value[index]!
+ const candidates=new Set(props.tasks.map(t=>t.id))
+ const matching=rule.custom?treeRows.value.filter(task=>{ if(!candidates.has(task.id))return false; const ref=props.itemRefs?.[task.id]; return matchesTaskWorkspaceFilter(task,labels.get(ref?.taskId??task.id,ref?.subId).tags,rule,data.today) }):treeRows.value.filter(task=>task.quadrantPriority===quadrant.priority)
+ const visible=props.itemRefs?withProjectAncestors(matching,treeRows.value):matching
+ const ids=new Set(matching.map(t=>t.id))
+ return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!ids.has(t.id)})),count:rule.custom?matching.length:matching.filter(t=>!t.depth).length}
+}))
 const isChild = (id: string) => !!props.itemRefs?.[id]?.parentKey
 async function save(id: string, change?: () => void) {
   if (!data.taskById(sourceId(id)) || busy(id)) return
@@ -82,7 +101,7 @@ async function save(id: string, change?: () => void) {
   } finally { savingIds.value = savingIds.value.filter((value) => value !== id) }
 }
 async function setPriority(id: string, priority: Priority) {
-  if (isChild(id)) return
+  if (isChild(id) || customized.value) return
   await save(id, () => {
     const ref = itemActions.source(id)
     if (ref.subId) data.updateSub(ref.taskId, ref.subId, { pr: priority })
@@ -149,10 +168,10 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 <template>
   <div class="quadrant-view">
     <div class="quadrant-toolbar">
-      <TaskOrderStatus :scope="orderScope" />
+      <TaskOrderStatus :scope="orderScope" /><span v-if="customized">自定义筛选 · 任务可出现在多个象限</span>
       <button v-if="doneCount && !itemRefs" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
     </div>
-    <div class="quadrants" :class="{ expanded }">
+    <div v-if="rules.error.value || labels.error" role="alert">{{ rules.error.value || labels.error }}<button @click="rules.retry(); labels.load()">重试</button></div><div class="quadrants" :class="{ expanded }">
       <section v-for="section in sections" v-show="!expanded || expanded === section.priority" :key="section.priority"
         class="quadrant" :class="{ 'drop-target': dragId && dropTarget === section.priority }"
         :aria-label="section.label" :style="{ '--quadrant-color': section.color }"
@@ -161,7 +180,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           <span class="quadrant-dot"></span>
           <h2 :title="`${section.priority} · ${section.hint}`">{{ section.label }}</h2>
           <span class="quadrant-count">{{ section.count }}</span>
-          <div class="quadrant-actions">
+          <div class="quadrant-actions"><button :aria-label="`编辑象限 ${section.label}`" @click="editRule(TASK_QUADRANTS.findIndex(q=>q.priority===section.priority))"><i class="ri-more-line"></i></button>
             <button :aria-label="`在${section.label}新建任务`" title="新建任务" @click="createTask(section.priority)"><i class="ri-add-line"></i></button>
             <button :aria-label="`${expanded ? '还原' : '放大'}${section.label}`" :aria-expanded="expanded === section.priority"
               :title="expanded ? '还原四象限' : '放大象限'" @click="expanded = expanded ? null : section.priority"><i :class="expanded ? 'ri-contract-left-right-line' : 'ri-expand-diagonal-line'"></i></button>
@@ -170,8 +189,8 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
         <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
           <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
-            :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
-            :draggable="!isChild(task.id) && !busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
+            :class="{ 'context-only': task.contextOnly, done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
+            :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
             @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
             <button v-if="selectionMode && !itemActions.isSub(task.id)" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
@@ -179,7 +198,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
-              <button class="quadrant-title" :title="task.title" :draggable="!isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
+              <button class="quadrant-title" :title="task.title" :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
               <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
@@ -193,7 +212,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
                 <button v-if="data.taskSaveState(sourceId(task.id)) === 'error'" :disabled="busy(task.id)" @click="save(task.id)">重试保存</button>
               </div>
             </div>
-            <label v-if="!isChild(task.id)" class="quadrant-move" title="移动到其他象限">
+            <label v-if="!customized && !isChild(task.id)" class="quadrant-move" title="移动到其他象限">
               <i class="ri-arrow-left-right-line"></i>
               <select :value="task.pr" :aria-label="`调整象限 ${task.title}`" :disabled="busy(task.id)"
                 @change="setPriority(task.id, ($event.target as HTMLSelectElement).value as Priority)">
@@ -210,11 +229,29 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
         </div>
       </section>
     </div>
-    <ContextActionMenu ref="contextMenu" />
+    <SettingsDialogShell v-if="editingRule!==null" title="编辑象限" width="560px" height="auto" @close="editingRule=null">
+ <form class="rule-form" @submit.prevent="saveRule">
+ <label>名称<input v-model="draftRule.name" maxlength="40" required /></label>
+ <div class="rule-field"><span>清单</span><TaskFilterSelect v-model="draftRule.projects" label="象限项目" :options="[{value:'',label:'收集箱'},...data.projects.map(p=>({value:p.id,label:p.name}))]" /></div>
+ <div class="rule-field"><span>标签</span><TaskFilterSelect v-model="draftRule.tags" label="象限标签" :options="labels.catalog.map(tag=>({value:tag,label:tag}))" /></div>
+ <label>标签匹配<select v-model="draftRule.tagMode"><option value="any">包含任一</option><option value="all">包含全部</option><option value="none">无标签</option></select></label>
+ <label>日期<select v-model="draftRule.date"><option value="all">所有</option><option value="today">今天</option><option value="tomorrow">明天</option><option value="week">最近 7 天</option><option value="overdue">已逾期</option><option value="undated">无日期</option></select></label>
+ <fieldset><legend>优先级</legend><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></fieldset>
+ <p>清单、标签、优先级留空表示所有；日期匹配执行安排或截止日期。</p>
+ <footer><button type="button" @click="resetRule">恢复默认</button><button type="button" @click="editingRule=null">取消</button><button type="submit">保存</button></footer>
+ </form></SettingsDialogShell><ContextActionMenu ref="contextMenu" />
   </div>
 </template>
 
 <style scoped>
+.context-only { opacity:.65; }
+.rule-form { padding:var(--wao-space-3); display:grid; gap:var(--wao-space-2); }
+.rule-form>label,.rule-field { display:grid; grid-template-columns:80px minmax(0,1fr); align-items:center; gap:var(--wao-space-2); }
+.rule-form input:not([type=checkbox]),.rule-form select { min-width:0; padding:var(--wao-space-1); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
+.rule-form fieldset { border:0; display:flex; gap:var(--wao-space-2); }
+.rule-form footer { display:flex; justify-content:flex-end; gap:var(--wao-space-2); }
+.rule-form footer button { padding:var(--wao-space-1) var(--wao-space-2); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); }
+
 .quadrant-parent { min-width: 0; max-width: 100%; border: 0; padding: 0; background: transparent; color: var(--wao-text-3); font-size: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-task:focus { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .quadrant-more { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); }
@@ -230,7 +267,7 @@ button:disabled { opacity: .5; cursor: wait; }
 button:focus-visible, .quadrant-move:focus-within { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .quadrant-toolbar button, .quadrant-save button, .quadrant-empty button { border: 0; border-radius: 5px; background: transparent; padding: 5px 6px; color: var(--wao-text-weak); }
 .quadrant-toolbar button:hover, .quadrant-empty button:hover { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
-.quadrants { display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.quadrants { min-height:calc(100dvh - 330px); display: grid; flex: 1; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .quadrants.expanded { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .quadrant { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .quadrant.drop-target { border-color: var(--quadrant-color); box-shadow: inset 0 0 0 2px var(--quadrant-color); }

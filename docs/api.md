@@ -38,3 +38,9 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 ## 文档限时分享（2026-10-28）
 
 知识库文档与小记共用作者管理的 `GET/POST /api/docs/{id}/public-shares` 和 `DELETE /api/docs/{id}/public-shares/{shareId}`。POST 使用 `{ "durationHours": 1 | 24 | 168 }`，返回随机 token 一次；匿名读取只接受 `/api/share/notes/{token}`、`{token}.md` 与快照内图片。旧 `/api/share/docs/{id}[.md]` 一律失效，不能凭文档 ID 免登录读取。完整权限、快照与迁移边界见 [文档限时分享](specs/document-share-tokens-2026-10-28.md)。
+
+## 任务标签与个人收集箱（2026-10-29）
+
+`GET /api/task-labels` 返回当前成员可见任务及有效子任务的标签记录 `{taskId, subId, revision, tags}`。`PUT /api/task-labels/{taskId}` 接收 `{subId, revision, tags}`，空 subId 表示主任务；需登录并有源任务可见权限，锁后复核。版本冲突返回 409，相同结果重试幂等；tags 空数组明确清空。每项最多 20 个标签，名称 1–40 字符且无控制字符。标签独立保存，普通任务 PUT 不修改标签。
+
+个人收集箱使用 task.project 空串，只有 owner 可见；列表、详情及锁后写入均校验。浏览器待办提供任务/子任务标签筛选与成员级象限配置。详见 [任务工作台规范](specs/task-workspace-labels-2026-10-29.md)。

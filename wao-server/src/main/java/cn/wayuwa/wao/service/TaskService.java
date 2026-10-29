@@ -66,9 +66,12 @@ public class TaskService {
      */
     public List<TaskDto> list(String memberId) {
         Set<String> visibleProjectIds = projects.visibleProjectIds(memberId);
-        if (visibleProjectIds.isEmpty()) return List.of();
-        return numbers.attach(taskMapper.selectList(new QueryWrapper<TaskEntity>()
-                        .in("project_id", visibleProjectIds)).stream()
+        var scope = new QueryWrapper<TaskEntity>();
+        scope.and(q -> {
+            if (!visibleProjectIds.isEmpty()) q.in("project_id", visibleProjectIds).or();
+            q.nested(inbox -> inbox.eq("project_id", "").eq("owner_id", memberId));
+        });
+        return numbers.attach(taskMapper.selectList(scope).stream()
                 .map(this::rawDto)
                 .toList());
     }
@@ -127,10 +130,10 @@ public class TaskService {
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(req.title().trim());
-        e.setProjectId(req.project());
+        e.setProjectId(req.project() == null ? "" : req.project());
         e.setStatus("待办");
         e.setPr(StringUtils.hasText(req.pr()) ? req.pr() : "P2");
-        e.setOwnerId(StringUtils.hasText(req.owner()) ? req.owner() : "wg");
+        e.setOwnerId(!StringUtils.hasText(req.project()) && StringUtils.hasText(createdBy) ? createdBy : StringUtils.hasText(req.owner()) ? req.owner() : "wg");
         e.setCreatedBy(createdBy);
         e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
         // 没选截止日期就不排期，不再默认落在今天。
@@ -161,7 +164,7 @@ public class TaskService {
         requireVisible(id, memberId);
         TaskEntity entity = taskMapper.lockById(id);
         if (entity == null) throw new NotFoundException("任务不存在");
-        requireProjectVisible(entity.getProjectId(), memberId);
+        if (!visibleTo(entity, memberId)) throw new NotFoundException("任务不存在");
         if (!expectedVersion.equals(SubtaskTree.version(parse(entity.getDetailJson()).subs())))
             throw new cn.wayuwa.wao.common.ConflictException("子任务已有更新，请重新读取后重试");
         TaskEntity before = historyCopy(entity);
@@ -204,7 +207,7 @@ public class TaskService {
     public TaskDto patch(String id, PatchTaskRequest req, String memberId) {
         requireVisible(id, memberId);
         TaskEntity e = taskMapper.lockById(id);
-        if (e == null) throw new NotFoundException("任务不存在");
+        if (e == null || !visibleTo(e, memberId)) throw new NotFoundException("任务不存在");
         TaskEntity before = historyCopy(e);
         String previousStatus = e.getStatus();
         TaskDetail d = parse(e.getDetailJson());
@@ -291,10 +294,10 @@ public class TaskService {
         }
         e.setParentTaskId(previous == null ? null : previous.getParentTaskId());
         e.setTitle(dto.title());
-        e.setProjectId(dto.project());
+        e.setProjectId(dto.project() == null ? "" : dto.project());
         e.setStatus(dto.status());
         e.setPr(dto.pr());
-        e.setOwnerId(dto.owner());
+        e.setOwnerId(!StringUtils.hasText(dto.project()) && previous == null ? memberId : dto.owner());
         // 前端用本地生成的稳定 id 走 PUT upsert，首次写入的 DTO 还没有服务端创建人；
         // 必须从当前会话补齐，否则创建人筛选和后续协作通知都会丢失身份。
         e.setCreatedBy(previous == null ? blankOr(dto.createdBy(), memberId) : previous.getCreatedBy());
@@ -744,6 +747,7 @@ public class TaskService {
         if (!StringUtils.hasText(memberId)) {
             return true;
         }
+        if (!StringUtils.hasText(entity.getProjectId())) return java.util.Objects.equals(entity.getOwnerId(), memberId);
         try {
             projects.get(entity.getProjectId(), memberId);
             return true;
@@ -753,7 +757,7 @@ public class TaskService {
     }
 
     private void requireProjectVisible(String projectId, String memberId) {
-        if (StringUtils.hasText(memberId)) {
+        if (StringUtils.hasText(memberId) && StringUtils.hasText(projectId)) {
             projects.get(projectId, memberId);
         }
     }

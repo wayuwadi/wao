@@ -432,7 +432,7 @@ public class FeishuTaskNotifier {
 
     /** 这个项目关掉通知了吗；关了就整条跳过，连卡片都不组装。 */
     private boolean muted(String projectId) {
-        return !notifyGate.enabled(projectId);
+        return !StringUtils.hasText(projectId) || !notifyGate.enabled(projectId);
     }
 
     private boolean taskActivityMuted(String projectId) {
