@@ -68,9 +68,12 @@ const treeRows = computed(() => {
   const visible = props.itemRefs ? withProjectAncestors(matches, props.contextTasks ?? props.tasks) : matches
   const sorted = order.sort(orderScope.value, visible, t => t.id)
   if (!props.itemRefs) return sorted.map(task => ({ ...decoTask(task), depth: 0, quadrantPriority: task.pr }))
-  let priority: Priority = 'P2'
+  const priorities = new Map<string, Priority>()
   return taskTreeRows(sorted, []).map(({ task, depth }) => {
-    if (!depth) priority = task.pr
+    const ref = props.itemRefs?.[task.id]
+    // 只有未设置优先级的普通子事项沿父链归属；显式优先级必须立即影响象限。
+    const priority = ref?.priorityUnset && ref.parentKey ? priorities.get(ref.parentKey) ?? task.pr : task.pr
+    priorities.set(task.id, priority)
     return { ...decoTask(task), depth, quadrantPriority: priority }
   })
 })
@@ -87,10 +90,10 @@ function resetRule() { if(editingRule.value===null)return; void rules.set(rules.
 const sections = computed(() => TASK_QUADRANTS.map((quadrant,index) => {
  const rule=rules.value.value[index]!
  const candidates=new Set(props.tasks.map(t=>t.id))
- const matching=rule.custom?treeRows.value.filter(task=>{ if(!candidates.has(task.id))return false; const ref=props.itemRefs?.[task.id]; return matchesTaskWorkspaceFilter(task,labels.get(ref?.taskId??task.id,ref?.subId).tags,rule,data.today) }):treeRows.value.filter(task=>task.quadrantPriority===quadrant.priority)
+ const matching=rule.custom?treeRows.value.filter(task=>{ if(!candidates.has(task.id))return false; const ref=props.itemRefs?.[task.id]; return matchesTaskWorkspaceFilter(task,labels.get(ref?.taskId??task.id,ref?.subId).tags,rule,data.today) }):treeRows.value.filter(task=>candidates.has(task.id)&&task.quadrantPriority===quadrant.priority)
  const visible=props.itemRefs?withProjectAncestors(matching,treeRows.value):matching
  const ids=new Set(matching.map(t=>t.id))
- return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!ids.has(t.id)})),count:rule.custom?matching.length:matching.filter(t=>!t.depth).length}
+ return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!ids.has(t.id)})),count:matching.length}
 }))
 const isChild = (id: string) => !!props.itemRefs?.[id]?.parentKey
 async function save(id: string, change?: () => void) {

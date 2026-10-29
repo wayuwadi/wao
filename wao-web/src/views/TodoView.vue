@@ -29,7 +29,8 @@ const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFo
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
 const filtered = computed(() => scope.value.filter(task => {
  if(selection.value==='completed') return isTaskFinished(task)
- if(isTaskFinished(task)) return false
+ const sourceId=projection.value.refs[task.id]?.taskId??task.id
+ if(isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
  if(selection.value==='inbox' && task.project) return false
  if(selection.value.startsWith('project:') && task.project!==selection.value.slice(8)) return false
  if(selection.value.startsWith('tag:') && !tagsFor(task.id).includes(selection.value.slice(4))) return false
