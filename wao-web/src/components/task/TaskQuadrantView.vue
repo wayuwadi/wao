@@ -24,7 +24,7 @@ import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[] }>()
+const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -233,7 +233,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
  <form class="rule-form" @submit.prevent="saveRule">
  <label>名称<input v-model="draftRule.name" maxlength="40" required /></label>
  <div class="rule-field"><span>清单</span><TaskFilterSelect v-model="draftRule.projects" label="象限项目" :options="[{value:'',label:'收集箱'},...data.projects.map(p=>({value:p.id,label:p.name}))]" /></div>
- <div class="rule-field"><span>标签</span><TaskFilterSelect v-model="draftRule.tags" label="象限标签" :options="labels.catalog.map(tag=>({value:tag,label:tag}))" /></div>
+ <div class="rule-field"><span>标签</span><TaskFilterSelect v-model="draftRule.tags" label="象限标签" :options="(tagOptions ?? labels.catalog).map(tag=>({value:tag,label:tag}))" /></div>
  <label>标签匹配<select v-model="draftRule.tagMode"><option value="any">包含任一</option><option value="all">包含全部</option><option value="none">无标签</option></select></label>
  <label>日期<select v-model="draftRule.date"><option value="all">所有</option><option value="today">今天</option><option value="tomorrow">明天</option><option value="week">最近 7 天</option><option value="overdue">已逾期</option><option value="undated">无日期</option></select></label>
  <fieldset><legend>优先级</legend><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></fieldset>

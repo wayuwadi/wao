@@ -9,24 +9,26 @@ import { useMemberPreference } from '@/composables/memberPreference'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import { matchesTaskDate, type TaskDateFilter } from '@/utils/taskWorkspaceFilter'
 import { isTaskFinished } from '@/utils/projectCompletion'
+import { personalWorkItems } from '@/utils/personalWorkItems'
 import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
 import TodoLegacyView from './TodoLegacyView.vue'
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), labels = useTaskLabelsStore(), route = useRoute()
 const selection = ref('all'), query = ref(''), layout = ref<'list' | 'quadrant'>('list'), collapsed = ref<string[]>([]), selectedDay = ref(data.today)
-const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-week-line'},{id:'assigned',name:'指派给我',icon:'ri-user-follow-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
+const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-2-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
 const saved = useMemberPreference<{id:string; name:string; selection:string; query:string}[]>('task-workspace-filters-v1', raw => { try { const v=JSON.parse(raw || '[]'); return Array.isArray(v) ? v.filter(x=>typeof x?.id==='string' && typeof x.name==='string' && typeof x.selection==='string' && typeof x.query==='string') : [] } catch { return [] } }, JSON.stringify)
 watch(() => labels.identity, () => { selection.value='all'; query.value=''; collapsed.value=[]; void labels.load() }, { immediate:true })
 watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; selection.value='review' } }, {immediate:true})
 const projection = computed(() => projectWorkItems(data.tasks))
-// tasks 已由服务端按项目可见权限过滤；负责人/参与者是筛选条件，不是共享任务的可见权限。
-const visibleTags = computed(()=>[...new Set(projection.value.items.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
+// 共享权限决定能否打开项目，个人工作台另按归属收敛，避免将可见任务当成本人待办。
+const personal = computed(()=>personalWorkItems(projection.value.items, projection.value.refs, session.userId))
+const scope = computed(()=>selection.value.startsWith('project:') ? projection.value.items.filter(t=>t.project===selection.value.slice(8)) : personal.value)
+const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
-const filtered = computed(() => projection.value.items.filter(task => {
+const filtered = computed(() => scope.value.filter(task => {
  if(selection.value==='completed') return isTaskFinished(task)
  if(isTaskFinished(task)) return false
- if(selection.value==='assigned' && task.owner!==session.userId) return false
  if(selection.value==='inbox' && task.project) return false
  if(selection.value.startsWith('project:') && task.project!==selection.value.slice(8)) return false
  if(selection.value.startsWith('tag:') && !tagsFor(task.id).includes(selection.value.slice(4))) return false
@@ -44,7 +46,7 @@ async function add() {
  const identity=labels.identity, key=draftKey.value
  try {
   const existing=data.taskById(quickId.value)
-  const result=existing ? (await data.flushTask(existing.id), {task:existing,persisted:data.taskSaveState(existing.id)==='saved'}) : await data.addTask({desc:'',title:quick.value.trim(),project:selection.value.startsWith('project:')?selection.value.slice(8):'',pr:'P2',owner:session.userId,due:selection.value==='tomorrow'?new Date(Date.parse(data.today+'T12:00:00Z')+86400000).toISOString().slice(0,10):data.today},quickId.value)
+  const result=existing ? (await data.flushTask(existing.id), {task:existing,persisted:data.taskSaveState(existing.id)==='saved'}) : await data.addTask({desc:'',title:quick.value.trim(),project:selection.value.startsWith('project:')?selection.value.slice(8):'',pr:'P2',owner:session.userId,due:selection.value==='tomorrow'?new Date(Date.parse(data.today+'T12:00:00Z')+86400000).toISOString().slice(0,10):selection.value==='today'?data.today:''},quickId.value)
   if(!result.persisted) throw new Error('任务未保存，请重试')
   localStorage.removeItem(key)
   if(identity===labels.identity){ quick.value='';quickId.value='' }
@@ -59,7 +61,7 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
   <nav class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <p>清单</p><button v-for="project in data.projects" :key="project.id" :class="{active:selection==='project:'+project.id}" @click="selection='project:'+project.id"><i class="ri-list-check"></i>{{ project.name }}</button>
-   <p>筛选器</p><button v-for="filter in saved.value.value" :key="filter.id" @click="selection=filter.selection;query=filter.query"><i class="ri-filter-3-line"></i>{{ filter.name }}<span role="button" tabindex="0" aria-label="删除筛选器" @click.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))" @keydown.enter.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))">×</span></button>
+   <p>筛选器</p><button v-for="filter in saved.value.value" :key="filter.id" @click="selection=filter.selection==='assigned'?'all':filter.selection;query=filter.query"><i class="ri-filter-3-line"></i>{{ filter.name }}<span role="button" tabindex="0" aria-label="删除筛选器" @click.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))" @keydown.enter.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))">×</span></button>
    <button @click="saveFilter"><i class="ri-add-line"></i>保存当前筛选</button><small v-if="saved.error.value" role="alert">{{ saved.error.value }}<button @click="saved.retry()">重试</button></small>
    <p>标签</p><button v-for="tag in visibleTags" :key="tag" :class="{active:selection==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line"></i>{{ tag }}</button>
    <small v-if="labels.error" role="alert">{{ labels.error }}<button @click="labels.load()">重试</button></small>
@@ -74,7 +76,7 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
     <ProjectChecklistView v-else-if="layout==='list'" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed'" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
-    <TaskQuadrantView v-else :tasks="filtered.filter(t=>!query || t.title.toLowerCase().includes(query.toLowerCase()))" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="[]" :show-done="selection==='completed'" />
+    <TaskQuadrantView v-else :tasks="filtered.filter(t=>!query || t.title.toLowerCase().includes(query.toLowerCase()))" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="[]" :show-done="selection==='completed'" />
    </template>
   </main>
  </div>
