@@ -44,6 +44,8 @@ public class LocalNoteAiService {
     private org.springframework.beans.factory.ObjectProvider<NoteAiManagedService> managedNotes;
     @Autowired(required=false)
     private ObjectProvider<NoteAiCompanionService> companion;
+    @Autowired(required=false)
+    private ObjectProvider<NoteVisualRecapService> visualRecaps;
     private static final Logger log = LoggerFactory.getLogger(LocalNoteAiService.class);
     private final AiAssistantRunMapper runs;
     private final ImageService images;
@@ -247,6 +249,7 @@ public class LocalNoteAiService {
                 return true;
             }
             String response = companion==null?result.text():companion.getObject().validateChatRun(run,result.text());
+            if ("NOTE_VISUAL_RECAP".equals(run.getUsagePurpose())) response = NoteVisualRecapService.validateHtml(response);
             String storedImageId = null;
             if (result.png() != null) {
                 boolean thinking=noteAssets!=null&&noteAssets.thinkingImageRun(run.getId());
@@ -259,6 +262,8 @@ public class LocalNoteAiService {
                     ? runs.completeProviderSucceeded(run.getId(), claim, response)
                     : conversationCompletion.complete(run, claim, response);
             if (completed == 1 && companion != null) companion.getObject().captureRun(run, response);
+            if (completed == 1 && visualRecaps != null && "NOTE_VISUAL_RECAP".equals(run.getUsagePurpose()))
+                visualRecaps.getObject().capture(run.getMemberId(), run.getId(), response);
             if (completed == 0) orphanImageId = storedImageId;
         } catch (Exception exception) {
             discoveryError = "CALL_FAILED";

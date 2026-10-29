@@ -11,10 +11,11 @@ import { useProjectItemActions } from '@/composables/projectItemActions'
 import { toast } from '@/composables/toast'
 import { taskHierarchyDrop } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
-import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
+import { subItemKey, withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import TaskDocuments from '@/components/task/TaskDocuments.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
@@ -280,6 +281,68 @@ function finishTitle() {
 }
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
 const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
+const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const addingChild = ref(false)
+const childDraft = ref('')
+const childDraftError = ref('')
+const childInput = ref<HTMLInputElement | null>(null)
+const childDraftKey = computed(() => `wao-inline-sub:${useSessionStore().userId}:${source.value.taskId}${source.value.subId ? `:${source.value.subId}` : ''}`)
+watch([selectedId, () => useSessionStore().userId], () => {
+  addingChild.value = false
+  childDraft.value = ''
+  childDraftError.value = ''
+  contextMenu.value?.close()
+}, { flush: 'sync' })
+async function startChild(id: string) {
+  if (props.busy || actions.busy(id) || !props.contextItems.some(t => t.id === id)) return
+  const member = useSessionStore().userId
+  await selectChild(id)
+  if (member !== useSessionStore().userId || selectedId.value !== id) return
+  addingChild.value = true
+  childDraftError.value = ''
+  try { childDraft.value = localStorage.getItem(childDraftKey.value) || '' }
+  catch { childDraftError.value = '本机草稿无法读取，请保持页面打开' }
+  await nextTick()
+  childInput.value?.focus()
+  childInput.value?.scrollIntoView?.({ block: 'nearest' })
+}
+function storeChildDraft(event: Event) {
+  childDraft.value = (event.target as HTMLInputElement).value
+  try {
+    if (childDraft.value) localStorage.setItem(childDraftKey.value, childDraft.value)
+    else localStorage.removeItem(childDraftKey.value)
+    childDraftError.value = ''
+  } catch { childDraftError.value = '草稿无法写入本机，请保持页面打开' }
+}
+async function addChild() {
+  const parentId = selectedId.value
+  const member = useSessionStore().userId
+  if (!addingChild.value || !childDraft.value.trim() || props.busy || actions.busy(parentId)) return
+  const { taskId, subId } = source.value
+  const id = data.addSub(taskId, childDraft.value, subId)
+  if (!id) { childDraftError.value = '未能添加子任务，请稍后重试'; return }
+  childDraft.value = ''
+  try { localStorage.removeItem(childDraftKey.value) }
+  catch { childDraftError.value = '子任务已添加，本机输入草稿未能清除' }
+  if (props.collapsed.includes(parentId)) emit('toggle', parentId)
+  emit('reveal', subItemKey(taskId, id))
+  try { await data.flushTask(taskId) }
+  catch { toast('子任务尚未保存，已保留草稿，请查看保存问题', 'ri-error-warning-line') }
+  await nextTick()
+  if (member === useSessionStore().userId && selectedId.value === parentId && addingChild.value) childInput.value?.focus()
+}
+function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')) return
+  const task = props.contextItems.find(t => t.id === id)
+  if (!task) return
+  void contextMenu.value?.openAt(event, task.title || '未命名任务', [
+    { id: 'add-child', label: '添加子任务', disabled: props.busy || actions.busy(id), run: () => startChild(id) },
+    { id: 'open', label: '打开任务详情', run: () => actions.open(id) },
+  ])
+}
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
   if (file.size > data.MAX_IMAGE_BYTES) { done(null, file.name); return }
   const image = await data.uploadImage(file, `任务 · ${selected.value?.title ?? ''}`)
@@ -301,7 +364,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </div>
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
-      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else class="tree-spacer"></span>
         <input type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
@@ -338,12 +401,19 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           <MarkdownEditor v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" />
         </div>
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
-          <div v-for="child in directChildren" :key="child.id" class="detail-subtask">
+          <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
             <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
             <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
             <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>
           </div>
         </section>
+        <form v-if="addingChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
+          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="输入子任务，回车添加" :disabled="busy || actions.busy(selected.id)" @input="storeChildDraft" />
+          <WaoButton type="submit" variant="primary" :disabled="!childDraft.trim() || busy || actions.busy(selected.id)">添加</WaoButton>
+          <WaoButton type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
+          <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
+        </form>
+        <WaoButton v-else class="add-child-button" variant="ghost" :disabled="busy || actions.busy(selected.id)" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
         <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
         <TaskDocuments :key="`${useSessionStore().userId}:${selected.id}`" :task-id="source.taskId" :sub-id="source.subId" :title="taskTitle" :description="description" />
         <div class="save-status" aria-live="polite">
@@ -356,6 +426,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <p v-else class="empty">选择左侧任务，在这里查看详情</p>
     </WaoCard>
   </div>
+  <ContextActionMenu ref="contextMenu" />
 </template>
 
 <style scoped>
@@ -382,7 +453,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .is-compact .checklist-divider { display:none; }
 .is-compact .checklist-tasks { max-height:260px; padding:0; }
 .is-compact .checklist-detail { position:static; max-height:none; min-height:300px; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
-.checklist-layout { display:grid; grid-template-columns:minmax(240px, 0.85fr) minmax(0, 1.3fr); align-items:start; }
+.checklist-layout { display:grid; grid-template-columns:minmax(240px, 0.85fr) minmax(0, 1.3fr); align-items:start; font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; }
 .checklist-tasks,.checklist-detail { min-width:0; max-height:calc(100dvh - 220px); overflow:auto; border:0; border-radius:0; box-shadow:none; }
 .checklist-tasks { position:relative; padding:0 var(--wao-space-2) 0 0; }
 .checklist-detail { position:sticky; top:var(--wao-space-1); min-height:calc(100dvh - 240px); padding:0 0 0 var(--wao-space-2); }
@@ -399,6 +470,10 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .detail-subtasks { margin-top:var(--wao-space-3); border-top:1px solid var(--wao-line); }
 .detail-subtask { display:flex; align-items:center; gap:var(--wao-space-1); min-height:40px; border-bottom:1px solid var(--wao-line); }
 .child-title { flex:1; min-width:0; padding:var(--wao-space-1) 0; border:0; background:transparent; font:inherit; font-weight:400; color:var(--wao-text-2); text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.child-composer { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-top:var(--wao-space-2); }
+.child-composer input { flex:1; min-width:120px; min-height:var(--wao-control-height); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); padding:var(--wao-space-1); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
+.child-draft-error { width:100%; margin:0; color:var(--wao-danger-strong); font-size:var(--wao-font-caption); }
+.add-child-button { margin-top:var(--wao-space-1); color:var(--wao-primary-text); }
 .more-actions { padding:0 var(--wao-space-1); min-height:32px; }
 .checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
 .checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
@@ -424,7 +499,7 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .tree-toggle,.tree-spacer { width:16px; flex-shrink:0; }
 .tree-toggle { height:32px; padding:0; color:var(--wao-text-weak); }
 .task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }
-.task-title { font-family:var(--wao-font); font-weight:400; color:var(--wao-text-2); letter-spacing:0.01em; -webkit-font-smoothing:antialiased; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
+.task-title { font-family:var(--wao-font); font-weight:400; color:var(--wao-text-2); flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:1.5; }
 .finished { text-decoration:line-through; color:var(--wao-text-weak); }
 .task-meta.overdue { color:var(--wao-danger-strong); }
 .task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
@@ -438,6 +513,7 @@ h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {
+  .child-composer input { font-size:16px; }
   .group-add-button { width:44px; height:44px; }
   .checklist-layout { grid-template-columns:minmax(0,1fr) !important; }
   .checklist-divider { display:none; }
