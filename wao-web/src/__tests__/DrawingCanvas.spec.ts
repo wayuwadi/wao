@@ -2,6 +2,8 @@ import { expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 import type { ReactElement } from 'react'
+import { ref } from 'vue'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 const render = vi.hoisted(() => vi.fn())
 vi.mock('@excalidraw/excalidraw', () => ({
   Excalidraw: () => null,
@@ -32,7 +34,7 @@ it('初始化归一化仅报告就绪，后续真实编辑才触发保存', asyn
   const wrapper = mount(DrawingCanvas, {
     props: { sceneJson: '{"elements":[{"id":"shape"}]}', sceneKey: 'one', name: '测试画布' },
   })
-  const element = render.mock.calls.at(-1)![0] as ReactElement<{
+  const element = render.mock.calls[render.mock.calls.length - 1]![0] as ReactElement<{
     onChange: (elements: unknown[], state: unknown, files: unknown) => void
     excalidrawAPI?: () => void
   }>
@@ -54,5 +56,18 @@ it('初始化归一化仅报告就绪，后续真实编辑才触发保存', asyn
     {},
   )
   expect(wrapper.emitted('change')).toHaveLength(1)
+  wrapper.unmount()
+})
+
+it('隐藏页签不抢占当前页面的保存快捷键', () => {
+  const visible = ref(false)
+  const wrapper = mount(DrawingCanvas, {
+    props: { sceneJson: '{}', sceneKey: 'hidden', name: '后台草图' },
+    global: { provide: { [pageVisibleKey as symbol]: visible } },
+  })
+  const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true })
+  window.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(false)
+  expect(wrapper.emitted('save')).toBeUndefined()
   wrapper.unmount()
 })
