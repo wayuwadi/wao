@@ -169,6 +169,8 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         { path: 'focus', name: 'focus', component: () => import('@/views/FocusView.vue'), meta: { module: 'focus', tabKind: 'module' } },
+        { path: 'countdowns', name: 'countdowns', component: () => import('@/views/CountdownsView.vue'), meta: { module: 'countdowns', tabKind: 'module' } },
+        { path: 'habits', name: 'habits', component: () => import('@/views/HabitsView.vue'), meta: { module: 'habits', tabKind: 'module' } },
         {
           path: 'chat',
           name: 'chat',

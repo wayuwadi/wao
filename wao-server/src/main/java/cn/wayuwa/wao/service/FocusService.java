@@ -16,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FocusService {
     public static class Session {
-        public String id, mode, status, taskId, subId, taskTitle, note, noteId;
+        public String id, mode, status, taskId, subId, taskTitle, note, noteId, habitId;
         public long revision, startedAt, runningSince, elapsedMs, plannedMs, endedAt;
     }
-    public record Start(String mode, int minutes, String taskId, String subId, String note) {}
+    public record Start(String mode, int minutes, String taskId, String subId, String note, String habitId) {
+        public Start(String mode,int minutes,String taskId,String subId,String note){this(mode,minutes,taskId,subId,note,null);}
+    }
     public record Change(long revision, String action, String note) {}
     public record Stats(long todayCount, long todayMs, long totalCount, long totalMs) {}
     public record State(long serverNow, Session active, List<Session> history, Stats stats) {}
@@ -28,12 +30,17 @@ public class FocusService {
     private final TaskService tasks;
     private final KnowledgeService knowledge;
     private final Clock clock;
+    private final RoutineService routines;
     @org.springframework.beans.factory.annotation.Autowired
-    public FocusService(JdbcTemplate jdbc, ObjectMapper json, TaskService tasks, KnowledgeService knowledge) {
-        this(jdbc, json, tasks, knowledge, Clock.systemUTC());
+    public FocusService(JdbcTemplate jdbc, ObjectMapper json, TaskService tasks, KnowledgeService knowledge, RoutineService routines) {
+        this(jdbc, json, tasks, knowledge, Clock.systemUTC(),routines);
     }
     FocusService(JdbcTemplate jdbc, ObjectMapper json, TaskService tasks, KnowledgeService knowledge, Clock clock) {
+        this(jdbc,json,tasks,knowledge,clock,null);
+    }
+    FocusService(JdbcTemplate jdbc, ObjectMapper json, TaskService tasks, KnowledgeService knowledge, Clock clock,RoutineService routines) {
         this.jdbc=jdbc; this.json=json; this.tasks=tasks; this.knowledge=knowledge; this.clock=clock;
+        this.routines=routines;
     }
     public State state(String member) {
         requireMember(member);
@@ -55,7 +62,13 @@ public class FocusService {
         if(req.minutes()<1 || req.minutes()>180) throw new BadRequestException("时长应在 1 至 180 分钟之间");
         if(!read("SELECT body_json FROM focus_session WHERE active_member = ?",member).isEmpty()) throw new ConflictException("已有进行中的专注，请先继续或结束它");
         Session s=new Session(); s.id=id;s.mode=req.mode();s.status="running";s.revision=1;
-        s.note=checkedNote(req.note());s.taskId=blank(req.taskId());s.subId=blank(req.subId());s.taskTitle="";
+        s.note=checkedNote(req.note());s.taskId=blank(req.taskId());s.subId=blank(req.subId());s.habitId=blank(req.habitId());s.taskTitle="";
+        if(!s.habitId.isEmpty()) {
+            if(!s.taskId.isEmpty()||!s.subId.isEmpty())throw new BadRequestException("一次专注只能关联一个任务或习惯");
+            RoutineService.Item habit=routines.owned(member,s.habitId);
+            if(!habit.kind.equals("habit")||!habit.status.equals("active"))throw new BadRequestException("习惯已归档或不可用");
+            s.taskTitle=habit.name;
+        }
         if(!s.taskId.isEmpty()) {
             TaskDto task=tasks.get(s.taskId,member);s.taskTitle=task.title();
             if(!s.subId.isEmpty()) {
@@ -93,6 +106,7 @@ public class FocusService {
                 String meta="专注时长："+(s.elapsedMs/60_000)+" 分 "+(s.elapsedMs/1000%60)+" 秒\n开始："+date(s.startedAt)+"\n结束："+date(end);
                 List<DocBlockDto> blocks=new ArrayList<>();blocks.add(new DocBlockDto(null,null,meta,null,null));
                 if(!s.taskId.isEmpty()) blocks.add(new DocBlockDto(null,null,"关联任务：[打开任务](/s/t/"+s.taskId+(s.subId.isEmpty()?"":"/"+java.net.URLEncoder.encode(s.subId,java.nio.charset.StandardCharsets.UTF_8))+")",null,null));
+                if(s.habitId!=null&&!s.habitId.isEmpty()) blocks.add(new DocBlockDto(null,null,"关联习惯：[打开习惯](/habits?habit="+s.habitId+")",null,null));
                 blocks.add(new DocBlockDto(null,null,s.note.isBlank()?"本次未填写专注笔记。":s.note,null,null));
                 CreateNoteRequest note=new CreateNoteRequest(title.length()>200?title.substring(0,200):title,blocks,null,List.of("番茄钟"),false,false,false,null,true);
                 NoteAiManagedService.withoutAuto(member,()->knowledge.createNote(s.noteId,note,member));

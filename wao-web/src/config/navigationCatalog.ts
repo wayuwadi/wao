@@ -39,6 +39,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   { id: 'todo', description: '集中处理个人待办和需要跟进的事项。', keywords: ['清单'] },
   { id: 'focus', description: '关联任务开始专注，结束后将笔记保存为小记。', keywords: ['番茄钟', '计时', '专注'] },
+  { id: 'countdowns', description: '纪念日、生日和节日的倒数与提醒。', keywords: ['倒数日', '生日', '纪念日', '节日'] },
+  { id: 'habits', description: '计划习惯、打卡日志与连续统计。', keywords: ['习惯', '打卡', '坚持'] },
   { id: 'calendar', description: '按日、周、月安排任务和时间段。', keywords: ['日程'] },
   {
     id: 'workday-rhythm',
@@ -118,7 +120,7 @@ const DOMAINS: Array<{
     label: '今日',
     icon: 'ri-sun-line',
     description: '记录、安排与处理今天的事。',
-    ids: ['home', 'notes', 'todo', 'focus', 'calendar', 'workday-rhythm'],
+    ids: ['home', 'notes', 'todo', 'focus', 'countdowns', 'habits', 'calendar', 'workday-rhythm'],
   },
   {
     id: 'projects',

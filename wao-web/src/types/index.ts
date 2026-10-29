@@ -31,6 +31,8 @@ export type ModuleId =
   | 'calendar'
   | 'todo'
   | 'focus'
+  | 'countdowns'
+  | 'habits'
   | 'knowledge'
   | 'files'
   | 'reference-images'

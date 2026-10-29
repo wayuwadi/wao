@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useFocusStore } from '@/stores/focus'
+import { useRoutinesStore } from '@/stores/routines'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { projectWorkItems } from '@/utils/projectWorkItems'
@@ -11,6 +12,10 @@ import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 const focus = useFocusStore(), data = useDataStore(), ui = useUiStore(), route = useRoute()
+const routines=useRoutinesStore()
+const habitId=computed(()=>typeof route.query.focusHabit==='string'?route.query.focusHabit:'')
+const habit=computed(()=>routines.item(habitId.value))
+watch(()=>[habitId.value,routines.identity],()=>{if(habitId.value)void routines.load()},{immediate:true})
 const mode = ref<FocusMode>('pomodoro'), minutes = ref(25), task = ref(''), search = ref('')
 const items = computed(() => projectWorkItems(data.tasks))
 const choices = computed(() => items.value.items.filter(item => item.id === task.value || !search.value || item.title.toLowerCase().includes(search.value.toLowerCase())))
@@ -25,7 +30,7 @@ const progress = computed(() => focus.active?.plannedMs ? focus.elapsed / focus.
 const caption = computed(() => focus.active?.status === 'paused' ? '已暂停' : (focus.active?.mode ?? mode.value) === 'break' ? '休息一下' : '一次只做一件事')
 const selectedRef = computed(() => items.value.refs[task.value])
 const missingTask = computed(() => !!task.value && !selectedRef.value)
-function start() { void focus.start({ mode: mode.value, minutes: minutes.value, taskId: selectedRef.value?.taskId ?? '', subId: selectedRef.value?.subId ?? '' }) }
+function start() { void focus.start({ mode: mode.value, minutes: minutes.value, taskId: habitId.value?'':selectedRef.value?.taskId ?? '', subId: habitId.value?'':selectedRef.value?.subId ?? '', ...(habitId.value?{habitId:habitId.value}:{}) }) }
 function chooseMode(value: FocusMode) { mode.value = value; minutes.value = value === 'break' ? 5 : 25 }
 function when(value: number) { return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }
 const duration = (value: number) => `${Math.floor(value / 60_000)} 分钟`
@@ -44,11 +49,12 @@ async function retry() { focus.error = ''; await focus.load() }
         <div v-if="focus.active" class="current-task"><i class="ri-link" aria-hidden="true"></i><button v-if="focus.active.taskId && data.taskById(focus.active.taskId)" @click="ui.openTask(focus.active.taskId, focus.active.subId || undefined)">{{ focus.active.taskTitle }}</button><span v-else>{{ focus.active.taskTitle || '自由专注' }}</span></div>
         <div v-else class="focus-setup">
           <WaoField v-if="mode !== 'stopwatch'" label="时长（分钟）" v-slot="field"><input :id="field.id" v-model.number="minutes" type="number" min="1" max="180" :disabled="!!focus.pendingStart" /></WaoField>
-          <WaoField label="关联任务" hint="可以选择你有权查看的主任务或子任务" v-slot="field"><input :id="field.id" v-model="search" placeholder="搜索任务…" :disabled="!!focus.pendingStart" /><select v-model="task" aria-label="选择关联任务" :disabled="!!focus.pendingStart"><option value="">不关联任务 · 自由专注</option><option v-for="item in choices" :key="item.id" :value="item.id">{{ items.refs[item.id]?.subId ? '子任务 · ' : '' }}{{ item.title }}</option></select></WaoField>
+          <p v-if="habitId">关联习惯：{{habit?.name||(routines.state?'习惯不存在或不可用':'正在读取…')}} <RouterLink to="/focus">取消关联</RouterLink><span v-if="routines.error" role="alert">{{routines.error}}</span></p>
+          <WaoField v-else label="关联任务" hint="可以选择你有权查看的主任务或子任务" v-slot="field"><input :id="field.id" v-model="search" placeholder="搜索任务…" :disabled="!!focus.pendingStart" /><select v-model="task" aria-label="选择关联任务" :disabled="!!focus.pendingStart"><option value="">不关联任务 · 自由专注</option><option v-for="item in choices" :key="item.id" :value="item.id">{{ items.refs[item.id]?.subId ? '子任务 · ' : '' }}{{ item.title }}</option></select></WaoField>
           <p v-if="missingTask" role="alert">关联任务已不可用，请重新选择。</p>
         </div>
         <div class="focus-actions">
-          <WaoButton v-if="!focus.active" variant="primary" :loading="focus.busy" :disabled="missingTask || !Number.isInteger(minutes) || minutes < 1 || minutes > 180" @click="start">{{ focus.pendingStart ? '重试开始' : '开始' }}</WaoButton>
+          <WaoButton v-if="!focus.active" variant="primary" :loading="focus.busy" :disabled="missingTask || (!!habitId&&(!habit||habit.status!=='active'||habit.kind!=='habit')) || !Number.isInteger(minutes) || minutes < 1 || minutes > 180" @click="start">{{ focus.pendingStart ? '重试开始' : '开始' }}</WaoButton>
           <template v-else><WaoButton :disabled="focus.conflict" :loading="focus.busy" @click="focus.act(focus.active.status === 'running' ? 'pause' : 'resume')">{{ focus.active.status === 'running' ? '暂停' : '继续' }}</WaoButton><WaoButton variant="primary" :disabled="focus.conflict" :loading="focus.busy" @click="focus.act('finish')">{{ focus.active.mode === 'break' ? '结束休息' : '结束并保存小记' }}</WaoButton></template>
         </div>
         <p class="timer-hint">{{ focus.active ? '切换页面或刷新，计时仍会保留。' : '倒计时结束自动保存；正计时由你结束。' }}</p>
