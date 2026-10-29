@@ -10,7 +10,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
  */
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ anchor: HTMLElement | null; minWidth?: number; customContent?: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; ready: [] }>()
 const menu = ref<HTMLElement | null>(null)
 const theme = ref<string | undefined>()
 const style = ref<Record<string, string>>({ visibility: 'hidden' })
@@ -22,18 +22,30 @@ function place() {
   theme.value = anchor.closest('[data-wao-theme]')?.getAttribute('data-wao-theme') ?? undefined
   const rect = anchor.getBoundingClientRect()
   const height = el.offsetHeight
-  const width = Math.max(el.offsetWidth, props.minWidth ?? 0)
+  const minWidth = Math.min(Math.max(rect.width, props.minWidth ?? 0), window.innerWidth - 16)
+  const width = Math.min(Math.max(el.offsetWidth, minWidth), window.innerWidth - 16)
   const below = rect.bottom + 4
   const preferredTop = below + height > window.innerHeight - 8 && rect.top - height - 4 > 8 ? rect.top - height - 4 : below
   const top = Math.max(8, Math.min(preferredTop, window.innerHeight - height - 8))
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8)
-  style.value = { top: `${top}px`, left: `${left}px`, minWidth: `${Math.max(rect.width, props.minWidth ?? 0)}px` }
+  style.value = { top: `${top}px`, left: `${left}px`, minWidth: `${minWidth}px` }
 }
 function onKey(event: KeyboardEvent) {
+  if (!props.customContent && menu.value?.contains(document.activeElement) && ['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
+    event.preventDefault()
+    event.stopPropagation()
+    const buttons = Array.from(menu.value.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next]?.focus()
+    return
+  }
   if (event.key !== 'Escape') return
   event.preventDefault()
   event.stopPropagation()
   emit('close')
+  const anchor = props.anchor
+  ;(anchor?.matches('button') ? anchor : anchor?.querySelector<HTMLElement>('button'))?.focus()
 }
 function onPointer(event: MouseEvent) {
   const target = event.target as Node | null
@@ -45,7 +57,13 @@ function onScroll(event: Event) {
   emit('close')
 }
 onMounted(() => {
-  nextTick(place)
+  void nextTick(async () => {
+    place()
+    await nextTick()
+    if (!menu.value) return
+    if (!props.customContent) menu.value.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+    emit('ready')
+  })
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('mousedown', onPointer, true)
   window.addEventListener('scroll', onScroll, true)
@@ -69,6 +87,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .cell-menu {
+  font-family:var(--wao-font);
+  font-size:var(--wao-font-body);
+  line-height:1.5;
+  font-weight:400;
   position: fixed;
   z-index: 1200;
   max-height: 280px;
@@ -76,8 +98,9 @@ onBeforeUnmount(() => {
   padding: 4px;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(16, 18, 28, 0.14);
+  border-radius: var(--wao-radius-control);
+  box-shadow: var(--wao-shadow-pop);
+  max-width:calc(100vw - 16px);
 }
 .cell-menu:not(.custom-content) :slotted(button) {
   width: 100%;
@@ -88,10 +111,10 @@ onBeforeUnmount(() => {
   border: none;
   background: none;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--wao-radius-control);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  min-height:34px;
   color: var(--wao-text-2);
   text-align: left;
   white-space: nowrap;
@@ -99,8 +122,15 @@ onBeforeUnmount(() => {
 .cell-menu:not(.custom-content) :slotted(button > i) {
   color: var(--wao-primary-text);
 }
-.cell-menu:not(.custom-content) :slotted(button:hover),
-.cell-menu:not(.custom-content) :slotted(button.on) {
+.cell-menu:not(.custom-content) :deep(.status-pill) { font:inherit; }
+.cell-menu:not(.custom-content) :slotted(button:hover) {
   background: var(--wao-bg-hover);
 }
+.cell-menu:not(.custom-content) :slotted(button.on),
+.cell-menu:not(.custom-content) :slotted(button[aria-checked=true]) {
+  background:var(--wao-primary-soft);
+  color:var(--wao-primary-text);
+}
+.cell-menu:not(.custom-content) :slotted(button:focus-visible) { outline:2px solid var(--wao-primary); outline-offset:-2px; }
+@media(pointer:coarse) { .cell-menu:not(.custom-content) :slotted(button) { min-height:44px; } }
 </style>

@@ -1403,7 +1403,7 @@ async function uploadAttachment(event: Event) {
             <span class="prop-key">状态</span>
             <button class="pill" data-companion-anchor :style="{ background: tv.stBg, color: tv.stColor }" @click="menu = menu === 'status' ? null : 'status'">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
             <div v-if="menu === 'status'" class="pmenu w150">
-              <button v-for="o in statusOptions" :key="o" class="pmenu-item" @click="setStatus(o)">
+              <button v-for="o in statusOptions" :key="o" class="pmenu-item" :aria-pressed="task.status === o" @click="setStatus(o)">
                 <span class="mini pill-mini" :style="{ background: statusMeta(o).bg, color: statusMeta(o).color }">{{ o }}</span>
                 <span class="spacer"></span>
                 <i v-if="task.status === o" class="ri-check-line chk"></i>
@@ -1415,7 +1415,7 @@ async function uploadAttachment(event: Event) {
             <span class="prop-key">优先级</span>
             <button class="pill sq" :style="{ background: tv.prBg, color: tv.prColor }" @click="menu = menu === 'pr' ? null : 'pr'">{{ tv.pr }}<i class="ri-arrow-down-s-line"></i></button>
             <div v-if="menu === 'pr'" class="pmenu w190">
-              <button v-for="o in PR_OPTS" :key="o.key" class="pmenu-item" @click="setPriority(o.key)">
+              <button v-for="o in PR_OPTS" :key="o.key" class="pmenu-item" :aria-pressed="task.pr === o.key" @click="setPriority(o.key)">
                 <span class="mini" :style="{ background: priorityMeta(o.key).bg, color: priorityMeta(o.key).color }">{{ o.key }}</span>
                 <span class="pmenu-sub">{{ o.sub }}</span>
                 <i v-if="task.pr === o.key" class="ri-check-line chk"></i>
@@ -1429,7 +1429,7 @@ async function uploadAttachment(event: Event) {
               <span class="mini-av" :style="{ background: tv.ownerColor }">{{ tv.ownerInitial }}</span>{{ tv.ownerName }}<i class="ri-arrow-down-s-line"></i>
             </button>
             <div v-if="menu === 'owner'" class="pmenu w150">
-              <button v-for="m in session.members" :key="m.id" class="pmenu-item" @click="setOwner(m.id)">
+              <button v-for="m in session.members" :key="m.id" class="pmenu-item" :aria-pressed="task.owner === m.id" @click="setOwner(m.id)">
                 <span class="mini-av" :style="{ background: m.color }">{{ m.initial }}</span>
                 <span class="pmenu-name">{{ m.name }}</span>
                 <i v-if="task.owner === m.id" class="ri-check-line chk"></i>
@@ -1459,7 +1459,7 @@ async function uploadAttachment(event: Event) {
               <i class="ri-folder-2-line group-ico"></i>{{ currentGroup?.name ?? '未分组' }}<i class="ri-arrow-down-s-line"></i>
             </button>
             <div v-if="menu === 'group'" class="pmenu w150">
-              <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" @click="setGroup(g.id)">
+              <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" :aria-pressed="currentGroup?.id === g.id" @click="setGroup(g.id)">
                 <span class="pmenu-name">{{ g.name }}</span>
                 <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
               </button>
@@ -1550,6 +1550,7 @@ async function uploadAttachment(event: Event) {
                 :key="m.id"
                 class="pmenu-item"
                 type="button"
+                :aria-pressed="(task.parts ?? []).includes(m.id)"
                 @click="toggleParticipant(m.id)"
               >
                 <span class="mini-av" :style="{ background: m.color }">{{ m.initial }}</span>
@@ -2074,6 +2075,7 @@ async function uploadAttachment(event: Event) {
   to { transform: rotate(360deg); }
 }
 .share-menu {
+  font: 400 var(--wao-font-body)/1.5 var(--wao-font);
   position: absolute;
   right: 0;
   top: 34px;
@@ -2081,9 +2083,9 @@ async function uploadAttachment(event: Event) {
   width: 236px;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  box-shadow: var(--wao-shadow-pop-2);
-  padding: 5px;
+  border-radius: var(--wao-radius-control);
+  box-shadow: var(--wao-shadow-pop);
+  padding: 4px;
   animation: waoPop 0.14s ease;
 }
 .share-scope {
@@ -2116,8 +2118,7 @@ async function uploadAttachment(event: Event) {
   gap: 1px;
 }
 .share-filter-main b {
-  font-size: 12.5px;
-  font-weight: 500;
+  font: inherit;
   color: var(--wao-text);
 }
 .share-filter-main em {
@@ -2127,6 +2128,8 @@ async function uploadAttachment(event: Event) {
   line-height: 1.5;
 }
 .share-item {
+  font: inherit;
+  color: var(--wao-text-2);
   width: 100%;
   display: flex;
   align-items: flex-start;
@@ -2152,8 +2155,7 @@ async function uploadAttachment(event: Event) {
   gap: 1px;
 }
 .share-main b {
-  font-size: 12.5px;
-  font-weight: 500;
+  font: inherit;
   color: var(--wao-text);
 }
 .share-main em {
@@ -2465,8 +2467,8 @@ async function uploadAttachment(event: Event) {
 .send i {
   font-size: 13px;
 }
-.mention-menu { position: absolute; z-index: 8; left: 0; right: 62px; bottom: 38px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 8px; box-shadow: 0 8px 20px rgba(16,18,28,.14); padding: 4px; }
-.mention-menu button { width: 100%; border: 0; background: transparent; text-align: left; padding: 6px; display:flex; align-items:center; gap: 7px; border-radius: 6px; cursor:pointer; }
+.mention-menu { font: 400 var(--wao-font-body)/1.5 var(--wao-font); position: absolute; z-index: 8; left: 0; right: 62px; bottom: 38px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 8px; box-shadow: var(--wao-shadow-pop); padding: 4px; }
+.mention-menu button { font: inherit; color: var(--wao-text-2); min-height: 34px; width: 100%; border: 0; background: transparent; text-align: left; padding: 6px; display:flex; align-items:center; gap: 7px; border-radius: 6px; cursor:pointer; }
 .mention-menu button:hover { background: var(--wao-primary-soft); }
 .mention-menu span { width: 20px; height:20px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; }
 
@@ -2680,15 +2682,16 @@ async function uploadAttachment(event: Event) {
   background: var(--wao-primary-soft);
 }
 .pmenu {
+  font: 400 var(--wao-font-body)/1.5 var(--wao-font);
   position: absolute;
   left: 60px;
   top: 34px;
   z-index: 89;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  box-shadow: var(--wao-shadow-pop-2);
-  padding: 5px;
+  border-radius: var(--wao-radius-control);
+  box-shadow: var(--wao-shadow-pop);
+  padding: 4px;
   animation: waoPop 0.14s ease;
 }
 .pmenu.w150 {
@@ -2706,6 +2709,9 @@ async function uploadAttachment(event: Event) {
   left: 0;
 }
 .pmenu-item {
+  font: inherit;
+  color: var(--wao-text-2);
+  min-height: 34px;
   width: 100%;
   display: flex;
   align-items: center;
@@ -2713,15 +2719,19 @@ async function uploadAttachment(event: Event) {
   border: none;
   background: none;
   border-radius: 7px;
-  padding: 7px 8px;
+  padding: 6px 8px;
   cursor: pointer;
 }
 .pmenu-item:hover {
-  background: var(--wao-bg-hover-2);
+  background: var(--wao-bg-hover);
 }
+.pmenu-item[aria-pressed="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.pmenu-item:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.pmenu-item .mini { font: inherit; }
+@media (pointer: coarse) { .pmenu-item { min-height: 44px; } }
 .pmenu-empty { padding: 8px; color: var(--wao-text-faint); font-size: 12px; text-align: center; }
 .pmenu-item.plain {
-  font-size: 13px;
+  font: inherit;
   color: var(--wao-text);
 }
 .pill-mini {
@@ -2731,13 +2741,13 @@ async function uploadAttachment(event: Event) {
 .pmenu-sub {
   flex: 1;
   text-align: left;
-  font-size: 12px;
+  font: inherit;
   color: var(--wao-text-3);
 }
 .pmenu-name {
   flex: 1;
   text-align: left;
-  font-size: 13px;
+  font: inherit;
 }
 .chk {
   font-size: 14px;

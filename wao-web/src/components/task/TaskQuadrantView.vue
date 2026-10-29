@@ -236,7 +236,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
  <div class="rule-field"><span>标签</span><TaskFilterSelect v-model="draftRule.tags" label="象限标签" :options="(tagOptions ?? labels.catalog).map(tag=>({value:tag,label:tag}))" /></div>
  <label>标签匹配<select v-model="draftRule.tagMode"><option value="any">包含任一</option><option value="all">包含全部</option><option value="none">无标签</option></select></label>
  <label>日期<select v-model="draftRule.date"><option value="all">所有</option><option value="today">今天</option><option value="tomorrow">明天</option><option value="week">最近 7 天</option><option value="overdue">已逾期</option><option value="undated">无日期</option></select></label>
- <fieldset><legend>优先级</legend><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></fieldset>
+ <div class="rule-field rule-priorities" role="group" aria-label="优先级"><span>优先级</span><div><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></div></div>
  <p>清单、标签、优先级留空表示所有；日期匹配执行安排或截止日期。</p>
  <footer><button type="button" @click="resetRule">恢复默认</button><button type="button" @click="editingRule=null">取消</button><button type="submit">保存</button></footer>
  </form></SettingsDialogShell><ContextActionMenu ref="contextMenu" />
@@ -245,12 +245,21 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
 
 <style scoped>
 .context-only { opacity:.65; }
-.rule-form { padding:var(--wao-space-3); display:grid; gap:var(--wao-space-2); }
+.rule-form { padding:var(--wao-space-3); display:grid; gap:var(--wao-space-2); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
 .rule-form>label,.rule-field { display:grid; grid-template-columns:80px minmax(0,1fr); align-items:center; gap:var(--wao-space-2); }
 .rule-form input:not([type=checkbox]),.rule-form select { min-width:0; padding:var(--wao-space-1); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
-.rule-form fieldset { border:0; display:flex; gap:var(--wao-space-2); }
+.rule-priorities>div { border:0; display:flex; flex-wrap:wrap; gap:var(--wao-space-1); padding:0; margin:0; }
+.rule-priorities label { display:flex; align-items:center; gap:var(--wao-space-1); min-height:34px; padding:6px var(--wao-space-1); border-radius:var(--wao-radius-control); cursor:pointer; }
+.rule-priorities label:has(input:checked) { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
+.rule-form>p { margin:0; color:var(--wao-text-3); font-size:var(--wao-font-caption); }
+.rule-form input[type=checkbox] { accent-color:var(--wao-primary); }
 .rule-form footer { display:flex; justify-content:flex-end; gap:var(--wao-space-2); }
-.rule-form footer button { padding:var(--wao-space-1) var(--wao-space-2); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); }
+.rule-form footer button { padding:var(--wao-space-1) var(--wao-space-2); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; cursor:pointer; }
+.rule-form footer button[type=submit] { background:var(--wao-primary); border-color:var(--wao-primary); color:var(--wao-on-primary); }
+.rule-form footer button:first-child { margin-right:auto; border-color:transparent; color:var(--wao-primary-text); }
+.rule-form footer { border-top:1px solid var(--wao-line); padding-top:var(--wao-space-2); flex-wrap:wrap; }
+.rule-form button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
+@media(max-width:600px) { .rule-form {padding:var(--wao-space-2);} .rule-form>label,.rule-field {grid-template-columns:64px minmax(0,1fr);gap:var(--wao-space-1);} }
 
 .quadrant-parent { min-width: 0; max-width: 100%; border: 0; padding: 0; background: transparent; color: var(--wao-text-3); font-size: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-task:focus { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
