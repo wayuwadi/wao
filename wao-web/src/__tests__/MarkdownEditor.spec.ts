@@ -290,6 +290,27 @@ describe('异步挂载焦点保护', () => {
     expect(w.get('li').text()).toBe('图后条目')
     w.unmount()
   })
+  // Regression: 线上群聊文档的段落内又嵌套段落，UniqueID 初始化触发 RangeError。
+  it.each([true, false])('历史嵌套段落无损展开后正常打开（只读=%s）', async readonly => {
+    const legacy: RichDocNode = { type: 'doc', content: [{ type: 'paragraph', attrs: { uid: 'outer' }, content: [
+      { type: 'text', text: '摘要', marks: [{ type: 'bold' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: '正文第一段' }, { type: 'hardBreak' }, { type: 'text', text: '换行内容' }] },
+      { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: '引用原文' }] }] },
+      { type: 'text', text: '末尾文字' },
+    ] }] }
+    const before = JSON.stringify(legacy)
+    const w = await mountEditor({ modelValue: '', document: legacy, advanced: true, readonly })
+    try {
+      const e = (w.vm as unknown as { editor: Editor }).editor
+      expect(() => e.state.doc.check()).not.toThrow()
+      expect(e.getJSON().content!.map(node => node.type)).toEqual(['paragraph', 'paragraph', 'blockquote', 'paragraph'])
+      expect(e.state.doc.textContent).toBe('摘要正文第一段换行内容引用原文末尾文字')
+      expect(w.get('strong').text()).toBe('摘要')
+      expect(w.find('.tiptap p p').exists()).toBe(false)
+      expect(w.emitted('content-change')).toBeUndefined()
+      expect(JSON.stringify(legacy)).toBe(before)
+    } finally { w.unmount() }
+  })
   it('接物追加保留已有富文本，外部 HTML 和 Markdown 按原文保存，只读时拒绝追加', async () => {
     const w = await mountEditor({ modelValue: '**已有草稿**' })
     expect(w.vm.appendPlainText('<img src=x onerror=alert(1)>\n# 原样保留')).toBe(true)

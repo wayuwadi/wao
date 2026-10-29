@@ -1,6 +1,19 @@
 <script setup lang="ts">
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  h,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
+import { onBeforeRouteLeave, routerKey } from 'vue-router'
+import { useSessionStore } from '@/stores/session'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import {
   createDrawing,
   deleteDrawing,
@@ -14,13 +27,53 @@ import {
   type DrawingFileSummary,
   type DrawingFileVersion,
 } from '@/api/drawings'
-const DrawingCanvas = defineAsyncComponent(() => import('@/components/drawings/DrawingCanvas.vue').then((module) => module.default))
+const DrawingCanvas = defineAsyncComponent({
+  loader: () => import('@/components/drawings/DrawingCanvas.vue').then((module) => module.default),
+  loadingComponent: {
+    render: () => h('div', { class: 'canvas-loading', role: 'status' }, '正在加载画布…'),
+  },
+  errorComponent: {
+    render: () =>
+      h('div', { class: 'canvas-loading', role: 'alert' }, [
+        h('p', '画布加载失败，草图内容已保留。'),
+        h(
+          'button',
+          {
+            onClick: () => {
+              canvasKey.value = `${activeId.value}:${++canvasGeneration}`
+            },
+          },
+          '重试加载画布',
+        ),
+      ]),
+  },
+})
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils/drawingDrafts'
 
 type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
 const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
+const session = useSessionStore()
+const owner = session.userId
+const search = ref('')
+const listError = ref('')
+const versionsError = ref('')
+const draftError = ref('')
+const draftScene = ref('')
+const transitioning = ref(false)
+const deletingId = ref('')
+const conflict = ref(false)
+const reloadingCloud = ref(false)
+let disposed = false
+let draftQueue: Promise<unknown> = Promise.resolve()
+const sameOwner = () => !disposed && session.userId === owner
 const files = ref<DrawingFileSummary[]>([])
+const visibleFiles = computed(() =>
+  files.value.filter((file) =>
+    file.title.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()),
+  ),
+)
+const recentFiles = computed(() => files.value.slice(0, 3))
 const activeId = ref('')
 const current = ref<DrawingFile | null>(null)
 const sceneJson = ref('')
@@ -52,10 +105,19 @@ const syncMeta = computed(
   () =>
     ({
       loading: { text: '正在读取云端文件', icon: 'ri-loader-4-line' },
-      dirty: { text: '未保存，本机草稿已记录', icon: 'ri-edit-circle-line' },
+      dirty: {
+        text: draftScene.value === sceneJson.value ? '待同步 · 本机草稿已记录' : '尚未保存',
+        icon: 'ri-edit-circle-line',
+      },
       saving: { text: '正在保存到账号', icon: 'ri-loader-4-line' },
       saved: { text: '已保存到账号', icon: 'ri-cloud-line' },
-      error: { text: '保存失败，草稿仍在本机', icon: 'ri-error-warning-line' },
+      error: {
+        text:
+          draftScene.value === sceneJson.value
+            ? '保存失败 · 本机草稿已记录'
+            : '保存失败 · 请勿关闭页面',
+        icon: 'ri-error-warning-line',
+      },
       conflict: { text: '云端已有新版本，未覆盖', icon: 'ri-git-merge-line' },
     })[syncState.value],
 )
@@ -73,16 +135,22 @@ function message(cause: unknown, fallback: string) {
 
 async function loadList() {
   loadingList.value = true
+  listError.value = ''
   error.value = ''
   try {
-    if (props.embedded && props.drawingId) { await openFile(props.drawingId); return }
-    files.value = await fetchDrawings()
+    if (props.embedded && props.drawingId) {
+      await openFile(props.drawingId)
+      return
+    }
+    const loaded = await fetchDrawings()
+    if (!sameOwner()) return
+    files.value = loaded.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
-    const first = files.value.find((item) => item.id === requested)
-    if (first) await openFile(first.id)
+    if (requested) await openFile(requested)
     else syncState.value = 'saved'
   } catch (cause) {
     error.value = message(cause, '草图文件列表读取失败')
+    listError.value = error.value
     syncState.value = 'error'
   } finally {
     loadingList.value = false
@@ -90,79 +158,135 @@ async function loadList() {
 }
 
 async function openFile(id: string) {
-  if (activeId.value === id && current.value && !loadingFile.value) return
+  if (
+    !sameOwner() ||
+    transitioning.value ||
+    deletingId.value ||
+    restoringVersion.value !== null ||
+    renaming.value
+  )
+    return
+  if (activeId.value === id && current.value && !loadingFile.value) {
+    sidebarOpen.value = window.innerWidth > 760
+    return
+  }
+  transitioning.value = true
   clearTimeout(saveTimer)
-  if (dirty.value && syncState.value !== 'conflict') await saveNow()
+  if (!(await settleEdits())) {
+    transitioning.value = false
+    return
+  }
 
   const token = ++loadToken
   activeId.value = id
   loadingFile.value = true
   syncState.value = 'loading'
   error.value = ''
+  versions.value = []
+  versionsError.value = ''
+  draftError.value = ''
+  editingTitle.value = false
   try {
     const remote = await fetchDrawing(id)
     let draft = null
     try {
-      draft = await readDrawingDraft(id)
+      draft = await readDrawingDraft(owner, id, !remote.docId)
     } catch {
       // IndexedDB 被浏览器禁用时仍可使用云端保存。
     }
-    if (token !== loadToken) return
+    if (token !== loadToken || !sameOwner()) return
 
     current.value = remote
     titleDraft.value = remote.title
     sceneJson.value = draft?.sceneJson ?? remote.sceneJson
-    revision.value = draft?.revision ?? remote.revision
     dirty.value = !!draft && draft.sceneJson !== remote.sceneJson
+    revision.value = dirty.value ? draft!.revision : remote.revision
+    draftScene.value = draft?.sceneJson ?? ''
+    if (draft && !dirty.value) await clearDraft(id)
+    if (token !== loadToken || !sameOwner()) return
     canvasKey.value = `${id}:${++canvasGeneration}`
     updateSummary(remote)
     void loadVersions(id)
 
-    if (dirty.value && draft?.revision !== remote.revision) {
+    conflict.value = dirty.value && draft?.revision !== remote.revision
+    if (conflict.value) {
       syncState.value = 'conflict'
       error.value = '本机草稿基于旧版本，云端已有更新。当前先展示本机草稿，不会覆盖云端。'
     } else {
       syncState.value = dirty.value ? 'dirty' : 'saved'
     }
+    sidebarOpen.value = window.innerWidth > 760 && sidebarOpen.value
   } catch (cause) {
-    if (token !== loadToken) return
+    if (token !== loadToken || !sameOwner()) return
     current.value = null
     sceneJson.value = ''
     error.value = message(cause, '草图文件读取失败')
     syncState.value = 'error'
   } finally {
     if (token === loadToken) loadingFile.value = false
+    transitioning.value = false
   }
 }
 
 async function loadVersions(id = activeId.value) {
   if (!id) return
   loadingVersions.value = true
+  versionsError.value = ''
   try {
     const loaded = await fetchDrawingVersions(id)
-    if (activeId.value === id) versions.value = loaded
+    if (activeId.value === id && sameOwner()) versions.value = loaded
   } catch (cause) {
-    if (activeId.value === id) error.value = message(cause, '草图版本读取失败')
+    if (activeId.value === id && sameOwner())
+      versionsError.value = message(cause, '草图版本读取失败')
   } finally {
     if (activeId.value === id) loadingVersions.value = false
   }
 }
 
-function scheduleDraft() {
+function persistDraft() {
   clearTimeout(draftTimer)
-  const id = activeId.value
+  if (!current.value || !dirty.value) return Promise.resolve(true)
+  const id = current.value.id
   const capturedScene = sceneJson.value
   const capturedRevision = revision.value
-  draftTimer = window.setTimeout(() => {
-    void writeDrawingDraft({
-      id,
-      sceneJson: capturedScene,
-      revision: capturedRevision,
-      updatedAt: Date.now(),
-    }).catch(() => {
-      // 云端自动保存仍会继续；失败时页面状态由服务端请求给出。
-    })
-  }, 180)
+  const operation = draftQueue
+    .then(() =>
+      writeDrawingDraft({
+        id,
+        memberId: owner,
+        sceneJson: capturedScene,
+        revision: capturedRevision,
+        updatedAt: Date.now(),
+      }),
+    )
+    .then(
+      () => {
+        if (activeId.value === id && sceneJson.value === capturedScene) {
+          draftScene.value = capturedScene
+          draftError.value = ''
+        }
+        return true
+      },
+      () => {
+        if (activeId.value === id)
+          draftError.value = '本机草稿未能写入。请保持页面打开，保存到账号或下载备份。'
+        return false
+      },
+    )
+  draftQueue = operation
+  return operation
+}
+
+async function clearDraft(id: string) {
+  clearTimeout(draftTimer)
+  const operation = draftQueue.then(() => removeDrawingDraft(owner, id)).catch(() => undefined)
+  draftQueue = operation
+  await operation
+}
+
+function scheduleDraft() {
+  clearTimeout(draftTimer)
+  draftTimer = window.setTimeout(() => void persistDraft(), 180)
 }
 
 function scheduleSave() {
@@ -171,13 +295,23 @@ function scheduleSave() {
 }
 
 function canvasChanged(nextScene: string) {
-  if (!current.value || nextScene === sceneJson.value) return
+  if (
+    !sameOwner() ||
+    !current.value ||
+    reloadingCloud.value ||
+    deletingId.value ||
+    restoringVersion.value !== null ||
+    nextScene === sceneJson.value
+  )
+    return
   sceneJson.value = nextScene
   dirty.value = true
-  error.value = ''
-  syncState.value = 'dirty'
+  if (!conflict.value) {
+    error.value = ''
+    syncState.value = savePromise ? 'saving' : 'dirty'
+  }
   scheduleDraft()
-  scheduleSave()
+  if (!conflict.value) scheduleSave()
 }
 
 function canvasReady() {
@@ -186,51 +320,53 @@ function canvasReady() {
 
 async function saveNow() {
   clearTimeout(saveTimer)
-  if (!current.value || !dirty.value || syncState.value === 'conflict') return
+  if (!sameOwner() || !current.value || !dirty.value || conflict.value) return
   if (savePromise) {
     await savePromise
     return
   }
 
   const id = current.value.id
-  const capturedScene = sceneJson.value
-  const capturedRevision = revision.value
-  syncState.value = 'saving'
-  error.value = ''
   savePromise = (async () => {
-    try {
-      const saved = await saveDrawing(id, capturedScene, capturedRevision)
-      updateSummary(saved)
-      if (activeId.value !== id || !current.value) return
-      current.value = saved
-      revision.value = saved.revision
-      if (sceneJson.value === capturedScene) {
-        dirty.value = false
-        syncState.value = 'saved'
-        await removeDrawingDraft(id).catch(() => undefined)
-        await loadVersions(id)
-      } else {
+    while (sameOwner() && current.value?.id === id && dirty.value && !conflict.value) {
+      const capturedScene = sceneJson.value
+      const capturedRevision = revision.value
+      const capturedTitle = current.value.title
+      syncState.value = 'saving'
+      error.value = ''
+      try {
+        const saved = await saveDrawing(id, capturedScene, capturedRevision)
+        if (!sameOwner() || activeId.value !== id || !current.value) return
+        // A rename may finish while the scene response is in flight.
+        if (current.value.title !== capturedTitle) saved.title = current.value.title
+        updateSummary(saved)
+        current.value = saved
+        revision.value = saved.revision
+        if (sceneJson.value === capturedScene) {
+          dirty.value = false
+          syncState.value = 'saved'
+          await clearDraft(id)
+          // Edits can arrive while IndexedDB finishes removing the saved snapshot.
+          if (dirty.value) await persistDraft()
+          void loadVersions(id)
+        } else {
+          dirty.value = true
+          syncState.value = 'dirty'
+          await persistDraft()
+        }
+      } catch (cause) {
+        if (!sameOwner() || activeId.value !== id) return
         dirty.value = true
-        syncState.value = 'dirty'
-        await writeDrawingDraft({
-          id,
-          sceneJson: sceneJson.value,
-          revision: saved.revision,
-          updatedAt: Date.now(),
-        }).catch(() => undefined)
-        scheduleSave()
+        error.value = message(cause, '草图保存失败')
+        const status = cause as { response?: { status?: number }; status?: number }
+        conflict.value =
+          status?.response?.status === 409 ||
+          status?.status === 409 ||
+          /其它页面|其他页面|版本冲突/.test(error.value)
+        syncState.value = conflict.value ? 'conflict' : 'error'
+        await persistDraft()
+        return
       }
-    } catch (cause) {
-      if (activeId.value !== id) return
-      dirty.value = true
-      error.value = message(cause, '草图保存失败')
-      syncState.value = error.value.includes('其它页面') ? 'conflict' : 'error'
-      await writeDrawingDraft({
-        id,
-        sceneJson: sceneJson.value,
-        revision: capturedRevision,
-        updatedAt: Date.now(),
-      }).catch(() => undefined)
     }
   })()
   try {
@@ -240,15 +376,35 @@ async function saveNow() {
   }
 }
 
+async function settleEdits() {
+  if (editingTitle.value) {
+    await saveTitle()
+    if (editingTitle.value) return false
+  }
+  if (savePromise) await savePromise
+  if (dirty.value && !conflict.value) await saveNow()
+  if (!dirty.value) return true
+  await persistDraft()
+  error.value ||= '当前修改尚未保存。请重试保存，或下载备份后重新读取云端。'
+  return false
+}
+
 async function newFile() {
-  if (creating.value) return
+  if (
+    creating.value ||
+    transitioning.value ||
+    deletingId.value ||
+    restoringVersion.value !== null ||
+    reloadingCloud.value
+  )
+    return
   creating.value = true
   error.value = ''
   try {
-    if (dirty.value && syncState.value !== 'conflict') await saveNow()
+    if (!(await settleEdits())) return
     const created = await createDrawing()
+    if (!sameOwner()) return
     updateSummary(created)
-    activeId.value = ''
     await openFile(created.id)
     sidebarOpen.value = window.innerWidth > 760
   } catch (cause) {
@@ -259,19 +415,19 @@ async function newFile() {
 }
 
 async function renameFile(file: DrawingFileSummary) {
-  const title = window.prompt('请输入新的草图名称', file.title)?.trim()
-  if (!title || title === file.title) return
-  try {
-    const renamed = await renameDrawing(file.id, title)
-    updateSummary(renamed)
-    if (current.value?.id === file.id) current.value = { ...current.value, title }
-  } catch (cause) {
-    error.value = message(cause, '草图重命名失败')
-  }
+  await openFile(file.id)
+  if (current.value?.id === file.id) await startTitleEdit()
 }
 
 async function startTitleEdit() {
-  if (!current.value || renaming.value) return
+  if (
+    !current.value ||
+    renaming.value ||
+    transitioning.value ||
+    deletingId.value ||
+    reloadingCloud.value
+  )
+    return
   titleDraft.value = current.value.title
   editingTitle.value = true
   await nextTick()
@@ -300,6 +456,7 @@ async function saveTitle() {
   error.value = ''
   try {
     const renamed = await renameDrawing(current.value.id, title)
+    if (!sameOwner()) return
     updateSummary(renamed)
     if (current.value?.id === renamed.id) {
       current.value = { ...current.value, title: renamed.title, updatedAt: renamed.updatedAt }
@@ -315,7 +472,13 @@ async function saveTitle() {
 }
 
 async function restoreVersion(version: DrawingFileVersion) {
-  if (!current.value || version.revision === revision.value || restoringVersion.value !== null)
+  if (
+    !current.value ||
+    transitioning.value ||
+    deletingId.value ||
+    version.revision === revision.value ||
+    restoringVersion.value !== null
+  )
     return
   if (dirty.value) {
     error.value = '请先保存当前修改，再恢复历史版本'
@@ -325,7 +488,9 @@ async function restoreVersion(version: DrawingFileVersion) {
   restoringVersion.value = version.revision
   error.value = ''
   try {
-    const restored = await restoreDrawingVersion(current.value.id, version.revision, revision.value)
+    const id = current.value.id
+    const restored = await restoreDrawingVersion(id, version.revision, revision.value)
+    if (!sameOwner() || activeId.value !== id) return
     current.value = restored
     sceneJson.value = restored.sceneJson
     revision.value = restored.revision
@@ -354,24 +519,33 @@ function fullscreenChanged() {
 }
 
 async function removeFile(file: DrawingFileSummary) {
+  if (transitioning.value || deletingId.value || restoringVersion.value !== null) return
   if (!window.confirm(`删除「${file.title}」吗？该操作无法撤销。`)) return
+  deletingId.value = file.id
   try {
     if (activeId.value === file.id) {
       if (savePromise) await savePromise
       clearTimeout(saveTimer)
-      dirty.value = false
+      clearTimeout(draftTimer)
     }
     await deleteDrawing(file.id)
-    await removeDrawingDraft(file.id).catch(() => undefined)
+    if (!sameOwner()) return
+    await clearDraft(file.id)
     files.value = files.value.filter((item) => item.id !== file.id)
     if (activeId.value === file.id) {
       activeId.value = ''
       current.value = null
       sceneJson.value = ''
       syncState.value = 'saved'
+      dirty.value = false
+      conflict.value = false
+      error.value = ''
+      draftError.value = ''
     }
   } catch (cause) {
     error.value = message(cause, '草图删除失败')
+  } finally {
+    deletingId.value = ''
   }
 }
 
@@ -387,17 +561,45 @@ function downloadDraft() {
 }
 
 async function useCloudVersion() {
-  if (!current.value) return
+  if (!current.value || transitioning.value || deletingId.value || restoringVersion.value !== null)
+    return
   if (!window.confirm('确定放弃当前本机草稿，重新读取云端版本吗？建议先下载草稿备份。')) return
-  const id = current.value.id
-  await removeDrawingDraft(id).catch(() => undefined)
-  dirty.value = false
-  activeId.value = ''
-  await openFile(id)
+  transitioning.value = true
+  reloadingCloud.value = true
+  try {
+    const id = current.value.id
+    if (savePromise) await savePromise
+    clearTimeout(saveTimer)
+    // Fetch first: a failed reload must never erase the only remaining draft.
+    let remote: DrawingFile
+    try {
+      remote = await fetchDrawing(id)
+    } catch (cause) {
+      error.value = message(cause, '云端读取失败，当前草稿已保留')
+      return
+    }
+    if (!sameOwner() || current.value?.id !== id) return
+    await clearDraft(id)
+    dirty.value = false
+    conflict.value = false
+    current.value = remote
+    sceneJson.value = remote.sceneJson
+    revision.value = remote.revision
+    draftScene.value = ''
+    draftError.value = ''
+    error.value = ''
+    syncState.value = 'saved'
+    canvasKey.value = `${id}:${++canvasGeneration}`
+    updateSummary(remote)
+    void loadVersions(id)
+  } finally {
+    transitioning.value = false
+    reloadingCloud.value = false
+  }
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return
+  if (!dirty.value && (!editingTitle.value || titleDraft.value === current.value?.title)) return
   event.preventDefault()
   event.returnValue = ''
 }
@@ -412,75 +614,152 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(draftTimer)
   if (dirty.value && current.value) {
-    void writeDrawingDraft({ id: current.value.id, sceneJson: sceneJson.value, revision: revision.value, updatedAt: Date.now() }).catch(() => undefined)
-    if (syncState.value !== 'conflict') void saveNow()
+    void persistDraft()
   }
+  disposed = true
+  ++loadToken
   window.removeEventListener('beforeunload', beforeUnload)
   document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
-useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
+watch(
+  () => session.userId,
+  () => {
+    clearTimeout(saveTimer)
+    clearTimeout(draftTimer)
+    if (dirty.value) void persistDraft()
+    ++loadToken
+    current.value = null
+    files.value = []
+    dirty.value = false
+  },
+)
+useSaveBeforeRefresh(async () => {
+  if (!(await settleEdits())) throw new Error('草图尚未保存，请先处理保存失败或版本冲突')
+})
+if (inject(routerKey, null)) onBeforeRouteLeave(settleEdits)
 </script>
 
 <template>
-  <section ref="page" class="drawings-page" :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }">
-    <aside v-if="!embedded" class="file-sidebar">
+  <section
+    ref="page"
+    class="drawings-page"
+    :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }"
+  >
+    <button
+      v-if="sidebarOpen && !embedded"
+      class="sidebar-backdrop"
+      aria-label="关闭文件列表"
+      @click="sidebarOpen = false"
+    ></button>
+    <aside
+      v-if="!embedded && sidebarOpen"
+      class="file-sidebar"
+      aria-label="草图文件列表"
+      @keydown.esc="sidebarOpen = false"
+    >
       <div class="sidebar-head">
         <div>
           <strong>我的草图</strong>
-          <span>{{ files.length }} 个文件</span>
+          <span>{{
+            loadingList
+              ? '正在读取…'
+              : listError
+                ? '暂时无法读取'
+                : `${files.length} 个文件 · 最近编辑优先`
+          }}</span>
         </div>
-        <button title="收起文件列表" @click="sidebarOpen = false">
+        <button title="收起文件列表" aria-label="收起文件列表" @click="sidebarOpen = false">
           <i class="ri-side-bar-line"></i>
         </button>
       </div>
 
-      <button class="new-file" :disabled="creating" @click="newFile">
-        <i :class="creating ? 'ri-loader-4-line spin' : 'ri-add-line'"></i>
+      <WaoButton
+        class="new-file"
+        variant="primary"
+        :loading="creating"
+        :disabled="transitioning || !!deletingId"
+        @click="newFile"
+      >
+        <i v-if="!creating" class="ri-add-line"></i>
         {{ creating ? '正在新建' : '新建草图' }}
-      </button>
+      </WaoButton>
+
+      <label class="file-search"
+        ><i class="ri-search-line" aria-hidden="true"></i
+        ><input v-model="search" type="search" aria-label="搜索草图" placeholder="搜索草图"
+      /></label>
 
       <div v-if="loadingList" class="list-state">
         <i class="ri-loader-4-line spin"></i>正在读取文件
+      </div>
+      <div v-else-if="listError" class="list-state empty-list" role="alert">
+        <span>{{ listError }}</span
+        ><WaoButton @click="loadList">重试读取</WaoButton>
       </div>
       <div v-else-if="!files.length" class="list-state empty-list">
         <i class="ri-draft-line"></i>
         <span>还没有草图</span>
         <small>新建后会以当前账号保存</small>
       </div>
+      <div v-else-if="!visibleFiles.length" class="list-state empty-list">
+        <span>没有匹配的草图</span
+        ><WaoButton variant="ghost" @click="search = ''">清除搜索</WaoButton>
+      </div>
       <div v-else class="file-list">
         <div
-          v-for="file in files"
+          v-for="file in visibleFiles"
           :key="file.id"
           class="file-row"
           :class="{ active: activeId === file.id }"
-          role="button"
-          :tabindex="loadingFile ? -1 : 0"
-          :aria-disabled="loadingFile"
-          @click="!loadingFile && openFile(file.id)"
-          @keydown.enter="!loadingFile && openFile(file.id)"
-          @keydown.space.prevent="!loadingFile && openFile(file.id)"
         >
-          <i class="ri-draft-line file-icon"></i>
-          <span class="file-main">
-            <strong>{{ file.title }}</strong>
-            <small
-              >v{{ file.revision }} ·
-              {{
-                new Date(file.updatedAt).toLocaleString('zh-CN', {
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-              }}</small
+          <button
+            class="file-open"
+            :title="file.title"
+            :aria-current="activeId === file.id ? 'true' : undefined"
+            :disabled="transitioning || !!deletingId || restoringVersion !== null"
+            @click="openFile(file.id)"
+          >
+            <i class="ri-draft-line file-icon"></i>
+            <span class="file-main">
+              <strong>{{ file.title }}</strong>
+              <small
+                >编辑于
+                {{
+                  new Date(file.updatedAt).toLocaleString('zh-CN', {
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                }}</small
+              >
+            </span>
+          </button>
+          <span class="file-actions">
+            <a
+              v-if="file.docId && file.kbId"
+              :href="`/kb/${file.kbId}?doc=${file.docId}`"
+              title="在知识库管理"
+              >知识库</a
             >
-          </span>
-          <span class="file-actions" @click.stop>
-            <a v-if="file.docId && file.kbId" :href="`/kb/${file.kbId}?doc=${file.docId}`" title="在知识库管理">知识库</a>
-            <button v-if="!file.docId" type="button" title="重命名" @click="renameFile(file)">
+            <button
+              v-if="!file.docId"
+              type="button"
+              title="重命名"
+              :aria-label="`重命名 ${file.title}`"
+              :disabled="transitioning || !!deletingId"
+              @click="renameFile(file)"
+            >
               <i class="ri-pencil-line"></i>
             </button>
-            <button v-if="!file.docId" type="button" title="删除" @click="removeFile(file)">
+            <button
+              v-if="!file.docId"
+              type="button"
+              title="删除"
+              :aria-label="`删除 ${file.title}`"
+              :disabled="transitioning || !!deletingId"
+              @click="removeFile(file)"
+            >
               <i class="ri-delete-bin-line"></i>
             </button>
           </span>
@@ -494,6 +773,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
           v-if="!sidebarOpen && !embedded"
           class="icon-button"
           title="展开文件列表"
+          aria-label="展开文件列表"
           @click="sidebarOpen = true"
         >
           <i class="ri-menu-line"></i>
@@ -530,11 +810,22 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
           </summary>
           <div class="version-popover">
             <strong>最近三个有效版本</strong>
+            <p v-if="versionsError" role="alert">
+              {{ versionsError }} <button @click="loadVersions()">重试</button>
+            </p>
+            <p v-else-if="loadingVersions && !versions.length">正在读取版本…</p>
+            <p v-else-if="!versions.length">暂无历史版本</p>
             <button
               v-for="version in versions"
               :key="version.revision"
               type="button"
-              :disabled="version.revision === revision || restoringVersion !== null"
+              :disabled="
+                dirty ||
+                transitioning ||
+                !!deletingId ||
+                version.revision === revision ||
+                restoringVersion !== null
+              "
               @click="restoreVersion(version)"
             >
               <span>版本 {{ version.revision }}</span>
@@ -544,7 +835,14 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
             </button>
           </div>
         </details>
-        <div v-if="current" class="sync-pill" :class="syncState">
+        <div
+          v-if="current"
+          class="sync-pill"
+          :class="syncState"
+          role="status"
+          aria-live="polite"
+          :title="syncMeta.text"
+        >
           <i
             :class="[syncMeta.icon, { spin: syncState === 'loading' || syncState === 'saving' }]"
           ></i>
@@ -553,6 +851,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
         <button
           v-if="dirty && syncState !== 'conflict'"
           class="save-button"
+          aria-label="立即保存"
           :disabled="syncState === 'saving'"
           @click="saveNow"
         >
@@ -560,24 +859,49 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
         </button>
         <button
           v-if="current"
+          class="icon-button"
+          title="下载草图备份"
+          aria-label="下载草图备份"
+          @click="downloadDraft"
+        >
+          <i class="ri-download-2-line"></i>
+        </button>
+        <button
+          v-if="current"
           type="button"
           class="icon-button fullscreen-button"
           :title="isFullscreen ? '退出全屏' : '全屏演示'"
+          :aria-label="isFullscreen ? '退出全屏' : '全屏演示'"
           @click="toggleFullscreen"
         >
           <i :class="isFullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i>
         </button>
       </header>
 
-      <div v-if="error" class="error-banner" :class="{ conflict: syncState === 'conflict' }">
+      <div v-if="draftError && dirty" class="error-banner" role="alert">
+        <span>{{ draftError }}</span
+        ><button @click="downloadDraft">下载备份</button>
+      </div>
+      <div
+        v-if="error"
+        class="error-banner"
+        :class="{ conflict: syncState === 'conflict' }"
+        role="alert"
+      >
         <i class="ri-error-warning-line"></i>
         <span>{{ error }}</span>
         <template v-if="syncState === 'conflict'">
           <button @click="downloadDraft">下载本机草稿</button>
           <button @click="useCloudVersion">重新读取云端</button>
         </template>
-        <button v-else-if="current && dirty" @click="saveNow">重试保存</button>
-        <button v-else @click="loadList">重试读取</button>
+        <template v-else-if="current && dirty"
+          ><button @click="saveNow">重试保存</button
+          ><button @click="useCloudVersion">重新读取云端</button></template
+        >
+        <button v-else-if="!current" @click="activeId ? openFile(activeId) : loadList()">
+          重试读取
+        </button>
+        <button v-else @click="error = ''">关闭提示</button>
       </div>
 
       <div class="canvas-shell">
@@ -587,19 +911,52 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
         </div>
         <DrawingCanvas
           v-else-if="current"
+          :key="canvasKey"
           :scene-json="sceneJson"
           :scene-key="canvasKey"
           :name="current.title"
           @change="canvasChanged"
           @ready="canvasReady"
+          @save="saveNow"
         />
-        <div v-else-if="!embedded" class="canvas-empty">
+        <div v-else-if="!embedded && !loadingList && !error" class="canvas-empty">
           <span><i class="ri-draft-line"></i></span>
-          <h1>把想法画出来</h1>
-          <p>选择左侧草图继续创作，或新建一张。打开文件后才会加载画布。</p>
-          <button :disabled="creating" @click="newFile">
-            <i class="ri-add-line"></i>新建草图
-          </button>
+          <h1>{{ files.length ? '继续你的想法' : '把想法画出来' }}</h1>
+          <p>用自由画布整理思路、绘制流程或记录灵感。修改自动保存到账号。</p>
+          <div v-if="recentFiles.length" class="recent-files">
+            <span>最近编辑</span
+            ><button
+              v-for="file in recentFiles"
+              :key="file.id"
+              class="recent-file"
+              :disabled="transitioning"
+              @click="openFile(file.id)"
+            >
+              <i class="ri-draft-line"></i><span>{{ file.title }}</span
+              ><i class="ri-arrow-right-line"></i>
+            </button>
+          </div>
+          <WaoButton
+            :variant="files.length ? 'secondary' : 'primary'"
+            :loading="creating"
+            @click="newFile"
+            ><i class="ri-add-line"></i>新建草图</WaoButton
+          >
+        </div>
+        <div
+          v-if="
+            restoringVersion !== null || (deletingId && deletingId === activeId) || reloadingCloud
+          "
+          class="canvas-loading"
+          role="status"
+        >
+          {{
+            reloadingCloud
+              ? '正在读取云端…'
+              : restoringVersion !== null
+                ? '正在恢复版本…'
+                : '正在删除…'
+          }}
         </div>
       </div>
     </main>
@@ -607,23 +964,32 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </template>
 
 <style scoped>
-.drawings-page.embedded { flex: 1; height: 100%; min-height: 0; margin: 0; padding: 0; width: 100%; }
 .drawings-page {
+  position: relative;
   height: 100%;
   min-height: 0;
   display: flex;
   overflow: hidden;
   background: var(--wao-bg-page);
 }
+.drawings-page.embedded {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
 .file-sidebar {
+  box-sizing: border-box;
   min-height: 0;
   overflow: hidden;
-  width: 268px;
-  flex: 0 0 268px;
+  width: 280px;
+  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 12px;
+  gap: var(--wao-space-2);
+  padding: var(--wao-space-2);
   border-right: 1px solid var(--wao-line);
   background: var(--wao-bg-card);
 }
@@ -631,94 +997,106 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 .drawing-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--wao-space-1);
 }
 .sidebar-head > div {
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 .sidebar-head strong {
-  font-size: 14px;
+  font-size: var(--wao-font-card-title);
 }
 .sidebar-head span,
-.title-block span {
-  color: var(--wao-text-weak);
-  font-size: 10px;
+.title-block > span {
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .sidebar-head button,
 .icon-button {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--wao-radius-control);
   background: transparent;
   color: var(--wao-text-3);
   cursor: pointer;
 }
 .sidebar-head button:hover,
 .icon-button:hover {
-  background: var(--wao-bg-hover-2);
+  background: var(--wao-bg-hover);
 }
-.new-file,
-.canvas-empty button {
-  min-height: 38px;
-  display: inline-flex;
+.new-file {
+  width: 100%;
+  flex-shrink: 0;
+}
+.file-search {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 0;
-  border-radius: 9px;
-  background: var(--wao-primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
+  gap: var(--wao-space-1);
+  min-height: 38px;
+  padding: 0 var(--wao-space-1);
+  border: 1px solid var(--wao-line-control);
+  border-radius: var(--wao-radius-control);
+  color: var(--wao-text-3);
 }
-.new-file:disabled,
-.canvas-empty button:disabled {
-  opacity: 0.6;
-  cursor: wait;
+.file-search:focus-within {
+  border-color: var(--wao-primary);
+}
+.file-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wao-text);
+  font: inherit;
+  font-size: var(--wao-font-body);
+  outline: none;
 }
 .file-list {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   display: grid;
   align-content: start;
-  gap: 5px;
+  gap: var(--wao-space-1);
 }
 .file-row {
   box-sizing: border-box;
   width: 100%;
-  min-height: 58px;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
+  border-radius: var(--wao-radius-control);
   color: var(--wao-text);
-  text-align: left;
-  cursor: pointer;
 }
 .file-row:hover,
-.file-row:focus-visible {
-  background: var(--wao-bg-hover-2);
-}
-.file-row:focus-visible {
-  outline: 2px solid var(--wao-primary-line);
-  outline-offset: -2px;
+.file-row:focus-within {
+  background: var(--wao-bg-hover);
 }
 .file-row.active {
   border-color: var(--wao-primary-line);
   background: var(--wao-primary-soft);
+}
+.file-open {
+  min-width: 0;
+  min-height: 68px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1);
+  border: 0;
+  border-radius: var(--wao-radius-control);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .file-icon {
   width: 30px;
@@ -726,10 +1104,10 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   flex: 0 0 30px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-sub);
   color: var(--wao-primary-text);
-  font-size: 16px;
+  font-size: 18px;
 }
 .file-main {
   min-width: 0;
@@ -740,17 +1118,19 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 .file-main strong {
   overflow: hidden;
   color: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .file-main small {
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .file-actions {
   display: flex;
+  flex-direction: column;
+  padding-right: 4px;
   opacity: 0;
 }
 .file-row:hover .file-actions,
@@ -759,34 +1139,36 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   opacity: 1;
 }
 .file-actions button {
-  width: 25px;
-  height: 25px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--wao-radius-control);
   background: transparent;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
   cursor: pointer;
 }
-.file-actions button:hover,
-.file-actions button:focus-visible {
+.file-actions a {
+  font-size: var(--wao-font-caption);
+  color: var(--wao-primary-text);
+}
+.file-actions button:hover {
   background: var(--wao-bg-card);
   color: var(--wao-text);
 }
-.file-actions button:last-child:hover,
-.file-actions button:last-child:focus-visible {
+.file-actions button:last-child:hover {
   color: var(--wao-danger-strong);
 }
 .list-state {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-3) 0;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .empty-list {
   flex-direction: column;
@@ -797,7 +1179,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   color: var(--wao-primary-text);
 }
 .empty-list small {
-  max-width: 180px;
+  max-width: 210px;
+  font-size: var(--wao-font-caption);
   line-height: 1.5;
 }
 .drawing-workspace {
@@ -809,9 +1192,10 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   background: var(--wao-bg-card);
 }
 .drawing-toolbar {
-  height: 54px;
-  flex: 0 0 54px;
-  padding: 0 14px;
+  min-height: 64px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  padding: var(--wao-space-1) var(--wao-space-2);
   border-bottom: 1px solid var(--wao-line);
   background: var(--wao-bg-card);
 }
@@ -819,12 +1203,12 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 .title-block > strong,
 .title-trigger strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--wao-font-card-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -834,7 +1218,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   max-width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--wao-space-1);
   padding: 0;
   border: 0;
   background: transparent;
@@ -843,40 +1227,35 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 }
 .title-trigger i {
   flex: 0 0 auto;
-  color: var(--wao-text-weak);
-  font-size: 11px;
-  opacity: 0;
-}
-.title-trigger:hover i,
-.title-trigger:focus-visible i {
-  opacity: 1;
+  color: var(--wao-text-3);
+  font-size: 14px;
 }
 .title-block input {
   box-sizing: border-box;
   width: min(360px, 100%);
-  height: 27px;
-  padding: 0 7px;
+  min-height: 36px;
+  padding: 0 var(--wao-space-1);
   border: 1px solid var(--wao-primary);
-  border-radius: 6px;
+  border-radius: var(--wao-radius-control);
   outline: 2px solid var(--wao-primary-soft);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   font: inherit;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--wao-font-body);
+  font-weight: 600;
 }
 .version-menu {
   position: relative;
 }
 .version-menu summary {
-  min-height: 30px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 9px;
-  border-radius: 8px;
+  padding: 0 var(--wao-space-1);
+  border-radius: var(--wao-radius-control);
   color: var(--wao-text-2);
-  font-size: 10px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
   list-style: none;
 }
@@ -885,53 +1264,52 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 }
 .version-menu summary:hover,
 .version-menu[open] summary {
-  background: var(--wao-bg-hover-2);
+  background: var(--wao-bg-hover);
 }
 .version-popover {
   position: absolute;
   z-index: 30;
-  top: calc(100% + 9px);
+  top: calc(100% + 8px);
   right: 0;
-  width: 230px;
+  width: min(270px, calc(100vw - 48px));
   display: grid;
-  gap: 5px;
-  padding: 10px;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1);
   border: 1px solid var(--wao-line);
-  border-radius: 10px;
+  border-radius: var(--wao-radius-card);
   background: var(--wao-bg-card);
-  box-shadow: var(--wao-shadow-pop-2);
+  box-shadow: var(--wao-shadow-pop);
 }
-.version-popover > strong {
-  padding: 2px 4px 6px;
-  font-size: 11px;
+.version-popover > strong,
+.version-popover p {
+  margin: 0;
+  padding: var(--wao-space-1);
+  font-size: var(--wao-font-help);
 }
 .version-popover button {
   min-width: 0;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 2px 8px;
-  padding: 8px;
+  gap: 4px 8px;
+  padding: var(--wao-space-1);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--wao-radius-control);
   background: transparent;
   color: var(--wao-text);
   text-align: left;
   cursor: pointer;
 }
 .version-popover button:hover:not(:disabled) {
-  background: var(--wao-bg-hover-2);
-}
-.version-popover button:disabled {
-  cursor: default;
+  background: var(--wao-bg-hover);
 }
 .version-popover button span {
-  font-size: 11px;
-  font-weight: 650;
+  font-size: var(--wao-font-help);
+  font-weight: 600;
 }
 .version-popover button small {
   grid-column: 1;
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .version-popover button i,
 .version-popover button em {
@@ -939,68 +1317,61 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   grid-row: 1 / span 2;
   align-self: center;
   color: var(--wao-primary-text);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
   font-style: normal;
 }
 .sync-pill {
-  max-width: 270px;
-  min-height: 29px;
+  min-width: 0;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--wao-success-line);
-  border-radius: 999px;
+  padding: 0 var(--wao-space-1);
+  border-radius: var(--wao-radius-control);
   background: var(--wao-success-bg);
   color: var(--wao-success-strong);
-  font-size: 10px;
-  white-space: nowrap;
+  font-size: var(--wao-font-caption);
 }
 .sync-pill.dirty,
 .sync-pill.loading,
 .sync-pill.saving {
-  border-color: var(--wao-primary-line);
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
 }
 .sync-pill.error,
 .sync-pill.conflict {
-  border-color: var(--wao-danger-line);
   background: var(--wao-danger-bg);
   color: var(--wao-danger-strong);
 }
 .save-button,
 .error-banner button {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 var(--wao-space-1);
   border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
-  font-size: 10px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
 }
 .save-button i {
   margin-right: 5px;
 }
-.fullscreen-button {
-  flex: 0 0 32px;
-  font-size: 16px;
-}
 .error-banner {
-  min-height: 40px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 6px 13px;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1) var(--wao-space-2);
   border-bottom: 1px solid var(--wao-danger-line);
   background: var(--wao-danger-bg);
   color: var(--wao-danger-strong);
-  font-size: 10px;
+  font-size: var(--wao-font-help);
 }
 .error-banner span {
   min-width: 0;
   flex: 1;
+  overflow-wrap: anywhere;
 }
 .error-banner button {
   border-color: currentColor;
@@ -1020,7 +1391,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   min-height: 0;
   background: var(--wao-bg-page);
 }
-.drawings-page:fullscreen .file-sidebar {
+.drawings-page:fullscreen .file-sidebar,
+.drawings-page:fullscreen .sidebar-backdrop {
   display: none;
 }
 .drawings-page:fullscreen .drawing-toolbar {
@@ -1029,11 +1401,11 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   top: 10px;
   right: 10px;
   width: auto;
-  height: 40px;
+  min-height: 40px;
   padding: 0 4px;
   border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  box-shadow: var(--wao-shadow-pop-2);
+  border-radius: var(--wao-radius-control);
+  box-shadow: var(--wao-shadow-pop);
 }
 .drawings-page:fullscreen .drawing-toolbar > :not(.fullscreen-button) {
   display: none;
@@ -1042,27 +1414,31 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 .canvas-empty {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wao-space-2);
+  padding: var(--wao-space-3);
+  overflow: auto;
   background: var(--wao-bg-card);
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
   z-index: 2;
 }
 .canvas-empty > span {
   width: 58px;
   height: 58px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 18px;
+  border-radius: var(--wao-radius-modal);
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
   font-size: 27px;
 }
 .canvas-empty h1 {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--wao-text);
   font-size: var(--wao-font-title);
   font-weight: var(--wao-weight-heading);
@@ -1070,12 +1446,60 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 }
 .canvas-empty p {
   max-width: 430px;
-  margin: 0 16px 8px;
+  margin: 0;
   line-height: 1.7;
   text-align: center;
 }
-.canvas-empty button {
-  padding: 0 15px;
+.recent-files {
+  width: min(360px, 100%);
+  display: grid;
+  gap: var(--wao-space-1);
+  margin: var(--wao-space-1) 0;
+}
+.recent-files > span {
+  font-size: var(--wao-font-caption);
+}
+.recent-file {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1) var(--wao-space-2);
+  border: 1px solid var(--wao-line);
+  border-radius: var(--wao-radius-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  text-align: left;
+  cursor: pointer;
+}
+.recent-file:hover {
+  background: var(--wao-primary-soft);
+  border-color: var(--wao-primary-line);
+}
+.recent-file span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--wao-font-body);
+}
+.recent-file i {
+  color: var(--wao-primary-text);
+}
+.sidebar-backdrop {
+  display: none;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: -2px;
 }
 .spin {
   animation: spin 0.9s linear infinite;
@@ -1086,60 +1510,76 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   }
 }
 @media (max-width: 760px) {
-  .drawings-page {
-    height: 100%;
-    min-height: 0;
-  }
   .file-sidebar {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 20;
-    width: min(86vw, 310px);
-    transform: translateX(-102%);
-    transition: transform 0.18s ease;
-    box-shadow: var(--wao-shadow-pop-2);
+    width: min(90%, 310px);
+    box-shadow: var(--wao-shadow-pop);
   }
-  .sidebar-open .file-sidebar {
-    transform: translateX(0);
+  .sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    border: 0;
+    background: var(--wao-mask-bg);
   }
   .drawing-toolbar {
-    height: 48px;
-    flex-basis: 48px;
-    padding: 0 8px;
+    padding: var(--wao-space-1);
+    gap: 4px;
+  }
+  .title-block {
+    flex-basis: calc(100% - 56px);
   }
   .sync-pill {
-    max-width: none;
-    padding: 0 8px;
+    order: 1;
+    flex-basis: 100%;
+    min-height: 28px;
   }
-  .sync-pill span {
-    display: none;
+  .version-menu summary,
+  .icon-button,
+  .sidebar-head button {
+    min-width: 44px;
+    min-height: 44px;
   }
-  .version-menu summary span {
-    display: none;
-  }
-  .version-menu summary {
-    width: 30px;
-    justify-content: center;
-    padding: 0;
+  .version-popover {
+    left: 0;
+    right: auto;
   }
   .save-button {
-    width: 32px;
-    padding: 0;
-    font-size: 0;
-  }
-  .save-button i {
-    margin: 0;
-    font-size: 15px;
-  }
-  .error-banner {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    margin-left: auto;
   }
   .error-banner span {
     flex-basis: calc(100% - 28px);
   }
   .file-actions {
     opacity: 1;
+  }
+  .file-actions button {
+    width: 44px;
+    height: 44px;
+  }
+  .file-search input,
+  .title-block input {
+    font-size: 16px;
+  }
+  .canvas-empty {
+    padding: var(--wao-space-2);
+  }
+}
+@media (pointer: coarse) {
+  .file-actions {
+    opacity: 1;
+  }
+  .file-actions button {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
   }
 }
 </style>

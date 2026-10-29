@@ -11,6 +11,7 @@ import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from '@/composables/theme'
+import { usePageVisibility } from '@/composables/pageVisibility'
 
 const props = defineProps<{
   sceneJson: string
@@ -21,10 +22,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   change: [sceneJson: string]
   ready: []
+  save: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
 const { effective } = useTheme()
+const pageVisible = usePageVisibility()
 let root: Root | null = null
 let ready = false
 let mountedKey = ''
@@ -49,7 +52,7 @@ function persistedContent(sceneJson: string) {
 
 function initialData(): ExcalidrawInitialDataState {
   try {
-    return JSON.parse(props.sceneJson) as ExcalidrawInitialDataState
+    return { ...JSON.parse(props.sceneJson), scrollToContent: true } as ExcalidrawInitialDataState
   } catch {
     return { elements: [], appState: {}, files: {} }
   }
@@ -62,7 +65,11 @@ function changed(
 ) {
   const sceneJson = serializeAsJSON(elements, appState, files, 'local')
   if (!ready) {
+    // Excalidraw calls onChange after loading and normalizing initialData.
+    // Its API callback runs earlier, before that normalization has completed.
     lastScene = sceneJson
+    ready = true
+    emit('ready')
     return
   }
   if (persistedContent(sceneJson) === persistedContent(lastScene)) {
@@ -90,21 +97,18 @@ function render() {
       theme: effective.value,
       autoFocus: true,
       onChange: changed,
-      excalidrawAPI: () => {
-        window.requestAnimationFrame(() => {
-          ready = true
-          emit('ready')
-        })
-      },
     }),
   )
 }
 
 watch(() => [props.sceneKey, props.name, effective.value], render)
 function preventBrowserSave(event: KeyboardEvent) {
+  if (!pageVisible.value) return
+  if (event.target instanceof Element && host.value && !host.value.closest('.drawings-page')?.contains(event.target)) return
   if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 's') {
     event.preventDefault()
     event.stopImmediatePropagation()
+    emit('save')
   }
 }
 onMounted(() => {
