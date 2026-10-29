@@ -758,7 +758,7 @@ button:disabled {
 .grid-jobs.th {
   padding: 9px 16px;
   border-bottom: 1px solid var(--wao-divider);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .grid-jobs.row {
@@ -774,7 +774,7 @@ button:disabled {
 .grid-runs.th {
   padding: 9px 16px;
   border-bottom: 1px solid var(--wao-divider);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .grid-runs.row {
@@ -833,7 +833,7 @@ button:disabled {
   color: var(--wao-text-weak);
 }
 .mini {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   border-radius: 5px;
   padding: 1.5px 7px;
 }
@@ -981,7 +981,7 @@ button:disabled {
   padding: 8px 16px;
   border-top: 1px solid var(--wao-divider);
   border-bottom: 1px solid var(--wao-divider);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   background: var(--wao-bg-sub);
 }
@@ -1045,7 +1045,7 @@ button:disabled {
   border-radius: 50%;
   background: var(--wao-primary-tint);
   color: var(--wao-primary-text);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   display: inline-flex;
   align-items: center;
   justify-content: center;

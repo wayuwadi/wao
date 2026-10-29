@@ -13,7 +13,7 @@ export interface ConfirmAction {
 export function useConfirmAction() {
   const session = useSessionStore()
   const confirmation = shallowRef<ConfirmAction | null>(null)
-  watch(() => session.userId, () => { confirmation.value = null })
+  watch(() => session.userId, () => { confirmation.value = null }, { flush: 'sync' })
   function confirmAction(action: ConfirmAction) {
     if (!confirmation.value) confirmation.value = action
   }

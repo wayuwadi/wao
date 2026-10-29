@@ -9,6 +9,8 @@ import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
@@ -585,11 +587,14 @@ function onFileSettingsSaved(settings: FileSettings) {
         }}
       </div>
       <div class="file-drop" @dragover.prevent @drop.prevent="onDrop">
-        <div v-if="!data.files.length" class="img-empty">
-          <i class="ri-folder-line"></i>
-          <div>还没有文件——把文件拖到这里，或点右上角“上传文件”</div>
-        </div>
-        <div v-else class="file-list">
+        <WaoEmptyState v-if="!data.files.length && data.fileLoadState === 'loading'" title="正在读取文件…" icon="ri-loader-4-line" role="status" />
+        <WaoEmptyState v-else-if="data.fileLoadState === 'error'" title="文件读取失败" :description="data.files.length ? '以下为上次读取的文件，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert">
+          <template #actions><WaoButton @click="data.refreshFiles()">重新读取文件</WaoButton></template>
+        </WaoEmptyState>
+        <WaoEmptyState v-else-if="!data.files.length" title="还没有文件" description="把文件拖到这里，或直接选择要上传的文件。" icon="ri-folder-line">
+          <template #actions><WaoButton variant="primary" :disabled="uploading > 0" @click="unifiedInput?.click()">选择文件</WaoButton></template>
+        </WaoEmptyState>
+        <div v-if="data.files.length" class="file-list">
           <div v-for="(f, i) in data.files" :key="i" class="file-row">
             <div class="file-icon"><i :class="f.icon"></i></div>
             <div class="file-main">
@@ -1085,7 +1090,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .unified-drop span {
   color: var(--wao-text-weak);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .unified-drop button {
   height: 30px;
@@ -1122,7 +1127,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 .page-source-bar > span {
   padding: 0 6px;
   color: var(--wao-text-weak);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   font-weight: 650;
 }
 .page-source-bar button {
@@ -1133,7 +1138,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   background: transparent;
   color: var(--wao-text-weak);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .page-source-bar button.active {
   border-color: var(--wao-primary-line);
@@ -1326,7 +1331,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .file-sub {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   white-space: nowrap;
   overflow: hidden;
@@ -1486,7 +1491,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 .drop-tip {
   margin-top: 10px;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .img-info {
@@ -1504,7 +1509,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   text-overflow: ellipsis;
 }
 .img-meta {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .img-copy {
@@ -1513,7 +1518,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;

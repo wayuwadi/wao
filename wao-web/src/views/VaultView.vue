@@ -10,6 +10,8 @@ import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
@@ -270,7 +272,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 
     <div v-if="data.vaultError" class="banner error">
       <i class="ri-error-warning-line"></i>
-      <span>密码库读取失败，这里暂时是空的——你的条目仍在服务端，没有丢失。</span>
+      <span>{{ data.vault.length ? '密码库读取失败，以下为上次读取结果。请重试获取最新内容。' : '密码库读取失败，请检查连接后重试。' }}</span>
       <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
     </div>
 
@@ -315,7 +317,13 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
           </div>
           <i class="ri-arrow-right-s-line item-go"></i>
         </button>
-        <div v-if="filtered.length === 0" class="empty">这个分组还没有条目</div>
+        <WaoEmptyState v-if="!items.length && data.loadStates.vault === 'loading'" title="正在读取密码库…" icon="ri-loader-4-line" role="status" />
+        <WaoEmptyState v-else-if="filtered.length === 0 && !data.vaultError" :title="query.trim() ? '没有匹配的条目' : '这个分组还没有条目'" :description="query.trim() ? '试试其他名称、账号或网址。' : '添加条目后，可以在这里查看和复制。'">
+          <template #actions>
+            <WaoButton v-if="query.trim()" @click="query = ''">清除搜索</WaoButton>
+            <WaoButton v-else variant="primary" @click="openNewItem">添加第一个条目</WaoButton>
+          </template>
+        </WaoEmptyState>
         <WaoPagination v-if="vaultPageCount > 1" v-model:page="vaultPage" :page-count="vaultPageCount" :total="filtered.length" aria-label="密码条目查询结果分页" />
       </div>
 
@@ -531,7 +539,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .col-label {
   padding: 2px 8px 6px;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   letter-spacing: 1.5px;
 }
@@ -577,7 +585,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   text-align: left;
 }
 .gb-count {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .group-add {
@@ -593,7 +601,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   cursor: pointer;
   background: none;
   color: var(--wao-text-3);
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .group-add:hover {
   border-color: var(--wao-primary);
@@ -653,7 +661,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .item-user {
   margin-top: 1px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   white-space: nowrap;
   overflow: hidden;
@@ -689,7 +697,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .d-sub {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .fields {
@@ -741,7 +749,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-2);
   cursor: pointer;
 }

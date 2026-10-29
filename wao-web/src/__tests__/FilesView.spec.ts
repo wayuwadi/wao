@@ -12,6 +12,29 @@ vi.mock('@/api/system', () => ({
 }))
 
 describe('FilesView', () => {
+  it('读取中和读取失败不显示空列表，重试成功后才提供首个文件入口', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const refresh = vi.spyOn(data, 'refreshFiles').mockResolvedValue(false)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在读取文件')
+    expect(wrapper.text()).not.toContain('还没有文件')
+    data.fileLoadState = 'error'
+    await flushPromises()
+    expect(wrapper.text()).toContain('文件读取失败')
+    expect(wrapper.text()).not.toContain('还没有文件')
+    refresh.mockImplementation(async () => { data.fileLoadState = 'loaded'; return true })
+    await wrapper.get('.file-drop .wao-button').trigger('click')
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('还没有文件')
+    expect(wrapper.get('.file-drop .wao-button').text()).toBe('选择文件')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.mocked(fetchFileSettings).mockResolvedValue({
       fileMaxMb: 12,
