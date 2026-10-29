@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.common;
 
+import org.springframework.http.ResponseEntity;
+
 import cn.wayuwa.wao.auth.FeishuLoginException;
 import cn.wayuwa.wao.feishu.FeishuApiException;
 import java.util.Optional;
@@ -109,6 +111,14 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleFeishuApi(FeishuApiException exception) {
         log.warn("Feishu open API call failed: {}", exception.getMessage());
         return ApiResponse.fail(50203, exception.getMessage());
+    }
+
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Void>> responseStatus(org.springframework.web.server.ResponseStatusException ex) {
+        return ResponseEntity.status(ex.getStatusCode())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(ApiResponse.fail(ex.getStatusCode().value() * 100,
+                        ex.getReason() == null ? "请求暂不可用" : ex.getReason()));
     }
 
     @ExceptionHandler(Exception.class)

@@ -6,6 +6,22 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.*;
 
 class AttendanceSyncSchedulerTest {
+    @Test void refreshesEveryMemberBeforeHistoryAndIsolatesBackfillFailures() {
+        var service = mock(AttendanceService.class);
+        var scheduler = new AttendanceSyncScheduler(service);
+        var today = LocalDate.now(AttendanceService.ZONE);
+        when(service.enabledMembers()).thenReturn(List.of("member-a", "member-b"));
+        doThrow(new IllegalStateException("history unavailable")).when(service).backfillNextPeriod("member-a", today);
+        scheduler.syncToday();
+        var order = inOrder(service);
+        order.verify(service).sync("member-a", today, today);
+        order.verify(service).sync("member-b", today, today);
+        order.verify(service).backfillNextPeriod("member-a", today);
+        order.verify(service).backfillNextPeriod("member-b", today);
+        scheduler.syncToday();
+        verify(service, times(2)).sync("member-a", today, today);
+    }
+
     @Test void temporaryMemberFailureDoesNotBlockOtherMembersOrNextCycle() {
         var service = mock(AttendanceService.class);
         var scheduler = new AttendanceSyncScheduler(service);

@@ -17,6 +17,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 class FileServiceTest {
+    @Test void oversizedMarkdownIsRejectedBeforeReadingStoredBytes() {
+        var metadata = new FileBlobEntity();
+        metadata.setId("large"); metadata.setName("large.md");
+        metadata.setByteSize(200L * 1024 * 1024);
+        when(mapper.findMeta("large")).thenReturn(metadata);
+        assertThatThrownBy(() -> service.preview("large")).hasMessageContaining("2MB");
+        verify(mapper, never()).selectById("large");
+    }
     private final FileBlobMapper mapper = mock(FileBlobMapper.class);
     private final FileSettingsService settings = mock(FileSettingsService.class);
     private final FileService service = new FileService(mapper, settings);

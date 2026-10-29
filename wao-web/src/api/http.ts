@@ -51,51 +51,102 @@ function retryGatewayRequest(
 }
 
 /** 解析 WAO 后端的 token/done/error SSE 事件，供长时 AI 接口复用。 */
-export async function* streamTextEvents(url: string, body: unknown): AsyncGenerator<string> {
-  assertSessionRequest(url)
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    credentials: 'include',
-  })
-  if (!res.ok || !res.body) {
-    if (res.status === 401 && isProtectedRequest(url)) requireSessionRecovery()
-    let message = `请求失败：${res.status}`
-    try {
-      const error = (await res.json()) as Partial<ApiResponse<unknown>>
-      if (error.message) message = error.message
-    } catch {
-      /* 非 JSON 错误保留状态码。 */
-    }
-    throw new Error(message)
-  }
+export interface StreamTextOptions {
+  signal?: AbortSignal
+  idleTimeoutMs?: number
+}
 
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    buffer = buffer.replace(/\r\n/g, '\n')
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() || ''
-    for (const part of parts) {
-      const lines = part.split('\n')
-      let eventName = ''
-      const payloadLines: string[] = []
-      for (const line of lines) {
-        if (line.startsWith('event:')) eventName = line.slice(6).trimStart()
-        else if (line.startsWith('data:')) payloadLines.push(line.slice(5).trimStart())
+export async function* streamTextEvents(
+  url: string,
+  body: unknown,
+  options: StreamTextOptions = {},
+): AsyncGenerator<string> {
+  assertSessionRequest(url)
+  const controller = new AbortController()
+  const timeout = options.idleTimeoutMs ?? 330_000
+  if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('无效的回复等待时间')
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancel = () => controller.abort(options.signal?.reason)
+  const leavePage = () => controller.abort()
+  const cancelReader = () => {
+    void reader?.cancel().catch(() => {})
+  }
+  const resetTimeout = () => {
+    clearTimeout(timer)
+    timer = setTimeout(
+      () => controller.abort(new Error('回复等待超时，请在历史记录中查看任务结果')),
+      timeout,
+    )
+  }
+  options.signal?.addEventListener('abort', cancel, { once: true })
+  controller.signal.addEventListener('abort', cancelReader, { once: true })
+  window.addEventListener('pagehide', leavePage)
+  try {
+    if (options.signal?.aborted) cancel()
+    controller.signal.throwIfAborted()
+    resetTimeout()
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'include',
+      signal: controller.signal,
+    })
+    if (!res.ok || !res.body) {
+      if (res.status === 401 && isProtectedRequest(url)) requireSessionRecovery()
+      let message = `请求失败：${res.status}`
+      try {
+        const error = (await res.json()) as Partial<ApiResponse<unknown>>
+        if (error.message) message = error.message
+      } catch {
+        /* 非 JSON 错误保留状态码。 */
       }
-      const payload = payloadLines.join('\n')
-      if (eventName === 'token' && payload) yield payload
-      else if (eventName === 'done') return
-      else if (eventName === 'error') throw new Error(payload)
+      throw new Error(message)
+    }
+
+    reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      controller.signal.throwIfAborted()
+      resetTimeout()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      if (buffer.length > 2_000_000) throw new Error('回复内容过大，请在历史记录中查看')
+      buffer = buffer.replace(/\r\n/g, '\n')
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() || ''
+      for (const part of parts) {
+        const lines = part.split('\n')
+        let eventName = ''
+        const payloadLines: string[] = []
+        for (const line of lines) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trimStart()
+          else if (line.startsWith('data:')) payloadLines.push(line.slice(5).trimStart())
+        }
+        const payload = payloadLines.join('\n')
+        if (eventName === 'token' && payload) yield payload
+        else if (eventName === 'done') return
+        else if (eventName === 'error') throw new Error(payload)
+      }
+    }
+    throw new Error('回复连接提前结束，请重试；原问题已保留')
+  } catch (error) {
+    if (controller.signal.aborted) throw controller.signal.reason
+    throw error
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', cancel)
+    window.removeEventListener('pagehide', leavePage)
+    controller.signal.removeEventListener('abort', cancelReader)
+    controller.abort()
+    if (reader) {
+      void reader.cancel().catch(() => {})
+      reader.releaseLock()
     }
   }
-  throw new Error('回复连接提前结束，请重试；原问题已保留')
 }
 
 http.interceptors.request.use(async (config: RetriableRequestConfig) => {

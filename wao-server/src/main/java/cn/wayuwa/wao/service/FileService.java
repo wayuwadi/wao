@@ -217,15 +217,18 @@ public class FileService {
 
     /** 读取 UTF-8 Markdown 正文供登录后的站内安全渲染，不执行上传内容。 */
     public FilePreviewDto preview(String id) {
-        FileBlobEntity entity = raw(id);
+        FileBlobEntity entity = metadata(id);
         String lower = entity.getName() == null ? "" : entity.getName().toLowerCase(Locale.ROOT);
         String type = entity.getContentType() == null ? "" : entity.getContentType().toLowerCase(Locale.ROOT);
         if (!(lower.endsWith(".md") || lower.endsWith(".markdown") || type.equals("text/markdown"))) {
             throw new BadRequestException("当前只支持 Markdown 文件站内预览");
         }
-        if (entity.getContent().length > MAX_PREVIEW_BYTES) {
+        if (entity.getByteSize() != null && entity.getByteSize() > MAX_PREVIEW_BYTES) {
             throw new BadRequestException("Markdown 文件超过 2MB，请下载后查看");
         }
+        entity = raw(id);
+        if (entity.getContent().length > MAX_PREVIEW_BYTES)
+            throw new BadRequestException("Markdown 文件超过 2MB，请下载后查看");
         try {
             String content = StandardCharsets.UTF_8.newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)

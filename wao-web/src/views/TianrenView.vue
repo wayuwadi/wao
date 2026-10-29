@@ -251,15 +251,20 @@ async function shareReading() {
   }
 }
 
+let streamController: AbortController | undefined
+onBeforeUnmount(() => streamController?.abort())
+
 async function interpretToday() {
   if (!canInterpret.value) return
   interpreting.value = true
+  const controller = new AbortController()
+  streamController = controller
   const previous = interpretation.value
   interpretationError.value = ''
   conversationError.value = ''
   let received = false
   try {
-    for await (const chunk of streamTianrenInterpretation(focus.value.trim())) {
+    for await (const chunk of streamTianrenInterpretation(focus.value.trim(), controller.signal)) {
       if (!received) { interpretation.value = ''; received = true }
       interpretation.value += chunk
     }
@@ -273,6 +278,7 @@ async function interpretToday() {
     focus.value = ''
   } catch (cause) {
     interpretation.value = previous
+    if (controller.signal.aborted) return
     interpretationError.value = cause instanceof Error ? cause.message : 'AI 解读失败，请保留关注点后重试'
   } finally {
     interpreting.value = false

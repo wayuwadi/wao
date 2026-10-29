@@ -28,6 +28,42 @@ import org.mockito.ArgumentCaptor;
 
 class AiAssistantServiceTest {
 
+    @Test void connectionWaitTimeoutNeverFailsAQueuedOrRunningJob() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "streamWaitTimeout", Duration.ofMillis(1));
+        var run = new AiAssistantRunEntity();
+        run.setId("slow-run"); run.setMemberId("member");
+        for (String status : List.of("secure_queued", "provider_running")) {
+            run.setStatus(status);
+            when(mapper.selectById("slow-run")).thenReturn(run);
+            service.streamQueuedRun("slow-run", "member", mock(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.class));
+            verify(mapper, never()).failActive(any(), any());
+            assertThat(run.getStatus()).isEqualTo(status);
+        }
+    }
+
+    @Test void disconnectedStreamStopsPollingWithoutFailingPersistentJob() throws Exception {
+        var run = new AiAssistantRunEntity();
+        run.setId("stream-run"); run.setMemberId("member"); run.setStatus("secure_queued");
+        when(mapper.selectById("stream-run")).thenReturn(run);
+        var emitter = mock(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.class);
+        org.mockito.Mockito.doThrow(new java.io.IOException("disconnected"))
+                .when(emitter).send(any(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder.class));
+        service.streamQueuedRun("stream-run", "member", emitter);
+        verify(mapper).selectById("stream-run");
+        verify(mapper, never()).failActive(any(), any());
+        verify(emitter).complete();
+    }
+
+    @Test void interruptedStreamDoesNotCancelPersistentJob() {
+        Thread.currentThread().interrupt();
+        try {
+            service.streamQueuedRun("stream-run", "member", mock(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.class));
+            verify(mapper, never()).failActive(any(), any());
+            verify(mapper, never()).selectById(anyString());
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally { Thread.interrupted(); }
+    }
+
     private final AiAssistantRunMapper mapper = mock(AiAssistantRunMapper.class);
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final AiRunService aiRunService = mock(AiRunService.class);

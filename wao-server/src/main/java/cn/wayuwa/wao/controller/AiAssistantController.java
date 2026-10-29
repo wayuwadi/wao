@@ -34,6 +34,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/assistant")
 public class AiAssistantController {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.AssistantStreamExecutor streams;
+
     private final AiAssistantService service;
     private final AiAssistantConversationService conversationService;
     private final AiAssistantAssetService assetService;
@@ -107,12 +110,7 @@ public class AiAssistantController {
     public SseEmitter chatStream(@Valid @RequestBody AssistantChatRequest request, HttpServletRequest http) {
         SseEmitter emitter = new SseEmitter(310_000L);
         String memberId = currentMember.idOr(http, "unknown");
-        // 项目生产基线仍是 Java 17，使用普通守护线程释放 Tomcat 请求线程。
-        // 待整体升级 Java 21 后再通过 ADR 统一切换虚拟线程，不能在单个功能里偷跑运行时基线。
-        Thread worker = new Thread(() -> service.chatStream(request, memberId, emitter), "wao-assistant-stream");
-        worker.setDaemon(true);
-        worker.start();
-        return emitter;
+        return streams.submit(emitter, () -> service.chatStream(request, memberId, emitter));
     }
 
     /** 一次性返回完整回复；适合网络环境不支持 SSE 的场景。 */
