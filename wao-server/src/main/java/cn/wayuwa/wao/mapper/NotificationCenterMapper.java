@@ -11,7 +11,16 @@ import org.apache.ibatis.annotations.Select;
 /** 通知中心只读聚合查询，不复制已有任务与 AI Run 事实。 */
 @Mapper
 public interface NotificationCenterMapper {
-    String EVENT_UNION = """
+    // Only explicit personal date/habit reminders join the feed; legacy organization cards stay hidden.
+    String PERSONAL_ROUTINE_EVENTS = """
+            SELECT CONCAT('routine:', n.id) AS event_id, 'INTERNAL' AS event_type,
+                   n.title, n.body AS detail, NULL AS actor_name,
+                   n.created_at AS occurred_at, n.target_path, 'INFO' AS severity
+              FROM internal_notification n
+             WHERE n.member_id = #{memberId}
+               AND (n.target_path = '/countdowns' OR n.target_path LIKE '/habits?habit=%')
+            """;
+    String EVENT_UNION = PERSONAL_ROUTINE_EVENTS + " UNION ALL " + """
             SELECT CONCAT('mention-chat:', c.id) AS event_id, 'INTERNAL' AS event_type,
                    '聊天中有人 @ 你' AS title, c.content AS detail, sender.name AS actor_name,
                    c.created_at AS occurred_at, '/?chat=1' AS target_path, 'INFO' AS severity

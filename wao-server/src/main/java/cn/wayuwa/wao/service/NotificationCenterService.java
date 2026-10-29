@@ -85,7 +85,7 @@ public class NotificationCenterService {
             case "AI_RUN" -> "SUCCESS".equals(row.getSeverity())
                     ? policy.aiRunSuccess() : policy.aiRunFailure();
             case "LOGIN" -> false;
-            case "INTERNAL" -> row.getEventId() != null && row.getEventId().startsWith("mention-");
+            case "INTERNAL" -> row.getEventId() != null && (row.getEventId().startsWith("mention-") || row.getEventId().startsWith("routine:"));
             default -> false;
         };
     }
