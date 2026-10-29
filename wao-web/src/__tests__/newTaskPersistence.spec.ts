@@ -81,6 +81,16 @@ describe('新建任务的落库反馈', () => {
     expect(putTask.mock.calls[1]?.[1].desc).toBe('请求期间继续写的正文')
   })
 
+  it('个人收集箱关闭默认日期后真实写入仍保持无日期，不影响其他入口', async () => {
+    putTask.mockImplementation(savedTask)
+    const result = await data.addTask({ title:'无日期收集',project:'',pr:'P2',owner:'m1',due:'',desc:'' },'undated-inbox',{defaultDueToToday:false})
+    expect(result.persisted).toBe(true)
+    expect(putTask.mock.calls[0]?.[1].due).toBe('')
+    expect(data.taskById('undated-inbox')?.due).toBe('')
+    const planned = await data.addTask({ title:'今日安排',project:'',pr:'P2',owner:'m1',due:todayIso(),desc:'' },'dated-inbox',{defaultDueToToday:false})
+    expect(planned.task.due).toBe(todayIso())
+  })
+
   it('保存期间新增子任务时只接收服务端编号，不覆盖较新的编辑', async () => {
     const task = data.tasks[0]!
     task.subs = [{ id: 's-original', text: '旧标题', done: false }]
