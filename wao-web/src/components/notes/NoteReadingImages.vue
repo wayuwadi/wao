@@ -49,7 +49,7 @@ figcaption strong, .image-name-button { font-weight: 500; min-width: 0; overflow
 img { display: block; width: 100%; height: auto; max-height: 280px; object-fit: contain; border-radius: 7px; }
 .reading-image-error { display: block; padding: 28px 8px; color: var(--wao-text-weak); font-size: 12px; line-height: 1.7; }
 .reading-image-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; }
-.reading-image-actions button { border: 0; padding: 4px 0; font: inherit; font-size: 11px; color: var(--wao-text-weak); background: transparent; cursor: pointer; }
+.reading-image-actions button { border: 0; padding: 4px 0; font: inherit; font-size: var(--wao-font-caption); color: var(--wao-text-weak); background: transparent; cursor: pointer; }
 .reading-image-actions i { margin-right: 3px; }
 button:hover { color: var(--wao-primary-text); }
 button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
