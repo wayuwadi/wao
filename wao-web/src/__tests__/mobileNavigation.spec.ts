@@ -139,7 +139,7 @@ describe('手机按需完整导航', () => {
 
     const { wrapper } = await mountNavigation('/')
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
-    expect(labels).toEqual(expect.arrayContaining(['待办', '番茄钟', '习惯打卡']))
+    expect(labels).toEqual(expect.arrayContaining(['待办', '番茄钟', '习惯']))
     expect(wrapper.get('[title="项目"]').attributes('draggable')).not.toBe('true')
     const nav = useNavStore()
     nav.builtinMenusState = 'loaded'

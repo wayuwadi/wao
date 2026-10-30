@@ -119,7 +119,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   navigation: {
     id: 'navigation',
-    label: '全部功能',
+    label: '全部',
     icon: 'ri-compass-discover-line',
     path: '/navigation',
   },
@@ -150,7 +150,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   focus: { id: 'focus', label: '番茄钟', icon: 'ri-timer-line', path: '/focus' },
   countdowns: { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', path: '/countdowns' },
-  habits: { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', path: '/habits' },
+  habits: { id: 'habits', label: '习惯', icon: 'ri-seedling-line', path: '/habits' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   'reference-images': {
@@ -330,7 +330,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'navigation',
-      label: '全部功能',
+      label: '全部',
       icon: 'ri-compass-discover-line',
       group: 'ROOT',
       order: 20,
@@ -372,7 +372,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       id: 'focus', label: '番茄钟', icon: 'ri-timer-line', group: 'PERSONAL', order: 15, visible: true,
     },
     { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', group: 'PERSONAL', order: 16, visible: true },
-    { id: 'habits', label: '习惯打卡', icon: 'ri-seedling-line', group: 'PERSONAL', order: 17, visible: true },
+    { id: 'habits', label: '习惯', icon: 'ri-seedling-line', group: 'PERSONAL', order: 17, visible: true },
     {
       id: 'todo',
       label: '待办',
