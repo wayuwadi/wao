@@ -29,6 +29,65 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('完成保存及失败时只保留本次完成的行，重试成功后不再随正文保存出现', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs.push({ id: 'old', text: '早已完成', done: true })
+    let phase: 'saved' | 'saving' | 'error' = 'saved'
+    vi.spyOn(data, 'taskSaveState').mockImplementation(() => phase)
+    const sync = async () => {
+      const p = projectWorkItems(data.tasks)
+      await wrapper.setProps({ items: p.items, contextItems: p.items, itemRefs: p.refs })
+    }
+    let finish!: () => void
+    vi.spyOn(data, 'flushTask').mockResolvedValueOnce().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    vi.spyOn(data, 'setSubState').mockImplementation(() => {
+      data.tasks[0]!.subs[0]!.done = true
+      phase = 'saving'
+    })
+    try {
+      await sync()
+      await wrapper.get('[aria-label="完成 子任务"]').setValue(true)
+      await vi.advanceTimersByTimeAsync(3000); await sync()
+      expect(wrapper.find('[data-task-id="sub:parent:child"]').exists()).toBe(true)
+      expect(wrapper.find('[data-task-id="sub:parent:old"]').exists()).toBe(false)
+      phase = 'error'; finish(); await flushPromises(); await sync()
+      expect(wrapper.find('[data-task-id="sub:parent:child"]').exists()).toBe(true)
+      expect(wrapper.find('[data-task-id="sub:parent:old"]').exists()).toBe(false)
+      phase = 'saved'; await sync(); await flushPromises()
+      expect(wrapper.find('[data-task-id="sub:parent:child"]').exists()).toBe(false)
+      phase = 'saving'; await sync()
+      expect(wrapper.find('[data-task-id="sub:parent:child"]').exists()).toBe(false)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('编辑父子任务正文时，共享保存状态不显示已完成的子孙任务', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs.push(
+      { id: 'done', text: '已完成子任务', done: true },
+      { id: 'grandchild', parentId: 'child', text: '已完成孙任务', done: true },
+    )
+    const state = vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const sync = async () => {
+      const p = projectWorkItems(data.tasks)
+      await wrapper.setProps({ items: p.items, contextItems: p.items, itemRefs: p.refs })
+    }
+    await sync(); await flushPromises()
+    for (const id of ['parent', 'sub:parent:child']) {
+      await wrapper.get(`[data-task-id="${id}"] .task-select`).trigger('click')
+      wrapper.findComponent({ name: 'MarkdownEditor' }).vm.$emit('update:modelValue', '修改正文')
+      for (const phase of ['saving', 'error', 'saving', 'saved'] as const) {
+        state.mockReturnValue(phase)
+        await sync()
+        expect(wrapper.find('[data-task-id="sub:parent:done"]').exists()).toBe(false)
+        expect(wrapper.find('[data-task-id="sub:parent:grandchild"]').exists()).toBe(false)
+      }
+    }
+    await wrapper.setProps({ showDone: true })
+    expect(wrapper.find('[data-task-id="sub:parent:done"]').exists()).toBe(true)
+    expect(wrapper.find('[data-task-id="sub:parent:grandchild"]').exists()).toBe(true)
+  })
+
   it('任务复选框右键打开功能菜单，不切换完成状态', async () => {
     const { wrapper, data } = setup()
     const checkbox = wrapper.get('[data-task-id="parent"] input[type=checkbox]')

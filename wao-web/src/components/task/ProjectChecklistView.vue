@@ -70,6 +70,11 @@ const overdue = (task:Task) => deadlineInfo(task.due, today.value, task.status =
 const actions = useProjectItemActions(() => props.itemRefs)
 // Keep completion reversible locally before saving, so even a slow request cannot block undo.
 const pendingCompletion = ref(new Set<string>())
+// Only the row being completed may stay visible while its shared source saves.
+const retainedCompletion = ref(new Set<string>())
+watch(() => [...retainedCompletion.value].map(id => [id, data.taskSaveState(actions.sourceId(id))] as const), states => {
+  for (const [id, state] of states) if (state === 'saved') retainedCompletion.value.delete(id)
+})
 const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const committingCompletion = new Set<string>()
 let completionQueue = Promise.resolve()
@@ -86,8 +91,10 @@ function commitCompletion(id: string) {
     if (member !== useSessionStore().userId || !pendingCompletion.value.has(id)) return
     await data.flushTask(actions.sourceId(id))
     if (member !== useSessionStore().userId || !pendingCompletion.value.has(id)) return
+    retainedCompletion.value.add(id)
     cancelCompletion(id)
     await actions.status(id, '已完成')
+    if (data.taskSaveState(actions.sourceId(id)) !== 'error') retainedCompletion.value.delete(id)
     if (selectedId.value === id && data.taskSaveState(actions.sourceId(id)) === 'saved') detailOnlySelection.value = false
     cancelCompletion(id)
     } catch {
@@ -107,6 +114,7 @@ function toggleCompletion(id: string) {
 }
 const isComplete = (task: Task) => task.status === '已完成' || pendingCompletion.value.has(task.id)
 watch(() => useSessionStore().userId, () => {
+  retainedCompletion.value.clear()
   for (const id of [...pendingCompletion.value]) cancelCompletion(id)
 }, { flush: 'sync' })
 onBeforeUnmount(() => {
@@ -175,7 +183,7 @@ const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => 
 const selectedId = computed({ get: () => viewMemory.value.selectedId, set: value => { viewMemory.value.selectedId = value } })
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
-  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id))))
+  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
   const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
