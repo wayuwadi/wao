@@ -417,10 +417,11 @@ const deletingId = ref('')
 const confirmingDeleteId = ref('')
 const deleteError = ref<{ id: string; message: string } | null>(null)
 const deleteConfirmation = ref<HTMLElement | null>(null)
+const deleteMenuAnchor = ref<HTMLElement | null>(null)
 const deleteButtons = new Map<string, HTMLElement>()
 const readerDeleteButton = ref<HTMLElement | null>(null)
 function setReaderDeleteButton(value: unknown) { readerDeleteButton.value = value instanceof HTMLElement ? value : null }
-function deleteAnchor(id: string) { return reading.value ? readerMenuAnchor.value?.id === id ? readerMenuAnchor.value.element : readerMore.value?.querySelector<HTMLElement>('summary') ?? readerDeleteButton.value : deleteButtons.get(id) }
+function deleteAnchor(id: string) { return reading.value ? readerMenuAnchor.value?.id === id ? readerMenuAnchor.value.element : readerMore.value?.querySelector<HTMLElement>('summary') ?? readerDeleteButton.value : deleteMenuAnchor.value ?? deleteButtons.get(id) }
 const deleteConfirmationStyle = ref<Record<string, string>>({ visibility: 'hidden' })
 function setDeleteConfirmation(value: unknown) { deleteConfirmation.value = value instanceof HTMLElement ? value : null }
 function setDeleteButton(id: string, value: unknown) {
@@ -505,7 +506,8 @@ function toggleNotePreview(id: string) {
     ? expandedIds.value.filter(item => item !== id)
     : [...expandedIds.value, id]
 }
-async function toggleDeleteConfirmation(id: string) {
+async function toggleDeleteConfirmation(id: string, anchor?: HTMLElement) {
+  deleteMenuAnchor.value = anchor ?? null
   if (deletingId.value) return
   if (confirmingDeleteId.value === id) { closeDeleteConfirmation(true); return }
   deleteConfirmationStyle.value = { visibility: 'hidden', width: `${Math.min(320, window.innerWidth - 24)}px` }
@@ -523,6 +525,7 @@ function cancelDeleteOnEscape(id: string, event: KeyboardEvent) {
 function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
   const note = data.docById(id)
   if (!note) return
+  const menuSource = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   const moreButton = event.currentTarget instanceof HTMLElement && event.currentTarget.matches('.note-more-actions') ? event.currentTarget : undefined
   if (editingIds.value.includes(id)) {
     if (!moreButton) return
@@ -552,7 +555,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'copy', label: '复制内容', run: () => { const note = data.docById(id); if (note) openMediaCopy(note) } },
     { id: 'link', label: '分享设置', run: () => openNoteShare(id) },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
-    { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
+    { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id, moreButton ?? menuSource) },
   ], moreButton)
 }
 function openReaderNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {

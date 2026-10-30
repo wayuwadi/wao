@@ -6,7 +6,6 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.*;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -100,15 +99,10 @@ public class FocusService {
             long end=now;
             if(s.status.equals("running") && s.plannedMs>0 && elapsed(s,now)>=s.plannedMs) end=s.runningSince+Math.max(0,s.plannedMs-s.elapsedMs);
             s.elapsedMs=elapsed(s,now);s.runningSince=0;s.status="finished";s.endedAt=end;
-            if(!s.mode.equals("break")) {
+            if(!s.mode.equals("break") && s.note.codePoints().anyMatch(c -> !Character.isWhitespace(c) && !Character.isSpaceChar(c))) {
                 s.noteId=UUID.randomUUID().toString().replace("-","");
-                String title="番茄钟 · "+(s.taskTitle.isEmpty()?"自由专注":s.taskTitle);
-                String meta="专注时长："+(s.elapsedMs/60_000)+" 分 "+(s.elapsedMs/1000%60)+" 秒\n开始："+date(s.startedAt)+"\n结束："+date(end);
-                List<DocBlockDto> blocks=new ArrayList<>();blocks.add(new DocBlockDto(null,null,meta,null,null));
-                if(!s.taskId.isEmpty()) blocks.add(new DocBlockDto(null,null,"关联任务：[打开任务](/s/t/"+s.taskId+(s.subId.isEmpty()?"":"/"+java.net.URLEncoder.encode(s.subId,java.nio.charset.StandardCharsets.UTF_8))+")",null,null));
-                if(s.habitId!=null&&!s.habitId.isEmpty()) blocks.add(new DocBlockDto(null,null,"关联习惯：[打开习惯](/habits?habit="+s.habitId+")",null,null));
-                blocks.add(new DocBlockDto(null,null,s.note.isBlank()?"本次未填写专注笔记。":s.note,null,null));
-                CreateNoteRequest note=new CreateNoteRequest(title.length()>200?title.substring(0,200):title,blocks,null,List.of("番茄钟"),false,false,false,null,true);
+                List<DocBlockDto> blocks=List.of(new DocBlockDto(null,null,s.note,null,null));
+                CreateNoteRequest note=new CreateNoteRequest(null,blocks,null,List.of("番茄钟"),false,false,false,null,true);
                 NoteAiManagedService.withoutAuto(member,()->knowledge.createNote(s.noteId,note,member));
             }
         }
@@ -121,7 +115,6 @@ public class FocusService {
     private void lockMember(String member){requireMember(member);if(jdbc.queryForList("SELECT id FROM member WHERE id = ? FOR UPDATE",String.class,member).isEmpty())throw new NotFoundException("成员不存在");}
     private String checkedNote(String note){String value=blank(note);if(value.length()>50_000)throw new BadRequestException("专注笔记不能超过 50000 字");return value;}
     private String blank(String value){return value==null?"":value;}
-    private String date(long ms){return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai")).format(Instant.ofEpochMilli(ms));}
     private List<Session> read(String sql,Object...args){return jdbc.query(sql,(rs,n)->{try{return json.readValue(rs.getString(1),Session.class);}catch(Exception e){throw new IllegalStateException(e);}},args);}
     private String write(Session s){try{return json.writeValueAsString(s);}catch(Exception e){throw new IllegalStateException(e);}}
 }

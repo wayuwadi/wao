@@ -407,8 +407,10 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
-        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
+        <div class="detail-secondary-actions">
         <RouterLink :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
+        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
+        </div>
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <div class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
           <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @focus="outlineOpen = true" @click="outlineOpen = true"><i class="ri-list-unordered"></i></button>
@@ -449,6 +451,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 </template>
 
 <style scoped>
+.detail-secondary-actions { display: flex; align-items: center; gap: var(--wao-space-2); min-width: 0; }
+.detail-secondary-actions > a { flex-shrink: 0; white-space: nowrap; }
 .description-outline-anchor { position: sticky; top: var(--wao-space-1); height: 0; z-index: 3; margin-left: auto; width: fit-content; }
 .outline-trigger { position: absolute; right: 0; width: 44px; height: 44px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .description-outline { position: absolute; right: 0; top: 44px; width: min(280px, 65vw); max-height: 50vh; overflow: auto; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }

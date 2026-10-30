@@ -28,3 +28,16 @@ it('习惯数量目标打开日志，保存后显示已完成并可撤销',async
  const log={...store.logDraft!,revision:1};vi.mocked(saveHabitLog).mockResolvedValue(log);vi.mocked(fetchRoutines).mockResolvedValue({...initial,logs:[log]})
  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(b=>b.textContent?.trim()==='保存打卡')!.click();await flushPromises();expect(wrapper.text()).toContain('今天已完成 · 撤销');expect(wrapper.text()).toContain('完成三杯')
 })
+
+it.each(['countdown','habit'] as const)('取消添加 %s 后没有草稿提示，再次打开为空表单',async kind=>{
+ const wrapper=mount(kind==='habit'?HabitsView:CountdownsView,{global});await flushPromises()
+ const add=()=>wrapper.findAll('button').find(b=>b.text()===(kind==='habit'?'添加习惯':'添加日期'))!
+ await add().trigger('click');await flushPromises()
+ const store=useRoutinesStore();store.drafts[kind]!.name='未确认内容';await flushPromises()
+ expect(wrapper.find('.draft-banner').exists()).toBe(false)
+ Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(b=>b.textContent?.trim()==='取消')!.click();await flushPromises()
+ expect(store.drafts[kind]).toBeUndefined();expect(wrapper.find('.draft-banner').exists()).toBe(false)
+ expect(saveRoutine).not.toHaveBeenCalled()
+ await add().trigger('click');await flushPromises();expect(store.drafts[kind]?.name).toBe('')
+ wrapper.unmount();expect(store.drafts[kind]).toBeUndefined()
+})

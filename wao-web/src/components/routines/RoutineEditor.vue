@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoutinesStore } from '@/stores/routines'
 import { convertCalendarDate } from '@/api/importantDates'
 import type { RoutineKind } from '@/api/personalRoutines'
@@ -16,13 +16,15 @@ let conversion=0
 watch(()=>[draft.value.date,draft.value.calendar],async()=>{const n=++conversion;lunar.value='';if(draft.value.calendar!=='lunar'||!draft.value.date)return;try{const v=await convertCalendarDate({calendarType:'SOLAR',solarDate:draft.value.date});if(n===conversion)lunar.value=v.lunarLabel}catch(e:any){if(n===conversion)lunar.value=e.message||'农历换算失败'}},{immediate:true})
 function addReminder(){localError.value='';if(props.kind==='habit'){if(!/^\d{2}:\d{2}$/.test(reminder.value))return;draft.value.reminderTimes=[...new Set([...draft.value.reminderTimes,reminder.value])].sort()}else{const n=Number(reminder.value);if(!Number.isInteger(n)||n<0||n>365){localError.value='提前天数应为 0 至 365';return}draft.value.remindBefore=[...new Set([...draft.value.remindBefore,n])].sort((a,b)=>a-b)}reminder.value=''}
 async function save(){localError.value='';if(!draft.value.name.trim()||!draft.value.date){localError.value='请填写名称和日期';return}if(await store.save(draft.value,true))emit('close')}
+function cancel(){if(store.busy)return;if(!draft.value.revision)store.clear(props.kind);emit('close')}
+onBeforeUnmount(()=>{if(!draft.value.revision&&!store.busy)store.clear(props.kind)})
 function adoptRemote(){if(remote.value)store.edit(remote.value)}
 </script>
 <template>
- <SettingsDialogShell :title="title" width="720px" @close="!store.busy&&emit('close')">
+ <SettingsDialogShell :title="title" width="720px" @close="cancel">
   <form class="routine-form" :inert="store.busy" @submit.prevent="save">
    <p v-if="localError||store.error||store.draftError" role="alert" class="error">{{localError||store.error||store.draftError}}</p>
-   <p class="hint">关闭后保留本机草稿。提醒仅发到你自己的 WAO 通知中心。</p>
+   <p class="hint">添加时只有保存后才创建记录，取消不保留草稿。提醒仅发到你自己的 WAO 通知中心。</p>
    <div v-if="conflict" class="conflict" role="alert"><p>云端记录已更新：{{remote?.name}} · {{remote?.date}} · {{remote?.note||'无备注'}}。本机草稿未覆盖。</p><WaoButton @click="adoptRemote">使用云端内容</WaoButton><WaoButton @click="draft.revision=remote!.revision">保留本机内容，采用最新版本</WaoButton></div>
    <WaoField label="名称" required v-slot="f"><input :id="f.id" v-model="draft.name" maxlength="120" autocomplete="off" /></WaoField>
    <WaoField label="图标或短文字" v-slot="f"><input :id="f.id" v-model="draft.emoji" maxlength="16" /><div class="icons"><button v-for="icon in icons" :key="icon" type="button" :aria-label="`使用图标 ${icon}`" :aria-pressed="draft.emoji===icon" @click="draft.emoji=icon">{{icon}}</button></div></WaoField>
@@ -49,7 +51,7 @@ function adoptRemote(){if(remote.value)store.edit(remote.value)}
    <div class="pair"><WaoField label="颜色" v-slot="f"><select :id="f.id" v-model="draft.color"><option value="primary">蓝</option><option value="green">绿</option><option value="orange">金</option><option value="pink">粉</option><option value="purple">紫</option></select></WaoField><WaoField label="卡片样式" v-slot="f"><select :id="f.id" v-model="draft.style"><option value="plain">简洁</option><option value="soft">浅色背景</option><option value="outline">彩色边框</option></select></WaoField></div>
    <WaoField label="备注" v-slot="f"><textarea :id="f.id" v-model="draft.note" rows="3" maxlength="5000" /></WaoField>
   </form>
-  <template #footer><WaoButton :disabled="store.busy" @click="emit('close')">关闭并保留草稿</WaoButton><WaoButton variant="primary" :loading="store.busy" :disabled="!!conflict||!!store.draftError" @click="save">保存</WaoButton></template>
+  <template #footer><WaoButton :disabled="store.busy" @click="cancel">{{ draft.revision ? '关闭并保留草稿' : '取消' }}</WaoButton><WaoButton variant="primary" :loading="store.busy" :disabled="!!conflict||!!store.draftError" @click="save">保存</WaoButton></template>
  </SettingsDialogShell>
 </template>
 <style scoped>

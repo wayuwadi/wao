@@ -8,7 +8,7 @@ export const useRoutinesStore=defineStore('routines',()=>{
  const drafts=ref<Partial<Record<RoutineKind,RoutineItem>>>({}), logDraft=ref<HabitLog|null>(null)
  let generation=0,sequence=0,restoring=false
  const key=()=>`wao-routines-drafts:${identity.value}`
- function protect(){if(!identity.value||restoring)return;try{localStorage.setItem(key(),JSON.stringify({drafts:drafts.value,log:logDraft.value}));draftError.value=''}catch{draftError.value='本机草稿无法保存，请保持页面并备份输入内容'}}
+ function protect(){if(!identity.value||restoring)return;try{localStorage.setItem(key(),JSON.stringify({drafts:Object.fromEntries(Object.entries(drafts.value).filter(([, item])=>item?.revision)),log:logDraft.value}));draftError.value=''}catch{draftError.value='本机草稿无法保存，请保持页面并备份输入内容'}}
  watch([drafts,logDraft],protect,{deep:true,flush:'sync'})
  async function load(month=state.value?.month){
   if(!identity.value||busy.value)return
@@ -40,7 +40,7 @@ export const useRoutinesStore=defineStore('routines',()=>{
   generation++;sequence++;state.value=null;error.value='';draftError.value='';busy.value=false;loading.value=false
   // Read before replacing refs: the deep watcher must not erase another member's stored draft.
   let stored:any=null;try{stored=identity.value?JSON.parse(localStorage.getItem(key())||'null'):null}catch{draftError.value='草稿读取失败，请勿清除浏览器数据'}
-  restoring=true;drafts.value=stored?.drafts??{};logDraft.value=stored?.log??null;restoring=false
+  restoring=true;drafts.value=Object.fromEntries(Object.entries(stored?.drafts??{}).filter(([, item])=>(item as RoutineItem)?.revision));logDraft.value=stored?.log??null;restoring=false
  },{immediate:true,flush:'sync'})
  return {identity,state,error,draftError,busy,loading,drafts,logDraft,load,edit,clear,save,saveLog,item,summary,log}
 })
