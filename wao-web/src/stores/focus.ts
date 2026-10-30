@@ -82,7 +82,7 @@ export const useFocusStore = defineStore('focus', () => {
       if (result.status === 'finished') {
         if (note.value === submitted && result.mode !== 'break') note.value = ''
         draftSession = ''; attemptedFinish = ''
-        toast(result.mode === 'break' ? '休息结束，可以开始下一次专注' : '专注已保存为小记 · 番茄钟', 'ri-timer-line')
+        toast(result.mode === 'break' ? '休息结束，可以开始下一次专注' : result.noteId ? '专注笔记已保存 · 番茄钟' : '专注已结束，计时记录已保留', 'ri-timer-line')
       }
       protect()
     } catch (e: any) { if (generation === epoch) error.value = e?.message || '未能保存，笔记已保留，请重试' }

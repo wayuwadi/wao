@@ -983,6 +983,18 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('更多菜单删除使用可见按钮定位，不使用隐藏图标的零坐标', async () => {
+    useDataStore().docs.one = doc('one', '菜单定位验收')
+    const wrapper = await view()
+    const trigger = wrapper.get('[data-note-id="one"] .note-more-actions')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({ left: 800, right: 824, top: 200, bottom: 224, width: 24, height: 24 } as DOMRect)
+    await trigger.trigger('click'); await flushPromises()
+    const action = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.includes('移入回收站'))!
+    action.click(); await flushPromises()
+    expect(deletePanel().attributes('style')).toContain('left: 504px')
+    expect(deletePanel().attributes('style')).toContain('top: 232px')
+    wrapper.unmount()
+  })
   it('折叠卡片的删除确认锚定按钮并脱离卡片裁切，Esc 返回按钮焦点', async () => {
     useDataStore().docs.one = doc('one', '很长的小记')
     const wrapper = await view()

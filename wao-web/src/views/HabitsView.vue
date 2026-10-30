@@ -37,7 +37,7 @@ onMounted(()=>{timer=setInterval(refresh,60_000);window.addEventListener('focus'
 <template><div class="routine-page">
  <header><div><h1>习惯打卡</h1><p>每天一点点，让进步看得见。</p></div><WaoButton variant="primary" :disabled="!store.state" @click="edit()">添加习惯</WaoButton></header>
  <p v-if="store.error" role="alert" class="error">{{store.error}} <WaoButton @click="store.load()">重试</WaoButton></p><p v-if="store.draftError" role="alert" class="error">{{store.draftError}}</p>
- <div v-if="store.drafts.habit" class="draft-banner">有未保存的习惯草稿 <WaoButton @click="editing=true">继续编辑</WaoButton><WaoButton @click="store.clear('habit')">舍弃草稿</WaoButton></div>
+ <div v-if="!editing&&store.drafts.habit?.revision" class="draft-banner">有未保存的习惯草稿 <WaoButton @click="editing=true">继续编辑</WaoButton><WaoButton @click="store.clear('habit')">舍弃草稿</WaoButton></div>
  <div v-if="store.logDraft" class="draft-banner">有未保存的打卡日志（{{store.logDraft.date}}） <WaoButton @click="logging=true">继续填写</WaoButton><WaoButton @click="store.logDraft=null">舍弃日志草稿</WaoButton></div>
  <div class="routine-toolbar"><select v-model="group" aria-label="习惯分组筛选"><option value="">全部分组</option><option v-for="g in [...new Set((store.state?.items||[]).filter(i=>i.kind==='habit').map(i=>i.group))]" :key="g" :value="g">{{g||'其他'}}</option></select><select v-model="status" aria-label="习惯状态筛选"><option value="active">进行中</option><option value="archived">已归档</option><option value="trash">回收站</option></select></div>
  <p v-if="!store.state" role="status">{{store.loading?'正在读取习惯…':'习惯尚未读取'}}</p><p v-else-if="!items.length" class="empty">这里还没有习惯，选择一个小目标开始。</p>

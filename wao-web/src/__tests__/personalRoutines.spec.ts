@@ -11,7 +11,7 @@ beforeEach(()=>{vi.resetAllMocks();localStorage.clear();setActivePinia(createPin
 it('成员切换隔离草稿并丢弃在途响应',async()=>{
  const store=useRoutinesStore();let resolve!:(s:RoutineState)=>void
  vi.mocked(fetchRoutines).mockImplementationOnce(()=>new Promise(r=>resolve=r));const pending=store.load()
- store.edit({...newRoutine('habit','2026-10-29'),name:'甲的草稿'});login('other');resolve({...state(),items:[{...newRoutine('habit','2026-10-29'),name:'甲的数据'}]});await pending
+ store.edit({...newRoutine('habit','2026-10-29'),name:'甲的草稿',revision:1});login('other');resolve({...state(),items:[{...newRoutine('habit','2026-10-29'),name:'甲的数据'}]});await pending
  expect(store.state).toBeNull();expect(store.drafts.habit).toBeUndefined();expect(localStorage.getItem('wao-routines-drafts:me:me')).toContain('甲的草稿');expect(localStorage.getItem('wao-routines-drafts:other:other')||'').not.toContain('甲')
  login();expect(store.drafts.habit?.name).toBe('甲的草稿')
 })

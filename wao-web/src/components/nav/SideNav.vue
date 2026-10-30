@@ -1,16 +1,32 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import { useIsMobile } from '@/composables/viewport'
 import { useNavStore } from '@/stores/nav'
+import { useFavoritesStore } from '@/stores/favorites'
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
+import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 import { FIXED_NAV_IDS, type NavItemId } from '@/config/nav'
 const emit = defineEmits<{ (e: 'open-search'): void; (e: 'navigate'): void }>()
 const nav = useNavStore()
 const session = useSessionStore()
+const favorites = useFavoritesStore()
+const knowledgeFavorites = useKnowledgeFavoritesStore()
+const data = useDataStore()
+const favoriteProjects = computed(() => favorites.orderedProjects.map(item => ({
+  id: item.targetId, label: data.projectById(item.targetId)?.name || item.label,
+  path: `/projects/${encodeURIComponent(item.targetId)}`, icon: 'ri-star-line',
+})))
+const favoriteKnowledge = computed(() => knowledgeFavorites.ids.flatMap(id => {
+  const kb = data.kbById(id)
+  return kb && !kb.notes ? [{ id, label: kb.name, path: `/kb/${encodeURIComponent(id)}`, icon: kb.icon || 'ri-book-2-line' }] : []
+}))
+function children(id: NavItemId) { return id === 'projects' ? favoriteProjects.value : id === 'knowledge' ? favoriteKnowledge.value : [] }
+onMounted(() => { void favorites.load(); void knowledgeFavorites.load() })
 const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
@@ -61,13 +77,22 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
 
     <nav ref="menuRef" class="menu" aria-label="主菜单">
       <div class="items">
-        <button v-for="id in FIXED_NAV_IDS" :key="id" class="item"
-          :class="{ active: activeItem === id, center: isCollapsed }"
-          :aria-current="activeItem === id ? 'page' : undefined"
+        <template v-for="id in FIXED_NAV_IDS" :key="id">
+        <button class="item"
+          :class="{ active: activeItem === id && (isCollapsed || !children(id).some(item => route.path === item.path)), center: isCollapsed }"
+          :aria-current="route.path === nav.itemMeta(id)?.path ? 'page' : undefined"
           :title="nav.itemMeta(id)?.label" @click="go(id)">
           <i :class="nav.itemMeta(id)?.icon" aria-hidden="true"></i>
           <span :class="isCollapsed ? 'compact-label' : 'item-label'">{{ nav.itemMeta(id)?.label }}</span>
         </button>
+        <div v-if="!isCollapsed && children(id).length" class="favorite-children" :aria-label="id === 'projects' ? '收藏项目' : '收藏知识库'">
+          <RouterLink v-for="item in children(id)" :key="item.id" class="item favorite-link"
+            :class="{ active: route.path === item.path }" :to="item.path" :title="item.label"
+            :aria-current="route.path === item.path ? 'page' : undefined" @click="emit('navigate')">
+            <i :class="item.icon" aria-hidden="true"></i><span class="item-label">{{ item.label }}</span>
+          </RouterLink>
+        </div>
+        </template>
       </div>
     </nav>
     <div class="user-row">
@@ -94,6 +119,7 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
 </template>
 
 <style scoped>
+.favorite-link { text-decoration: none; min-width: 0; }
 .favorite-drop-target { outline: 1px solid var(--wao-primary); background: var(--wao-primary-soft); }
 .favorite-order-status { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .favorite-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }

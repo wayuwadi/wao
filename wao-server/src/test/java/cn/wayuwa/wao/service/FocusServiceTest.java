@@ -36,7 +36,7 @@ class FocusServiceTest {
         assertThat(s.elapsedMs).isEqualTo(180_000);assertThat(s.status).isEqualTo("finished");
         var capture=org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);
         verify(notes).createNote(eq(s.noteId),capture.capture(),eq("me"));
-        assertThat(capture.getValue().tags()).containsExactly("番茄钟");assertThat(capture.getValue().blocks().get(1).p()).isEqualTo("完成笔记");
+        assertThat(capture.getValue().tags()).containsExactly("番茄钟");assertThat(capture.getValue().blocks().get(0).p()).isEqualTo("完成笔记");
         assertThat(change(s,"finish","重复请求").noteId).isEqualTo(s.noteId);verifyNoMoreInteractions(notes);
         assertThat(service.state("me").stats().totalMs()).isEqualTo(180_000);assertThat(service.state("me").active()).isNull();
     }
@@ -45,6 +45,20 @@ class FocusServiceTest {
         assertThat(s.elapsedMs).isEqualTo(60_000);assertThat(s.endedAt).isEqualTo(beginning+60_000);
         var second=tx.execute(t->service.start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",new FocusService.Start("stopwatch",25,"","",""),"me"));
         now+=1_000_000;assertThat(FocusService.elapsed(second,now)).isEqualTo(1_000_000);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"", " \t\n", "\u00a0\u3000"})
+    void blankNotesKeepHistoryAndStatsWithoutCreatingNotes(String text){
+        var s=start("stopwatch",25,"","");now+=30_000;s=change(s,"finish",text);
+        assertThat(s.noteId).isNullOrEmpty();verifyNoInteractions(notes);
+        assertThat(change(s,"finish","late retry").noteId).isNullOrEmpty();verifyNoInteractions(notes);
+        assertThat(service.state("me").history()).hasSize(1);
+        assertThat(service.state("me").stats().totalMs()).isEqualTo(30_000);
+    }
+    @Test void automaticDeadlineWithEmptyNoteDoesNotCreateNote(){
+        var s=start("pomodoro",1,"","");now+=120_000;s=change(s,"save","");
+        assertThat(s.status).isEqualTo("finished");assertThat(s.elapsedMs).isEqualTo(60_000);
+        assertThat(s.noteId).isNullOrEmpty();verifyNoInteractions(notes);
     }
     @Test void sameStartIsIdempotentAndOnlyOneActiveSessionPerMember(){
         var first=start("pomodoro",25,"","");assertThat(start("pomodoro",25,"","").startedAt).isEqualTo(first.startedAt);
@@ -66,7 +80,8 @@ class FocusServiceTest {
         var s=start("pomodoro",25,"shared","sub");assertThat(s.taskTitle).isEqualTo("共享子任务");verify(tasks).get("shared","me");
         now+=10_000;change(s,"finish","说明");
         var capture=org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);verify(notes).createNote(anyString(),capture.capture(),eq("me"));
-        assertThat(capture.getValue().blocks().get(1).p()).contains("/s/t/shared/sub");
+        assertThat(capture.getValue().blocks()).hasSize(1); assertThat(capture.getValue().blocks().get(0).p()).isEqualTo("说明");
+        assertThat(service.state("me").history().get(0).taskId).isEqualTo("shared");
         when(tasks.get("private","me")).thenThrow(new NotFoundException("不可见"));
         assertThatThrownBy(()->tx.execute(t->service.start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",new FocusService.Start("pomodoro",25,"private","",""),"me"))).isInstanceOf(NotFoundException.class);
     }
@@ -77,6 +92,7 @@ class FocusServiceTest {
         var s=tx.execute(t->service.start(id,new FocusService.Start("pomodoro",25,"","","读书笔记","habit"),"me"));
         assertThat(s.habitId).isEqualTo("habit");assertThat(s.taskTitle).isEqualTo("阅读习惯");now+=1000;change(s,"finish","读书笔记");
         var capture=org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);verify(notes).createNote(anyString(),capture.capture(),eq("me"));
-        assertThat(capture.getValue().blocks().get(1).p()).contains("/habits?habit=habit");verify(routines).owned("me","habit");verifyNoMoreInteractions(routines);
+        assertThat(capture.getValue().blocks()).hasSize(1); assertThat(capture.getValue().blocks().get(0).p()).isEqualTo("读书笔记");
+        assertThat(service.state("me").history().get(0).habitId).isEqualTo("habit");verify(routines).owned("me","habit");verifyNoMoreInteractions(routines);
     }
 }
