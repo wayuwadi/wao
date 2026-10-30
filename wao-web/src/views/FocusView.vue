@@ -105,8 +105,9 @@ button,input,textarea { font: inherit; } button { cursor: pointer; } button:disa
 .task-options { max-height: 240px; overflow: auto; margin-block: var(--wao-space-1); }
 .task-options button { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 40px; border: 0; border-radius: var(--wao-radius-control); padding: var(--wao-space-1); text-align: left; background: transparent; color: var(--wao-text); }
 .task-options button span { flex: 1; overflow-wrap: anywhere; } .task-options button:hover,.task-options button[aria-pressed=true] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
-.dial-space { flex: 1; min-height: 180px; width: 100%; display: grid; place-items: center; padding-block: var(--wao-space-2); }
-.dial-space :deep(.focus-dial) { width: min(100%, 340px, 37dvh); margin: 0; }
+.dial-space { container-type: size; flex: 1; min-height: 180px; width: 100%; display: grid; place-items: center; padding-block: var(--wao-space-2); }
+.dial-space :deep(.focus-dial) { width: min(100%, 340px, calc(100cqh - 20px)); margin: 0; }
+.dial-space :deep(svg) { display: block; }
 .duration-setting { display: flex; align-items: center; gap: var(--wao-space-1); height: 36px; flex: none; font-size: var(--wao-font-help); color: var(--wao-text-3); }
 .duration-setting input { width: 64px; min-height: 32px; text-align: center; padding: 4px; } input,textarea { box-sizing: border-box; min-width: 0; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); padding: var(--wao-space-1); background: var(--wao-bg-sub); color: var(--wao-text); } .task-popover input { width: 100%; min-height: 40px; }
 .focus-actions { display: grid; justify-items: center; gap: var(--wao-space-1); margin-top: var(--wao-space-2); flex: none; }
@@ -126,5 +127,6 @@ li { line-height: 1.35; display: flex; align-items: baseline; gap: var(--wao-spa
 li>div { flex: 1; min-width: 0; } li strong,li p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } li small { display: block; margin-top: 4px; } li p { margin: 4px 0 0; color: var(--wao-text-3); } .history-empty { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @container focus-workspace (max-width: 720px) { .focus-columns { grid-template-columns: minmax(0,1fr); overflow: auto; } .timer-panel { min-height: 530px; padding: var(--wao-space-1); } .focus-side { border-left: 0; border-top: 1px solid var(--wao-line); padding: var(--wao-space-2) 0 0; } .focus-history { min-height: 260px; } }
+@media (min-width: 821px) and (max-height: 800px) { .focus-stats { grid-template-columns: repeat(4,minmax(0,1fr)); } .focus-stats>div { padding-inline: var(--wao-space-1); } }
 @media(max-width:760px) { .focus-page { height: auto; } .focus-columns { flex: none; } .timer-panel { min-height: 530px; } .focus-side { min-height: 540px; } input,textarea { font-size: 16px; } }
 </style>
