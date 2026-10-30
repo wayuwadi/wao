@@ -8,7 +8,6 @@ import { useUiStore } from '@/stores/ui'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import { focusTime, type FocusMode } from '@/api/focus'
 import FocusDial from '@/components/focus/FocusDial.vue'
-import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 const focus = useFocusStore(), data = useDataStore(), ui = useUiStore(), route = useRoute()
@@ -28,6 +27,12 @@ watch(() => focus.identity, () => { task.value = ''; search.value = '' })
 const display = computed(() => focus.active ? focus.display : mode.value === 'stopwatch' ? '00:00' : focusTime(minutes.value * 60_000))
 const progress = computed(() => focus.active?.plannedMs ? focus.elapsed / focus.active.plannedMs * 100 : 0)
 const caption = computed(() => focus.active?.status === 'paused' ? '已暂停' : (focus.active?.mode ?? mode.value) === 'break' ? '休息一下' : '一次只做一件事')
+const taskPickerOpen = ref(false)
+const recentHistory = computed(() => focus.history.slice(0, 5))
+const taskLabel = computed(() => focus.active?.taskTitle || (habitId.value ? habit.value?.name : items.value.items.find(item => item.id === task.value)?.title) || '自由专注')
+watch(() => focus.active?.id, () => { taskPickerOpen.value = false })
+function selectTask(id: string) { task.value = id; taskPickerOpen.value = false; search.value = '' }
+function leavePicker(event: FocusEvent) { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) taskPickerOpen.value = false }
 const selectedRef = computed(() => items.value.refs[task.value])
 const missingTask = computed(() => !!task.value && !selectedRef.value)
 function start() { void focus.start({ mode: mode.value, minutes: minutes.value, taskId: habitId.value?'':selectedRef.value?.taskId ?? '', subId: habitId.value?'':selectedRef.value?.subId ?? '', ...(habitId.value?{habitId:habitId.value}:{}) }) }
@@ -38,59 +43,88 @@ async function retry() { focus.error = ''; await focus.load() }
 </script>
 <template>
   <div class="focus-page wao-page-frame">
-    <header class="focus-heading"><div><h1>番茄专注</h1><p>留一段时间，专心推进眼前的事。</p></div><RouterLink to="/todo">回到待办 <i class="ri-arrow-right-line"></i></RouterLink></header>
-    <p v-if="focus.error" class="focus-error" role="alert">{{ focus.error }} <WaoButton @click="retry">重新读取</WaoButton></p>
-    <p v-if="focus.draftError" class="focus-error" role="alert">{{ focus.draftError }}</p>
-    <p v-if="!focus.ready" role="status">正在读取专注记录…</p>
-    <div v-else class="focus-columns">
-      <WaoCard class="timer-panel" :class="{ 'timer-idle': !focus.active }">
-        <div class="focus-modes" aria-label="计时模式"><WaoButton v-for="option in ([['pomodoro','番茄计时'],['stopwatch','正计时'],['break','短休息']] as const)" :key="option[0]" :variant="(focus.active?.mode ?? mode) === option[0] ? 'primary' : 'ghost'" :disabled="!!focus.active || !!focus.pendingStart" @click="chooseMode(option[0])">{{ option[1] }}</WaoButton></div>
-        <FocusDial :time="display" :progress="progress" :label="caption" />
-        <div v-if="focus.active" class="current-task"><i class="ri-link" aria-hidden="true"></i><button v-if="focus.active.taskId && data.taskById(focus.active.taskId)" @click="ui.openTask(focus.active.taskId, focus.active.subId || undefined)">{{ focus.active.taskTitle }}</button><span v-else>{{ focus.active.taskTitle || '自由专注' }}</span></div>
-        <div v-else class="focus-setup" :class="{ 'setup-stopwatch': mode === 'stopwatch' }">
-          <WaoField v-if="mode !== 'stopwatch'" label="时长（分钟）" v-slot="field"><input :id="field.id" v-model.number="minutes" type="number" min="1" max="180" :disabled="!!focus.pendingStart" /></WaoField>
-          <p v-if="habitId">关联习惯：{{habit?.name||(routines.state?'习惯不存在或不可用':'正在读取…')}} <RouterLink to="/focus">取消关联</RouterLink><span v-if="routines.error" role="alert">{{routines.error}}</span></p>
-          <WaoField v-else label="关联任务" hint="可以选择你有权查看的主任务或子任务" v-slot="field"><input :id="field.id" v-model="search" placeholder="搜索任务…" :disabled="!!focus.pendingStart" /><select v-model="task" aria-label="选择关联任务" :disabled="!!focus.pendingStart"><option value="">不关联任务 · 自由专注</option><option v-for="item in choices" :key="item.id" :value="item.id">{{ items.refs[item.id]?.subId ? '子任务 · ' : '' }}{{ item.title }}</option></select></WaoField>
-          <p v-if="missingTask" role="alert">关联任务已不可用，请重新选择。</p>
-        </div>
-        <div class="focus-actions">
-          <WaoButton v-if="!focus.active" variant="primary" :loading="focus.busy" :disabled="missingTask || (!!habitId&&(!habit||habit.status!=='active'||habit.kind!=='habit')) || !Number.isInteger(minutes) || minutes < 1 || minutes > 180" @click="start">{{ focus.pendingStart ? '重试开始' : '开始' }}</WaoButton>
-          <template v-else><WaoButton :disabled="focus.conflict" :loading="focus.busy" @click="focus.act(focus.active.status === 'running' ? 'pause' : 'resume')">{{ focus.active.status === 'running' ? '暂停' : '继续' }}</WaoButton><WaoButton variant="primary" :disabled="focus.conflict" :loading="focus.busy" @click="focus.act('finish')">{{ focus.active.mode === 'break' ? '结束休息' : '结束专注' }}</WaoButton></template>
-        </div>
-        <p class="timer-hint">{{ focus.active ? '切换页面或刷新，计时仍会保留。' : '倒计时结束自动保存；正计时由你结束。' }}</p>
-      </WaoCard>
-      <div class="focus-side">
-        <WaoCard><WaoField label="专注笔记" hint="有内容时保存到小记并加上「番茄钟」标签；空笔记只保留专注记录。计时与任务关联在本页查看。" v-slot="field"><textarea :id="field.id" :value="focus.note" maxlength="50000" rows="7" :disabled="focus.busy || (focus.active?.mode ?? mode) === 'break'" placeholder="这次准备做什么？记下想法、进展和下一步…" @input="focus.editNote(($event.target as HTMLTextAreaElement).value)" /></WaoField><div class="note-status"><span>{{ focus.draftError ? '草稿待保护' : focus.dirty ? '本机草稿已保留' : focus.active ? '已同步' : '本机草稿' }}</span><WaoButton v-if="focus.active" variant="ghost" :loading="focus.busy" :disabled="!focus.dirty && !focus.conflict" @click="focus.act('save')">{{ focus.conflict ? '同步本机笔记' : '保存笔记' }}</WaoButton></div></WaoCard>
-        <div class="focus-stats"><div><small>今日专注</small><strong>{{ focus.stats.todayCount }} <span>次</span></strong></div><div><small>今日时长</small><strong>{{ Math.floor(focus.stats.todayMs / 60_000) }} <span>分钟</span></strong></div><div><small>累计专注</small><strong>{{ focus.stats.totalCount }} <span>次</span></strong></div><div><small>累计时长</small><strong>{{ Math.floor(focus.stats.totalMs / 60_000) }} <span>分钟</span></strong></div></div>
-      </div>
+    <header class="focus-heading"><h1>番茄钟</h1><RouterLink to="/todo">回到待办 <i class="ri-arrow-right-line"></i></RouterLink></header>
+    <div class="focus-feedback" aria-live="polite">
+      <span v-if="focus.error || focus.draftError" class="focus-error" role="alert">{{ focus.error || focus.draftError }} <button v-if="focus.error" @click="retry">重新读取</button></span>
+      <span v-else-if="!focus.ready">正在读取专注记录…</span>
     </div>
-    <section class="focus-history"><h2>专注记录 <small>最近 200 条 · 仅自己可见</small></h2><p v-if="focus.ready && !focus.history.length">还没有记录，从第一段专注开始。</p><ol><li v-for="record in focus.history" :key="record.id"><i :class="record.mode === 'break' ? 'ri-cup-line' : 'ri-timer-line'" aria-hidden="true"></i><div><strong>{{ record.mode === 'break' ? '短休息' : record.taskTitle || '自由专注' }}</strong><small>{{ when(record.startedAt) }} — {{ when(record.endedAt) }} · {{ duration(record.elapsedMs) }}</small><p v-if="record.note">{{ record.note }}</p></div><RouterLink v-if="record.noteId" :to="{ path: '/notes', query: { note: record.noteId } }">查看小记</RouterLink></li></ol></section>
+    <div class="focus-columns">
+      <section class="timer-panel" aria-label="专注计时">
+        <div class="focus-modes" aria-label="计时模式"><button v-for="option in ([['pomodoro','番茄计时'],['stopwatch','正计时'],['break','短休息']] as const)" :key="option[0]" :aria-pressed="(focus.active?.mode ?? mode) === option[0]" :disabled="!!focus.active || !!focus.pendingStart" @click="chooseMode(option[0])">{{ option[1] }}</button></div>
+        <div class="task-picker" @focusout="leavePicker" @keydown.esc.stop="taskPickerOpen=false">
+          <button class="task-trigger" aria-label="选择关联任务" :aria-expanded="taskPickerOpen" :disabled="!focus.ready || !!focus.pendingStart || !!habitId || (!!focus.active && !focus.active.taskId)" @click="focus.active ? ui.openTask(focus.active.taskId, focus.active.subId || undefined) : (taskPickerOpen=!taskPickerOpen)"><i :class="habitId ? 'ri-seedling-line' : 'ri-link'"></i><span>{{ taskLabel }}</span><i v-if="!focus.active && !habitId" class="ri-arrow-down-s-line"></i></button>
+          <RouterLink v-if="habitId && !focus.active" class="unlink-habit" to="/focus">取消关联</RouterLink>
+          <div v-if="taskPickerOpen" class="task-popover">
+            <input v-model="search" aria-label="搜索关联任务" placeholder="搜索任务或子任务…" />
+            <div class="task-options" role="group" aria-label="可关联任务">
+              <button :aria-pressed="!task" @click="selectTask('')">自由专注 · 不关联任务</button>
+              <button v-for="item in choices" :key="item.id" :aria-pressed="task===item.id" @click="selectTask(item.id)"><i :class="items.refs[item.id]?.subId ? 'ri-node-tree' : 'ri-checkbox-blank-circle-line'"></i><span>{{ item.title }}</span><i v-if="task===item.id" class="ri-check-line"></i></button>
+              <p v-if="!choices.length">没有匹配的任务</p>
+            </div>
+            <small>仅显示你有权查看的任务</small>
+          </div>
+        </div>
+        <div class="dial-space"><FocusDial :time="display" :progress="progress" :label="caption" /></div>
+        <div class="duration-setting"><label for="focus-minutes">时长</label><input id="focus-minutes" :value="focus.active ? Math.round(focus.active.plannedMs / 60000) : minutes" @input="minutes=Number(($event.target as HTMLInputElement).value)" aria-label="时长（分钟）" type="number" min="1" max="180" :disabled="!!focus.active || !!focus.pendingStart || mode==='stopwatch'" /><span>分钟</span></div>
+        <div class="focus-actions">
+          <WaoButton class="main-action" variant="primary" :loading="focus.busy" :disabled="!focus.ready || focus.conflict || (!focus.active && (missingTask || (!!habitId&&(!habit||habit.status!=='active'||habit.kind!=='habit')) || !Number.isInteger(minutes) || minutes<1 || minutes>180))" @click="focus.active ? focus.act(focus.active.status==='running'?'pause':'resume') : start()">{{ focus.active ? focus.active.status==='running' ? '暂停' : '继续专注' : focus.pendingStart ? '重试开始' : '开始' }}</WaoButton>
+          <WaoButton class="end-action" :class="{ 'action-placeholder': !focus.active }" :disabled="!focus.active || focus.conflict" :loading="focus.busy" @click="focus.act('finish')">{{ focus.active?.mode==='break' ? '结束休息' : '结束专注' }}</WaoButton>
+        </div>
+        <p class="timer-hint" :class="{ 'focus-error': missingTask }">{{ missingTask ? '关联任务已不可用，请重新选择。' : '切换页面或刷新，计时仍会保留。' }}</p>
+      </section>
+      <aside class="focus-side" aria-label="专注笔记与概览">
+        <section class="note-panel">
+          <WaoField label="专注笔记" v-slot="field"><textarea :id="field.id" :value="focus.note" maxlength="50000" :disabled="focus.busy || (focus.active?.mode ?? mode)==='break'" placeholder="记录这次专注的想法…" @input="focus.editNote(($event.target as HTMLTextAreaElement).value)" /></WaoField>
+          <div class="note-status"><span>{{ focus.draftError ? '草稿待保护' : focus.dirty ? '本机草稿已保留' : focus.active ? '已同步' : '有内容时保存为小记 · #番茄钟' }}</span><WaoButton variant="ghost" :loading="focus.busy" :disabled="!focus.active || (!focus.dirty && !focus.conflict)" @click="focus.act('save')">{{ focus.conflict ? '同步本机笔记' : '保存笔记' }}</WaoButton></div>
+        </section>
+        <section class="focus-overview" aria-label="专注概览">
+          <h2>概览</h2>
+          <div class="focus-stats"><div><small>今日专注</small><strong>{{ focus.stats.todayCount }} <span>次</span></strong></div><div><small>今日时长</small><strong>{{ Math.floor(focus.stats.todayMs / 60_000) }} <span>分钟</span></strong></div><div><small>累计专注</small><strong>{{ focus.stats.totalCount }} <span>次</span></strong></div><div><small>累计时长</small><strong>{{ Math.floor(focus.stats.totalMs / 60_000) }} <span>分钟</span></strong></div></div>
+          <section class="focus-history"><h2>专注记录 <small>最近 5 条 · 仅自己可见</small></h2><p v-if="focus.ready && !recentHistory.length" class="history-empty">还没有记录，从第一段专注开始。</p><ol><li v-for="record in recentHistory" :key="record.id"><i :class="record.mode==='break' ? 'ri-cup-line' : 'ri-timer-line'" aria-hidden="true"></i><div><strong :title="record.note || record.taskTitle">{{ record.mode==='break' ? '短休息' : record.taskTitle || '自由专注' }}</strong><small>{{ when(record.startedAt) }} — {{ when(record.endedAt) }} · {{ duration(record.elapsedMs) }}</small></div><RouterLink v-if="record.noteId" :to="{path:'/notes',query:{note:record.noteId}}" aria-label="查看小记" title="查看小记"><i class="ri-file-text-line"></i></RouterLink></li></ol></section>
+        </section>
+      </aside>
+    </div>
   </div>
 </template>
 <style scoped>
-.focus-page { container: focus-workspace / inline-size; max-width: 1200px; margin: 0 auto; padding: var(--wao-space-3); color: var(--wao-text); }
-.focus-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-2); margin-bottom: var(--wao-space-3); }
-h1 { font-size: var(--wao-font-title); margin: 0; } h2 { font-size: var(--wao-font-section); } h1,h2 { font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); } p { line-height: var(--wao-line-body); }
-.focus-heading p { margin: var(--wao-space-1) 0 0; font-size: var(--wao-font-help); }
-.focus-heading a { font-size: var(--wao-font-help); }
-.focus-heading p,.timer-hint,small,.note-status { color: var(--wao-text-3); } small { font-size: var(--wao-font-caption); } a { color: var(--wao-primary-text); text-decoration: none; }
-.focus-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--wao-space-3); }
-.timer-panel { container: focus-timer / inline-size; padding: var(--wao-space-3); } .focus-modes,.focus-actions { display: flex; justify-content: center; gap: var(--wao-space-1); flex-wrap: wrap; }
-.timer-idle :deep(.focus-dial) { width: min(100%, 240px); margin: var(--wao-space-2) auto; }
-.timer-idle .focus-actions { margin-top: var(--wao-space-2); }
-.focus-setup,.focus-side { display: grid; gap: var(--wao-space-2); align-content: start; } .focus-side>.wao-card { padding: var(--wao-space-3); }
-.focus-setup { align-items: start; }
-input,select,textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-page); color: var(--wao-text); font: inherit; }
-textarea { resize: vertical; line-height: var(--wao-line-body); } .focus-actions { margin-top: var(--wao-space-3); } .timer-hint { text-align: center; font-size: var(--wao-font-help); margin: var(--wao-space-1) 0 0; }
-.current-task { display: flex; justify-content: center; gap: var(--wao-space-1); overflow-wrap: anywhere; } .current-task button { background: none; border: 0; color: var(--wao-primary); font: inherit; cursor: pointer; }
-.note-status { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-top: var(--wao-space-1); font-size: var(--wao-font-caption); }
-.focus-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--wao-space-2); } .focus-stats>div { background: var(--wao-bg-sub); border-radius: var(--wao-radius-card); padding: var(--wao-space-2); display: grid; gap: var(--wao-space-1); min-width: 0; } .focus-stats strong { font-size: var(--wao-font-stat); font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } .focus-stats strong span { font-size: var(--wao-font-help); font-weight: 400; color: var(--wao-text-3); } .focus-stats small { font-size: var(--wao-font-help); }
-.focus-history { margin-top: var(--wao-space-4); } .focus-history h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); } h2 small { font-size: var(--wao-font-caption); font-weight: normal; } .focus-history > p { color: var(--wao-text-3); } ol { list-style: none; padding: 0; } li { display: flex; gap: var(--wao-space-2); border-bottom: 1px solid var(--wao-line); padding: var(--wao-space-2) 0; align-items: baseline; } li>div { min-width: 0; flex: 1; overflow-wrap: anywhere; } li small { display: block; margin-top: var(--wao-space-1); } li p { white-space: pre-wrap; max-height: 5em; overflow: auto; margin-bottom: 0; } .focus-error { color: var(--wao-danger); }
-@container focus-workspace (max-width: 800px) { .focus-columns { grid-template-columns: minmax(0,1fr); } }
-@container focus-timer (min-width: 400px) {
-  .focus-setup:not(.setup-stopwatch) { grid-template-columns: 120px minmax(0,1fr); }
-  .focus-setup > [role="alert"] { grid-column: 1 / -1; }
-}
-@container focus-workspace (max-width: 480px) { .timer-panel,.focus-side>.wao-card { padding: var(--wao-space-2); } .focus-heading { align-items: start; } .focus-heading a { flex-shrink: 0; } li { flex-wrap: wrap; } }
-@media(max-width: 760px) { .focus-page { padding: var(--wao-space-2); } .focus-columns { grid-template-columns: minmax(0,1fr); } input,select,textarea { font-size: 16px; } }
+.focus-page { box-sizing: border-box; container: focus-workspace / inline-size; height: 100%; min-height: 0; display: flex; flex-direction: column; padding: var(--wao-space-2); color: var(--wao-text); }
+.focus-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-2); flex: none; }
+h1 { font-size: var(--wao-font-title); } h2 { font-size: var(--wao-font-body); } h1,h2 { margin: 0; font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); }
+a { color: var(--wao-primary-text); text-decoration: none; } small,.timer-hint,.note-status,.focus-feedback { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
+.focus-feedback { height: 28px; flex: none; overflow: auto; } .focus-error { color: var(--wao-danger); }
+.focus-columns { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(320px,1fr); min-height: 0; flex: 1; }
+.timer-panel { display: flex; flex-direction: column; align-items: center; min-height: 0; padding: var(--wao-space-2) var(--wao-space-3); }
+.focus-modes { display: flex; flex: none; padding: 4px; background: var(--wao-bg-sub); border-radius: var(--wao-radius-pill); }
+button,input,textarea { font: inherit; } button { cursor: pointer; } button:disabled { cursor: default; }
+.focus-modes button { min-height: 32px; padding: 4px var(--wao-space-2); border: 0; border-radius: var(--wao-radius-pill); background: transparent; color: var(--wao-text-3); }
+.focus-modes button[aria-pressed=true] { color: var(--wao-primary-text); background: var(--wao-bg-card); }
+.task-picker { position: relative; margin-top: var(--wao-space-3); width: min(100%,360px); text-align: center; flex: none; }
+.task-trigger { display: inline-flex; align-items: center; justify-content: center; gap: var(--wao-space-1); max-width: 100%; min-height: 36px; padding: 4px var(--wao-space-1); border: 0; background: transparent; color: var(--wao-text-2); }
+.task-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .unlink-habit { font-size: var(--wao-font-caption); }
+.task-popover { position: absolute; z-index: 30; inset-inline: 0; top: 100%; text-align: left; padding: var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
+.task-options { max-height: 240px; overflow: auto; margin-block: var(--wao-space-1); }
+.task-options button { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 40px; border: 0; border-radius: var(--wao-radius-control); padding: var(--wao-space-1); text-align: left; background: transparent; color: var(--wao-text); }
+.task-options button span { flex: 1; overflow-wrap: anywhere; } .task-options button:hover,.task-options button[aria-pressed=true] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.dial-space { flex: 1; min-height: 180px; width: 100%; display: grid; place-items: center; padding-block: var(--wao-space-2); }
+.dial-space :deep(.focus-dial) { width: min(100%, 340px, 37dvh); margin: 0; }
+.duration-setting { display: flex; align-items: center; gap: var(--wao-space-1); height: 36px; flex: none; font-size: var(--wao-font-help); color: var(--wao-text-3); }
+.duration-setting input { width: 64px; min-height: 32px; text-align: center; padding: 4px; } input,textarea { box-sizing: border-box; min-width: 0; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); padding: var(--wao-space-1); background: var(--wao-bg-sub); color: var(--wao-text); } .task-popover input { width: 100%; min-height: 40px; }
+.focus-actions { display: grid; justify-items: center; gap: var(--wao-space-1); margin-top: var(--wao-space-2); flex: none; }
+.focus-actions :deep(.wao-button) { width: 170px; border-radius: var(--wao-radius-pill); } .action-placeholder { visibility: hidden; pointer-events: none; }
+.timer-hint { margin: var(--wao-space-1) 0 0; min-height: 20px; text-align: center; flex: none; }
+.focus-side { min-height: 0; display: flex; flex-direction: column; gap: var(--wao-space-2); padding-left: var(--wao-space-3); border-left: 1px solid var(--wao-line); }
+.note-panel { flex: none; } .note-panel textarea { width: 100%; height: clamp(72px,10dvh,110px); resize: none; line-height: var(--wao-line-body); }
+.note-status { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-1); min-height: 40px; } .note-status span { min-width: 0; }
+.focus-overview { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: var(--wao-space-1); }
+.focus-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--wao-space-1); flex: none; }
+.focus-stats>div { display: flex; flex-direction: column; gap: 4px; padding: var(--wao-space-1) var(--wao-space-2); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); min-width: 0; }
+.focus-stats strong { line-height: 1.4; font-size: var(--wao-font-section); font-variant-numeric: tabular-nums; } .focus-stats strong span { font-size: var(--wao-font-caption); font-weight: normal; }
+.focus-history { min-height: 0; flex: 1; display: flex; flex-direction: column; padding-top: var(--wao-space-1); }
+.focus-history h2 { display: flex; justify-content: space-between; gap: var(--wao-space-1); flex: none; } .focus-history h2 small { font-weight: normal; }
+ol { list-style: none; margin: var(--wao-space-1) 0 0; padding: 0; overflow: auto; min-height: 0; }
+li { line-height: 1.35; display: flex; align-items: baseline; gap: var(--wao-space-1); padding: 6px 0; border-bottom: 1px solid var(--wao-line); font-size: var(--wao-font-help); }
+li>div { flex: 1; min-width: 0; } li strong,li p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } li small { display: block; margin-top: 4px; } li p { margin: 4px 0 0; color: var(--wao-text-3); } .history-empty { color: var(--wao-text-3); font-size: var(--wao-font-help); }
+button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@container focus-workspace (max-width: 720px) { .focus-columns { grid-template-columns: minmax(0,1fr); overflow: auto; } .timer-panel { min-height: 530px; padding: var(--wao-space-1); } .focus-side { border-left: 0; border-top: 1px solid var(--wao-line); padding: var(--wao-space-2) 0 0; } .focus-history { min-height: 260px; } }
+@media(max-width:760px) { .focus-page { height: auto; } .focus-columns { flex: none; } .timer-panel { min-height: 530px; } .focus-side { min-height: 540px; } input,textarea { font-size: 16px; } }
 </style>

@@ -353,7 +353,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </header>
       </Teleport>
 
-      <div ref="contentRef" class="content">
+      <div ref="contentRef" class="content" :class="{ 'focus-content': route.path === '/focus' }">
         <DataLoadStatus :states="data.loadStates" :errors="data.loadErrors" :active-domains="visibleDataDomains" @retry="data.retryDomain" />
         <!-- 页面主体撑满剩余高度；复杂页面可用本页锚点，首页留给主要内容。 -->
         <div class="page-stage">
@@ -722,16 +722,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .page-stage:has(.home) { align-items: stretch; }
 @media (min-width: 821px) {
-  .content:has(.notes-page) {
+  .content:has(.notes-page), .content.focus-content {
     overflow: hidden;
   }
-  .page-stage:has(.notes-page) {
+  .page-stage:has(.notes-page), .focus-content .page-stage {
     flex: 1 1 0;
     min-height: 0;
     align-items: stretch;
     overflow: hidden;
   }
-  .page-body:has(.notes-page) {
+  .page-body:has(.notes-page), .focus-content .page-body {
     min-height: 0;
     overflow: hidden;
   }

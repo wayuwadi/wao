@@ -277,7 +277,7 @@ const detailDemoComment = ref('')
             <p>输入 /代码 或 /code 插入代码块，可选择语言、复制与自动换行。</p>
             <MarkdownEditor v-model="codeExample" slash-commands />
           </section>
-          <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>内容区不超过 800px 时按计时、笔记、统计顺序叠放；准备时使用紧凑表盘，开始后显示大表盘。示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
+          <section class="reference-section"><h2>番茄专注 · 示例数据</h2><p>计时盘在准备、运行、暂停与结束时保持相同大小和位置；任务选择使用浮层，右侧笔记、概览和最近五条记录使用固定分区。窄屏顺序叠放。示例不启动计时或保存小记。</p><FocusDial time="18:42" :progress="25" label="一次只做一件事" /></section>
           <section class="reference-section"><h2>倒数日 · 示例数据</h2><p>日期卡片复用主题颜色、简洁/浅底/描边样式；示例不创建提醒。</p><DateCounterCard :item="sampleDate" :summary="sampleDateSummary" /></section>
           <section class="reference-section clipboard-example">
             <h2>复制与链接 · 示例数据</h2>
