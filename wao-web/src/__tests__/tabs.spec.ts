@@ -265,6 +265,7 @@ describe('tabs store', () => {
 describe('持久页签名称迁移', () => {
   it('恢复所有模块默认标题，保留自定义和实体名、路径及置顶', () => {
     localStorage.setItem('wao-tabs-v1', JSON.stringify({ activeKey: 'navigation', tabs: [
+      { key: 'habits', label: '习惯打卡', path: '/habits', icon: 'icon', closable: true },
       { key: 'navigation', label: '工作台', path: '/navigation?section=tools', icon: 'icon', closable: true, pinned: true },
       { key: 'workspaces', label: '链接空间', path: '/workspaces', icon: 'icon', closable: true },
       { key: 'ai-sessions', label: 'AI 会话', path: '/ai-sessions', icon: 'icon', closable: true },
@@ -273,13 +274,14 @@ describe('持久页签名称迁移', () => {
     ] }))
     setActivePinia(createPinia())
     const store = useTabsStore()
-    expect(store.tabs.find(t => t.key === 'navigation')).toMatchObject({ label: '全部功能', path: '/navigation?section=tools', pinned: true })
+    expect(store.tabs.find(t => t.key === 'navigation')).toMatchObject({ label: '全部', path: '/navigation?section=tools', pinned: true })
     expect(store.tabs.some(t => t.key === 'workspaces' || t.key === 'ai-sessions')).toBe(false)
     expect(store.tabs.find(t => t.key === 'settings')?.label).toBe('我的设置')
     expect(store.tabs.find(t => t.key === 'proj:p1')?.label).toBe('真实项目')
+    expect(store.tabs.find(t => t.key === 'habits')?.label).toBe('习惯')
     expect(store.activeKey).toBe('navigation')
     store.activate('settings')
     setActivePinia(createPinia())
-    expect(useTabsStore().tabs.find(t => t.key === 'navigation')?.label).toBe('全部功能')
+    expect(useTabsStore().tabs.find(t => t.key === 'navigation')?.label).toBe('全部')
   })
 })
