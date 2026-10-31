@@ -498,19 +498,28 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
   </div>
   <TaskQuickActionDialog v-if="quickAction" v-bind="quickAction" @close="quickAction=null" /><ContextActionMenu ref="contextMenu" />
-  <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
-    <p class="delete-description">确定删除「{{ deleteTarget.title }}」？{{ deleteTarget.subId ? '下级子任务会保留并上移一级。' : '内嵌子事项会一并删除，独立子任务会保留并移回顶层。' }}</p>
-    <p v-if="deleteError" class="child-draft-error" role="alert">{{ deleteError }}</p>
-    <WaoButton v-if="deleteError && deleteTarget.subId" variant="ghost" @click="actions.open(deleteTarget.taskId)">查看保存问题</WaoButton>
+  <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" icon="ri-delete-bin-line" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
+    <div class="delete-content">
+      <p class="delete-description">确定删除「{{ deleteTarget.title }}」？</p>
+      <p class="delete-consequence">{{ deleteTarget.subId ? '下级子任务会保留并上移一级。' : '内嵌子事项会一并删除，独立子任务会保留并移回顶层。' }}</p>
+      <p v-if="deleteError" class="child-draft-error" role="alert">{{ deleteError }}</p>
+      <WaoButton v-if="deleteError && deleteTarget.subId" variant="ghost" @click="actions.open(deleteTarget.taskId)">查看保存问题</WaoButton>
+    </div>
     <template #footer>
-      <WaoButton variant="secondary" :disabled="deleting" @click="deleteTarget = null">取消</WaoButton>
-      <WaoButton variant="danger" :loading="deleting" :disabled="deleteBusy" @click="confirmDelete">{{ deleteError ? '重试删除' : '确认删除' }}</WaoButton>
+      <div class="delete-actions">
+        <WaoButton variant="secondary" :disabled="deleting" @click="deleteTarget = null">取消</WaoButton>
+        <WaoButton variant="danger" :loading="deleting" :disabled="deleteBusy" @click="confirmDelete">{{ deleteError ? '重试删除' : '确认删除' }}</WaoButton>
+      </div>
     </template>
   </SettingsDialogShell>
 </template>
 
 <style scoped>
-.delete-description { overflow-wrap: anywhere; }
+.delete-content { display: flex; flex-direction: column; gap: var(--wao-space-1); padding: var(--wao-space-3); overflow-wrap: anywhere; }
+.delete-description { margin: 0; color: var(--wao-text); font-size: var(--wao-font-body); }
+.delete-consequence { margin: 0; color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.delete-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--wao-space-1); }
+@media (max-width: 650px) { .delete-content { padding: var(--wao-space-2); } }
 .detail-secondary-actions { display: flex; align-items: center; gap: var(--wao-space-2); min-width: 0; }
 .detail-secondary-actions > a { flex-shrink: 0; white-space: nowrap; }
 .description-outline-anchor { position: sticky; top: var(--wao-space-1); height: 0; z-index: 3; margin-left: auto; width: fit-content; }
