@@ -29,6 +29,92 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  async function clickBodyButton(label: string) {
+    const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)
+    expect(button).toBeTruthy()
+    button!.click()
+    await flushPromises()
+  }
+
+  it('右键删除目标任务，取消不写入，失败可重试且不打开完整详情', async () => {
+    const { data, wrapper } = setup()
+    const remove = vi.spyOn(data, 'deleteTask').mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const open = vi.spyOn(useUiStore(), 'openTask')
+    await wrapper.get('[data-task-id="parent"]').trigger('contextmenu')
+    await clickBodyButton('删除任务')
+    expect(remove).not.toHaveBeenCalled()
+    await clickBodyButton('取消')
+    expect(remove).not.toHaveBeenCalled()
+    await wrapper.get('[data-task-id="parent"] .task-select').trigger('keydown', { key: 'F10', shiftKey: true })
+    await clickBodyButton('删除任务')
+    await clickBodyButton('确认删除')
+    expect(document.body.textContent).toContain('删除失败，任务已保留')
+    await clickBodyButton('重试删除')
+    expect(remove).toHaveBeenNthCalledWith(1, 'parent')
+    expect(remove).toHaveBeenNthCalledWith(2, 'parent')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('详情已完成子任务可右键删除，保留其他子项，保存失败后按原始 ID 重试', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs[0]!.done = true
+    data.tasks[0]!.subs.push({ id: 'nested', parentId: 'child', text: '保留的下级', done: false })
+    const sync = async () => {
+      const p = projectWorkItems(data.tasks)
+      await wrapper.setProps({ items: p.items, contextItems: p.items, itemRefs: p.refs })
+    }
+    await sync()
+    const remove = vi.spyOn(data, 'removeSub')
+    const state = vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const flush = vi.spyOn(data, 'flushTask').mockImplementationOnce(async () => { state.mockReturnValue('error') }).mockImplementationOnce(async () => { state.mockReturnValue('saved') })
+    await wrapper.get('.detail-subtask input').trigger('contextmenu')
+    await clickBodyButton('删除子任务')
+    await clickBodyButton('确认删除')
+    expect(remove).toHaveBeenCalledWith('parent', 'child')
+    expect(data.tasks[0]!.subs.map(sub => sub.id)).toEqual(['nested'])
+    expect(data.tasks[0]!.subs[0]!.parentId).toBeNull()
+    expect(document.body.textContent).toContain('子任务删除尚未保存')
+    await sync()
+    await clickBodyButton('重试删除')
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(flush).toHaveBeenNthCalledWith(2, 'parent')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('删除处理中不重复提交，切换成员清除确认框', async () => {
+    const { data, wrapper } = setup()
+    let finish!: (value: boolean) => void
+    const remove = vi.spyOn(data, 'deleteTask').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    await wrapper.get('[data-task-id="parent"]').trigger('contextmenu')
+    await clickBodyButton('删除任务')
+    await clickBodyButton('确认删除')
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === '确认删除')!
+    expect(confirm.disabled).toBe(true)
+    confirm.click()
+    expect(remove).toHaveBeenCalledTimes(1)
+    useSessionStore().accept({ accountId: 'test', member: { id: 'another-member', name: '乙', initial: '乙', role: '', color: '' }, identities: [], createdAt: '' })
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    finish(true)
+    await flushPromises()
+  })
+
+  it('删除前取消该任务尚未提交的完成计时器', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = setup()
+    const status = vi.spyOn(data, 'patchTask')
+    vi.spyOn(data, 'deleteTask').mockResolvedValue(true)
+    try {
+      await wrapper.get('[data-task-id="parent"] input[type=checkbox]').setValue(true)
+      await wrapper.get('[data-task-id="parent"]').trigger('contextmenu')
+      await clickBodyButton('删除任务')
+      await clickBodyButton('确认删除')
+      await vi.advanceTimersByTimeAsync(3500)
+      expect(status).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
   it('完成保存及失败时只保留本次完成的行，重试成功后不再随正文保存出现', async () => {
     vi.useFakeTimers()
     const { data, wrapper } = setup()
