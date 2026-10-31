@@ -1081,6 +1081,11 @@ async function uploadAttachment(event: Event) {
       >
         <template #heading>
           <div class="main detail-title">
+            <textarea v-if="openSub" ref="subTitleArea" class="title-input" :class="{ done: openSub.done }" rows="1" :value="openSub.text" aria-label="子任务名称" placeholder="子任务名称" @input="editSubTitle" @keydown.enter.prevent></textarea>
+            <textarea v-else ref="taskTitleArea" class="title-input" rows="1" :value="task.title" aria-label="任务名称" @input="editTitle"></textarea>
+          </div>
+        </template>
+        <template #tools>
             <div class="detail-kicker">
               <div v-if="openSub" class="type-line"><WorkItemIcon kind="subtask" :size="18" />子任务</div>
               <div v-else class="type-line">
@@ -1093,9 +1098,6 @@ async function uploadAttachment(event: Event) {
               </div>
               <TaskLabelEditor :key="task.id + (openSubId ?? '')" :task-id="task.id" :sub-id="openSubId ?? undefined" inline />
             </div>
-            <textarea v-if="openSub" ref="subTitleArea" class="title-input" :class="{ done: openSub.done }" rows="1" :value="openSub.text" aria-label="子任务名称" placeholder="子任务名称" @input="editSubTitle" @keydown.enter.prevent></textarea>
-            <textarea v-else ref="taskTitleArea" class="title-input" rows="1" :value="task.title" aria-label="任务名称" @input="editTitle"></textarea>
-          </div>
         </template>
         <template #summary="{ propertiesOpen }">
           <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
@@ -1113,8 +1115,9 @@ async function uploadAttachment(event: Event) {
               <MarkdownEditor
                 v-model="subDesc"
                 slash-commands
-                placeholder="补充这个子任务的做法、验收标准…输入 / 插入标题、列表等，可直接粘贴截图"
-                :min-height="compact ? 56 : 200"
+                placeholder="添加描述…支持 / 命令和粘贴图片"
+                :min-height="compact ? 40 : 200"
+                :hide-character-count="compact"
                 @upload-image="onSubImage"
               />
             </div>
@@ -1139,8 +1142,9 @@ async function uploadAttachment(event: Event) {
               <MarkdownEditor
                 v-model="desc"
                 slash-commands
-                placeholder="补充背景、目标与边界…输入 / 插入标题、列表等，可直接粘贴截图"
-                :min-height="compact ? 56 : 200"
+                placeholder="添加描述…支持 / 命令和粘贴图片"
+                :min-height="compact ? 40 : 200"
+                :hide-character-count="compact"
                 @upload-image="onTaskImage"
               />
             </div>
@@ -1226,7 +1230,7 @@ async function uploadAttachment(event: Event) {
         </template>
         <template #comments>
           <!-- 评论：跟着当前查看的任务 / 子任务 -->
-          <div class="task-comments">
+          <div class="task-comments" :class="{ 'has-draft': commentText.length > 0 }">
             <h3 class="comments-title">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></h3>
             <div class="comment-list">
               <div v-for="cm in comments" :key="cm.index" class="comment">
@@ -1253,7 +1257,7 @@ async function uploadAttachment(event: Event) {
             </div>
             <div class="comment-input">
               <div class="ci-wrap">
-                <textarea v-model="commentText" rows="3" aria-label="评论内容" :disabled="sendingComment" placeholder="写下评论…" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey"></textarea>
+                <textarea v-model="commentText" rows="1" aria-label="评论内容" :disabled="sendingComment" placeholder="写下评论…" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey"></textarea>
                 <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
                   <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
                     <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
@@ -2794,13 +2798,14 @@ async function uploadAttachment(event: Event) {
 }
 .side-relations .attach-list { margin: 4px 0 2px; }
 .side-relations .attach { padding: 6px 8px; }
-.detail-kicker { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wao-space-1) var(--wao-space-2); margin-bottom: var(--wao-space-1); }
+.detail-kicker { display: flex; align-items: center; gap: var(--wao-space-1); min-width: 0; }
 .detail-kicker .type-line { margin: 0; flex-shrink: 0; font-size: var(--wao-font-body); color: var(--wao-text-3); }
-.detail-kicker :deep(.task-labels) { flex: 1; min-width: 140px; margin: 0; }
+.detail-kicker :deep(.task-labels) { flex: 1; min-width: 0; margin: 0; flex-wrap: nowrap; overflow-x: auto; }
+.detail-kicker :deep(.task-labels > *) { flex-shrink: 0; }
 .detail-kicker :deep(.task-labels > button) { color: var(--wao-text-3); }
 .detail-kicker :deep(.label-chip) { font-size: var(--wao-font-help, 13px); }
 .work-item-type { min-height: 32px; padding: 4px var(--wao-space-1); border-color: transparent; background: transparent; font-size: var(--wao-font-body); }
-.comments-title { display: flex; align-items: center; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); font-size: var(--wao-font-section); font-weight: 600; }
+.comments-title { display: flex; align-items: center; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-1); font-size: var(--wao-font-section); font-weight: 600; }
 .side-count { color: var(--wao-text-3); font-size: var(--wao-font-body); font-weight: 400; }
 .task-comments .comment-list { gap: var(--wao-space-3); }
 .task-comments .c-head { flex-wrap: wrap; align-items: center; }
@@ -2808,13 +2813,16 @@ async function uploadAttachment(event: Event) {
 .task-comments .c-time { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
 .task-comments .c-text { font-size: var(--wao-font-body); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-comments .c-av { width: 32px; height: 32px; font-size: var(--wao-font-help, 13px); }
-.task-comments .ci-wrap { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
-.task-comments .ci-wrap textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; padding: var(--wao-space-1) var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-body)/1.7 var(--wao-font); }
+.task-comments .ci-wrap { min-width: 0; align-items: flex-end; }
+.task-comments .ci-wrap textarea { box-sizing: border-box; flex: 1; min-width: 0; min-height: 42px; resize: vertical; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-body)/1.7 var(--wao-font); }
+.task-comments:focus-within .ci-wrap textarea, .task-comments.has-draft .ci-wrap textarea { min-height: 88px; }
+.task-comments .comment-list:empty + .comment-input { margin-top: 0; }
 .task-comments .ci-wrap textarea:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .task-comments .ci-wrap textarea::placeholder { color: var(--wao-text-3); }
 .task-comments .send { min-height: 36px; font-size: var(--wao-font-body); border-radius: var(--wao-radius-control); }
 .task-comments .mention-menu { right: 0; bottom: 100%; max-height: 200px; overflow: auto; }
 .comment-help { margin: var(--wao-space-1) 0 0; color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); }
+.task-comments:not(:focus-within):not(.has-draft) .comment-help { display: none; }
 .comment:focus-within .c-op { opacity: 1; }
 .c-op:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .c-edit-input { color: var(--wao-text); background: var(--wao-bg-card); font-size: var(--wao-font-body); }
