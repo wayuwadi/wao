@@ -535,9 +535,9 @@ const month = computed(() => {
       dayMark: all.some((event) => event.holidayDayType === 'ADJUSTED_WORKDAY')
         ? '班'
         : all.some((event) => event.holidayDayType === 'DAY_OFF') ? '休' : '',
-      numBg: isToday ? '#4358D6' : 'transparent',
-      numColor: isToday ? '#FFFFFF' : inM ? '#3E414D' : '#C4C7D2',
-      bg: inM ? '#FFFFFF' : '#FBFBFC',
+      numBg: isToday ? 'var(--wao-primary)' : 'transparent',
+      numColor: isToday ? 'var(--wao-on-primary)' : inM ? 'var(--wao-text)' : 'var(--wao-text-weak)',
+      bg: inM ? 'var(--wao-bg-card)' : 'var(--wao-bg-sub)',
       workWeek: showWorkWeek.value && d.getDay() === 0 ? workWeekForDate(dayIso, workSchedule.value) : null,
     })
   }
