@@ -10,6 +10,8 @@ public class AttendanceDayEntity {
     private String memberId; private LocalDate attendanceDate;
     private LocalDateTime remoteClockInAt; private LocalDateTime remoteClockOutAt;
     private String remoteDayType; private String remoteAnomaly;
+    private String remoteLeaves;
+    public String getRemoteLeaves(){return remoteLeaves;} public void setRemoteLeaves(String v){remoteLeaves=v;}
     private LocalDateTime manualClockInAt; private LocalDateTime manualClockOutAt; private String manualDayType;
     private Boolean manualOverride; private LocalDateTime syncedAt; private LocalDateTime createdAt; private LocalDateTime updatedAt;
     public String getMemberId(){return memberId;} public void setMemberId(String v){memberId=v;}

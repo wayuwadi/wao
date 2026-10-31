@@ -31,6 +31,17 @@ async function panel() {
 }
 
 describe('Moka 会话确认恢复', () => {
+  it('请假明细展示 Moka 原始时长和时段，不绘制零工时', async () => {
+    const result=view('OK')
+    result.days=[{date:'2026-10-26',clockInAt:null,clockOutAt:null,dayType:'LEAVE',anomaly:null,manualOverride:false,workHours:null,expectedWorkday:true,workWeekLabel:'工作日',leaves:[{title:'事假',startAt:'2026-10-26T09:00',endAt:'2026-10-26T18:00',duration:8,durationUnit:'小时'}]}]
+    vi.mocked(fetchAttendance).mockResolvedValue(result)
+    const wrapper=await panel()
+    await wrapper.setProps({selectedDate:'2026-10-26'})
+    expect(wrapper.get('.leave-details').text()).toContain('事假 · 8 小时')
+    expect(wrapper.get('.leave-details').text()).toContain('09:00 至 2026-10-26 18:00')
+    expect(wrapper.findAll('.trend-point')).toHaveLength(0)
+  })
+
   beforeEach(() => {
     vi.mocked(fetchAttendance).mockReset()
     vi.mocked(syncAttendance).mockReset().mockResolvedValue(view('OK'))

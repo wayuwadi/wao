@@ -36,6 +36,7 @@ import { useWeatherStore } from '@/stores/weather'
 import { fetchCalendarTianrenReadings, type TianrenReading } from '@/api/tianren'
 import { weatherAdvice, weatherName, weatherTemperature } from '@/utils/weather'
 import type { AttendanceDay } from '@/api/attendance'
+import { attendanceCaption, attendanceStatus, leaveDescription } from '@/utils/attendancePresentation'
 import {
   defaultAlternateWorkWeek,
   parseAlternateWorkWeek,
@@ -60,6 +61,7 @@ interface CalEvt {
   kind?: string
   sourceLabel?: string
   sortOrder?: number
+  attendanceSummary?: boolean
   go?: () => void
 }
 
@@ -86,6 +88,21 @@ watch([calY, calM], ([year, month]) => {
 const viewMode = ref<'year' | 'month' | 'week' | 'day'>('month')
 const attendanceMode = ref(localStorage.getItem(`wao-attendance-mode:${session.currentUser.id}`) === 'true')
 const attendanceDays = ref<AttendanceDay[]>([])
+const attendanceByDate = computed(() => new Map(attendanceDays.value.map(day => [day.date, day])))
+function expectedAttendanceWorkday(day: AttendanceDay) {
+  const holiday = holidayEvents.value.find(event => event.date === day.date && event.category === 'CHINA' && event.dayType !== 'FESTIVAL')
+  return holiday ? holiday.dayType === 'ADJUSTED_WORKDAY' : day.expectedWorkday
+}
+function dayAttendance(date: string) {
+  const day = attendanceMode.value ? attendanceByDate.value.get(date) : undefined
+  if (!day) return { status: '', caption: '', detail: '' }
+  const status = attendanceStatus(day, data.today, expectedAttendanceWorkday(day))
+  const caption = attendanceCaption(day, status)
+  const detail = day.leaves?.length ? day.leaves.map(leaveDescription).join('\n')
+    : status === 'missing' ? (!day.clockInAt && !day.clockOutAt ? '未打卡' : !day.clockInAt ? '缺上班卡' : '缺下班卡')
+    : day.anomaly || caption
+  return { status, caption, detail }
+}
 const selectedAttendanceDate = ref<string | null>(null)
 /** 日历默认只看当前人；切换后才加载另一成员的任务，避免跨成员任务默认混在一起。 */
 const calendarMemberId = ref(session.currentUser.id)
@@ -421,23 +438,26 @@ const events = computed<CalEvt[]>(() => {
     const sourceLabel = day.manualOverride ? '手工模拟' : 'Moka'
     const manualLabel = day.manualOverride ? ' · 模拟' : ''
     const openDay = () => { selectedAttendanceDate.value = day.date }
-    const pushAttendance = (title: string, sortOrder: number, color: string, time?: string) => evs.push({
-      date: day.date, title, color, time, sortOrder,
+    const pushAttendance = (title: string, sortOrder: number, color: string, time?: string, attendanceSummary = false) => evs.push({
+      date: day.date, title, color, time, sortOrder, attendanceSummary,
       kind: '考勤',
       sourceLabel,
       go: openDay,
     })
     if (day.dayType === 'LEAVE') {
-      pushAttendance(`请假 · 不计日均${manualLabel}`, 0, '#B9821F')
+      pushAttendance(`${attendanceCaption(day, 'leave')} · 不计日均`, 0, '#B9821F', undefined, true)
+      if (clockIn) pushAttendance(`上班打卡${manualLabel}`, 1, '#2C8A5B', clockIn)
+      if (clockOut) pushAttendance(`下班打卡${manualLabel}`, 2, '#2C8A5B', clockOut)
       return
     }
     if (day.dayType === 'REST' && !clockIn && !clockOut) {
       pushAttendance(`休息日${manualLabel}`, 0, '#79808F')
       return
     }
-    pushAttendance(`${clockIn ? '上班打卡' : '上班 · 缺卡'}${clockIn && day.anomaly ? ` · ${day.anomaly}` : ''}${manualLabel}`, 0, clockIn ? (day.anomaly ? '#D9634C' : '#2C8A5B') : '#D9634C', clockIn)
-    pushAttendance(`${clockOut ? '下班打卡' : '下班 · 缺卡'}${manualLabel}`, 1, clockOut ? '#2C8A5B' : '#D9634C', clockOut)
-    if (day.workHours !== null) pushAttendance(`当日工时 · ${day.workHours.toFixed(2)} h${manualLabel}`, 2, '#4358D6')
+    const missing = attendanceStatus(day, data.today, expectedAttendanceWorkday(day)) === 'missing'
+    if (clockIn || missing) pushAttendance(`${clockIn ? '上班打卡' : '上班 · 缺卡'}${clockIn && day.anomaly ? ` · ${day.anomaly}` : ''}${manualLabel}`, 0, clockIn ? (day.anomaly ? '#D9634C' : '#2C8A5B') : '#D9634C', clockIn)
+    if (clockOut || missing) pushAttendance(`${clockOut ? '下班打卡' : '下班 · 缺卡'}${manualLabel}`, 1, clockOut ? '#2C8A5B' : '#D9634C', clockOut)
+    if (day.workHours !== null) pushAttendance(`当日工时 · ${day.workHours.toFixed(2)} h${manualLabel}`, 2, '#4358D6', undefined, true)
   })
   return evs
 })
@@ -471,7 +491,7 @@ const month = computed(() => {
   const dim = new Date(y, m + 1, 0).getDate()
   const prevDim = new Date(y, m, 0).getDate()
   const byDate: Record<string, CalEvt[]> = {}
-  events.value.forEach((e) => (byDate[e.date] = byDate[e.date] || []).push(e))
+  events.value.filter(event => !event.attendanceSummary).forEach((e) => (byDate[e.date] = byDate[e.date] || []).push(e))
   for (const k of Object.keys(byDate)) {
     byDate[k]!.sort((a, b) => {
       const attendancePriority = Number(a.kind !== '考勤') - Number(b.kind !== '考勤')
@@ -1196,7 +1216,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         <div class="date-navigation" aria-label="日期导航">
           <button class="nav-btn" aria-label="上一时间段" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
           <input v-model="selectedDate" class="date-picker" type="date" aria-label="选择日历日期" />
-          <button v-if="calendarMemberId === session.userId" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })">查看当天记录</button>
+          <button v-if="calendarMemberId === session.userId" class="day-records-btn" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })">查看当天记录</button>
           <button class="today-btn" @click="goToday">今天</button>
           <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
         </div>
@@ -1249,7 +1269,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
             :key="dy.iso"
             :data-date="dy.iso"
             class="day"
-            :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso }"
+            :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso, 'attendance-missing': dayAttendance(dy.iso).status === 'missing', 'attendance-anomaly': dayAttendance(dy.iso).status === 'anomaly', 'attendance-leave': dayAttendance(dy.iso).status === 'leave' }"
             :style="{ background: dy.bg }"
             title="双击这一天，选择新建任务或提醒事项"
             @dblclick.self="quickCreate(dy.iso)"
@@ -1259,6 +1279,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           >
             <div class="day-heading">
               <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }" @dblclick="quickCreate(dy.iso)">{{ dy.label }}</div>
+              <button v-if="dayAttendance(dy.iso).caption" class="day-attendance wao-tabular" :class="dayAttendance(dy.iso).status" :title="dayAttendance(dy.iso).detail" :aria-label="`${dy.iso} ${dayAttendance(dy.iso).caption}，查看考勤详情`" @click="selectedAttendanceDate = dy.iso">{{ dayAttendance(dy.iso).caption }}</button>
               <span v-if="dy.dayMark" class="day-mark" :class="dy.dayMark === '班' ? 'work' : 'rest'">{{ dy.dayMark }}</span>
             </div>
             <div v-if="dy.workWeek" class="work-week-mark" :class="dy.workWeek.type">
@@ -1952,6 +1973,12 @@ button.holiday-status { cursor: pointer; }
   align-items: center;
   gap: 4px;
 }
+.day-num { flex-shrink: 0; }
+.day-attendance { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 11px; padding: 2px; cursor: pointer; }
+.day-attendance.leave { color: var(--wao-warning-strong); }
+.day-attendance.missing, .day-attendance.anomaly { color: var(--wao-danger-strong); }
+.day.attendance-missing, .day.attendance-anomaly { background: var(--wao-danger-bg) !important; outline: 1px solid var(--wao-danger-line); outline-offset: -1px; }
+.day.attendance-leave { background: var(--wao-warning-bg) !important; }
 .day-mark {
   min-width: 17px;
   height: 17px;
@@ -2401,6 +2428,7 @@ button.holiday-status { cursor: pointer; }
 .member-calendar select { min-width: 0; width: 100%; }
 .date-navigation { display: flex; align-items: center; flex-shrink: 0; border: 1px solid var(--wao-line-control); border-radius: 8px; }
 .date-navigation button { border: 0; }
+.day-records-btn { flex-shrink: 0; padding: 5px; background: transparent; color: var(--wao-text-2); white-space: nowrap; font-size: 11px; cursor: pointer; }
 .date-picker { width: 122px; height: 28px; padding: 0 3px; border: 0; color: var(--wao-text-2); background: transparent; font: inherit; font-size: 12px; }
 .calendar-search { flex-shrink: 0; width: 30px; }
 .search-toggle { position: relative; z-index: 2; width: 30px; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
@@ -2449,7 +2477,8 @@ button.holiday-status { cursor: pointer; }
 @container app-main (max-width: 340px) {
   .date-navigation { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; width: 100%; min-width: 0; }
   .date-picker { width: 100%; min-width: 0; }
-  .date-navigation .today-btn { grid-row: 2; grid-column: 1 / -1; }
+  .date-navigation .today-btn { grid-row: 2; grid-column: 1; padding: 0; }
+  .date-navigation .day-records-btn { grid-row: 2; grid-column: 2 / -1; }
   .date-navigation .nav-btn:last-child { grid-row: 1; grid-column: 3; }
   .member-calendar { max-width: 100%; }
 }

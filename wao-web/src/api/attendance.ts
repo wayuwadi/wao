@@ -2,7 +2,8 @@ import { http, type ApiResponse } from './http'
 
 export type AttendanceDayType = 'WORKDAY' | 'LEAVE' | 'REST'
 export interface AttendanceConfig { enabled: boolean; username: string | null; vaultItemId: string | null; status: 'UNCONFIGURED'|'DISABLED'|'READY'|'SYNCING'|'OK'|'NEEDS_LOGIN'|'NEEDS_CONFIRMATION'|'ERROR'; lastSyncedAt: string|null; lastError: string|null; historySyncedFrom:string|null; historyTargetFrom:string; historyComplete:boolean }
-export interface AttendanceDay { date:string; clockInAt:string|null; clockOutAt:string|null; dayType:AttendanceDayType; anomaly:string|null; manualOverride:boolean; workHours:number|null; expectedWorkday:boolean; workWeekLabel:string }
+export interface AttendanceLeave { title:string; startAt:string; endAt:string; duration:number|null; durationUnit:string|null }
+export interface AttendanceDay { date:string; clockInAt:string|null; clockOutAt:string|null; dayType:AttendanceDayType; anomaly:string|null; manualOverride:boolean; workHours:number|null; expectedWorkday:boolean; workWeekLabel:string; leaves?:AttendanceLeave[] }
 export interface AttendanceWeek { from:string; to:string; label:string; averageHours:number; validDays:number }
 export interface AttendanceView { from:string; to:string; config:AttendanceConfig; days:AttendanceDay[]; totalHours:number; monthDailyAverageHours:number; validDays:number; weeks:AttendanceWeek[] }
 export interface AttendanceConfigPayload { enabled:boolean; username:string; vaultItemId:string|null }

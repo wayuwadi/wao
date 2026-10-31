@@ -63,6 +63,22 @@ class AttendanceServiceTest {
         assertThat(result.workHours()).isEqualByComparingTo("4.00");
     }
 
+    @Test void leaveDetailsSurviveReadAndRestoreButDoNotLeakIntoManualOverride() throws Exception {
+        LocalDate date=LocalDate.of(2026,9,2);
+        AttendanceDayEntity value=day(date,null,null,"LEAVE");
+        var leave=new AttendanceDto.Leave("事假","2026-09-02T09:00","2026-09-02T18:00",new java.math.BigDecimal("8"),"小时");
+        value.setRemoteLeaves(new ObjectMapper().writeValueAsString(List.of(leave)));
+        when(days.findRange("wg",date,date)).thenReturn(List.of(value));
+        var remote=service.attendance("wg",date,date).days().get(0);
+        assertThat(remote.leaves()).containsExactly(leave);
+        assertThat(remote.anomaly()).isNull();
+        assertThat(remote.workHours()).isNull();
+        value.setManualOverride(true);value.setManualDayType("WORKDAY");
+        assertThat(service.attendance("wg",date,date).days().get(0).leaves()).isEmpty();
+        value.setManualOverride(false);
+        assertThat(service.attendance("wg",date,date).days().get(0).leaves()).containsExactly(leave);
+    }
+
     @Test void repeatedSessionExpiryStopsAfterOneReloginAndRequiresUserAction() {
         AttendanceConnectorMapper connectors=mock(AttendanceConnectorMapper.class); VaultService vault=mock(VaultService.class);
         VaultCryptoService crypto=mock(VaultCryptoService.class); MokaAttendanceClient moka=mock(MokaAttendanceClient.class);

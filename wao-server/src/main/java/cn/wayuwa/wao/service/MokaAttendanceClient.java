@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
+import java.math.BigDecimal;
+import cn.wayuwa.wao.dto.AttendanceDto;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -105,12 +107,13 @@ public class MokaAttendanceClient {
         LocalDateTime in = findTime(row, date, Set.of("clockInTime", "clockInAt"), true);
         LocalDateTime out = findTime(row, date, Set.of("clockOutTime", "clockOutAt"), false);
         if (in != null && out != null && !out.isAfter(in)) out = out.plusDays(1);
-        String raw = row == null ? "" : row.toString();
-        String dayType = raw.contains("leaveRecord") && hasNonEmptyField(row, "leaveRecord") ? "LEAVE" : "WORKDAY";
+        List<AttendanceDto.Leave> leaves = new ArrayList<>();
+        collectLeaves(row, date, leaves);
+        String dayType = leaves.isEmpty() ? "WORKDAY" : "LEAVE";
         Set<String> anomalies = new LinkedHashSet<>();
         addFlag(row, anomalies, "late", "迟到"); addFlag(row, anomalies, "leaveEarly", "早退");
         addFlag(row, anomalies, "absent", "旷工"); addFlag(row, anomalies, "lackWorkTime", "工时不足");
-        return new RemoteDay(date, in, out, dayType, String.join("、", anomalies));
+        return new RemoteDay(date, in, out, dayType, String.join("、", anomalies), List.copyOf(leaves));
     }
 
     private JsonNode post(String url, JsonNode body, Session session) {
@@ -131,6 +134,7 @@ public class MokaAttendanceClient {
                 throw new RemoteException("Moka 服务返回 HTTP " + response.statusCode());
             }
             JsonNode value = json.readTree(response.body());
+            if (value.path("code").asInt(0) == 100007) throw new SessionExpiredException();
             if (value.path("success").isBoolean() && !value.path("success").asBoolean()) {
                 String message = text(value, "msg", "message", "errorMsg");
                 if (looksUnauthorized(message)) throw new SessionExpiredException();
@@ -186,13 +190,37 @@ public class MokaAttendanceClient {
         try { return date.atTime(LocalTime.parse(value.length() >= 5 ? value.substring(0, 5) : value)); }
         catch (RuntimeException ignored) { return null; }
     }
-    private boolean hasNonEmptyField(JsonNode node, String name) {
-        if (node == null) return false;
+    private void collectLeaves(JsonNode node, LocalDate date, List<AttendanceDto.Leave> leaves) {
+        if (node == null) return;
         if (node.isObject()) {
-            JsonNode direct=node.get(name); if (direct!=null&&!direct.isNull()&&(!direct.isContainerNode()||direct.size()>0)) return true;
-            Iterator<JsonNode> it=node.elements(); while(it.hasNext()) if(hasNonEmptyField(it.next(),name)) return true;
-        } else if (node.isArray()) for(JsonNode child:node) if(hasNonEmptyField(child,name)) return true;
-        return false;
+            node.fields().forEachRemaining(field -> {
+                if (field.getKey().equals("leaveRecord") || field.getKey().endsWith("#leaveRecord")) {
+                    JsonNode records = field.getValue();
+                    if (records.isObject() && records.has("fieldValue")) records = records.path("fieldValue");
+                    if (records.isArray()) records.forEach(record -> addLeave(record, date, leaves));
+                } else collectLeaves(field.getValue(), date, leaves);
+            });
+        } else if (node.isArray()) node.forEach(child -> collectLeaves(child, date, leaves));
+    }
+    private void addLeave(JsonNode record, LocalDate date, List<AttendanceDto.Leave> leaves) {
+        if (!record.isObject()) return;
+        String title = text(record, "title");
+        if (!StringUtils.hasText(title)) return;
+        LocalDateTime start = leaveTime(record, "beginDate", "beginTime");
+        LocalDateTime end = leaveTime(record, "endDate", "endTime");
+        if (start != null && !start.toLocalDate().isAfter(date) && end != null
+                && end.isAfter(start) && end.isAfter(date.atStartOfDay())) {
+            BigDecimal duration = null;
+            try { duration = new BigDecimal(record.path("duration").asText()); }
+            catch (NumberFormatException ignored) { }
+            if (duration != null && duration.signum() < 0) duration = null;
+            AttendanceDto.Leave leave = new AttendanceDto.Leave(title, start.toString(), end.toString(), duration, text(record, "durationUnit"));
+            if (!leaves.contains(leave)) leaves.add(leave);
+        }
+    }
+    private LocalDateTime leaveTime(JsonNode record, String dateKey, String timeKey) {
+        try { return LocalDate.parse(record.path(dateKey).asText()).atTime(LocalTime.parse(record.path(timeKey).asText())); }
+        catch (RuntimeException ignored) { return null; }
     }
     private void addFlag(JsonNode node, Set<String> target, String key, String label) { if (findBoolean(node, key)) target.add(label); }
     private boolean findBoolean(JsonNode node, String key) {
@@ -211,7 +239,11 @@ public class MokaAttendanceClient {
     private static String safe(String value) { return value == null ? "" : value; }
 
     public record Session(String uid, String jwt) { }
-    public record RemoteDay(LocalDate date, LocalDateTime clockInAt, LocalDateTime clockOutAt, String dayType, String anomaly) { }
+    public record RemoteDay(LocalDate date, LocalDateTime clockInAt, LocalDateTime clockOutAt, String dayType, String anomaly, List<AttendanceDto.Leave> leaves) {
+        public RemoteDay(LocalDate date, LocalDateTime in, LocalDateTime out, String type, String anomaly) {
+            this(date, in, out, type, anomaly, List.of());
+        }
+    }
     public static class SessionExpiredException extends RuntimeException { }
     public static class AuthenticationRequiredException extends BadRequestException { public AuthenticationRequiredException(String message){super(message);} }
     public static class SessionConfirmationRequiredException extends AuthenticationRequiredException {
