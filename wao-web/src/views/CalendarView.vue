@@ -261,7 +261,11 @@ async function loadHolidays() {
   const { from, to } = visibleRange()
   holidayState.value = 'loading'
   try {
-    const result = await fetchHolidayEvents(iso(from), iso(to))
+    // Attendance always summarizes the whole month, even in day/week views.
+    const result = await fetchHolidayEvents(
+      iso(from) < attendanceRange.value.from ? iso(from) : attendanceRange.value.from,
+      iso(to) > attendanceRange.value.to ? iso(to) : attendanceRange.value.to,
+    )
     if (requestSequence !== holidayRequestSequence) return
     holidayEvents.value = result.events
     holidayYears.value = result.years
@@ -1335,6 +1339,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <AttendancePanel
             ref="attendancePanel"
             :active="attendanceMode"
+            :holidays="holidayEvents"
+            :holiday-state="holidayState"
             :from="attendanceRange.from"
             :to="attendanceRange.to"
             :selected-date="selectedAttendanceDate"

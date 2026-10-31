@@ -4,10 +4,11 @@ import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { toast } from '@/composables/toast'
+import type { HolidayEvent } from '@/api/holiday'
 import { clearAttendanceDay, fetchAttendance, saveAttendanceConfig, saveAttendanceDay, syncAttendance,
   type AttendanceDay, type AttendanceDayType, type AttendanceView } from '@/api/attendance'
 
-const props=defineProps<{active:boolean;from:string;to:string;selectedDate:string|null}>()
+const props=defineProps<{active:boolean;from:string;to:string;selectedDate:string|null;holidays?:HolidayEvent[];holidayState?:'loading'|'ready'|'error'}>()
 const emit=defineEmits<{(e:'loaded',days:AttendanceDay[]):void;(e:'close-day'):void}>()
 const data=useDataStore();const session=useSessionStore();const router=useRouter()
 const view=ref<AttendanceView|null>(null);const loading=ref(false);const syncing=ref(false);const error=ref('')
@@ -22,15 +23,19 @@ const configDraftKey=computed(()=>`wao-attendance-config-draft:${session.current
 const dayDraftKey=computed(()=>editing.value?`wao-attendance-day-draft:${session.currentUser.id}:${editing.value.date}`:'')
 const DAILY_TARGET_HOURS=10
 const REQUIRED_CLOCK_OUT_MINUTES=19*60+30
-const MONTHLY_EARLY_DEPARTURE_ALLOWANCE=4
 
 function timeMinutes(value:string|null|undefined){if(!value)return null;const [hourText,minuteText]=value.slice(11,16).split(':');const hour=Number(hourText);const minute=Number(minuteText);return Number.isFinite(hour)&&Number.isFinite(minute)?hour*60+minute:null}
 function formatTargetClockOut(minutes:number){const nextDay=minutes>=24*60;const normalized=minutes%(24*60);return `${nextDay?'次日 ':''}${String(Math.floor(normalized/60)).padStart(2,'0')}:${String(normalized%60).padStart(2,'0')}`}
 const attendanceGoals=computed(()=>{
   const current=view.value
   const average=current?.monthDailyAverageHours??0
+  // CalendarView supplies the full displayed month, including future scheduled workdays.
+  const holidayDays=new Map((props.holidays??[]).filter(day=>day.category==='CHINA'&&day.dayType!=='FESTIVAL').map(day=>[day.date,day.dayType]))
+  const isWorkday=(day:AttendanceDay)=>holidayDays.has(day.date)?holidayDays.get(day.date)==='ADJUSTED_WORKDAY':day.expectedWorkday
+  const monthWorkdays=(current?.days??[]).filter(isWorkday).length
+  const earlyDepartureAllowance=Math.floor(monthWorkdays/5)
   const earlyDepartureDays=(current?.days??[]).filter(day=>{
-    if(!day.expectedWorkday||day.dayType!=='WORKDAY'||day.workHours===null||!day.clockOutAt)return false
+    if(!isWorkday(day)||day.dayType==='LEAVE'||day.workHours===null||!day.clockOutAt)return false
     const clockOut=timeMinutes(day.clockOutAt)
     return day.clockOutAt.slice(0,10)===day.date&&clockOut!==null&&clockOut<REQUIRED_CLOCK_OUT_MINUTES
   }).length
@@ -54,9 +59,9 @@ const attendanceGoals=computed(()=>{
     average,
     averageGap:Math.abs(average-DAILY_TARGET_HOURS),
     averageAchieved:average>=DAILY_TARGET_HOURS,
-    earlyDepartureDays,
-    earlyDepartureRemaining:Math.max(0,MONTHLY_EARLY_DEPARTURE_ALLOWANCE-earlyDepartureDays),
-    earlyDepartureExceeded:earlyDepartureDays>MONTHLY_EARLY_DEPARTURE_ALLOWANCE,
+    monthWorkdays,earlyDepartureAllowance,earlyDepartureDays,
+    earlyDepartureRemaining:Math.max(0,earlyDepartureAllowance-earlyDepartureDays),
+    earlyDepartureExceeded:earlyDepartureDays>earlyDepartureAllowance,
     todayValue,todayHint,todayState,
   }
 })
@@ -132,7 +137,8 @@ onMounted(()=>{data.reloadVault();load()})
       <div class="attendance-goals">
         <div class="attendance-goal" :class="attendanceGoals.averageAchieved?'achieved':'warn'"><span><b>日均 10h 目标</b><em>{{ attendanceGoals.averageAchieved?'已达标':'需提升' }}</em></span><strong class="wao-tabular">{{ attendanceGoals.average.toFixed(2) }} / 10.00 h</strong><small>{{ view.validDays?`${attendanceGoals.averageAchieved?'高于':'距离'}目标 ${attendanceGoals.averageGap.toFixed(2)} h`:'等待完整上下班记录' }}</small></div>
         <div class="attendance-goal" :class="attendanceGoals.todayState"><span><b>今日下班规划</b><em>最低 19:30</em></span><strong class="wao-tabular">{{ attendanceGoals.todayValue }}</strong><small>{{ attendanceGoals.todayHint }}</small></div>
-        <div class="attendance-goal" :class="attendanceGoals.earlyDepartureExceeded?'danger':attendanceGoals.earlyDepartureDays?'warn':'achieved'"><span><b>19:30 前下班</b><em>每月可用 4 天</em></span><strong class="wao-tabular">{{ attendanceGoals.earlyDepartureDays }} / 4 天</strong><small>{{ attendanceGoals.earlyDepartureExceeded?`已超出 ${attendanceGoals.earlyDepartureDays-4} 天`:`本月还可使用 ${attendanceGoals.earlyDepartureRemaining} 天` }}</small></div>
+        <div v-if="!holidayState||holidayState==='ready'" class="attendance-goal" :class="attendanceGoals.earlyDepartureExceeded?'danger':attendanceGoals.earlyDepartureDays?'warn':'achieved'"><span><b :title="`本月 ${attendanceGoals.monthWorkdays} 个工作日 × 20%，向下取整；19:30 出勤率至少 80%`">19:30 前下班</b><em>本月可用 {{ attendanceGoals.earlyDepartureAllowance }} 天</em></span><strong class="wao-tabular">{{ attendanceGoals.earlyDepartureDays }} / {{ attendanceGoals.earlyDepartureAllowance }} 天</strong><small>{{ attendanceGoals.earlyDepartureExceeded?`已超出 ${attendanceGoals.earlyDepartureDays-attendanceGoals.earlyDepartureAllowance} 天`:`本月还可使用 ${attendanceGoals.earlyDepartureRemaining} 天` }}</small></div>
+        <div v-else class="attendance-goal pending"><span><b>19:30 前下班</b></span><small>{{ holidayState==='error'?'节假日读取失败，暂无法计算额度':'正在读取本月工作日…' }}</small></div>
       </div>
       <div class="attendance-weeks"><span v-for="week in view.weeks" :key="week.from"><b>{{ week.label }}</b> · 周均 {{ week.averageHours.toFixed(2) }}h / {{ week.validDays }} 天</span></div>
       <div class="attendance-actions"><span class="status" :class="view.config.status.toLowerCase()"><i></i>{{ statusText() }}<template v-if="view.config.lastSyncedAt"> · {{ view.config.lastSyncedAt.replace('T',' ').slice(0,16) }}</template></span><button @click="openConfig"><i class="ri-settings-3-line"></i>设置</button></div>
