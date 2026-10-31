@@ -391,20 +391,7 @@ const mobileActionsId = ref('')
 const noteDrafts = ref<Record<string, NoteDraftSnapshot>>({})
 const noteTextCache = createNoteTextCache()
 function noteText(note: Doc) { return noteTextCache.text(note.id, displayedContent(note)) }
-const savedNoticeId = ref('')
 const locatedSavedId = ref('')
-async function locateSavedNote(moveFocus = true) {
-  const id = savedNoticeId.value
-  if (!id || !notes.value.some(note => note.id === id)) return
-  locatedSavedId.value = id
-  discoveryMode.value = 'notes'
-  const index = matching.value.findIndex(note => note.id === id)
-  if (index >= 0) limit.value = Math.max(limit.value, index + 1)
-  await nextTick()
-  const card = notesList.value?.querySelector<HTMLElement>(`[data-note-id="${id}"]`)
-  card?.scrollIntoView?.({ block: 'nearest', behavior: 'auto' })
-  if (moveFocus) card?.focus({ preventScroll: true })
-}
 function displayedContent(note: Doc) { return noteDrafts.value[note.id]?.content ?? latestNoteContent(note) }
 function displayedTitle(note: Doc) { return noteDrafts.value[note.id]?.title ?? note.title }
 function displayedTags(note: Doc) { return noteDrafts.value[note.id]?.tags ?? note.tags ?? [] }
@@ -906,7 +893,7 @@ const matching = computed(() => {
     && (!needle || `${displayedTitle(doc)}\n${noteText(doc)}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
 watch(notes, values => noteTextCache.retain(new Set(values.map(note => note.id))))
-watch(() => session.currentUser.id, () => { noteTextCache.clear(); savedNoticeId.value = ''; locatedSavedId.value = '' })
+watch(() => session.currentUser.id, () => { noteTextCache.clear(); locatedSavedId.value = '' })
 const focusSummaries = computed(() => new Map(visible.value.map(note => [note.id,
   !noteDrafts.value[note.id] && !query.value && !displayedContent(note).document && !cardImages(note).length
     ? focusNoteSummary(displayedTitle(note), displayedTags(note), displayedMarkdown(note)) : null])))
@@ -1072,7 +1059,7 @@ const retainedEdits = computed(() => notes.value.filter(note => (editingIds.valu
 const visible = computed(() => {
   const list = [...matching.value.slice(0, limit.value), ...retainedEdits.value]
   const located = notes.value.find(note => note.id === locatedSavedId.value)
-  return located && !list.some(note => note.id === located.id) ? [located, ...list] : list
+  return located ? [located, ...list.filter(note => note.id !== located.id)] : list
 })
 const notePreviews = computed(() => new Map(visible.value.map(note => [note.id, cardImages(note)])))
 const cardActiveImages = ref<Record<string, number | undefined>>({})
@@ -1104,6 +1091,7 @@ const loading = computed(() => !refreshing.value && (['idle', 'loading'].include
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 let searchReturn: { top: number; windowTop: number; limit: number; expanded: string[] } | null = null
 watch(query, async (value, previous) => {
+  locatedSavedId.value = ''
   if (value && !previous) searchReturn = { top: notesList.value?.scrollTop ?? 0, windowTop: window.scrollY, limit: limit.value, expanded: [...expandedIds.value] }
   confirmingDeleteId.value = ''
   if (!value && searchReturn) {
@@ -1115,7 +1103,8 @@ watch(query, async (value, previous) => {
     if (window.scrollY !== restore.windowTop) window.scrollTo({ top: restore.windowTop })
   } else { limit.value = PAGE_SIZE; notesList.value?.scrollTo?.({ top: 0 }) }
 })
-watch([selectedTag, sort, imageFilter, timeFilter], () => {
+watch([selectedTag, sort, imageFilter, timeFilter, selectedAuthor, showSystemArticles], () => {
+  locatedSavedId.value = ''
   limit.value = PAGE_SIZE; confirmingDeleteId.value = ''
   notesList.value?.scrollTo?.({ top: 0 })
 })
@@ -1168,14 +1157,15 @@ watch([() => route.query.findRequest, () => route.query.note, () => route.query.
   }
 }, { immediate: true })
 
-function onCreated(id: string) {
+async function onCreated(id: string) {
   companionNoteId.value = id
   companionExplicitId.value = ''
   void companion.value?.refresh()
-  savedNoticeId.value = id
-  locatedSavedId.value = ''
+  locatedSavedId.value = id
+  discoveryMode.value = 'notes'
   highlighted.value = id
-  if (matching.value.some(note => note.id === id)) void locateSavedNote(false)
+  await nextTick()
+  if (notesList.value) notesList.value.scrollTop = 0
   void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
@@ -1327,7 +1317,6 @@ onMounted(() => void loadPins())
         <p v-if="pinError" class="error" role="alert">{{ pinError }}<button v-if="!pinsReady" @click="loadPins">重试读取置顶</button></p>
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
         <div class="list-summary"><span>{{ matching.length }} 条小记</span><span>{{ filterSummary }}</span></div>
-        <p v-if="savedNoticeId" class="saved-note-notice" role="status">已保存到服务器<span v-if="!matching.some(note => note.id === savedNoticeId)">，当前筛选未包含这条小记</span>。<button type="button" @click="locateSavedNote()">查看刚保存的小记</button><button type="button" aria-label="关闭保存提示" @click="savedNoticeId = ''; locatedSavedId = ''">关闭</button></p>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
         <p v-if="!loading && !loadError && !visible.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
@@ -1340,16 +1329,17 @@ onMounted(() => void loadPins())
 
 
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
-            <span class="note-meta-trailing"><span class="card-action-slot"><span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span><span class="card-hover-actions"><div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
-              <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
-              <NoteAiStageButton :disabled="stageDisabled(note.id, 'thinking')" :title="`思考图：${stageActionText(note.id, 'thinking')}`" :aria-label="`思考图${stageActionText(note.id, 'thinking')}`" @activate="onStageClick(note, 'thinking')"><i class="ri-lightbulb-line" aria-hidden="true"></i></NoteAiStageButton>
-            </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
+            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
               <button class="note-card-text-action" type="button" :aria-label="`阅读小记：${note.title}`" @click.stop="startReading(note.id, $event)">阅读</button>
               <button class="note-card-text-action" type="button" :aria-label="`编辑小记：${note.title}`" @click.stop="editNote(note.id)">编辑</button>
               <button class="note-card-text-action" type="button" :aria-expanded="mobileActionsId === note.id" :aria-label="`AI 工具：${note.title}`" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id">AI 工具</button>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
             </span>
+            <span class="card-action-slot"><span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span><span class="card-hover-actions"><div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
+              <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
+              <NoteAiStageButton :disabled="stageDisabled(note.id, 'thinking')" :title="`思考图：${stageActionText(note.id, 'thinking')}`" :aria-label="`思考图${stageActionText(note.id, 'thinking')}`" @activate="onStageClick(note, 'thinking')"><i class="ri-lightbulb-line" aria-hidden="true"></i></NoteAiStageButton>
+            </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span>
           </div>
 
           <button v-if="query && noteSearchHit(note)" class="note-search-hit" type="button" @click.stop="locateSearchNote(note.id, query, noteSearchHit(note)?.field === '正文')">
@@ -1448,8 +1438,7 @@ onMounted(() => void loadPins())
 </template>
 
 <style scoped>
-.saved-note-notice { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); padding:var(--wao-space-1) var(--wao-space-2); color:var(--wao-text-2); background:var(--wao-bg-sub); border-radius:var(--wao-radius-control); font-size:var(--wao-font-help); }
-.saved-note-notice button,.note-card-text-action { color:var(--wao-primary-text); background:transparent; border:0; font-size:var(--wao-font-help); padding:var(--wao-space-1); cursor:pointer; white-space:nowrap; }
+.note-card-text-action { color:var(--wao-primary-text); background:transparent; border:0; font-size:var(--wao-font-help); padding:var(--wao-space-1); cursor:pointer; white-space:nowrap; }
 .focus-note-duration { margin:0; font-weight:600; font-size:var(--wao-font-body); }
 .focus-note-time { margin:0; color:var(--wao-text-3); font-size:var(--wao-font-caption); }
 .focus-note-excerpt { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:var(--wao-font-reading); line-height:var(--wao-line-body); overflow-wrap:anywhere; }
@@ -1924,7 +1913,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .note-meta { grid-template-columns:minmax(0,1fr); }
   .note-meta-trailing { justify-content:flex-start; }
   .note-meta-trailing > .card-action-slot { flex-basis:100%; }
-  .note-card-text-action,.saved-note-notice button { min-height:44px; }
+  .note-card-text-action { min-height:44px; }
   .note-card .card-identity { font-size:var(--wao-font-caption); }
 }
 .focus-note-summary { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--wao-space-1); }
@@ -1933,4 +1922,12 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .compact-focus .note-card-footer { padding:0; min-height:0; }
 .compact-focus .note-card-footer .card-tags { justify-content:flex-end; }
 @media(min-width:761px) { .compact-focus .note-card-text-action { padding-top:0; padding-bottom:0; } }
+/* Keep the reading controls beside the title; identity and expanded AI tools stay below. */
+.note-meta { grid-template-columns:minmax(0,1fr) auto; }
+.note-meta-trailing { width:auto; flex-wrap:nowrap; }
+.note-meta > .card-action-slot { grid-column:1 / -1; }
+@container(max-width:560px) {
+  .note-meta { grid-template-columns:minmax(0,1fr); }
+  .note-meta-trailing { justify-content:flex-start; flex-wrap:wrap; }
+}
 </style>

@@ -1484,25 +1484,44 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('保存后保留筛选，明确提示并定位新小记，下一条使用独立草稿 id', async () => {
+  it('保存后保留筛选并直接在顶部展示新小记，无额外保存提示，下一条使用独立草稿 id', async () => {
     const data = useDataStore()
     vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => { data.docs[id!] = doc(id!, text); return id! })
     const wrapper = await view()
     await wrapper.find('input[type="search"]').setValue('找不到的词')
     await wrapper.find('textarea').setValue('即时显示的想法')
     const original = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id
+    wrapper.get('.notes-list').element.scrollTop = 900
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
     expect(wrapper.get('input[type="search"]').element).toHaveProperty('value', '找不到的词')
-    expect(wrapper.get('.saved-note-notice').text()).toContain('当前筛选未包含这条小记')
-    await wrapper.get('.saved-note-notice button').trigger('click')
-    await flushPromises()
+    expect(wrapper.find('.saved-note-notice').exists()).toBe(false)
+    expect(wrapper.get('.notes-list').element.scrollTop).toBe(0)
+    expect(wrapper.get('.note-meta > .note-meta-trailing').text()).toContain('已保存')
+    expect(wrapper.find('.note-meta > .card-action-slot').exists()).toBe(true)
     expect((wrapper.find('.note-card textarea').element as HTMLTextAreaElement).value).toBe('即时显示的想法')
     expect(wrapper.find('.empty').exists()).toBe(false)
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
     expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     await wrapper.find('textarea').setValue('第二条')
     expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id).not.toBe(original)
+    wrapper.unmount()
+  })
+
+  it('保存的新小记即使排序靠后也显示在顶部，主动搜索后恢复原筛选', async () => {
+    const data = useDataStore()
+    data.docs.other = doc('other', '另一条记录', '2026-10-31T12:00:00')
+    vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => { data.docs[id!] = doc(id!, text); return id! })
+    const wrapper = await view()
+    await wrapper.get('.writing-pane textarea').setValue('保存的独立新段落')
+    wrapper.get('.notes-list').element.scrollTop = 900
+    await wrapper.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.note-card')[0]!.text()).toContain('保存的独立新段落')
+    expect(wrapper.get('.notes-list').element.scrollTop).toBe(0)
+    await wrapper.get('input[type="search"]').setValue('另一条')
+    expect(wrapper.findAll('.note-card')).toHaveLength(1)
+    expect(wrapper.get('.note-card').text()).toContain('另一条记录')
     wrapper.unmount()
   })
 

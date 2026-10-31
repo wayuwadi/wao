@@ -1239,7 +1239,7 @@ export const useDataStore = defineStore('data', () => {
     return request
   }
 
-  function replaceDocs(list: Doc[]) {
+  function replaceDocs(list: Doc[], requested: Record<string, Doc>) {
     const previous = { ...docs }
     const archived = Object.values(archivedDocIds.value).flat()
       .flatMap((id) => docs[id] ? [docs[id]!] : [])
@@ -1247,9 +1247,14 @@ export const useDataStore = defineStore('data', () => {
     list.forEach((doc) => {
       const old = previous[doc.id]
       // 目录刷新不卸载已加载的正文，也不能替换用户正在编辑的基线。
-      docs[doc.id] = old && (docPending(doc.id)
+      docs[doc.id] = old && (docPending(doc.id) || (old.rev ?? 1) > (doc.rev ?? 1)
         || ((doc.bodyLoaded === false || doc.detailLoaded === false)
           && old.bodyLoaded !== false && old.detailLoaded !== false && old.rev === doc.rev)) ? old : doc
+    })
+    // A catalog requested before a save cannot authoritatively remove that save.
+    // A later refresh still removes genuinely deleted documents.
+    Object.values(previous).forEach((doc) => {
+      if (!docs[doc.id] && (doc !== requested[doc.id] || docPending(doc.id))) docs[doc.id] = doc
     })
     archived.forEach((doc) => {
       if (!docs[doc.id]) docs[doc.id] = doc
@@ -1274,12 +1279,13 @@ export const useDataStore = defineStore('data', () => {
   function loadDocs(): Promise<boolean> {
     if (docsRequest) return docsRequest
     const generation = docMemberGeneration
+    const requested = { ...docs }
     loadStates.docs = 'loading'
     delete loadErrors.docs
     const request = fetchDocs()
       .then((list) => {
         if (generation !== docMemberGeneration) return false
-        replaceDocs(list)
+        replaceDocs(list, requested)
         loadStates.docs = 'loaded'
         return true
       })

@@ -31,6 +31,8 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 ## 小记图文整理（2026-10-28）
 
+小记保存后直接在当前清单顶部展示已保存条目，保留原筛选条件；不再展示额外的「已保存到服务器／查看刚保存的小记」提示条。卡片标题同行提供保存状态、字数、阅读、编辑和 AI 工具，窄屏允许换行。目录刷新保留请求期间已保存的新条目，不允许低版本响应覆盖新正文；后续刷新仍正常反映删除。
+
 `GET /api/docs/notes/{docId}/visual-recap` 返回本人小记最近整理；`POST` 接收 `expectedRev` 和 32 位小写十六进制 `requestId`。返回 `status`（EMPTY/RUNNING/SUCCEEDED/FAILED），已创建结果带 `sourceRev/sourceText/stale/id`，成功带 `html`，失败带 `message`。响应为 ApiResponse，禁止缓存。
 
 复用本机 AI 队列；来源版本不一致为 409，非本人或删除/归档来源为 404；正文限制 24000 字符。HTML 仅作为私有 JSON 数据返回，浏览器必须经白名单和沙箱渲染。只读结果不覆盖正文。此能力当前限浏览器，MCP 与 CLI 不新增权限或命令。流程与保留规则见 [小记图文整理](specs/notes-visual-recap-2026-10-28.md)。

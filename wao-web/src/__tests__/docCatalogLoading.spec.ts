@@ -45,6 +45,31 @@ describe('文档目录和正文分开加载', () => {
     expect(await first).toBe(true)
     expect(await second).toBe(true)
   })
+  it('旧目录响应不能移除请求期间刚保存的小记，下一次刷新仍能反映删除', async () => {
+    const data = useDataStore()
+    let finish!: (rows: Doc[]) => void
+    api.fetchDocs.mockReturnValueOnce(new Promise<Doc[]>(resolve => { finish = resolve }))
+    const loading = data.refreshDocs()
+    data.applyRemoteDoc(full())
+    finish([])
+    await loading
+    expect(data.docOf('d1').text).toBe('完整服务器正文')
+    api.fetchDocs.mockResolvedValueOnce([])
+    await data.refreshDocs()
+    expect(data.docs.d1).toBeUndefined()
+  })
+  it('旧目录版本不能覆盖刚保存的正文或降级已知版本', async () => {
+    const data = useDataStore()
+    data.docs.d1 = full()
+    let finish!: (rows: Doc[]) => void
+    api.fetchDocs.mockReturnValueOnce(new Promise<Doc[]>(resolve => { finish = resolve }))
+    const loading = data.refreshDocs()
+    data.applyRemoteDoc({ ...full(), rev: 4, content: { version: 1, document: null, markdown: '刚保存的新段落' } })
+    finish([full()])
+    await loading
+    expect(data.docOf('d1').text).toBe('刚保存的新段落')
+    expect(data.docs.d1?.rev).toBe(4)
+  })
   it('目录重载保留同版本正文，也不覆盖未保存草稿', async () => {
     const data = useDataStore()
     data.docs.d1 = full()
