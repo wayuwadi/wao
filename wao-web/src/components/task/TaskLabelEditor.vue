@@ -13,7 +13,7 @@ const draftTags = computed(()=>draft.value.split(/[,，]/).map(s=>s.trim()).filt
 const current = computed(() => labels.get(props.taskId, props.subId))
 const key = computed(() => `wao-task-label-draft:${labels.identity}:${props.taskId}:${props.subId ?? ''}`)
 watch(key, () => {
- editing.value = false; error.value = ''; saving.value = false
+ editing.value = false; error.value = ''; saving.value = false; draft.value = ''; revision.value = 0
  try {
   const saved = localStorage.getItem(key.value)
   if (saved) { const value = JSON.parse(saved); draft.value = value.text; revision.value = value.revision; editing.value = true }
@@ -30,8 +30,8 @@ function begin() {
  if (props.autoOpen) void nextTick(focusInput)
 }
 function protect() {
- try { localStorage.setItem(key.value, JSON.stringify({ text: draft.value, revision: revision.value })) }
- catch { error.value = '无法保护本机草稿，请保持页面直到保存成功' }
+ try { localStorage.setItem(key.value, JSON.stringify({ text: draft.value, revision: revision.value })); return true }
+ catch { error.value = '无法保护本机草稿，请保持页面直到保存成功'; return false }
 }
 function toggle(tag: string) { const tags = draftTags.value; draft.value = (tags.includes(tag) ? tags.filter(t=>t!==tag) : [...tags,tag]).join('，'); protect() }
 async function save() {
@@ -46,13 +46,13 @@ async function save() {
  } catch (e: any) { if (key.value === identity) error.value = e.response?.data?.message || '标签未保存，草稿已保留，请重试' }
  finally { if (key.value === identity) saving.value = false }
 }
-async function reload() { await labels.load(); if (!labels.error) { revision.value = current.value.revision; protect() } }
-function dismiss() { if (saving.value) return; protect(); editing.value = false }
+async function reload() { const identity = key.value; await labels.load(); if (identity === key.value && !labels.error) { revision.value = current.value.revision; protect() } }
+function dismiss() { if (saving.value || !protect()) return; editing.value = false }
 function cancel() { if (saving.value) return; try { localStorage.removeItem(key.value); editing.value = false; error.value = ''; trigger.value?.focus(); emit('done') } catch { error.value = '无法清除草稿，请重试' } }
 </script>
 <template>
  <div class="task-labels" :class="{inline}">
-  <span v-for="tag in current.tags" :key="tag" class="label-chip"># {{ tag }}</span>
+  <div v-if="current.tags.length" class="label-chips" aria-label="当前标签"><span v-for="tag in current.tags" :key="tag" class="label-chip" :title="tag"># {{ tag }}</span></div>
   <button v-if="!autoOpen || !editing" ref="trigger" type="button" :disabled="!labels.ready" aria-haspopup="dialog" :aria-expanded="editing" @click="editing ? dismiss() : begin()"><i class="ri-price-tag-3-line"></i> 标签</button>
   <component :is="autoOpen ? 'div' : CellMenu" v-if="editing" v-bind="autoOpen ? {} : { anchor: trigger, minWidth: 300, customContent: true }" class="label-popover" @close="dismiss" @ready="focusInput">
   <form role="dialog" aria-label="编辑任务标签" @submit.prevent="save" @keydown.esc.stop.prevent="autoOpen ? cancel() : dismiss()">
@@ -67,7 +67,10 @@ function cancel() { if (saving.value) return; try { localStorage.removeItem(key.
  </div>
 </template>
 <style scoped>
-.task-labels { position:relative; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
+.task-labels { position:relative; min-width:0; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
+.label-chips { display:flex; flex:1; min-width:0; gap:var(--wao-space-1); overflow-x:auto; }
+.label-chips > .label-chip { flex-shrink:0; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.task-labels > button { flex-shrink:0; }
 .label-popover { box-sizing:border-box; width:300px; max-width:calc(100vw - 16px); }
 .label-chip { background:var(--wao-primary-soft); color:var(--wao-primary-text); border-radius:var(--wao-radius-pill); padding:2px var(--wao-space-1); font-size:var(--wao-font-caption); }
 button { border:0; background:transparent; color:var(--wao-primary-text); font:inherit; cursor:pointer; min-height:32px; }

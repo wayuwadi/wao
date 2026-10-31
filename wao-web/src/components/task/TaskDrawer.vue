@@ -2800,8 +2800,7 @@ async function uploadAttachment(event: Event) {
 .side-relations .attach { padding: 6px 8px; }
 .detail-kicker { display: flex; align-items: center; gap: var(--wao-space-1); min-width: 0; }
 .detail-kicker .type-line { margin: 0; flex-shrink: 0; font-size: var(--wao-font-body); color: var(--wao-text-3); }
-.detail-kicker :deep(.task-labels) { flex: 1; min-width: 0; margin: 0; flex-wrap: nowrap; overflow-x: auto; }
-.detail-kicker :deep(.task-labels > *) { flex-shrink: 0; }
+.detail-kicker :deep(.task-labels) { flex: 1; min-width: 0; margin: 0; flex-wrap: nowrap; }
 .detail-kicker :deep(.task-labels > button) { color: var(--wao-text-3); }
 .detail-kicker :deep(.label-chip) { font-size: var(--wao-font-help, 13px); }
 .work-item-type { min-height: 32px; padding: 4px var(--wao-space-1); border-color: transparent; background: transparent; font-size: var(--wao-font-body); }
