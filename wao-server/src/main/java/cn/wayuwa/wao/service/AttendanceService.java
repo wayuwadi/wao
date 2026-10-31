@@ -186,6 +186,8 @@ public class AttendanceService {
         AttendanceDayEntity value=new AttendanceDayEntity(); LocalDateTime now=LocalDateTime.now(ZONE);
         value.setMemberId(memberId); value.setAttendanceDate(remote.date()); value.setRemoteClockInAt(remote.clockInAt()); value.setRemoteClockOutAt(remote.clockOutAt());
         value.setRemoteDayType(remote.dayType()); value.setRemoteAnomaly(blank(remote.anomaly())); value.setManualOverride(false); value.setSyncedAt(now); value.setCreatedAt(now); value.setUpdatedAt(now);
+        try { value.setRemoteLeaves(json.writeValueAsString(remote.leaves())); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException ex) { throw new IllegalStateException("无法保存请假明细", ex); }
         days.upsertRemote(value); AttendanceDayEntity stored=days.find(memberId,remote.date()); syncRhythm(memberId,remote.date(),effectiveIn(stored),effectiveOut(stored));
     }
     private void syncRhythm(String memberId,LocalDate date,LocalDateTime in,LocalDateTime out) { rhythm.syncAttendanceCompletion(memberId,date,"CLOCK_IN",in); rhythm.syncAttendanceCompletion(memberId,date,"CLOCK_OUT",out); }
@@ -199,7 +201,13 @@ public class AttendanceService {
             else if (in==null) anomaly=join(anomaly,"缺上班卡");
             else if (out==null) anomaly=join(anomaly,"缺下班卡");
         }
-        return new AttendanceDto.Day(date,string(in),string(out),type,anomaly,value!=null&&Boolean.TRUE.equals(value.getManualOverride()),hours(in,out,type),workday.active(),workday.label());
+        boolean manual=value!=null&&Boolean.TRUE.equals(value.getManualOverride());
+        return new AttendanceDto.Day(date,string(in),string(out),type,anomaly,manual,hours(in,out,type),workday.active(),workday.label(),manual?List.of():leaves(value));
+    }
+    private List<AttendanceDto.Leave> leaves(AttendanceDayEntity value) {
+        if (value==null || !StringUtils.hasText(value.getRemoteLeaves())) return List.of();
+        try { return json.readValue(value.getRemoteLeaves(), new com.fasterxml.jackson.core.type.TypeReference<List<AttendanceDto.Leave>>() {}); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException ex) { throw new IllegalStateException("无法读取请假明细", ex); }
     }
     private boolean valid(AttendanceDto.Day day){return !"LEAVE".equals(day.dayType())&&day.workHours()!=null;}
     private BigDecimal average(List<AttendanceDto.Day> valid){return valid.isEmpty()?BigDecimal.ZERO.setScale(2):valid.stream().map(AttendanceDto.Day::workHours).reduce(BigDecimal.ZERO,BigDecimal::add).divide(BigDecimal.valueOf(valid.size()),2,RoundingMode.HALF_UP);}

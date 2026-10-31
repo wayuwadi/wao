@@ -15,12 +15,12 @@ import org.apache.ibatis.annotations.Update;
     AttendanceDayEntity find(@Param("memberId") String memberId, @Param("date") LocalDate date);
     @Insert("""
         INSERT INTO attendance_day(member_id, attendance_date, remote_clock_in_at, remote_clock_out_at,
-          remote_day_type, remote_anomaly, manual_clock_in_at, manual_clock_out_at, manual_day_type,
+          remote_day_type, remote_anomaly, remote_leaves, manual_clock_in_at, manual_clock_out_at, manual_day_type,
           manual_override, synced_at, created_at, updated_at)
-        VALUES(#{memberId},#{attendanceDate},#{remoteClockInAt},#{remoteClockOutAt},#{remoteDayType},#{remoteAnomaly},
+        VALUES(#{memberId},#{attendanceDate},#{remoteClockInAt},#{remoteClockOutAt},#{remoteDayType},#{remoteAnomaly},#{remoteLeaves},
           #{manualClockInAt},#{manualClockOutAt},#{manualDayType},#{manualOverride},#{syncedAt},#{createdAt},#{updatedAt})
         ON DUPLICATE KEY UPDATE remote_clock_in_at=VALUES(remote_clock_in_at), remote_clock_out_at=VALUES(remote_clock_out_at),
-          remote_day_type=VALUES(remote_day_type), remote_anomaly=VALUES(remote_anomaly), synced_at=VALUES(synced_at), updated_at=VALUES(updated_at)
+          remote_day_type=VALUES(remote_day_type), remote_anomaly=VALUES(remote_anomaly), remote_leaves=VALUES(remote_leaves), synced_at=VALUES(synced_at), updated_at=VALUES(updated_at)
         """)
     void upsertRemote(AttendanceDayEntity value);
     @Insert("""
