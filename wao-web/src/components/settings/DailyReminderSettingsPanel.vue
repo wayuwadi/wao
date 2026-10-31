@@ -267,7 +267,7 @@ onMounted(() => {
 <style scoped>
 .visibility-notice { margin: 12px 16px; padding: 10px 12px; border-radius: 7px; color: var(--wao-warning-strong); background: var(--wao-warning-bg); }
 .reminder-diagnosis summary { cursor: pointer; color: var(--wao-primary-text); }
-.reminder-diagnosis { padding: 9px 10px; border-radius: 7px; background: var(--wao-bg-sub); font-size: 12px; line-height: 1.6; }
+.reminder-diagnosis { padding: 9px 10px; border-radius: 7px; background: var(--wao-bg-sub); font-size: var(--wao-font-caption); line-height: 1.6; }
 .reminder-diagnosis ul { margin: 5px 0 0; padding-left: 18px; }
 .reminder-diagnosis a { color: var(--wao-primary-text); }
 .reminder-card {
@@ -291,17 +291,17 @@ p {
   margin: 0;
 }
 h2 {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 p {
   margin-top: 5px;
   color: var(--wao-text-weak);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1.55;
 }
 .reminder-head > span {
   color: var(--wao-primary-text);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .reminder-head button,
 .reminder-state button {
@@ -332,8 +332,8 @@ p {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .time-field input,
 .reminder-fields input,
@@ -362,8 +362,8 @@ p {
   resize: vertical;
 }
 .reminder-fields small {
-  color: var(--wao-text-weak);
-  font-size: 10px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .reminder-controls {
   display: grid;
@@ -375,7 +375,7 @@ p {
   align-items: center;
   gap: 6px;
   color: var(--wao-text-weak);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .enable-switch input {
   width: 34px;
@@ -388,7 +388,7 @@ p {
 }
 .actions button {
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   border: 0;
   border-radius: 6px;
   padding: 6px 8px;
@@ -430,7 +430,7 @@ p {
   margin: 0 16px 14px;
   padding: 8px 10px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .inline-message.error {
   background: var(--wao-danger-bg);

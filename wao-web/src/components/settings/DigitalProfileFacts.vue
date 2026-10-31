@@ -159,16 +159,16 @@ onBeforeUnmount(() => {
   padding-top: 17px;
   margin-top: 17px;
   border-top: 1px solid var(--wao-divider);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .profile-facts h3 {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   margin: 0;
 }
 .profile-facts p,
 .profile-facts span {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1.6;
 }
 .facts-form {
@@ -219,7 +219,7 @@ button:disabled {
 }
 @media (max-width: 650px) {
   .facts-form select {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
   .profile-facts :deep(.wao-button) {
     min-height: 44px;

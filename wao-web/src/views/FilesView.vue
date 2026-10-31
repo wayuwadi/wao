@@ -914,7 +914,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   background: var(--wao-bg-card);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .upload-result-header,
 .upload-results li {
@@ -987,7 +987,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border-radius: 7px;
   background: transparent;
   color: #7a7d89;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .seg-btn.on {
@@ -1011,7 +1011,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -1074,7 +1074,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   gap: 4px;
 }
 .unified-drop b {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .unified-drop span {
   color: var(--wao-text-weak);
@@ -1095,7 +1095,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .note {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .page-empty {
@@ -1145,7 +1145,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border-radius: 999px;
   background: var(--wao-bg-hover);
   color: var(--wao-text-weak);
-  font-size: 9.5px;
+  font-size: var(--wao-font-caption);
   font-weight: 650;
 }
 .page-source.ai_run_report {
@@ -1241,7 +1241,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .page-dialog small {
   color: var(--wao-text-weak);
@@ -1310,7 +1310,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   min-width: 0;
 }
 .file-name {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-text);
   white-space: nowrap;
@@ -1326,7 +1326,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   text-overflow: ellipsis;
 }
 .file-size {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   flex-shrink: 0;
 }
@@ -1336,7 +1336,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   flex-shrink: 0;
@@ -1394,7 +1394,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 9px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -1467,8 +1467,8 @@ function onFileSettingsSaved(settings: FileSettings) {
   border-radius: 12px;
   padding: 44px 20px;
   text-align: center;
-  color: var(--wao-text-weak);
-  font-size: 13px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .img-empty i {
   display: block;
@@ -1489,7 +1489,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   gap: 4px;
 }
 .img-name {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-text);
   white-space: nowrap;

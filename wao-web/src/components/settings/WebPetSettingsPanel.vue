@@ -150,15 +150,15 @@ useSaveBeforeRefresh(async () => {
 
 <style scoped>
 .settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.settings-heading h1 { margin: 0; font-size: 18px; }
-.settings-heading p, .settings-card p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 12px; line-height: 1.55; }
+.settings-heading h1 { margin: 0; font-size: var(--wao-font-section); }
+.settings-heading p, .settings-card p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: var(--wao-font-caption); line-height: 1.55; }
 .primary { min-height: 34px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--wao-primary); color: #fff; cursor: pointer; white-space: nowrap; }
 .primary:disabled { opacity: .55; cursor: default; }
 .pet-settings { display: grid; gap: 14px; margin-top: 14px; }
 .settings-card { padding: 16px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
-.settings-card h2 { margin: 0; font-size: 14px; }
+.settings-card h2 { margin: 0; font-size: var(--wao-font-body); }
 .trigger-grid, .duration-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 15px; }
-.trigger-grid label, .duration-grid label { display: grid; gap: 6px; color: var(--wao-text-weak); font-size: 11px; }
+.trigger-grid label, .duration-grid label { display: grid; gap: 6px; color: var(--wao-text-3); font-size: var(--wao-font-help); }
 select, input[type='number'] { width: 100%; height: 36px; box-sizing: border-box; padding: 0 9px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .duration-grid label > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; }
 .duration-grid em { font-style: normal; }
@@ -166,9 +166,9 @@ select, input[type='number'] { width: 100%; height: 36px; box-sizing: border-box
 .switch-list label { display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 1px solid var(--wao-divider); border-radius: 9px; cursor: pointer; }
 .switch-list input { margin-top: 2px; }
 .switch-list span, .switch-list b, .switch-list small { display: block; }
-.switch-list b { color: var(--wao-text); font-size: 12px; }
-.switch-list small { margin-top: 3px; color: var(--wao-text-weak); font-size: 10.5px; line-height: 1.45; }
-.state-card { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 12px; }
+.switch-list b { color: var(--wao-text); font-size: var(--wao-font-caption); }
+.switch-list small { margin-top: 3px; color: var(--wao-text-3); font-size: var(--wao-font-help); line-height: 1.45; }
+.state-card { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .state-card span { flex: 1; }.state-card button { border: 0; background: none; color: inherit; cursor: pointer; }
 .state-card.error { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
 .spin { display: inline-block; animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }

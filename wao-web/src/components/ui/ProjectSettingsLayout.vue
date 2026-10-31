@@ -34,7 +34,7 @@ function navigate(event: KeyboardEvent, index: number) {
 .settings-tabs { display: flex; gap: 24px; padding: 0 26px; border-bottom: 1px solid var(--wao-line); }
 .settings-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 48px; padding: 0 0 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--wao-text-3); font: inherit; cursor: pointer; white-space: nowrap; }
 .settings-tabs button[aria-selected='true'] { color: var(--wao-primary-text); border-bottom-color: var(--wao-primary); }
-.member-count { font-size: 12px; }
+.member-count { font-size: var(--wao-font-caption); }
 .settings-panel { padding: 24px 26px; min-width: 0; }
 .settings-panel[hidden] { display: none; }
 @media (max-width: 650px) { .settings-tabs { padding: 0 15px; gap: 22px; } .settings-panel { padding: 20px 15px; } }

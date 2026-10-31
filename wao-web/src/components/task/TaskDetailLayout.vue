@@ -279,7 +279,7 @@ defineExpose({ selectSection, openProperties })
   background: transparent;
   color: var(--wao-text-3);
   font: inherit;
-  font-size: var(--wao-font-reading, 16px);
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .detail-tabs button[aria-selected='true'] {
@@ -307,8 +307,9 @@ defineExpose({ selectSection, openProperties })
 }
 h3 {
   margin: 0;
-  font-size: var(--wao-font-reading, 16px);
-  font-weight: 600;
+  font-size: var(--wao-font-section);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
 }
 .description-preview {
   padding: var(--wao-space-2);
@@ -316,8 +317,8 @@ h3 {
   background: var(--wao-bg-sub);
 }
 .description-preview p {
-  font-size: var(--wao-font-reading, 16px);
-  line-height: 1.7;
+  font-size: var(--wao-font-body);
+  line-height: var(--wao-line-body);
   margin: 0;
   color: var(--wao-text-2);
   overflow-wrap: anywhere;
@@ -343,10 +344,10 @@ h3 {
   padding-top: var(--wao-space-3);
   border-top: 1px solid var(--wao-line);
 }
-/* Reading sizes are local to task details, including the shared design preview. */
+/* Task descriptions use the same body size as subtasks, properties and comments. */
 .detail-scroll :deep(.md-body .tiptap) {
-  font-size: var(--wao-font-reading, 16px);
-  line-height: 1.7;
+  font-size: var(--wao-font-body);
+  line-height: var(--wao-line-body);
   color: var(--wao-text-2);
   overflow-wrap: anywhere;
 }

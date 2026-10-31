@@ -479,8 +479,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   line-height: var(--wao-line-heading);
 }
 .ktip {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .kb-discovery {
   margin-top: 18px;
@@ -519,7 +519,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   outline: 0;
   background: transparent;
   color: var(--wao-text);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .kb-search button {
   width: 24px;
@@ -544,8 +544,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--wao-text-weak);
-  font-size: 11.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -555,8 +555,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   box-shadow: 0 1px 4px rgba(16, 18, 28, .08);
 }
 .kb-result-count {
-  color: var(--wao-text-faint);
-  font-size: 11.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   white-space: nowrap;
 }
 .btn-ghost {
@@ -565,7 +565,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -584,7 +584,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 1px solid #f0c9c9;
   background: var(--wao-bg-card);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: #bc4141;
   cursor: pointer;
   display: inline-flex;
@@ -605,7 +605,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -632,12 +632,12 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   gap: 8px;
 }
 .kgroup-label {
-  font-size: 13.5px;
+  font-size: var(--wao-font-help);
   font-weight: 600;
   color: var(--wao-text-2);
 }
 .lock {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint-2);
 }
 .rename {
@@ -660,19 +660,19 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   font-size: 12px;
 }
 .kgroup-count {
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .kgroup-hint {
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .group-input {
   height: 27px;
   border: 1px solid var(--wao-primary);
   border-radius: 7px;
   padding: 0 9px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-text);
   outline: none;
@@ -686,7 +686,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   color: #fff;
   border: none;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
 }
 
@@ -741,7 +741,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 .kb-meta { margin-top: auto; flex-wrap: wrap; }
 
 .tag {
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   border-radius: 4px;
   padding: 1px 6px;
   flex-shrink: 0;
@@ -798,7 +798,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border-radius: 6px;
   background: transparent;
   color: var(--wao-text-3);
-  font-size: 11.5px;
+  font-size: var(--wao-font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -809,8 +809,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .kb-meta > i {
   font-size: 12px;
@@ -821,8 +821,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 1px dashed #d9dce5;
   border-radius: 10px;
   text-align: center;
-  color: var(--wao-text-faint);
-  font-size: 12.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .kb-filter-empty {
   margin-top: 18px;
@@ -834,11 +834,11 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   gap: 8px;
   border: 1px dashed var(--wao-line-strong);
   border-radius: 12px;
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .kb-filter-empty > i { font-size: 26px; color: var(--wao-text-faint); }
-.kb-filter-empty b { color: var(--wao-text-2); font-size: 13.5px; }
+.kb-filter-empty b { color: var(--wao-text-2); font-size: var(--wao-font-help); }
 .kb-filter-empty button {
   margin-top: 4px;
   height: 30px;
@@ -857,7 +857,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border-radius: 8px;
   background: var(--wao-danger-bg);
   color: #bc4141;
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -865,8 +865,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 .trash-empty {
   padding: 28px 0;
   text-align: center;
-  color: var(--wao-text-faint);
-  font-size: 12.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .trash-row {
   display: flex;
@@ -889,7 +889,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   min-width: 0;
 }
 .trash-name {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   white-space: nowrap;
   overflow: hidden;
@@ -897,7 +897,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 }
 .trash-sub {
   margin-top: 1px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   white-space: nowrap;
   overflow: hidden;
@@ -909,7 +909,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 1px solid var(--wao-line-control);
   background: var(--wao-bg-card);
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -937,8 +937,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   color: #bc4141;
 }
 .modal-hint {
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 
 /* 设置弹层 */
@@ -982,7 +982,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   font-size: 15px;
 }
 .modal-title {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .icon-btn {
@@ -1002,8 +1002,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 }
 .f-label {
   display: block;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   margin: 12px 0 6px;
 }
 .f-label:first-child {
@@ -1015,7 +1015,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   outline: none;
   background: var(--wao-bg-card);
@@ -1035,7 +1035,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 }
 .f-note {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .chips {
@@ -1050,7 +1050,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
 }
 .chip.on {
@@ -1083,13 +1083,13 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   color: var(--wao-text-3);
 }
 .perm-label {
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   font-weight: 500;
   color: var(--wao-text);
 }
 .perm-desc {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   margin-top: 1px;
 }
 .modal-foot {

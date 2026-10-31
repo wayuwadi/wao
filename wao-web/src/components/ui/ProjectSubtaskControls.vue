@@ -13,11 +13,11 @@ const emit = defineEmits<{ 'update:show': [value: boolean]; 'update:showDone': [
 </template>
 <style scoped>
 .subtask-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; font-size: 12px; cursor: pointer; }
+button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; font-size: var(--wao-font-body); cursor: pointer; }
 button:hover { background: var(--wao-bg-hover); }
 [aria-checked=true] { background:var(--wao-primary-soft); border-color:var(--wao-primary); color:var(--wao-primary-text); }
 button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
-[role=status], [role=alert] { font-size: 12px; color: var(--wao-text-3); }
+[role=status], [role=alert] { font-size: var(--wao-font-help); color: var(--wao-text-3); }
 [role=alert] { color: var(--wao-danger-strong); }
 @media (max-width: 760px) { button { min-height: 44px; } }
 </style>

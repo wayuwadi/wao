@@ -73,7 +73,7 @@ aside {
 }
 .nav-label {
   padding-left: 13px;
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-3);
 }
 nav {
@@ -87,7 +87,7 @@ nav button {
   border-radius: 8px;
   padding: 11px 12px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   text-align: left;
   display: flex;
@@ -100,7 +100,7 @@ nav button i {
 }
 .pending-badge {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   font-weight: 400;
   color: var(--wao-text-3);
 }
@@ -113,7 +113,7 @@ nav button[aria-pressed='true'] {
   margin-top: auto;
   padding: 22px 10px 0;
   color: var(--wao-text-3);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   line-height: 1.8;
   display: flex;
   gap: 7px;
@@ -164,13 +164,13 @@ nav button[aria-pressed='true'] {
 }
 .settings-scroll :deep(h3) {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   font-weight: 600;
 }
 .settings-scroll :deep(p) {
   margin: 4px 0 0;
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1.6;
 }
 .settings-scroll :deep(.section-heading) {
@@ -181,7 +181,7 @@ nav button[aria-pressed='true'] {
   margin-bottom: 16px;
 }
 .settings-scroll :deep(.default-tag) {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   white-space: nowrap;
   background: var(--wao-bg-sub);
   color: var(--wao-text-3);
@@ -196,7 +196,7 @@ nav button[aria-pressed='true'] {
   margin-top: 15px;
   background: var(--wao-bg-sub);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .settings-scroll :deep(.behavior-note i) {
@@ -210,7 +210,7 @@ nav button[aria-pressed='true'] {
   min-width: 0;
 }
 .settings-scroll :deep(label) {
-  font-size: 13px;
+  font-size: var(--wao-font-help);
 }
 .settings-scroll :deep(textarea) {
   display: block;
@@ -225,7 +225,7 @@ nav button[aria-pressed='true'] {
   background: var(--wao-bg-card);
   color: var(--wao-text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.9;
 }
 .ai-settings-layout :deep(button:focus-visible),
@@ -241,7 +241,7 @@ nav button[aria-pressed='true'] {
 .settings-footer :deep(button),
 .settings-scroll :deep(button) {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   padding: 8px 17px;
   border: 1px solid var(--wao-divider);
   border-radius: 8px;
@@ -273,7 +273,7 @@ nav button[aria-pressed='true'] {
   border-radius: 0;
   background: transparent;
   color: var(--wao-primary-text);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .settings-footer :deep(.light-action) {
   margin-right: 6px;
@@ -289,11 +289,11 @@ nav button[aria-pressed='true'] {
   justify-content: space-between;
   gap: 8px;
   margin: 0 0 9px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .settings-scroll :deep(.prompt-meta) {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   flex-wrap: wrap;
   margin: 8px 0 0;
 }
@@ -303,7 +303,7 @@ nav button[aria-pressed='true'] {
   border-radius: 8px;
   margin-top: 14px;
   background: var(--wao-bg-sub);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .settings-scroll :deep(.settings-conflict pre) {
   white-space: pre-wrap;
@@ -336,7 +336,7 @@ nav button[aria-pressed='true'] {
     flex-shrink: 0;
     white-space: nowrap;
     padding: 9px 10px;
-    font-size: 12px;
+    font-size: var(--wao-font-body);
     gap: 6px;
   }
   .nav-label,
@@ -368,7 +368,7 @@ nav button[aria-pressed='true'] {
     justify-content: flex-end;
   }
   .settings-scroll :deep(textarea) {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
     min-height: 180px;
   }
 }

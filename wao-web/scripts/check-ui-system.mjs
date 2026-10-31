@@ -38,6 +38,13 @@ export function styleViolations(source, filename) {
         !/^(?:none|inherit|initial|unset|var\(--[\w-]+\))$/.test(value)
       )
         violations.push({ rule: 'shadow', declaration, line })
+      // New UI text must use the shared scale. Existing geometry (icons, charts,
+      // display numerals) remains in the diff baseline or a specific exception.
+      if (
+        /^(?:font-size|font)$/.test(property) &&
+        /(?:^|[\s(,])\d*\.?\d+(?:px|rem|pt)\b/.test(value)
+      )
+        violations.push({ rule: 'typography', declaration, line })
     }
   }
   return violations
@@ -66,7 +73,7 @@ export function validateExceptions(exceptions) {
       !item ||
       !/^wao-web\/src\/.+\.(vue|css)$/.test(item.file) ||
       item.file.includes('..') ||
-      !['color', 'radius', 'shadow'].includes(item.rule) ||
+      !['color', 'radius', 'shadow', 'typography'].includes(item.rule) ||
       typeof item.declaration !== 'string' ||
       !item.declaration.trim() ||
       typeof item.reason !== 'string' ||

@@ -338,20 +338,20 @@ useOverlayDismiss(() => true, requestClose)
 </template>
 
 <style scoped>
-.recent-sync-error { width: 100%; color: var(--wao-text-3); font-size: 12px; margin: 0; }
+.recent-sync-error { width: 100%; color: var(--wao-text-3); font-size: var(--wao-font-help); margin: 0; }
 .recent-sync-error button { color: var(--wao-primary-text); border: 0; background: none; cursor: pointer; font: inherit; }
 .meta-row { display: flex; gap: 8px; align-items: end; margin-top: 12px; }
-.meta-field { display: grid; gap: 5px; min-width: 0; flex: 1; color: var(--wao-text-weak); font-size: 11px; }
+.meta-field { display: grid; gap: 5px; min-width: 0; flex: 1; color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .type-field { flex: 0 0 110px; }
 .default-project { flex: none; height: 34px; width: 34px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
 .default-project.on { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
 .default-project:disabled { cursor: default; }
 .schedule-details { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; }
-.schedule-details summary { display: flex; align-items: center; gap: 7px; color: var(--wao-text-2); font-size: 12px; cursor: pointer; list-style: none; }
+.schedule-details summary { display: flex; align-items: center; gap: 7px; color: var(--wao-text-2); font-size: var(--wao-font-help); cursor: pointer; list-style: none; }
 .schedule-details summary::-webkit-details-marker { display: none; }
 .schedule-details summary span { margin-left: auto; color: var(--wao-text-faint); }
 .compact-select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
-.source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
+.source-note { margin: 8px 0 14px; font-size: var(--wao-font-caption); line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
 .source-note a { color: var(--wao-primary-text); }
 .modal {
   position: fixed;
@@ -382,7 +382,7 @@ useOverlayDismiss(() => true, requestClose)
   padding: 14px 14px 8px;
 }
 .title {
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   font-weight: 700;
 }
 .close {
@@ -411,7 +411,7 @@ useOverlayDismiss(() => true, requestClose)
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
   padding: 0 12px;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
@@ -422,8 +422,8 @@ useOverlayDismiss(() => true, requestClose)
 }
 .label {
   margin-top: 14px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .label-hint {
   margin-left: 6px;
@@ -477,7 +477,7 @@ useOverlayDismiss(() => true, requestClose)
   border: 1px dashed var(--wao-line-strong);
   background: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   cursor: pointer;
   display: inline-flex;
@@ -515,7 +515,7 @@ useOverlayDismiss(() => true, requestClose)
 }
 .schedule-switch button.on { background: var(--wao-primary); color: #fff; }
 .range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-.range-fields label { display: grid; gap: 4px; font-size: 11.5px; color: var(--wao-text-weak); }
+.range-fields label { display: grid; gap: 4px; font-size: var(--wao-font-help); color: var(--wao-text-3); }
 .range-fields input {
   height: 36px;
   border: 1px solid var(--wao-line-control);
@@ -531,7 +531,7 @@ useOverlayDismiss(() => true, requestClose)
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -565,7 +565,7 @@ useOverlayDismiss(() => true, requestClose)
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -577,7 +577,7 @@ useOverlayDismiss(() => true, requestClose)
   border-color: #c7d0f1;
 }
 .seg.pr {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .av {
   width: 18px;
@@ -603,7 +603,7 @@ useOverlayDismiss(() => true, requestClose)
 }
 .foot .create-error, .foot .draft-state { min-width: 0; overflow-wrap: anywhere; }
 .draft-state {
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-success-strong);
   display: inline-flex;
   align-items: center;
@@ -611,7 +611,7 @@ useOverlayDismiss(() => true, requestClose)
 }
 .create-error {
   color: var(--wao-danger);
-  font-size: 11.5px;
+  font-size: var(--wao-font-help);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -629,7 +629,7 @@ useOverlayDismiss(() => true, requestClose)
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .btn-ghost:hover {
@@ -642,7 +642,7 @@ useOverlayDismiss(() => true, requestClose)
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -672,7 +672,7 @@ useOverlayDismiss(() => true, requestClose)
   /* 16px 是 iOS Safari 不自动放大页面的下限，比美观重要 */
   .title-input {
     height: 46px;
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
   .pill,
   .seg {
@@ -690,6 +690,6 @@ useOverlayDismiss(() => true, requestClose)
   .draft-state,
   .create-error { width: 100%; }
   .btn-ghost,
-  .btn-primary { flex: 1; height: 44px; font-size: 14px; }
+  .btn-primary { flex: 1; height: 44px; font-size: var(--wao-font-body); }
 }
 </style>

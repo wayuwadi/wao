@@ -446,10 +446,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     gap: 3px;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: var(--wao-font-body);
     border: 0;
     text-decoration: none;
-    color: var(--wao-text-weak);
+    color: var(--wao-text-3);
     background: transparent;
   }
   .mobile-main-nav i {
@@ -467,7 +467,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     background: var(--wao-danger);
     color: white;
     padding: 1px 4px;
-    font-size: 9px;
+    font-size: var(--wao-font-caption);
   }
   .shell .main {
     padding-bottom: calc(54px + env(safe-area-inset-bottom));
@@ -511,7 +511,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   border-radius: 9px;
   background: var(--wao-primary-tint);
   color: var(--wao-primary-text);
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -583,16 +583,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   font-size: 17px;
 }
 .crumb-a {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-weak);
   white-space: nowrap;
 }
 .crumb-sep {
   color: var(--wao-text-faint-2);
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 .crumb-b {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   font-weight: 500;
   white-space: nowrap;
@@ -614,7 +614,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .header-brand:hover { background: var(--wao-primary-soft); }
 .header-brand :deep(.wao-logo) { gap: 6px; }
 .header-brand :deep(.wao-logo-symbol) { width: 28px; height: 28px; }
-.header-brand :deep(.wao-logo-name) { font-size: 15px; font-weight: 600; }
+.header-brand :deep(.wao-logo-name) { font-size: var(--wao-font-body); font-weight: 600; }
 .crumb-b {
   max-width: 180px;
 }
@@ -628,7 +628,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -798,7 +798,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     max-width: 52px;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 10px;
+    font-size: var(--wao-font-caption);
     font-weight: 600;
     color: var(--wao-text);
   }
@@ -823,7 +823,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     flex: 0 0 27px;
   }
   .content {
-    font-size: 11px;
+    font-size: var(--wao-font-caption);
     overscroll-behavior: contain;
   }
   .data-status {
@@ -831,7 +831,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     margin: 5px 7px 0;
     padding: 6px 7px;
     border-radius: 7px;
-    font-size: 10px;
+    font-size: var(--wao-font-help);
   }
 }
 </style>
@@ -858,7 +858,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </style>
 
 <style scoped>
-.header .quick-actions .plus, .header .quick-actions .plus.ghost { width:auto; min-width:0; flex:none; height:30px; padding:0 8px; gap:5px; border:0; border-radius:7px; background:transparent; color:var(--wao-text-2); font-size:12px; }
+.header .quick-actions .plus, .header .quick-actions .plus.ghost { width:auto; min-width:0; flex:none; height:30px; padding:0 8px; gap:5px; border:0; border-radius:7px; background:transparent; color:var(--wao-text-2); font-size:var(--wao-font-body); }
 .quick-actions .plus .action-label { display:inline; }
 .quick-actions .plus i, .quick-actions .plus.ghost i { font-size:16px; color:var(--wao-primary-text); }
 .quick-actions .plus:hover, .quick-actions .plus.ghost:hover { background:var(--wao-primary-soft); color:var(--wao-primary-text); }

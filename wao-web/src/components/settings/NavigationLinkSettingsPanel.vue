@@ -765,7 +765,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .layout-tools input[type='search'] {
   flex: 1;
@@ -798,14 +798,14 @@ onUnmounted(() => {
 }
 .settings-heading h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--wao-font-section);
 }
 .settings-heading p,
 .card-head p,
 .footnote {
   margin: 5px 0 0;
   color: var(--wao-text-weak);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1.55;
 }
 .navigation-settings-grid {
@@ -833,7 +833,7 @@ onUnmounted(() => {
 }
 .card-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 .primary {
   min-height: 34px;
@@ -857,8 +857,8 @@ onUnmounted(() => {
   padding: 9px 10px;
   border-radius: 8px;
   background: var(--wao-bg-sub);
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .status span {
   flex: 1;
@@ -900,21 +900,21 @@ onUnmounted(() => {
   gap: 8px;
   padding: 9px 11px;
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .menu-group > header span {
   white-space: nowrap;
-  color: var(--wao-text-faint);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-body);
 }
 .empty-drop {
   margin: 0 8px 8px;
   padding: 12px;
   border: 1px dashed var(--wao-line-strong);
   border-radius: 7px;
-  color: var(--wao-text-faint);
+  color: var(--wao-text-3);
   text-align: center;
-  font-size: 11px;
+  font-size: var(--wao-font-help);
 }
 .menu-row,
 .quick-link-row {
@@ -972,8 +972,8 @@ onUnmounted(() => {
   display: grid;
   gap: 4px;
   min-width: 0;
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .menu-fields input,
 .menu-fields select,
@@ -1005,8 +1005,8 @@ onUnmounted(() => {
 .menu-meta > span {
   max-width: 150px;
   overflow: hidden;
-  color: var(--wao-text-faint);
-  font-size: 10px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1107,7 +1107,7 @@ onUnmounted(() => {
   .menu-fields input,
   .menu-fields select {
     min-height: 36px;
-    font-size: 12px;
+    font-size: var(--wao-font-body);
   }
   .menu-meta,
   .quick-actions {

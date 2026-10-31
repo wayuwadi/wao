@@ -61,17 +61,17 @@ async function tabKey(event: KeyboardEvent, index: number) {
 <style scoped>
 .features-page { max-width:1240px; width:100%; margin:0 auto; padding:28px 32px; color:var(--wao-text); }
 .feature-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:24px; }
-.hero-eyebrow { font-size:11px; letter-spacing:.1em; color:var(--wao-primary-text); }
+.hero-eyebrow { font-size:var(--wao-font-caption); letter-spacing:.1em; color:var(--wao-primary-text); }
 h1 { font-size: var(--wao-font-title); font-weight: var(--wao-weight-heading); margin:10px 0 8px;  line-height: var(--wao-line-heading);}
-.feature-heading p,.current-banner p { font-size:14px; line-height:1.7; color:var(--wao-text-2); margin:0; }
-.directory-link { display:flex; align-items:center; gap:8px; padding:9px 12px; border:1px solid var(--wao-line); border-radius:10px; color:var(--wao-text-2); text-decoration:none; font-size:13px; }
+.feature-heading p,.current-banner p { font-size:var(--wao-font-body); line-height:1.7; color:var(--wao-text-2); margin:0; }
+.directory-link { display:flex; align-items:center; gap:8px; padding:9px 12px; border:1px solid var(--wao-line); border-radius:10px; color:var(--wao-text-2); text-decoration:none; font-size:var(--wao-font-body); }
 .directory-link:hover { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 .explorer-tabs { display:flex; gap:24px; border-bottom:1px solid var(--wao-line); }
 .explorer-tabs button { display:flex; align-items:center; gap:8px; padding:12px 2px; margin-bottom:-1px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--wao-text-3); cursor:pointer; }
 .explorer-tabs button[aria-selected='true'] { color:var(--wao-primary-text); border-color:var(--wao-primary); font-weight:600; }
 .current-banner { padding:22px 0; }
-.current-banner small,.current-footer { font-size:12px; color:var(--wao-text-weak); }
-.current-banner h2 { font-size:22px; margin:8px 0; }
+.current-banner small,.current-footer { font-size:var(--wao-font-help); color:var(--wao-text-3); }
+.current-banner h2 { font-size:var(--wao-font-title); margin:8px 0; }
 .current-footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:22px 0; }
 .current-footer button { border:0; background:transparent; color:var(--wao-primary-text); cursor:pointer; }
 @media(max-width:600px) { .features-page { padding:20px 16px; } h1 { font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);} }

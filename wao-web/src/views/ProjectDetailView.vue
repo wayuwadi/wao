@@ -1472,9 +1472,9 @@ watch(visibleTaskIds, (ids) => {
 <style scoped>
 .project-task-count { border:0; background:transparent; color:var(--wao-text-weak); font-size:var(--wao-font-caption); cursor:pointer; padding:var(--wao-space-1); }
 .project-layout-sync { flex-shrink:0; min-width:4em; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
-.item-parent { display: block; max-width: 100%; margin: 4px 0 8px; padding: 0; border: 0; background: transparent; color: var(--wao-text-3); text-align: left; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.item-parent { display: block; max-width: 100%; margin: 4px 0 8px; padding: 0; border: 0; background: transparent; color: var(--wao-text-3); text-align: left; font-size: var(--wao-font-caption); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .item-tree-toggle { padding: 0; border: 0; background: transparent; color: var(--wao-text-3); min-width: 22px; min-height: 28px; cursor: pointer; }
-.item-child-mark, .item-context-label { color: var(--wao-text-3); font-size: 12px; }
+.item-child-mark, .item-context-label { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .item-context .grow-title { color: var(--wao-text-3); }
 .item-retry { border: 0; background: transparent; color: var(--wao-danger-strong); cursor: pointer; }
 .grow .check.item-checked { background: var(--wao-primary); border-color: var(--wao-primary); color: var(--wao-on-primary); }
@@ -1483,7 +1483,7 @@ watch(visibleTaskIds, (ids) => {
 /* Drag target covers the sticky table header (z-index: 3), including resize controls. */
 .task-root-drop { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
 .task-root-drop.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
-.task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
+.task-operation-error { color: var(--wao-danger-strong); font-size: var(--wao-font-help); }
 .task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .task-delete-title { overflow-wrap: anywhere; color: var(--wao-text); }
 .task-delete-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
@@ -1496,9 +1496,9 @@ watch(visibleTaskIds, (ids) => {
 .width-reset { margin-top: var(--wao-space-1); padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; cursor: pointer; }
 .column-width-status { padding: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .column-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
-.column-choices label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.column-choices label { display: flex; align-items: center; gap: 6px; font-size: var(--wao-font-help); cursor: pointer; }
 .column-choices input { accent-color: var(--wao-primary); }
-.project-action-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 12px; }
+.project-action-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; font-size: var(--wao-font-caption); }
 .action-count-scope { color: var(--wao-text-2); margin-right: 3px; }
 .project-action-filters button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
 .project-action-filters button[aria-pressed="true"] { background: var(--wao-primary-soft); border-color: var(--wao-primary); color: var(--wao-primary-text); }
@@ -1506,12 +1506,12 @@ watch(visibleTaskIds, (ids) => {
 .project-action-filters button:disabled { opacity: .65; cursor: wait; }
 
 .project-search-bar { display:flex; align-items:center; gap:8px; min-width:0; padding:6px 0; }
-.project-search-bar input { width:320px; max-width:100%; min-width:0; padding:6px 10px; border:1px solid var(--wao-line); border-radius:8px; color:var(--wao-text); background:var(--wao-bg-card); font:inherit; font-size:12px; }
+.project-search-bar input { width:320px; max-width:100%; min-width:0; padding:6px 10px; border:1px solid var(--wao-line); border-radius:8px; color:var(--wao-text); background:var(--wao-bg-card); font:inherit; font-size:var(--wao-font-body); }
 .project-search-bar button { flex-shrink:0; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
 .detail-quadrant .project-normal-tasks { display:flex; flex-direction:column; flex:1; min-height:0; }
 @media (max-width:600px) { .project-search-bar input { flex:1; width:0; } }
 
-.task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
+.task-scope { padding:8px 16px; color:var(--wao-text-3); background:var(--wao-bg-sub); font-size:var(--wao-font-help); }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
 
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
 .missing {
@@ -1542,7 +1542,7 @@ watch(visibleTaskIds, (ids) => {
   border: none;
   background: none;
   color: #7a7d89;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   padding: 4px 6px;
   margin-left: -6px;
@@ -1591,7 +1591,7 @@ watch(visibleTaskIds, (ids) => {
 }
 .phead-sub {
   margin-top: 3px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-weak);
 }
 .phead-sub i {
@@ -1620,7 +1620,7 @@ watch(visibleTaskIds, (ids) => {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -1636,12 +1636,12 @@ watch(visibleTaskIds, (ids) => {
 .btn-primary.sm {
   height: 32px;
   padding: 0 13px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .btn-primary.xs {
   height: 30px;
   padding: 0 12px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .btn-icon {
   width: 32px;
@@ -1682,7 +1682,7 @@ watch(visibleTaskIds, (ids) => {
   background: none;
   border-bottom: 2px solid transparent;
   color: #7a7d89;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1695,8 +1695,8 @@ watch(visibleTaskIds, (ids) => {
   border-bottom-color: var(--wao-primary);
 }
 .ptab-count {
-  font-size: 11px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .check {
   width: 17px;
@@ -1745,7 +1745,7 @@ watch(visibleTaskIds, (ids) => {
   color: #fff;
 }
 .wait-badge {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   background: var(--wao-warning-bg);
   color: var(--wao-warning-strong);
   border-radius: 5px;
@@ -1753,7 +1753,7 @@ watch(visibleTaskIds, (ids) => {
   flex-shrink: 0;
 }
 .mini {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   border-radius: 5px;
   padding: 1px 6px;
   flex-shrink: 0;
@@ -1779,16 +1779,16 @@ watch(visibleTaskIds, (ids) => {
   min-width: 0;
 }
 .feed-text {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   line-height: 1.6;
 }
 .feed-text.lg {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .feed-time {
-  font-size: 11px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
   margin-top: 1px;
 }
 
@@ -1808,7 +1808,7 @@ watch(visibleTaskIds, (ids) => {
   height: 32px;
   padding: 0 11px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1852,7 +1852,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 7px;
   background: transparent;
   color: #7a7d89;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1878,7 +1878,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 8px;
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1910,7 +1910,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 6px;
   background: none;
   color: var(--wao-text-2);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -1957,7 +1957,7 @@ watch(visibleTaskIds, (ids) => {
   border-top: 1px solid var(--wao-divider);
   margin-top: 6px;
   padding: 10px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-weak);
   cursor: pointer;
   text-align: left;
@@ -1977,12 +1977,12 @@ watch(visibleTaskIds, (ids) => {
   background: var(--wao-divider);
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .done-hint {
   margin-left: auto;
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .drag-grip.placeholder {
   visibility: hidden;
@@ -2001,7 +2001,7 @@ watch(visibleTaskIds, (ids) => {
 .trow-title {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2052,7 +2052,7 @@ watch(visibleTaskIds, (ids) => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
   text-align: left;
 }
 .task-status-menu button:hover,
@@ -2068,7 +2068,7 @@ watch(visibleTaskIds, (ids) => {
   flex-shrink: 0;
 }
 .trow-due {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   width: 62px;
   text-align: right;
   flex-shrink: 0;
@@ -2092,8 +2092,8 @@ watch(visibleTaskIds, (ids) => {
 .empty-inline {
   padding: 34px;
   text-align: center;
-  color: var(--wao-text-weak);
-  font-size: 13px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 
 .doc-row {
@@ -2113,20 +2113,20 @@ watch(visibleTaskIds, (ids) => {
 }
 .doc-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
 }
 .doc-time {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .doc-row .chev {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-faint-2);
 }
 
 .no-kb {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .doc-empty {
@@ -2136,8 +2136,8 @@ watch(visibleTaskIds, (ids) => {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--wao-text-weak);
-  font-size: 12.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
   text-align: center;
 }
 .doc-empty i {
@@ -2188,7 +2188,7 @@ watch(visibleTaskIds, (ids) => {
   padding: 2px 4px;
   margin-left: -4px;
   border-radius: 6px;
-  font-size: 13.5px;
+  font-size: var(--wao-font-body);
   font-weight: 650;
   color: var(--wao-text);
   cursor: text;
@@ -2218,13 +2218,13 @@ watch(visibleTaskIds, (ids) => {
   border: 1px solid var(--wao-primary);
   border-radius: 7px;
   padding: 0 8px;
-  font-size: 13.5px;
+  font-size: var(--wao-font-body);
   font-weight: 650;
   outline: none;
 }
 .group-count {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .group-op {
   width: 28px;
@@ -2270,7 +2270,7 @@ watch(visibleTaskIds, (ids) => {
   min-width: 0;
   border: none;
   background: none;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   outline: none;
   color: var(--wao-text);
 }
@@ -2278,7 +2278,7 @@ watch(visibleTaskIds, (ids) => {
   border: none;
   background: none;
   color: var(--wao-primary-text);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
   padding: 4px 6px;
 }
@@ -2287,7 +2287,7 @@ watch(visibleTaskIds, (ids) => {
   display: block;
   margin: 5px 8px 0;
   color: var(--wao-danger);
-  font-size: 11.5px;
+  font-size: var(--wao-font-help);
 }
 .grow {
   display: flex;
@@ -2307,7 +2307,7 @@ watch(visibleTaskIds, (ids) => {
 .grow-title {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.5;
   color: var(--wao-text);
   word-break: break-word;
@@ -2317,7 +2317,7 @@ watch(visibleTaskIds, (ids) => {
   text-decoration: line-through;
 }
 .grow-chev {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-faint-2);
   flex-shrink: 0;
 }
@@ -2331,7 +2331,7 @@ watch(visibleTaskIds, (ids) => {
   border-top: 1px solid var(--wao-divider);
   margin-top: 6px;
   padding: 9px 8px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   cursor: pointer;
   text-align: left;
@@ -2342,8 +2342,8 @@ watch(visibleTaskIds, (ids) => {
 .group-empty {
   padding: 18px 8px;
   text-align: center;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .group-add {
   height: 44px;
@@ -2351,7 +2351,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 12px;
   background: none;
   color: var(--wao-text-3);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2365,7 +2365,7 @@ watch(visibleTaskIds, (ids) => {
 }
 .group-add em {
   font-style: normal;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .group-full {
@@ -2373,7 +2373,7 @@ watch(visibleTaskIds, (ids) => {
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 
@@ -2405,8 +2405,8 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 9px;
   padding: 14px 8px;
   text-align: center;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .board-col-head {
   display: flex;
@@ -2420,13 +2420,13 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 50%;
 }
 .board-col-label {
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
   font-weight: 600;
   color: var(--wao-text-2);
 }
 .board-col-count {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .board-col-add {
   width: 22px;
@@ -2457,7 +2457,7 @@ watch(visibleTaskIds, (ids) => {
 }
 .board-col-chev {
   margin-left: auto;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-faint-2);
 }
 .board-collapsed {
@@ -2465,7 +2465,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 10px;
   padding: 14px 10px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .board-cards {
@@ -2494,7 +2494,7 @@ watch(visibleTaskIds, (ids) => {
 }
 .bc-title {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -2505,7 +2505,7 @@ watch(visibleTaskIds, (ids) => {
   gap: 7px;
 }
 .bc-due {
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 
 .feed-card {
@@ -2518,13 +2518,13 @@ watch(visibleTaskIds, (ids) => {
 .feed-empty {
   padding: 28px 0;
   text-align: center;
-  font-size: 12.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 
 @media (max-width: 760px) {
   .detail { width: 100%; box-sizing: border-box; overflow-x: hidden; padding: 10px 12px 28px; }
-  .back { min-height: 36px; margin-left: -4px; padding: 5px 4px; font-size: 12px; }
+  .back { min-height: 36px; margin-left: -4px; padding: 5px 4px; font-size: var(--wao-font-caption); }
 
   /* 项目头压成一行主信息 + 一行日期，避免桌面布局在窄屏上散成四五行。 */
   .phead {
@@ -2535,7 +2535,7 @@ watch(visibleTaskIds, (ids) => {
   .phead-name-wrap { grid-column: 2; }
   .phead-name-row { flex-wrap: nowrap; gap: 6px; }
   .phead-name { min-width: 0; overflow: hidden; font-size: var(--wao-font-title); line-height: var(--wao-line-heading); text-overflow: ellipsis; white-space: nowrap;  font-weight: var(--wao-weight-heading);}
-  .phead-sub { margin-top: 2px; overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .phead-sub { margin-top: 2px; overflow: hidden; font-size: var(--wao-font-caption); text-overflow: ellipsis; white-space: nowrap; }
   .phead > .spacer { display: none; }
   .phead-avs { grid-column: 3; margin: 0; padding-left: 5px; }
   .phead-av { width: 24px; height: 24px; border-color: var(--wao-bg-page); }
@@ -2576,7 +2576,7 @@ watch(visibleTaskIds, (ids) => {
   .board-col-head { min-height: 34px; padding-bottom: 7px; }
   .board-col-add { width: 32px; height: 32px; }
   .board-card { min-height: 62px; padding: 11px 12px; cursor: pointer; }
-  .bc-title { padding-right: 28px; font-size: 13.5px; overflow-wrap: anywhere; }
+  .bc-title { padding-right: 28px; font-size: var(--wao-font-body); overflow-wrap: anywhere; }
 
   /* 分组 / 内容也只走单列，触控按钮统一放大。 */
   .groups { grid-template-columns: minmax(0, 1fr); }
@@ -2605,24 +2605,24 @@ watch(visibleTaskIds, (ids) => {
 .task-view-toolbar { margin: 10px 0; flex-wrap: wrap; gap: 8px; }
 .task-view-toolbar .creator-filter { margin-left: 0; }
 .task-view-toolbar .seg { padding: 2px; border-radius: 7px; }
-.task-view-toolbar .seg-btn { height: 24px; padding: 0 9px; font-size: 12px; }
-.task-view-toolbar .creator-filter-btn { height: 28px; font-size: 12px; }
+.task-view-toolbar .seg-btn { height: 24px; padding: 0 9px; font-size: var(--wao-font-body); }
+.task-view-toolbar .creator-filter-btn { height: 28px; font-size: var(--wao-font-body); }
 .task-view-toolbar .table-toolbar-btn { height: 28px; }
 .copy-selection-actions { align-items: center; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--wao-primary-soft); }
-.copy-selection-actions .selection-count { font-size: 12px; color: var(--wao-primary-text); }
+.copy-selection-actions .selection-count { font-size: var(--wao-font-caption); color: var(--wao-primary-text); }
 .copy-selection-actions :deep(.task-batch-copy) { display: contents; }
 .copy-selection-actions :deep(.copy-preview) { flex-basis: 100%; }
 .detail:not(.selecting-tasks) .select-dot { display: none; }
 .project-more { position: relative; }
 .project-more-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; min-width: 168px; padding: 5px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); }
-.project-more-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: none; color: var(--wao-text-2); text-align: left; font-size: 12px; cursor: pointer; }
+.project-more-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: none; color: var(--wao-text-2); text-align: left; font-size: var(--wao-font-body); cursor: pointer; }
 .project-more-menu button:hover { background: var(--wao-primary-soft); }
-.project-info { margin-top: 9px; padding: 9px 12px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-weak); font-size: 12px; }
+.project-info { margin-top: 9px; padding: 9px 12px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
 .board { margin-top: 8px; }
 .board-col { max-width: 440px; }
 .board-col.is-collapsed { flex: 0 0 148px; min-width: 148px; }
 .bc-title { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.empty-columns-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--wao-text-weak); font-size: 11px; margin-top: 8px; }
+.empty-columns-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--wao-text-3); font-size: var(--wao-font-help); margin-top: 8px; }
 .empty-columns-control button { padding: 3px; border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; font: inherit; }
 @media (max-width: 760px) {
   .phead-name-wrap { flex: 1; }
@@ -2649,7 +2649,7 @@ watch(visibleTaskIds, (ids) => {
   width: 100%;
   min-width: 1100px;
   table-layout: fixed;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .project-task-table th {
   position: sticky;
@@ -2660,7 +2660,7 @@ watch(visibleTaskIds, (ids) => {
   height: 34px;
   font-weight: 500;
   color: var(--wao-text-3);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .project-task-table .table-sort { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
 .project-task-table .table-sort:hover, .project-task-table .table-sort:focus-visible { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
@@ -2697,11 +2697,11 @@ watch(visibleTaskIds, (ids) => {
 }
 .table-group-head .group-name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .table-group-count {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
   margin-right: 4px;
 }
 .table-group-head .group-op {
@@ -2726,8 +2726,8 @@ watch(visibleTaskIds, (ids) => {
   border: none;
   border-radius: 4px;
   background: none;
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .table-seg button.on {
@@ -2745,7 +2745,7 @@ watch(visibleTaskIds, (ids) => {
   border-radius: 6px;
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .done-switch {
@@ -2755,7 +2755,7 @@ watch(visibleTaskIds, (ids) => {
   border: none;
   background: none;
   color: var(--wao-text-weak);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
 }
 .done-switch:disabled {
@@ -2767,8 +2767,8 @@ watch(visibleTaskIds, (ids) => {
   padding: 0 6px;
   border-radius: 8px;
   background: var(--wao-bg-sub);
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .done-switch .track {
   position: relative;
@@ -2815,21 +2815,21 @@ watch(visibleTaskIds, (ids) => {
 .ptabs { margin-bottom: 0; }
 .ptab:not(.on), .task-view-toolbar .seg-btn:not(.on) { color: var(--wao-text-3); }
 .task-view-toolbar .seg { flex-shrink: 0; }
-.task-view-toolbar .seg-btn { height: 28px; font-size: 12.5px; }
+.task-view-toolbar .seg-btn { height: 28px; font-size: var(--wao-font-body); }
 .task-view-toolbar .creator-filter-btn, .task-view-toolbar .table-toolbar-btn { height: 32px; white-space: nowrap; }
 .task-view-toolbar .project-search-bar { flex: 1 1 240px; max-width: 360px; min-width: 0; padding: 0; position: relative; }
 .task-view-toolbar .project-search-bar > i { position: absolute; left: 9px; color: var(--wao-text-3); pointer-events: none; }
-.task-view-toolbar .project-search-bar input { width: 100%; min-width: 0; height: 32px; padding-left: 29px; font-size: 12.5px; }
+.task-view-toolbar .project-search-bar input { width: 100%; min-width: 0; height: 32px; padding-left: 29px; font-size: var(--wao-font-body); }
 .task-view-toolbar .project-search-bar button { flex-shrink: 0; white-space: nowrap; }
 .project-display-settings { position: relative; margin-left: auto; flex-shrink: 0; }
-.project-display-settings summary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-3); background: var(--wao-bg-card); font-size: 12.5px; cursor: pointer; list-style: none; white-space: nowrap; }
+.project-display-settings summary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-3); background: var(--wao-bg-card); font-size: var(--wao-font-help); cursor: pointer; list-style: none; white-space: nowrap; }
 .project-display-settings summary::-webkit-details-marker { display: none; }
 .project-display-settings[open] summary { color: var(--wao-primary-text); border-color: var(--wao-primary); }
 .display-settings-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 236px; max-width: calc(100vw - 32px); padding: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 8px; box-shadow: var(--wao-shadow-modal); }
-.display-settings-panel p, .display-settings-panel small { margin: 0; font-size: 12px; line-height: 1.6; color: var(--wao-text-3); }
+.display-settings-panel p, .display-settings-panel small { margin: 0; font-size: var(--wao-font-help); line-height: 1.6; color: var(--wao-text-3); }
 .display-settings-panel p[role="alert"] { color: var(--wao-danger); }
 .display-settings-panel p button { padding: 0; margin-left: 6px; border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; font: inherit; }
-.display-settings-label { color: var(--wao-text-3); font-size: 12px; }
+.display-settings-label { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .display-settings-panel .table-seg button { flex: 1; height: 30px; color: var(--wao-text-3); }
 .display-settings-panel .table-seg button.on { color: var(--wao-primary-text); }
 .display-settings-panel .done-switch { min-height: 32px; margin: 0; color: var(--wao-text-3); }

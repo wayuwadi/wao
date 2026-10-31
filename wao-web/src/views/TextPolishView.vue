@@ -542,7 +542,7 @@ onBeforeUnmount(() => {
 .start-hint,
 .method-help,
 .method-notice {
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-3);
   line-height: 1.7;
 }
@@ -551,13 +551,13 @@ onBeforeUnmount(() => {
 }
 .method-settings > summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   line-height: 1.7;
 }
 .method-settings > summary span {
   margin-left: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   font-weight: 400;
   color: var(--wao-text-3);
 }
@@ -582,7 +582,7 @@ onBeforeUnmount(() => {
 }
 .draft-notice {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   margin: 0 0 14px;
 }
 .polish-page {
@@ -601,7 +601,7 @@ onBeforeUnmount(() => {
 .eyebrow,
 .section-title span {
   color: var(--wao-primary-text);
-  font-size: 10px;
+  font-size: var(--wao-font-body);
   font-weight: 800;
   letter-spacing: 1.2px;
 }
@@ -615,7 +615,7 @@ h1 i {
 .page-header p {
   margin: 0;
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .privacy-note {
   padding: 8px 11px;
@@ -623,7 +623,7 @@ h1 i {
   border-radius: 9px;
   background: var(--wao-bg-card);
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   white-space: nowrap;
 }
 .prompt-card,
@@ -650,15 +650,15 @@ h1 i {
 }
 .section-title h2 {
   margin: 3px 0 0;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 .section-title small {
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .save-status {
-  color: var(--wao-text-weak);
-  font-size: 10px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .save-status.saving,
 .save-status.saved {
@@ -701,7 +701,7 @@ textarea:focus {
 }
 .prompt-actions > span {
   color: var(--wao-text-weak);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 button {
   font: inherit;
@@ -719,7 +719,7 @@ button {
 .secondary-button {
   min-width: 102px;
   padding: 7px 11px;
-  font-size: 10px;
+  font-size: var(--wao-font-body);
 }
 .secondary-button:disabled {
   opacity: 0.4;
@@ -754,7 +754,7 @@ button {
 }
 .copy-button {
   padding: 6px 9px;
-  font-size: 9.5px;
+  font-size: var(--wao-font-body);
 }
 .copy-button i {
   margin-right: 4px;
@@ -791,11 +791,11 @@ button {
 }
 .result-empty strong {
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
 }
 .result-empty span {
   max-width: 320px;
-  font-size: 10px;
+  font-size: var(--wao-font-help);
 }
 .result-empty.active i {
   animation: breathe 1.5s ease-in-out infinite;
@@ -809,7 +809,7 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
+  font-size: var(--wao-font-help);
 }
 .inline-error span {
   flex: 1;
@@ -842,11 +842,11 @@ button {
 .history-empty strong,
 .state-card strong {
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .history-empty span,
 .state-card span {
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .history-list {
   margin-top: 14px;
@@ -880,7 +880,7 @@ button {
 }
 .history-list time {
   color: var(--wao-primary-text);
-  font-size: 8.5px;
+  font-size: var(--wao-font-caption);
 }
 .history-list b {
   margin-top: 3px;
@@ -888,7 +888,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--wao-text-2);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   font-weight: 600;
 }
 .history-list details[open] summary > i {
@@ -909,7 +909,7 @@ button {
 }
 .history-compare article > span {
   color: var(--wao-primary-text);
-  font-size: 8.5px;
+  font-size: var(--wao-font-caption);
   font-weight: 750;
 }
 .history-compare pre {
@@ -929,7 +929,7 @@ button {
   display: flex;
   gap: 7px;
   color: var(--wao-text-weak);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .history-prompt span {
   white-space: pre-wrap;
@@ -937,7 +937,7 @@ button {
 .reuse-button {
   margin: 0 12px 12px;
   padding: 7px 9px;
-  font-size: 9.5px;
+  font-size: var(--wao-font-body);
 }
 .error-state button {
   margin-top: 4px;

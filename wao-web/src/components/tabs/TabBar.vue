@@ -343,7 +343,7 @@ function mCloseUnpinned() {
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--wao-text-3);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 400;
   white-space: nowrap;
   user-select: none;
@@ -372,7 +372,7 @@ function mCloseUnpinned() {
   color: var(--wao-primary-text);
 }
 .tab .tab-pin {
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-primary-text);
 }
 .tab-label {
@@ -433,8 +433,8 @@ function mCloseUnpinned() {
   padding: 4px;
 }
 .rename-form label {
-  color: var(--wao-text-weak);
-  font-size: 10px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .rename-form input {
   width: 100%;
@@ -479,7 +479,7 @@ function mCloseUnpinned() {
   background: none;
   border-radius: 7px;
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   cursor: pointer;
 }

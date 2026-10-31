@@ -699,10 +699,10 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .fullscreen-reminder::before { content:""; position:absolute; top:-6px; right:17px; width:10px; height:10px; border-top:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-left:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); background:var(--wao-bg-card); transform:rotate(45deg); }
 .fullscreen-reminder > i { display:grid; width:28px; height:28px; place-items:center; border-radius:50%; background:color-mix(in srgb, var(--wao-primary) 12%, var(--wao-bg-card)); color:var(--wao-primary-text); font-size:17px; animation:fullscreen-guide-spark 2.4s ease-in-out 2; }
 .fullscreen-reminder-copy { display:flex; min-width:0; flex-direction:column; gap:3px; }
-.fullscreen-reminder-copy strong { color:var(--wao-text-1); font-size:13px; font-weight:600; }
-.fullscreen-reminder-copy span { color:var(--wao-text-3); font-size:12px; line-height:1.45; }
+.fullscreen-reminder-copy strong { color:var(--wao-text-1); font-size:var(--wao-font-body); font-weight:600; }
+.fullscreen-reminder-copy span { color:var(--wao-text-3); font-size:var(--wao-font-body); line-height:1.45; }
 .fullscreen-reminder-actions { grid-column:2; display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
-.fullscreen-reminder-actions button { padding:6px 8px; border:0; background:transparent; color:var(--wao-text-3); font-size:12px; white-space:nowrap; }
+.fullscreen-reminder-actions button { padding:6px 8px; border:0; background:transparent; color:var(--wao-text-3); font-size:var(--wao-font-body); white-space:nowrap; }
 .fullscreen-reminder-actions .reminder-enter { border-radius:7px; background:var(--wao-primary); color:white; font-weight:600; }
 .fullscreen-reminder-actions button:hover { background:var(--wao-bg-hover); color:var(--wao-primary-text); }
 .fullscreen-reminder-actions .reminder-enter:hover { background:var(--wao-primary-hover); color:white; }
@@ -717,10 +717,10 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline-heading { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; margin: 0 0 12px; min-width: 0; }
 .inline-heading .fullscreen-toggle { flex: 0 0 auto; margin-left: auto; padding: 4px 7px; border: 0; color: var(--wao-text-3); }
 .inline-heading .fullscreen-toggle:hover { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
-.inline-heading > input { flex: 1; width: 0; min-width: 0; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 3px 0; background: transparent; color: var(--wao-text-1); font-size: 17px; font-weight: 600; }
+.inline-heading > input { flex: 1; width: 0; min-width: 0; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 3px 0; background: transparent; color: var(--wao-text-1); font-size: var(--wao-font-section); font-weight: 600; }
 .inline-heading input:focus { outline: none; border-bottom-color: var(--wao-primary); }
-.new-generated-title input { width: 100%; margin-bottom: 8px; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 5px 0; background: transparent; color: var(--wao-text-1); font-size: 16px; font-weight: 600; }
-.inline-heading .tag-chip, .inline-heading .add-tag { padding: 3px 7px; font-size: 11px; }
+.new-generated-title input { width: 100%; margin-bottom: 8px; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 5px 0; background: transparent; color: var(--wao-text-1); font-size: var(--wao-font-card-title); font-weight: 600; }
+.inline-heading .tag-chip, .inline-heading .add-tag { padding: 3px 7px; font-size: var(--wao-font-caption); }
 .composer-editor-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .composer-images { flex: 0 0 clamp(180px, 28%, 300px); align-self: stretch; min-height: 0; overflow: auto; margin-left: 16px; padding: 12px; border: 1px solid var(--wao-line); border-radius: 10px; }
 .images-stacked.has-image-rail .composer-editor-layout { flex-direction: column; }
@@ -734,16 +734,16 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-main :deep(img.md-img) { max-height: min(38vh, 320px); object-fit: contain; }
 .composer-editor-main :deep(.note-image-node img.md-img) { max-height: none; }
-.composer-footer > span { color: var(--wao-text-3); font-size: 12px; }
+.composer-footer > span { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .composer-footer { border-top: 1px solid var(--wao-line); padding-top: 12px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; line-height: 1.6; overflow-wrap: anywhere; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
 .save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
-.error { color: var(--wao-danger-strong) !important; font-size: 12px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
+.error { color: var(--wao-danger-strong) !important; font-size: var(--wao-font-help); overflow-wrap: anywhere; }
+@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:var(--wao-font-body); } .fullscreen-reminder-copy span { font-size:var(--wao-font-body); } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:var(--wao-font-body); } }
 @media (prefers-reduced-motion: reduce) { .auto-switch,.auto-switch::after { transition:none; } }
-.composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: 13px; border-radius: 7px; }
+.composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: var(--wao-font-body); border-radius: 7px; }
 
 button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @media (max-width: 600px) {
@@ -754,21 +754,21 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 </style>
 
 <style scoped>
-.composer-heading b { font-size: 15px; }
+.composer-heading b { font-size: var(--wao-font-body); }
 .fullscreen-toggle { margin-left: auto; padding: 5px 7px; border: 0; }
 .fullscreen-toggle i { font-size: 17px; color: var(--wao-text-3); }
 .editor-space { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fullscreen-quick-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 2px 0 14px; }
 .fullscreen-quick-tags > i { color: var(--wao-text-weak); font-size: 14px; }
-.fullscreen-quick-tags button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 20px; padding: 3px 11px; background: var(--wao-bg-sub-2); color: var(--wao-text-3); font-size: 12px; }
+.fullscreen-quick-tags button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 20px; padding: 3px 11px; background: var(--wao-bg-sub-2); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .fullscreen-quick-tags button:hover, .fullscreen-quick-tags button.selected { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
-.quick-tag-hash { opacity: .6; font-size: 11px; }
+.quick-tag-hash { opacity: .6; font-size: var(--wao-font-caption); }
 @media (pointer: coarse) { .fullscreen-quick-tags button { min-height: 44px; } }
 .editor-space :deep(.md) { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .editor-space :deep(.md-editor-wrap) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-space :deep(.md-body) { flex: 1 1 0; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; cursor: text; }
 .editor-space :deep(.tiptap) { flex: 1 0 auto; min-height: 100%; box-sizing: border-box; cursor: text; }
-.note-composer:not(.inline) .editor-space :deep(.article-footer button) { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.note-composer:not(.inline) .editor-space :deep(.article-footer button) { min-height: 34px; padding: 6px 10px; font-size: var(--wao-font-body); }
 .new-tag-form { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
 .new-tag-form input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); }
 .new-tag-form .error { width: 100%; }
@@ -776,10 +776,10 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 .composer-tags, .tag-picker { display: flex; gap: 7px; flex-wrap: wrap; }
 .composer-tags { min-width: 0; }
 .tag-picker { margin-top: 12px; }
-.composer-tags button, .tag-picker button { padding: 5px 8px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
+.composer-tags button, .tag-picker button { padding: 5px 8px; font-size: var(--wao-font-caption); max-width: 100%; overflow-wrap: anywhere; }
 .tag-chip, .tag-picker button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
 .tag-picker { padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; max-height: 150px; overflow: auto; }
-.tag-picker span { color: var(--wao-text-3); font-size: 12px; }
+.tag-picker span { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
 .note-composer.fullscreen.writing-narrow { padding-inline: max(24px, calc((100vw - 650px) / 2)); }
 .note-composer.fullscreen.has-image-rail { padding-inline: max(24px, calc((100vw - 1440px) / 2)); }
@@ -799,7 +799,7 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
     height: var(--note-visible-height, 100dvh);
     padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
-  .note-composer .editor-space :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
+  .note-composer .editor-space :deep(.md-body .tiptap) { font-size: var(--wao-font-card-title); line-height: 1.7; }
   /* 正文由 flex 填满输入区，不继承包含边框的最小高度产生空白滚动。 */
   .note-composer .editor-space :deep(.md-body .tiptap) { min-height: 0; }
   .fullscreen-toggle { min-width: 44px; min-height: 44px; }
@@ -833,7 +833,7 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 </style>
 
 <style scoped>
-.composer-title-input{flex:1;min-width:0;width:100%;font:inherit;font-size:15px;font-weight:600;border:0;border-bottom:1px solid var(--wao-line-control);padding:7px 0;background:transparent;color:var(--wao-text-1);outline:none}.composer-title-input::placeholder{color:var(--wao-text-2);opacity:1}.composer-title-input:focus{border-bottom-color:var(--wao-primary)}@media(max-width:600px){.composer-title-input{font-size:16px}}
+.composer-title-input{flex:1;min-width:0;width:100%;font:inherit;font-size:var(--wao-font-body);font-weight:600;border:0;border-bottom:1px solid var(--wao-line-control);padding:7px 0;background:transparent;color:var(--wao-text-1);outline:none}.composer-title-input::placeholder{color:var(--wao-text-2);opacity:1}.composer-title-input:focus{border-bottom-color:var(--wao-primary)}@media(max-width:600px){.composer-title-input{font-size:var(--wao-font-card-title)}}
 </style>
 
 <style scoped>.composer-image-lightbox > img{max-height:calc(100dvh - 150px)}</style>

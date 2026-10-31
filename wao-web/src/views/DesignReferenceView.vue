@@ -261,7 +261,7 @@ const detailDemoComment = ref('')
           </button>
         </nav>
         <div class="sidebar-note">
-          <strong>留白线框</strong><span>浅底分区 · 浮层阴影</span><span>规范 1.0 · 2026.10</span>
+          <strong>留白线框</strong><span>浅底分区 · 浮层阴影</span><span>规范 1.1 · 2026.10</span>
         </div>
       </aside>
       <div id="reference-content" class="reference-content">
@@ -323,7 +323,7 @@ const detailDemoComment = ref('')
               <p>草稿状态、筛选结果与阅读元信息使用辅助文字色，在明暗背景上保持清晰可读；禁用控件单独弱化。</p>
               <p>四象限任务标题与项目单行排列，长标题省略并提供完整提示；保存失败允许展开重试。项目拖拽的浅底表示移为子任务，行边缘插入线表示前后排序，更多菜单保留键盘入口。</p>
               <p class="help-type-example">说明 13px · 需要读懂的操作提示</p>
-              <p class="measurements">页面 22（手机 20）· 小节 18 · 卡片 16 · 正文 14 · 说明 13 · 元信息 12</p>
+              <p class="measurements">页面 22（手机 20）· 小节与卡片 16 · 正文 14 · 说明 13 · 元信息 12</p>
               <div class="reading-type-example" aria-label="阅读字号与标题层级示例">
                 <MarkdownEditor :model-value="typographyExample" readonly bare allow-h1 :min-height="0" />
               </div>
@@ -493,7 +493,7 @@ const detailDemoComment = ref('')
         <template v-else-if="active === 'task-detail'">
           <div class="section-heading">
             <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
-            <p>描述随内容增高，子任务与评论在主栏连续展示；桌面右侧只放属性，收起后仍可写评论。长描述可切换独立页签阅读。</p>
+            <p>描述随内容增高，子任务与评论在主栏连续展示；桌面右侧只放属性，收起后仍可写评论。长描述可切换独立页签阅读。描述、子任务、评论与属性值统一为 14px，分区标题为 16px，页签和操作不再额外放大。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
@@ -616,7 +616,7 @@ const detailDemoComment = ref('')
           >
         </template>
         <footer class="reference-footer">
-          <span>WAO Design · 规范 1.0</span
+          <span>WAO Design · 规范 1.1</span
           ><span>交互演示 · 本页输入不写入账号，离开页面即清除</span>
         </footer>
       </div>
@@ -735,7 +735,7 @@ const detailDemoComment = ref('')
 .detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }
 .detail-demo-row input[type=checkbox]:checked::after { content:"✓"; color:var(--wao-on-primary); font-size:var(--wao-font-caption); }
 .resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
-.detail-demo-title { margin: 0; font-size: calc(var(--wao-font-reading) * 1.5); line-height: 1.4; font-weight: 600; }
+.detail-demo-title { margin: 0; font-size: var(--wao-font-title); line-height: 1.4; font-weight: 600; }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
 .detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
 .detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0; border-bottom: 1px solid var(--wao-line); }

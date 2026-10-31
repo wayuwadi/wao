@@ -33,11 +33,11 @@ async function move() {
 <style scoped>
 /* 与任务属性栏的 prop-row 对齐：左侧 60px 灰色键名，右侧紧凑输入 */
 .subtask-properties { display: grid; gap: 0; margin: 0; }
-label { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 0; font-size: 12px; color: var(--wao-text-weak); }
-input, select { min-width: 0; height: 28px; padding: 0 6px; font: inherit; font-size: 12.5px; color: var(--wao-text-2); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+label { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 0; font-size: var(--wao-font-help); color: var(--wao-text-3); }
+input, select { min-width: 0; height: 28px; padding: 0 6px; font: inherit; font-size: var(--wao-font-body); color: var(--wao-text-2); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
 input:hover, select:hover, input:focus, select:focus { border-color: var(--wao-line-control); background: var(--wao-bg-card); outline: none; }
 details { margin-top: 6px; }
-summary { padding: 8px 0; font-size: 12px; color: var(--wao-text-weak); cursor: pointer; }
-details button { margin-top: 6px; height: 28px; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 12px; cursor: pointer; }
-p { color: var(--wao-danger-strong); font-size: 12px; }
+summary { padding: 8px 0; font-size: var(--wao-font-help); color: var(--wao-text-3); cursor: pointer; }
+details button { margin-top: 6px; height: 28px; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: var(--wao-font-body); cursor: pointer; }
+p { color: var(--wao-danger-strong); font-size: var(--wao-font-caption); }
 </style>

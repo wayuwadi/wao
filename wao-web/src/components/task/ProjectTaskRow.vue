@@ -238,7 +238,7 @@ function commitRename() {
   padding: 0 10px;
   border-right: 1px solid var(--wao-line);
   border-bottom: 1px solid var(--wao-line);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -259,8 +259,8 @@ function commitRename() {
   opacity: 0.45;
 }
 .table-number {
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .title-cell {
   flex-wrap: wrap;
@@ -295,7 +295,7 @@ function commitRename() {
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   text-align: left;
   cursor: pointer;
@@ -323,11 +323,11 @@ function commitRename() {
   background: var(--wao-bg-card);
   color: var(--wao-text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   outline: none;
 }
 .wait-badge {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   background: var(--wao-warning-bg);
   color: var(--wao-warning-strong);
   border-radius: 4px;
@@ -343,8 +343,8 @@ function commitRename() {
   padding: 0 6px;
   border-radius: 4px;
   background: var(--wao-bg-sub);
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 /* 行尾小工具：鼠标移到这一行才出现，不常驻占位 */
 .row-tools {
@@ -383,7 +383,7 @@ function commitRename() {
   background: transparent;
   color: var(--wao-text-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   padding: 0 2px;
   cursor: pointer;
 }
@@ -400,8 +400,8 @@ function commitRename() {
   color: transparent !important;
 }
 .created-date {
-  color: var(--wao-text-weak) !important;
-  font-size: 12px !important;
+  color: var(--wao-text-3) !important;
+  font-size: var(--wao-font-caption) !important;
 }
 .priority {
   display: inline-flex;
@@ -413,7 +413,7 @@ function commitRename() {
   border: none;
   border-radius: 3px;
   color: #fff;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   font-weight: 600;
   cursor: pointer;
 }
@@ -430,7 +430,7 @@ function commitRename() {
   border-radius: 10px;
   background: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -447,7 +447,7 @@ function commitRename() {
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
 }

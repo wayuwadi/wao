@@ -933,7 +933,7 @@ onBeforeUnmount(() => {
 }
 .eyebrow {
   color: #436b91;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   font-weight: 750;
   letter-spacing: 1.5px;
 }
@@ -950,7 +950,7 @@ onBeforeUnmount(() => {
   max-width: 720px;
   margin: 0;
   color: var(--wao-text-weak);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   line-height: 1.65;
 }
 button {
@@ -969,7 +969,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   font-weight: 680;
 }
 .copy-button {
@@ -1005,12 +1005,12 @@ button {
   display: block;
 }
 .guardrail b {
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
 }
 .guardrail span {
   margin-top: 2px;
   color: var(--wao-text-weak);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   line-height: 1.55;
 }
 .config-card,
@@ -1042,19 +1042,19 @@ button {
 .report-head > div > span,
 .sources-card header span {
   color: #436b91;
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
   font-weight: 750;
   letter-spacing: 1px;
 }
 .section-head h2,
 .report-head h2 {
   margin: 3px 0 0;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
 }
 .section-head > em,
 .history-panel .section-head > em {
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   font-style: normal;
 }
 .secondary-button,
@@ -1070,7 +1070,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--wao-font-body);
 }
 .secondary-button:hover:not(:disabled),
 .report-actions button:hover:not(:disabled),
@@ -1095,12 +1095,12 @@ button {
   display: block;
 }
 .chat-chip b {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .chat-chip small {
   margin-top: 2px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   overflow-wrap: anywhere;
 }
 .chat-chip.missing {
@@ -1125,8 +1125,8 @@ button {
 .speaker-editor label > span,
 .date-grid label > span,
 .focus-field > span {
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .speaker-editor select,
 .date-grid input,
@@ -1139,7 +1139,7 @@ button {
   background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .speaker-editor select,
 .date-grid input {
@@ -1168,7 +1168,7 @@ button {
   border-radius: 999px;
   background: color-mix(in srgb, #436b91 9%, var(--wao-bg-sub));
   color: #436b91;
-  font-size: 11px;
+  font-size: var(--wao-font-body);
   font-weight: 650;
 }
 .selected-speakers i {
@@ -1177,7 +1177,7 @@ button {
 .config-message {
   margin: 9px 0 0;
   color: var(--wao-text-weak);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .automation-link {
   margin-top: 10px;
@@ -1185,7 +1185,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   text-decoration: none;
 }
 .state-inline {
@@ -1194,8 +1194,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .state-inline.error {
   color: var(--wao-danger-strong);
@@ -1217,11 +1217,11 @@ button {
   padding: 0 9px;
   border-radius: 999px;
   background: var(--wao-bg-sub);
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 9.5px;
+  font-size: var(--wao-font-caption);
 }
 .draft-pill.error {
   background: var(--wao-danger-bg);
@@ -1261,8 +1261,8 @@ button {
   line-height: 1.6;
 }
 .focus-field > small {
-  color: var(--wao-text-weak);
-  font-size: 9.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .request-actions {
   margin-top: 13px;
@@ -1273,7 +1273,7 @@ button {
 }
 .request-actions > span {
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .request-actions > span i {
   margin-right: 5px;
@@ -1287,7 +1287,7 @@ button {
   border-radius: 8px;
   background: var(--wao-danger-bg);
   color: var(--wao-danger-strong);
-  font-size: 10.5px;
+  font-size: var(--wao-font-help);
   line-height: 1.5;
 }
 .inline-error i {
@@ -1306,7 +1306,7 @@ button {
   border-radius: 8px;
   background: var(--wao-bg-sub);
   color: var(--wao-text-3);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -1348,10 +1348,10 @@ button {
   height: 25px;
   border-radius: 50%;
   background: var(--wao-bg-sub);
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .stage-list li.done .stage-dot {
   background: var(--wao-success-bg);
@@ -1372,13 +1372,13 @@ button {
   overflow-wrap: anywhere;
 }
 .stage-list b {
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .stage-list small {
   margin-top: 2px;
   padding: 0 4px;
-  color: var(--wao-text-weak);
-  font-size: 8.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   line-height: 1.45;
 }
 .run-progress {
@@ -1390,7 +1390,7 @@ button {
   align-items: center;
   gap: 8px;
   color: var(--wao-text-3);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .run-progress i {
   color: var(--wao-primary-text);
@@ -1400,7 +1400,7 @@ button {
 }
 .run-progress b {
   color: var(--wao-danger-strong);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .run-progress.failed {
   background: var(--wao-danger-bg);
@@ -1419,7 +1419,7 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .new-result span {
   flex: 1;
@@ -1452,8 +1452,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   text-align: center;
 }
 .detail-state.empty {
@@ -1472,7 +1472,7 @@ button {
 .report-head p {
   margin: 4px 0 0;
   color: var(--wao-text-weak);
-  font-size: 9.5px;
+  font-size: var(--wao-font-caption);
 }
 .report-actions {
   display: flex;
@@ -1493,19 +1493,19 @@ button {
   background: var(--wao-bg-sub);
 }
 .report-meta dt {
-  color: var(--wao-text-weak);
-  font-size: 8.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .report-meta dd {
   margin: 3px 0 0;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   overflow-wrap: anywhere;
 }
 .report-focus b {
   display: block;
   margin-bottom: 3px;
   color: #436b91;
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .report-sections {
   margin-top: 13px;
@@ -1522,7 +1522,7 @@ button {
 }
 .report-sections h3 {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .report-sections h3 i {
   margin-right: 6px;
@@ -1530,7 +1530,7 @@ button {
 }
 .markdown {
   color: var(--wao-text-2);
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   line-height: 1.75;
 }
 .markdown :deep(p),
@@ -1557,16 +1557,16 @@ button {
   flex: 1;
 }
 .failed-detail b {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .failed-detail p {
   margin: 3px 0 0;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   line-height: 1.6;
   white-space: pre-wrap;
 }
 .invalid-report {
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
   line-height: 1.6;
 }
 .sources-card {
@@ -1576,11 +1576,11 @@ button {
 }
 .sources-card h3 {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .sources-card header em {
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   font-style: normal;
 }
 .source-list {
@@ -1605,7 +1605,7 @@ button {
 }
 .source-list a > b {
   color: #436b91;
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .source-list a span {
   min-width: 0;
@@ -1619,12 +1619,12 @@ button {
   white-space: nowrap;
 }
 .source-list strong {
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .source-list small {
   margin-top: 2px;
-  color: var(--wao-text-weak);
-  font-size: 8.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .history-panel {
   position: sticky;
@@ -1636,8 +1636,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   text-align: center;
 }
 .history-state.error {
@@ -1670,7 +1670,7 @@ button {
 }
 .history-status {
   color: var(--wao-success);
-  font-size: 8.5px;
+  font-size: var(--wao-font-help);
 }
 .history-list button.failed .history-status {
   color: var(--wao-danger-strong);
@@ -1685,7 +1685,7 @@ button {
 }
 .history-list b {
   margin-top: 4px;
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .history-list p {
   margin: 4px 0;
@@ -1693,11 +1693,11 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--wao-text-3);
-  font-size: 9.5px;
+  font-size: var(--wao-font-caption);
 }
 .history-list small {
-  color: var(--wao-text-weak);
-  font-size: 8.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .spin {
   animation: spin 1s linear infinite;

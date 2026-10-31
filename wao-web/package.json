@@ -15,7 +15,7 @@
     "dev:acceptance": "node scripts/acceptance/serve.mjs",
     "build-only": "node scripts/check-ui-system.mjs && vite build",
     "ui:check": "node scripts/check-ui-system.mjs",
-    "test:ui-rules": "node --test scripts/check-ui-system.node.mjs",
+    "test:ui-rules": "node --test scripts/check-ui-system.node.mjs scripts/check-ui-typography.node.mjs",
     "type-check": "vue-tsc --build",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",

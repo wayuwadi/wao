@@ -52,11 +52,11 @@ const visibleRows = computed(() => {
 .todo-checklist { min-width: 0; margin: var(--wao-space-1) 0 0 32px; }
 ul { list-style: none; padding: 0; margin: 0; }
 li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--wao-space-1); padding: 5px 0 5px calc(var(--sub-depth) * var(--wao-space-2)); }
-label { display: flex; align-items: baseline; gap: var(--wao-space-1); min-width: 0; flex: 1; color: var(--wao-text-2); font-size: 13px; line-height: 1.7; }
+label { display: flex; align-items: baseline; gap: var(--wao-space-1); min-width: 0; flex: 1; color: var(--wao-text-2); font-size: var(--wao-font-help); line-height: 1.7; }
 label span { min-width: 0; overflow-wrap: anywhere; }
 input { flex: none; accent-color: var(--wao-primary); }
 .done span { text-decoration: line-through; color: var(--wao-text-3); }
-.sub-state, button { color: var(--wao-text-3); font-size: 12px; }
+.sub-state, button { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 button { min-height: 32px; padding: 4px 0; border: 0; background: transparent; font-family: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @media (max-width: 600px) { .todo-checklist { margin-left: 40px; } li { flex-direction: column; align-items: stretch; gap: 0; } label { width: 100%; } .sub-state { margin-left: var(--wao-space-3); } }

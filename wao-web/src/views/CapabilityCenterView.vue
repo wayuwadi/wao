@@ -858,7 +858,7 @@ onBeforeUnmount(() => {
   padding: 14px 18px;
   border-top: 1px solid var(--wao-line);
   color: var(--wao-text-2);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.8;
 }
 .cap-planning summary {
@@ -892,12 +892,12 @@ onBeforeUnmount(() => {
   line-height: var(--wao-line-heading);
 }
 .cap-center-header p {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   margin: 0;
 }
 .cap-eyebrow {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   letter-spacing: 0.08em;
   color: var(--wao-primary-text);
 }
@@ -913,7 +913,7 @@ onBeforeUnmount(() => {
   background: none;
   color: var(--wao-text-3);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .cap-area-tabs button.active {
@@ -940,7 +940,7 @@ onBeforeUnmount(() => {
 .cap-filter-label {
   padding: 0 8px;
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   font-weight: 600;
 }
 .cap-type-filters button {
@@ -950,7 +950,7 @@ onBeforeUnmount(() => {
   border-radius: 7px;
   padding: 7px 9px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .cap-type-filters button.active {
@@ -971,7 +971,7 @@ onBeforeUnmount(() => {
 }
 .cap-search input {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   background: transparent;
   border: 0;
   width: 100%;
@@ -987,7 +987,7 @@ onBeforeUnmount(() => {
 .cap-list-heading {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
   margin-bottom: 10px;
 }
@@ -1018,7 +1018,7 @@ onBeforeUnmount(() => {
 }
 .cap-entry strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   overflow-wrap: anywhere;
 }
 .cap-entry small {
@@ -1027,11 +1027,11 @@ onBeforeUnmount(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
   color: var(--wao-text-3);
-  font-size: 11px;
+  font-size: var(--wao-font-help);
   margin: 4px 0 8px;
 }
 .cap-catalog-note {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   line-height: 1.8;
   color: var(--wao-text-3);
   padding: 8px 3px;
@@ -1070,7 +1070,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text);
   padding: 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .cap-capability-group {
   border-bottom: 1px solid var(--wao-line);
@@ -1080,7 +1080,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
   align-items: center;
   flex-wrap: wrap;
@@ -1093,15 +1093,15 @@ onBeforeUnmount(() => {
 }
 .cap-operation-description h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--wao-font-help);
 }
 .cap-operation-description small {
-  font-size: 11px;
+  font-size: var(--wao-font-help);
   overflow-wrap: anywhere;
   color: var(--wao-text-3);
 }
 .cap-helper-heading {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   margin: 18px 0 10px;
 }
 .cap-resource-type-switch {
@@ -1111,7 +1111,7 @@ onBeforeUnmount(() => {
 }
 .cap-resource-type-switch button {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   background: var(--wao-bg-sub);
   color: var(--wao-text-3);
   border: 0;
@@ -1152,7 +1152,7 @@ onBeforeUnmount(() => {
     gap: 8px;
   }
   .cap-area-tabs button {
-    font-size: 13px;
+    font-size: var(--wao-font-body);
   }
   .cap-columns {
     grid-template-columns: 1fr;
@@ -1174,7 +1174,7 @@ onBeforeUnmount(() => {
     border-radius: 7px;
   }
   .cap-entry strong {
-    font-size: 12px;
+    font-size: var(--wao-font-caption);
   }
   .cap-catalog-note {
     display: none;
@@ -1184,7 +1184,7 @@ onBeforeUnmount(() => {
     min-height: 0;
   }
   .cap-search input {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
   .cap-skill-filters select {
     min-width: 0;

@@ -494,8 +494,8 @@ onBeforeUnmount(() => {
   line-height: var(--wao-line-heading);
 }
 .ptip {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .btn-primary {
   height: 33px;
@@ -504,7 +504,7 @@ onBeforeUnmount(() => {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -579,7 +579,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   padding: 0 10px 0 32px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
@@ -597,7 +597,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--wao-line-control);
   background: var(--wao-bg-card);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -612,7 +612,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text-weak);
 }
 .tool-btn .chev {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .drop-menu {
   position: absolute;
@@ -636,7 +636,7 @@ onBeforeUnmount(() => {
   background: none;
   border-radius: 7px;
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   cursor: pointer;
 }
@@ -665,7 +665,7 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -689,7 +689,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 16px 2px 0;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   font-weight: 600;
 }
@@ -813,8 +813,8 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
-  color: var(--wao-text-weak);
-  font-size: 13px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .empty i {
   font-size: 22px;
@@ -830,8 +830,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   padding: 3px 2px 5px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .project-layout-status span { display: inline-flex; align-items: center; gap: 6px; }
 .project-layout-status [role='alert'] { color: #c45a5a; }
@@ -875,8 +875,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--wao-text-faint);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
   font-weight: 400;
   opacity: 0;
   transition: opacity .15s ease;
@@ -905,8 +905,8 @@ onBeforeUnmount(() => {
 }
 .context-caption, .context-subtitle {
   padding: 7px 9px 5px;
-  color: var(--wao-text-faint);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
   font-weight: 600;
   letter-spacing: .02em;
 }
@@ -924,13 +924,13 @@ onBeforeUnmount(() => {
   background: transparent;
   text-align: left;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .context-menu > button:hover, .context-menu > button:focus-visible { background: var(--wao-bg-hover-2); outline: none; }
 .context-menu > button:disabled { opacity: .5; cursor: not-allowed; }
 .context-menu > button > i { width: 16px; color: var(--wao-primary-text); font-size: 15px; }
-.context-menu > button > span:not(.group-dot) { margin-left: auto; color: var(--wao-text-faint); font-size: 10px; }
+.context-menu > button > span:not(.group-dot) { margin-left: auto; color: var(--wao-text-3); font-size: var(--wao-font-body); }
 .context-menu .context-group { min-height: 31px; padding-left: 15px; }
 .context-menu .context-group > i { margin-left: auto; }
 .context-separator { height: 1px; margin: 5px 3px; background: var(--wao-line); }
@@ -966,7 +966,7 @@ onBeforeUnmount(() => {
 .dialog-cancel { border: 1px solid var(--wao-line-control); color: var(--wao-text-2); background: var(--wao-bg-card); }
 .dialog-save { border: 1px solid var(--wao-primary); color: #fff; background: var(--wao-primary); }
 .dialog-save:disabled { opacity: .5; cursor: not-allowed; }
-.project-notice { position: fixed; z-index: 180; right: 22px; bottom: 22px; max-width: min(420px, calc(100vw - 32px)); display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); color: var(--wao-text-2); box-shadow: var(--wao-shadow-pop); font-size: 12px; animation: waoFadeUp .18s ease; }
+.project-notice { position: fixed; z-index: 180; right: 22px; bottom: 22px; max-width: min(420px, calc(100vw - 32px)); display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); color: var(--wao-text-2); box-shadow: var(--wao-shadow-pop); font-size: var(--wao-font-help); animation: waoFadeUp .18s ease; }
 .project-notice > i { color: var(--wao-primary-text); font-size: 15px; }
 .project-notice button { margin-left: 4px; padding: 2px; border: 0; background: transparent; color: var(--wao-text-weak); cursor: pointer; }
 
