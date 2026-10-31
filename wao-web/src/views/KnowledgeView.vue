@@ -736,7 +736,13 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.kb-cover { display: flex; align-items: center; justify-content: space-between; padding: 10px; margin: -14px -15px 4px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--kb-cover) 9%, var(--wao-bg-card)); }
+.kb-card { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-content: start; align-items: center; gap: var(--wao-space-1); }
+.kb-cover { display: contents; }
+.kb-icon { grid-column: 1; grid-row: 1; }
+.kb-name { grid-column: 2; grid-row: 1; }
+.kb-star { grid-column: 3; grid-row: 1; }
+.kb-desc, .kb-doc-matches, .kb-meta { grid-column: 1 / -1; }
+.kb-desc:empty { display: none; }
 .kb-star.starred { color: var(--wao-warning-strong); }
 .kb-meta { margin-top: auto; flex-wrap: wrap; }
 
@@ -778,7 +784,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   font-size: var(--wao-font-body);
   color: var(--wao-text-3);
   line-height: 1.6;
-  min-height: 36px;
+  min-height: 0;
 }
 .kb-doc-matches {
   display: flex;
@@ -816,11 +822,8 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
   font-size: 12px;
 }
 .kgroup-empty {
-  margin-top: 10px;
-  padding: 20px;
-  border: 1px dashed #d9dce5;
-  border-radius: 10px;
-  text-align: center;
+  margin-top: var(--wao-space-1);
+  padding: 0;
   color: var(--wao-text-3);
   font-size: var(--wao-font-help);
 }
