@@ -1720,13 +1720,11 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 0 10px 24px; } .search { flex: 1 1 50%; } }
-@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 0 10px 24px; } }
+@media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: var(--wao-space-2); grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 270px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 0 10px 24px; } .search { flex: 1 1 50%; } }
 @media (max-width: 760px) {
   .page-heading { gap: 8px; }
   .heading-title { gap: 8px; flex-wrap: wrap; }
   .writing-toggle, .toolbar button, .reader-toggle { min-height: 44px; }
-  .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 300px; }
   .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 120px !important; }
   .notes-list { padding: 0 0 24px; }
   .notes-page .note-body :deep(.md-body .tiptap), .notes-page .reader-article :deep(.md-body .tiptap) { font-size: var(--wao-font-card-title); line-height: 1.7; }
