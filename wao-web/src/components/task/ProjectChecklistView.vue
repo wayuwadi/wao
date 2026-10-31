@@ -20,6 +20,7 @@ import { subItemKey, withProjectAncestors, type ProjectItemRefs } from '@/utils/
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import TaskDocuments from '@/components/task/TaskDocuments.vue'
@@ -302,6 +303,45 @@ const saveState = computed(() => data.taskSaveState(source.value.taskId))
 const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
 const quickAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const deleteTarget = ref<{ id: string; taskId: string; subId?: string; title: string } | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
+const deleteBusy = computed(() => deleting.value || props.busy || data.movingTask || data.movingSubtasks || !!deleteTarget.value && data.taskSaveState(deleteTarget.value.taskId) === 'saving')
+watch(() => useSessionStore().userId, () => { deleteTarget.value = null; deleteError.value = '' }, { flush: 'sync' })
+function requestDelete(id: string, title: string) {
+  if (deleting.value || props.busy || actions.busy(id)) return
+  deleteTarget.value = { id, ...actions.source(id), title }
+  deleteError.value = ''
+}
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target || deleteBusy.value) return
+  const member = useSessionStore().userId
+  deleting.value = true
+  deleteError.value = ''
+  // Completion is delayed locally. Do not let its timer write the item being deleted.
+  for (const id of [...pendingCompletion.value]) {
+    if (id === target.id || !target.subId && actions.sourceId(id) === target.taskId) cancelCompletion(id)
+  }
+  try {
+    if (target.subId) {
+      if (!data.taskById(target.taskId)) throw new Error('任务已不存在，请刷新列表。')
+      if (data.subById(target.taskId, target.subId)) data.removeSub(target.taskId, target.subId)
+      await data.flushTask(target.taskId)
+      if (data.taskSaveState(target.taskId) === 'error' || data.apiLive && data.taskSaveState(target.taskId) !== 'saved') {
+        throw new Error('子任务删除尚未保存，本机修改已保留，请重试或查看保存问题。')
+      }
+    } else if (!(await data.deleteTask(target.taskId))) {
+      throw new Error('删除失败，任务已保留，请重试。')
+    }
+    if (member !== useSessionStore().userId || deleteTarget.value !== target) return
+    retainedCompletion.value.delete(target.id)
+    deleteTarget.value = null
+    toast(`已删除${target.subId ? '子任务' : '任务'}「${target.title}」`, 'ri-delete-bin-line')
+  } catch (error) {
+    if (member === useSessionStore().userId && deleteTarget.value === target) deleteError.value = error instanceof Error ? error.message : '删除失败，请重试。'
+  } finally { deleting.value = false }
+}
 const addingChild = ref(false)
 const childDraft = ref('')
 const childDraftError = ref('')
@@ -365,6 +405,8 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'tags', label: '设置标签', run: () => { quickAction.value={...actions.source(id),mode:'tags'} } },
     { id:'priority',label:'修改优先级',disabled:actions.busy(id),run:()=>{quickAction.value={...actions.source(id),mode:'priority'}} },
     { id: 'open', label: '打开任务详情', run: () => actions.open(id) },
+    { id: 'delete', label: actions.isSub(id) ? '删除子任务' : '删除任务', danger: true, separatorBefore: true,
+      disabled: deleting.value || props.busy || actions.busy(id), run: () => requestDelete(id, task.title || '未命名任务') },
   ])
 }
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
@@ -456,9 +498,19 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
   </div>
   <TaskQuickActionDialog v-if="quickAction" v-bind="quickAction" @close="quickAction=null" /><ContextActionMenu ref="contextMenu" />
+  <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
+    <p class="delete-description">确定删除「{{ deleteTarget.title }}」？{{ deleteTarget.subId ? '下级子任务会保留并上移一级。' : '内嵌子事项会一并删除，独立子任务会保留并移回顶层。' }}</p>
+    <p v-if="deleteError" class="child-draft-error" role="alert">{{ deleteError }}</p>
+    <WaoButton v-if="deleteError && deleteTarget.subId" variant="ghost" @click="actions.open(deleteTarget.taskId)">查看保存问题</WaoButton>
+    <template #footer>
+      <WaoButton variant="secondary" :disabled="deleting" @click="deleteTarget = null">取消</WaoButton>
+      <WaoButton variant="danger" :loading="deleting" :disabled="deleteBusy" @click="confirmDelete">{{ deleteError ? '重试删除' : '确认删除' }}</WaoButton>
+    </template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
+.delete-description { overflow-wrap: anywhere; }
 .detail-secondary-actions { display: flex; align-items: center; gap: var(--wao-space-2); min-width: 0; }
 .detail-secondary-actions > a { flex-shrink: 0; white-space: nowrap; }
 .description-outline-anchor { position: sticky; top: var(--wao-space-1); height: 0; z-index: 3; margin-left: auto; width: fit-content; }
