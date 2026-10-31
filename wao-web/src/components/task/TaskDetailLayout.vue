@@ -132,6 +132,7 @@ defineExpose({ selectSection, openProperties })
           {{ tab.label }}
         </button>
       </nav>
+      <div v-if="$slots.tools" class="detail-tools"><slot name="tools" /></div>
       <WaoButton
         :id="`${id}-properties-toggle`"
         class="properties-toggle"
@@ -238,7 +239,7 @@ defineExpose({ selectSection, openProperties })
   flex-direction: column;
 }
 .detail-heading {
-  padding: var(--wao-space-2) var(--wao-space-4) var(--wao-space-1);
+  padding: var(--wao-space-2) var(--wao-space-3) var(--wao-space-1);
   max-height: 35%;
   overflow: auto;
   flex-shrink: 0;
@@ -249,7 +250,8 @@ defineExpose({ selectSection, openProperties })
   flex-wrap: wrap;
   gap: var(--wao-space-1);
 }
-.detail-summary:not(:has(> *)) { display: none; }
+.detail-summary:not(:has(> *)),
+.detail-summary:has(> .save-feedback:only-child:empty) { display: none; }
 .detail-summary :deep(.hint) {
   font-size: var(--wao-font-help, 13px);
   white-space: normal;
@@ -260,7 +262,7 @@ defineExpose({ selectSection, openProperties })
   align-items: center;
   justify-content: space-between;
   gap: var(--wao-space-1);
-  padding: 0 var(--wao-space-4);
+  padding: 0 var(--wao-space-3);
   border-bottom: 1px solid var(--wao-line);
   flex-shrink: 0;
 }
@@ -270,6 +272,14 @@ defineExpose({ selectSection, openProperties })
   min-width: 0;
   overflow-x: auto;
 }
+.detail-tools {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 50%;
+  margin-left: auto;
+}
+.properties-toggle { flex-shrink: 0; }
 .detail-tabs button {
   padding: 10px 0;
   min-height: 44px;
@@ -296,7 +306,7 @@ defineExpose({ selectSection, openProperties })
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: var(--wao-space-3) var(--wao-space-4) var(--wao-space-4);
+  padding: var(--wao-space-2) var(--wao-space-3) var(--wao-space-3);
 }
 .preview-heading,
 .properties-heading {
@@ -336,12 +346,12 @@ h3 {
   font-size: var(--wao-font-caption);
 }
 .overview-subtasks {
-  margin-top: var(--wao-space-4);
+  margin-top: var(--wao-space-2);
 }
 .preview-heading { margin-bottom: var(--wao-space-1); }
 .detail-comments {
-  margin-top: var(--wao-space-4);
-  padding-top: var(--wao-space-3);
+  margin-top: var(--wao-space-2);
+  padding-top: var(--wao-space-2);
   border-top: 1px solid var(--wao-line);
 }
 /* Task descriptions use the same body size as subtasks, properties and comments. */
@@ -358,6 +368,13 @@ h3 {
 .detail-scroll :deep(.md-body p.is-editor-empty:first-child::before) { color: var(--wao-text-3); }
 .detail-scroll :deep(.image-actions) { position: static; justify-content: flex-end; padding: var(--wao-space-1); }
 .detail-scroll :deep(.image-upload) { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
+/* 概览里正文和图片入口共用一行；上传错误仍独占整行，编辑器从不卸载。 */
+.overview-description :deep(.md-editor-wrap) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--wao-space-1); }
+.overview-description :deep(.md-body) { min-width: 0; }
+.overview-description :deep(.image-actions) { grid-column: 2; grid-row: 1; padding: 0; align-self: start; }
+.overview-description :deep(.image-upload) { min-height: 40px; border-color: transparent; background: transparent; }
+.overview-description :deep(.upload-queue) { grid-column: 1 / -1; }
+.overview-description :deep(.md-body .tiptap) { box-sizing: border-box; padding: var(--wao-space-1); }
 .detail-properties {
   box-sizing: border-box;
   flex: 0 0 280px;
@@ -365,7 +382,7 @@ h3 {
   overflow: auto;
   overscroll-behavior: contain;
   border-left: 1px solid var(--wao-line);
-  padding: var(--wao-space-3) var(--wao-space-2);
+  padding: var(--wao-space-2);
   background: var(--wao-bg-sub);
 }
 .properties-heading {
@@ -377,8 +394,11 @@ h3 {
   }
   .detail-navigation {
     padding-inline: var(--wao-space-2);
-    gap: 0;
+    gap: 0 var(--wao-space-1);
+    flex-wrap: wrap;
   }
+  .detail-tools { order: 1; flex: 1 1 100%; max-width: none; justify-content: flex-start; margin-left: 0; }
+  .properties-toggle { margin-left: auto; }
   .detail-tabs {
     gap: var(--wao-space-1);
   }

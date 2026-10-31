@@ -14,6 +14,7 @@ const emit = defineEmits<{ close: []; ready: [] }>()
 const menu = ref<HTMLElement | null>(null)
 const theme = ref<string | undefined>()
 const style = ref<Record<string, string>>({ visibility: 'hidden' })
+let sizeObserver: ResizeObserver | undefined
 
 function place() {
   const anchor = props.anchor
@@ -59,6 +60,10 @@ function onScroll(event: Event) {
 onMounted(() => {
   void nextTick(async () => {
     place()
+    if (menu.value && typeof ResizeObserver !== 'undefined') {
+      sizeObserver = new ResizeObserver(place)
+      sizeObserver.observe(menu.value)
+    }
     await nextTick()
     if (!menu.value) return
     if (!props.customContent) menu.value.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
@@ -70,6 +75,7 @@ onMounted(() => {
   window.addEventListener('resize', place)
 })
 onBeforeUnmount(() => {
+  sizeObserver?.disconnect()
   window.removeEventListener('keydown', onKey, true)
   window.removeEventListener('mousedown', onPointer, true)
   window.removeEventListener('scroll', onScroll, true)

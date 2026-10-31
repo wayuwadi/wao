@@ -40,6 +40,7 @@ function showConfirmExample() {
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
+import CellMenu from '@/components/task/CellMenu.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
 const deadlineExample = ref('2026-10-20')
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
@@ -226,6 +227,10 @@ const detailDemoSubtasks = ref([
   { title: '邀请伙伴验证结果', done: false },
 ])
 const detailDemoComment = ref('')
+const detailLabelAnchor = ref<HTMLButtonElement | null>(null)
+const detailLabelInput = ref<HTMLInputElement | null>(null)
+const detailLabelsOpen = ref(false)
+const detailLabels = ref('')
 </script>
 
 <template>
@@ -261,7 +266,7 @@ const detailDemoComment = ref('')
           </button>
         </nav>
         <div class="sidebar-note">
-          <strong>留白线框</strong><span>浅底分区 · 浮层阴影</span><span>规范 1.1 · 2026.10</span>
+          <strong>留白线框</strong><span>浅底分区 · 浮层阴影</span><span>规范 1.2 · 2026.10</span>
         </div>
       </aside>
       <div id="reference-content" class="reference-content">
@@ -493,18 +498,20 @@ const detailDemoComment = ref('')
         <template v-else-if="active === 'task-detail'">
           <div class="section-heading">
             <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
-            <p>描述随内容增高，子任务与评论在主栏连续展示；桌面右侧只放属性，收起后仍可写评论。长描述可切换独立页签阅读。描述、子任务、评论与属性值统一为 14px，分区标题为 16px，页签和操作不再额外放大。</p>
+            <p>标题独占一行，类型与标签收进页签工具行。空描述保持轻量输入，图片入口并排；空评论只占一行，输入时展开。添加标签使用按钮旁的小浮层，不挤动正文。描述、子任务、评论与属性值统一为 14px，分区标题为 16px。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
+          <div class="density-examples"><WaoButton variant="ghost" @click="detailDemoDescription = ''">空描述示例</WaoButton><WaoButton variant="ghost" @click="detailDemoDescription = '先说明背景、目标与边界，再把具体执行拆成子任务。\n\n' + '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16)">长描述示例</WaoButton></div>
           <div class="task-detail-demo">
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
               <template #heading><h2 class="detail-demo-title">把一个想法拆成可执行的行动</h2></template>
+              <template #tools><button ref="detailLabelAnchor" class="detail-demo-label-trigger" type="button" aria-haspopup="dialog" :aria-expanded="detailLabelsOpen" @click="detailLabelsOpen = !detailLabelsOpen"><i class="ri-price-tag-3-line" aria-hidden="true"></i>标签</button><CellMenu v-if="detailLabelsOpen" :anchor="detailLabelAnchor" :min-width="300" custom-content @close="detailLabelsOpen = false" @ready="detailLabelInput?.focus({ preventScroll: true })"><form class="detail-demo-labels" role="dialog" aria-label="标签演示" @submit.prevent="detailLabelsOpen = false"><strong>标签</strong><input ref="detailLabelInput" v-model="detailLabels" aria-label="演示标签" placeholder="输入标签，用逗号分隔" /><footer><WaoButton variant="ghost" @click="detailLabelsOpen = false">取消</WaoButton><WaoButton type="submit">保存</WaoButton></footer></form></CellMenu></template>
               <template #summary="{ propertiesOpen }"><span v-if="!propertiesOpen">进行中 · P2 · 演示成员</span></template>
-              <template #description="{ compact }"><MarkdownEditor v-model="detailDemoDescription" :min-height="compact ? 56 : 200" slash-commands /></template>
+              <template #description="{ compact }"><MarkdownEditor v-model="detailDemoDescription" :min-height="compact ? 40 : 200" :hide-character-count="compact" placeholder="添加描述…支持 / 命令和粘贴图片" slash-commands /></template>
               <template #subtasks><h3>子任务</h3><label v-for="item in detailDemoSubtasks" :key="item.title" class="detail-demo-row"><input v-model="item.done" type="checkbox" />{{ item.title }}</label></template>
               <template #properties><p>编号 #演示 · 状态 进行中</p><p>负责人 演示成员</p></template>
-              <template #comments><WaoField v-slot="{ id }" label="评论草稿（演示）"><textarea :id="id" v-model="detailDemoComment" class="detail-demo-input"></textarea></WaoField></template>
+              <template #comments><WaoField v-slot="{ id }" label="评论草稿（演示）"><textarea :id="id" v-model="detailDemoComment" rows="1" placeholder="写下评论…" class="detail-demo-input"></textarea></WaoField></template>
             </TaskDetailLayout>
           </div>
         </template>
@@ -616,7 +623,7 @@ const detailDemoComment = ref('')
           >
         </template>
         <footer class="reference-footer">
-          <span>WAO Design · 规范 1.1</span
+          <span>WAO Design · 规范 1.2</span
           ><span>交互演示 · 本页输入不写入账号，离开页面即清除</span>
         </footer>
       </div>
@@ -737,8 +744,14 @@ const detailDemoComment = ref('')
 .resize-example { position: relative; max-width: 100%; padding: var(--wao-space-2); border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .detail-demo-title { margin: 0; font-size: var(--wao-font-title); line-height: 1.4; font-weight: 600; }
 .task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
-.detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
-.detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0; border-bottom: 1px solid var(--wao-line); }
+.detail-demo-input { box-sizing: border-box; width: 100%; min-height: 42px; padding: var(--wao-space-1); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
+.detail-demo-input:focus, .detail-demo-input:not(:placeholder-shown) { min-height: 88px; }
+.detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-1) 0; min-height: 44px; border-bottom: 1px solid var(--wao-line); }
+.density-examples { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); }
+.detail-demo-label-trigger { border: 0; background: transparent; color: var(--wao-text-3); min-height: 44px; font: inherit; cursor: pointer; }
+.detail-demo-labels { box-sizing: border-box; width: 288px; max-width: calc(100vw - 26px); display: grid; gap: var(--wao-space-1); padding: var(--wao-space-1); color: var(--wao-text); font: 400 var(--wao-font-body)/1.5 var(--wao-font); }
+.detail-demo-labels input { min-width: 0; width: 100%; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
+.detail-demo-labels footer { display: flex; justify-content: flex-end; gap: var(--wao-space-1); }
 .detail-demo-row input { accent-color: var(--wao-primary); }
 .design-reference {
   min-height: 100dvh;

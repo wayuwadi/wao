@@ -7,7 +7,6 @@ import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
-import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -446,12 +445,6 @@ function onFileSettingsSaved(settings: FileSettings) {
 <template>
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="files wao-page-frame">
-    <DemoBanner
-      icon="ri-hard-drive-2-line"
-      title="文件与图床"
-      text="文件、图床和网页托管均已接入真实后端持久化。网页托管可上传单文件 HTML，自定义公网链接后缀、标题和 icon；页面在隔离环境中运行，不会接触 WAO 登录态。"
-      storage-key="files"
-    />
     <div class="ftop">
       <div class="ftitle">文件与图床</div>
       <div class="seg">
@@ -1037,16 +1030,16 @@ function onFileSettingsSaved(settings: FileSettings) {
   font-size: 14px;
 }
 .unified-drop {
-  margin-top: 14px;
-  min-height: 82px;
-  padding: 14px 18px;
+  margin-top: var(--wao-space-2);
+  min-height: 56px;
+  padding: var(--wao-space-1) var(--wao-space-2);
   border: 1px dashed var(--wao-line-strong);
-  border-radius: 12px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--wao-space-1);
   cursor: pointer;
   transition:
     border-color 0.15s,
@@ -1064,14 +1057,16 @@ function onFileSettingsSaved(settings: FileSettings) {
   transform: translateY(-1px);
 }
 .unified-drop > i {
-  font-size: 26px;
+  font-size: var(--wao-font-title);
   color: var(--wao-primary-text);
 }
 .unified-drop > div {
   min-width: 0;
   flex: 1;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px var(--wao-space-2);
 }
 .unified-drop b {
   font-size: var(--wao-font-body);
@@ -1551,13 +1546,15 @@ function onFileSettingsSaved(settings: FileSettings) {
   }
   .unified-drop {
     align-items: flex-start;
-    flex-wrap: wrap;
+    padding: var(--wao-space-1);
   }
   .unified-drop > div {
-    min-width: calc(100% - 44px);
+    min-width: 0;
   }
   .unified-drop button {
-    margin-left: 39px;
+    margin-left: 0;
+    flex-shrink: 0;
+    min-height: 44px;
   }
 }
 @media (max-width: 760px), (hover: none), (pointer: coarse) {
