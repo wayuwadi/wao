@@ -749,7 +749,7 @@ const detailLabels = ref('')
 .detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-1) 0; min-height: 44px; border-bottom: 1px solid var(--wao-line); }
 .density-examples { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); }
 .detail-demo-label-trigger { border: 0; background: transparent; color: var(--wao-text-3); min-height: 44px; font: inherit; cursor: pointer; }
-.detail-demo-labels { box-sizing: border-box; width: 288px; max-width: calc(100vw - 26px); display: grid; gap: var(--wao-space-1); padding: var(--wao-space-1); }
+.detail-demo-labels { box-sizing: border-box; width: 288px; max-width: calc(100vw - 26px); display: grid; gap: var(--wao-space-1); padding: var(--wao-space-1); color: var(--wao-text); font: 400 var(--wao-font-body)/1.5 var(--wao-font); }
 .detail-demo-labels input { min-width: 0; width: 100%; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
 .detail-demo-labels footer { display: flex; justify-content: flex-end; gap: var(--wao-space-1); }
 .detail-demo-row input { accent-color: var(--wao-primary); }
