@@ -55,7 +55,7 @@ const { page, pageCount, visible } = useClientPagination(results, [() => props.q
 
 <style scoped>
 .project-search-results { min-width:0; overflow:auto; }
-.search-summary { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:10px 0; font-size:12px; color:var(--wao-text-weak); }
+.search-summary { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:10px 0; font-size:var(--wao-font-help); color:var(--wao-text-3); }
 .search-summary label { display:flex; align-items:center; gap:4px; color:var(--wao-text); }
 button { cursor:pointer; font:inherit; color:inherit; border:0; background:none; text-align:left; }
 .search-summary button,.search-open { color:var(--wao-primary-text); }
@@ -63,9 +63,9 @@ button { cursor:pointer; font:inherit; color:inherit; border:0; background:none;
 .search-task-title { display:flex; flex-wrap:wrap; gap:8px; padding:0; width:100%; font-weight:600; overflow-wrap:anywhere; }
 .search-task-title small { font-weight:400; color:var(--wao-text-weak); }
 ul { list-style:none; margin:5px 0 0; padding:0; }
-.search-hit { display:flex; flex-wrap:wrap; gap:4px 8px; padding:7px 0; width:100%; border-top:1px solid var(--wao-line); font-size:12px; overflow-wrap:anywhere; }
+.search-hit { display:flex; flex-wrap:wrap; gap:4px 8px; padding:7px 0; width:100%; border-top:1px solid var(--wao-line); font-size:var(--wao-font-body); overflow-wrap:anywhere; }
 .search-field { font-weight:600; flex-shrink:0; }
-.search-context { color:var(--wao-text-weak); font-size:12px; overflow-wrap:anywhere; }
+.search-context { color:var(--wao-text-3); font-size:var(--wao-font-body); overflow-wrap:anywhere; }
 .search-snippet { flex-basis:100%; white-space:pre-wrap; }
 .search-empty { padding:18px 0; color:var(--wao-text-weak); }
 </style>

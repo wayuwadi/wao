@@ -387,8 +387,8 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
 <style scoped>
 .day-workspace { container: todo-day / inline-size; width: 100%; min-width: 0; margin: var(--wao-space-2) auto var(--wao-space-3); }
 .day-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-2); flex-wrap: wrap; margin-bottom: var(--wao-space-3); }
-h2 { margin: 0; color: var(--wao-text); font-size: 22px; font-weight: 700; }
-.day-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; }
+h2 { margin: 0; color: var(--wao-text); font-size: var(--wao-font-title); font-weight: 700; }
+.day-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .day-overview b { color: var(--wao-text-2); font-weight: 600; }
 .day-heading nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .date-arrow { width: 40px; padding: 0; }
@@ -406,60 +406,60 @@ button, input, select { font: inherit; }
 .task-drag-handle { flex: none; color: var(--wao-text-3); padding-top: 4px; }
 .task-drag-handle.drag-ready, .task-title[draggable='true'] { cursor: grab; }
 .task-drag-handle.drag-ready:active, .task-title[draggable='true']:active { cursor: grabbing; }
-.task-priority-select { min-width: 0; max-width: 100%; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 12px; padding: 4px; }
+.task-priority-select { min-width: 0; max-width: 100%; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font-size: var(--wao-font-caption); padding: 4px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wao-space-1); min-height: 52px; }
-h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
-.section-heading span { margin-left: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; font-weight: 400; }
-.records-toggle { display: inline-flex; gap: 5px; align-items: center; min-height: 40px; padding: 4px 0; border: 0; background: transparent; color: var(--wao-text-2); font-size: 13px; text-align: left; }
+h3 { margin: 0; font-size: var(--wao-font-body); font-weight: 650; color: var(--wao-text); }
+.section-heading span { margin-left: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); font-weight: 400; }
+.records-toggle { display: inline-flex; gap: 5px; align-items: center; min-height: 40px; padding: 4px 0; border: 0; background: transparent; color: var(--wao-text-2); font-size: var(--wao-font-body); text-align: left; }
 .day-records { border-color: transparent; background: transparent; }
 .day-task { padding: 14px 0; border-top: 1px solid var(--wao-line); }
 .day-task-main { min-width: 0; }
 .task-heading { display: flex; align-items: flex-start; gap: var(--wao-space-1); }
-.task-title { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: var(--wao-text); font-size: 14px; font-weight: 650; text-align: left; overflow-wrap: anywhere; line-height: 1.65; }
+.task-title { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: var(--wao-text); font-size: var(--wao-font-body); font-weight: 650; text-align: left; overflow-wrap: anywhere; line-height: 1.65; }
 .task-title:hover { color: var(--wao-primary-text); }
 .task-check { flex: none; min-width: 24px; padding: 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 20px; line-height: 1.4; }
 .task-check[aria-pressed='true'] { color: var(--wao-success-strong); }
 .task-finished .task-title { font-weight: 500; color: var(--wao-text-2); }
-.task-status { flex: none; padding-top: 4px; font-size: 12px; color: var(--wao-text-3); }
+.task-status { flex: none; padding-top: 4px; font-size: var(--wao-font-help); color: var(--wao-text-3); }
 .task-more { flex: none; min-width: 32px; min-height: 32px; padding: 4px; }
-.task-project, .task-priority { min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--wao-text-3); }
-.checklist-reopen, .latest-progress { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: 12px; }
+.task-project, .task-priority { min-width: 0; overflow-wrap: anywhere; font-size: var(--wao-font-caption); color: var(--wao-text-3); }
+.checklist-reopen, .latest-progress { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .checklist-reopen { padding: 4px 0; min-height: 32px; border: 0; background: transparent; }
 .task-note-composer { margin: var(--wao-space-1) 0 0 32px; }
 .task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 0 32px; }
-.task-trace, .past-schedule { margin: 0; color: var(--wao-text-3); font-size: 12px; }
-.task-error button { min-height: 28px; padding: 3px 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 12px; }
+.task-trace, .past-schedule { margin: 0; color: var(--wao-text-3); font-size: var(--wao-font-caption); }
+.task-error button { min-height: 28px; padding: 3px 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: var(--wao-font-help); }
 .day-create { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin: 0; padding: 12px 0 var(--wao-space-2); border-top: 1px solid var(--wao-line); }
 .day-create input { flex: 1; min-width: 130px; padding: 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
 .day-create select { min-width: 0; max-width: 180px; min-height: var(--wao-control-height); padding: 5px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
-.day-events { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: 12px; }
+.day-events { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .day-events summary { width: fit-content; cursor: pointer; }
 .day-events > div { display: grid; gap: 6px; padding: var(--wao-space-1) 0 0; }
-.day-events small { margin-left: var(--wao-space-1); font-size: 12px; }
+.day-events small { margin-left: var(--wao-space-1); font-size: var(--wao-font-help); }
 .day-notes { padding-top: 0; }
-.section-action { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+.section-action { min-height: 32px; padding: 4px 8px; font-size: var(--wao-font-caption); }
 .day-note-link { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 0; border: 0; border-top: 1px solid var(--wao-line); background: transparent; color: var(--wao-text); text-align: left; }
-.day-note-link span { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
-.day-note-link small { color: var(--wao-text-3); font-size: 12px; }
+.day-note-link span { min-width: 0; overflow-wrap: anywhere; font-size: var(--wao-font-body); }
+.day-note-link small { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .notes-more { margin-top: var(--wao-space-1); }
-.coverage, .day-context { margin: 0 0 var(--wao-space-2); color: var(--wao-text-2); font-size: 13px; }
+.coverage, .day-context { margin: 0 0 var(--wao-space-2); color: var(--wao-text-2); font-size: var(--wao-font-body); }
 .coverage { padding: var(--wao-space-2); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); }
-.day-empty, .day-state { margin: 0; padding: var(--wao-space-2) 0; color: var(--wao-text-3); font-size: 13px; }
+.day-empty, .day-state { margin: 0; padding: var(--wao-space-2) 0; color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .day-state p { margin: var(--wao-space-1) 0; }
 .day-state button { margin-right: var(--wao-space-1); }
-.task-error { margin: var(--wao-space-1) 0; color: var(--wao-danger-strong); font-size: 12px; }
+.task-error { margin: var(--wao-space-1) 0; color: var(--wao-danger-strong); font-size: var(--wao-font-help); }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 button:disabled { opacity: .55; cursor: default; }
 @container todo-day (max-width: 600px) {
   .day-quadrants { grid-template-columns: minmax(0, 1fr); }
-  h2 { font-size: 21px; }
+  h2 { font-size: var(--wao-font-title); }
   .day-heading nav { width: 100%; }
   .day-heading input { flex: 1; }
   .day-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .day-create input { grid-column: 1 / -1; min-width: 0; width: 100%; }
   .day-create select { width: 100%; max-width: none; }
-  .day-heading input, .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: 16px; }
+  .day-heading input, .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: var(--wao-font-card-title); }
   .task-check, .task-more, .checklist-reopen, .section-action, .records-toggle { min-height: 44px; }
   .task-check { min-width: 32px; }
   .task-meta, .day-events, .checklist-reopen, .latest-progress, .task-note-composer { margin-left: 40px; }

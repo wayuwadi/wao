@@ -45,10 +45,10 @@ function close() {
 .day-side-rail { display: flex; flex-direction: column; gap: var(--wao-space-1); border-left: 1px solid var(--wao-line); padding-left: var(--wao-space-1); }
 .day-side-rail button { flex-direction: column; padding: var(--wao-space-1); min-width: 40px; }
 .day-side-rail span { writing-mode: vertical-rl; letter-spacing: .15em; }
-.day-side-count { min-width: 2ch; padding-inline: 4px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-2); font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.6; }
+.day-side-count { min-width: 2ch; padding-inline: 4px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-2); font-size: var(--wao-font-caption); font-variant-numeric: tabular-nums; line-height: 1.6; }
 .day-side-rail button[aria-expanded='true'] { background: var(--wao-primary-soft); }
 .day-side-panels { flex: 1; min-width: 0; }
-.day-side-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); color: var(--wao-text-2); font-size: 13px; }
+.day-side-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); color: var(--wao-text-2); font-size: var(--wao-font-body); }
 @container todo-day-layout (max-width: 800px) {
   .day-columns, .day-columns.side-open { grid-template-columns: minmax(0, 1fr); }
   .day-secondary { grid-row: 1; flex-direction: column; align-items: stretch; }

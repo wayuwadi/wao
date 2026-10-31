@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
 .usage-details {
   margin-top: 10px;
   color: var(--wao-text-3);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .usage-details summary {
   cursor: pointer;
@@ -589,10 +589,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
 }
 .execution-fields small {
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   line-height: 1.6;
 }
 select {
@@ -606,14 +606,14 @@ select {
   color: var(--wao-text);
   border-radius: 8px;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 @media (max-width: 650px) {
   .execution-fields {
     grid-template-columns: 1fr;
   }
   select {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
 }
 </style>
@@ -626,7 +626,7 @@ select {
   gap: 12px;
   margin: 18px 0;
   color: var(--wao-text-2);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .system-color-field input {
   width: 44px;
@@ -638,7 +638,7 @@ select {
   padding: 4px;
 }
 .system-color-field span {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 .system-color-preview {
@@ -650,7 +650,7 @@ select {
 .system-color-preview span {
   display: block;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   font-weight: 400;
   color: var(--wao-text-faint);
 }

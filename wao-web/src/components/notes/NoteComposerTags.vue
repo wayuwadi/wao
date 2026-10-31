@@ -16,15 +16,15 @@ const emit = defineEmits<{ toggle: [tag: string]; create: []; 'toggle-create': [
 <style scoped>
 .composer-tags { display:flex; align-items:center; flex-wrap:wrap; gap:7px; min-width:0; }
 .composer-tags > i { color:var(--wao-text-weak); font-size:14px; }
-.composer-tags button { display:inline-flex; align-items:center; gap:5px; border:0; border-radius:20px; padding:5px 8px; background:var(--wao-bg-sub-2); color:var(--wao-text-3); font-size:12px; max-width:100%; overflow-wrap:anywhere; cursor:pointer; }
+.composer-tags button { display:inline-flex; align-items:center; gap:5px; border:0; border-radius:20px; padding:5px 8px; background:var(--wao-bg-sub-2); color:var(--wao-text-3); font-size:var(--wao-font-caption); max-width:100%; overflow-wrap:anywhere; cursor:pointer; }
 .composer-tags button:hover, .composer-tags button.selected { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 .composer-tags button:disabled { opacity:.5; cursor:default; }
 .composer-tags button:focus-visible, .composer-tags input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
-.quick-tag-hash { opacity:.6; font-size:11px; }
+.quick-tag-hash { opacity:.6; font-size:var(--wao-font-caption); }
 .inline-tag-create { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
 .inline-tag-create input { min-width:0; width:140px; padding:6px; border:1px solid var(--wao-line-control); border-radius:6px; background:var(--wao-bg-card); color:var(--wao-text-1); }
 .add-tag { flex:none; padding:4px 9px; border-radius:7px; }
-.error { color:var(--wao-danger-strong); font-size:12px; }
+.error { color:var(--wao-danger-strong); font-size:var(--wao-font-help); }
 @media(max-width:760px) { .composer-tags { gap:6px; flex-wrap:nowrap; overflow-x:auto; flex-shrink:0; } .composer-tags button { min-height:44px; flex-shrink:0; } .inline-tag-create { flex:none; } }
 @media(pointer:coarse) { .composer-tags button { min-height:44px; } }
 </style>

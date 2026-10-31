@@ -158,12 +158,12 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   gap: 10px;
 }
 .title {
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   font-weight: 700;
 }
 .head-tip {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .close {
   width: 28px;
@@ -190,7 +190,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
   padding: 0 12px;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
@@ -201,8 +201,8 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
 }
 .label {
   margin-top: 14px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .pills {
   margin-top: 6px;
@@ -217,7 +217,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -239,7 +239,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.7;
   background: var(--wao-bg-card);
   color: var(--wao-text);
@@ -272,7 +272,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   font-weight: 600;
   color: var(--wao-text);
 }
@@ -282,8 +282,8 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
 }
 .vis-desc {
   margin-top: 3px;
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .foot {
   margin-top: 20px;
@@ -293,8 +293,8 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   flex-wrap: wrap;
 }
 .foot-tip {
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .btn-ghost {
   height: 34px;
@@ -303,7 +303,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .btn-ghost:hover {
@@ -316,7 +316,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
 }

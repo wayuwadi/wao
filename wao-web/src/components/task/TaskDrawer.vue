@@ -1588,7 +1588,7 @@ async function uploadAttachment(event: Event) {
 .task-save-conflict { padding: 12px 20px; color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 .task-save-conflict button { margin-left: 10px; }
 .task-save-conflict pre { max-height: 180px; overflow: auto; white-space: pre-wrap; }
-.optional-props > summary { padding: 12px 0; font-size: 12px; color: var(--wao-text-weak); cursor: pointer; }
+.optional-props > summary { padding: 12px 0; font-size: var(--wao-font-help); color: var(--wao-text-3); cursor: pointer; }
 /* 评论操作 / 编辑态 */
 .c-op {
   width: 22px;
@@ -1623,7 +1623,7 @@ async function uploadAttachment(event: Event) {
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   padding: 7px 9px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   line-height: 1.7;
   resize: vertical;
   outline: none;
@@ -1692,7 +1692,7 @@ async function uploadAttachment(event: Event) {
   background: none;
   padding: 4px 6px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-primary-text);
   cursor: pointer;
   flex-shrink: 0;
@@ -1711,7 +1711,7 @@ async function uploadAttachment(event: Event) {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   margin-bottom: 6px;
   min-width: 0;
@@ -1745,7 +1745,7 @@ async function uploadAttachment(event: Event) {
   border-radius: 11px;
   background: none;
   color: #338fe5;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   cursor: pointer;
 }
 .state-pill.completed {
@@ -1781,7 +1781,7 @@ async function uploadAttachment(event: Event) {
   border: none;
   background: none;
   color: var(--wao-text-3);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   padding: 4px 7px;
   border-radius: 6px;
@@ -1799,10 +1799,10 @@ async function uploadAttachment(event: Event) {
 }
 .sep {
   color: var(--wao-text-faint-2);
-  font-size: 14px;
+  font-size: var(--wao-font-body);
 }
 .wait-badge {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   background: var(--wao-warning-bg);
   color: var(--wao-warning-strong);
   border-radius: 5px;
@@ -1836,7 +1836,7 @@ async function uploadAttachment(event: Event) {
   width: 100%;
   border: none;
   outline: none;
-  font-size: calc(var(--wao-font-reading) * 1.5);
+  font-size: var(--wao-font-title);
   font-weight: 600;
   color: var(--wao-text);
   background: none;
@@ -1861,8 +1861,8 @@ async function uploadAttachment(event: Event) {
   gap: 10px;
 }
 .field-label {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   letter-spacing: 1px;
   margin-bottom: 6px;
 }
@@ -1883,7 +1883,7 @@ async function uploadAttachment(event: Event) {
 .ai-run-engine {
   flex: 0 0 auto;
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .ai-run-btn {
   height: 30px;
@@ -1892,7 +1892,7 @@ async function uploadAttachment(event: Event) {
   border-radius: 8px;
   background: linear-gradient(135deg, var(--wao-primary-soft), var(--wao-bg-card));
   color: var(--wao-primary-text);
-  font-size: 11.5px;
+  font-size: var(--wao-font-body);
   font-weight: 650;
   cursor: pointer;
   display: inline-flex;
@@ -1922,7 +1922,7 @@ async function uploadAttachment(event: Event) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .pause-ai-btn:hover:not(:disabled) { background: var(--wao-danger-bg); border-color: var(--wao-danger-line); }
 .pause-ai-btn:disabled { cursor: default; opacity: .7; }
@@ -1948,8 +1948,8 @@ async function uploadAttachment(event: Event) {
   animation: waoPop 0.14s ease;
 }
 .share-scope {
-  font-size: 11px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   padding: 5px 8px 6px;
   border-bottom: 1px solid var(--wao-divider);
   margin-bottom: 3px;
@@ -1981,7 +1981,7 @@ async function uploadAttachment(event: Event) {
   color: var(--wao-text);
 }
 .share-filter-main em {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   font-style: normal;
   color: var(--wao-text-weak);
   line-height: 1.5;
@@ -2018,7 +2018,7 @@ async function uploadAttachment(event: Event) {
   color: var(--wao-text);
 }
 .share-main em {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   font-style: normal;
   color: var(--wao-text-weak);
 }
@@ -2030,7 +2030,7 @@ async function uploadAttachment(event: Event) {
   margin-bottom: 8px;
 }
 .steps-count {
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .steps-bar {
@@ -2085,7 +2085,7 @@ async function uploadAttachment(event: Event) {
   opacity: 1;
 }
 .check-text {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
 }
 .check-text.done {
@@ -2179,15 +2179,15 @@ async function uploadAttachment(event: Event) {
 .attach-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
 }
 .attach-size {
-  font-size: 11.5px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .attach .dl {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-faint-2);
 }
 .relation-unlink {
@@ -2199,14 +2199,14 @@ async function uploadAttachment(event: Event) {
   border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong);
 }
 .rel {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-warning-strong);
   background: var(--wao-warning-bg);
   border-radius: 5px;
   padding: 1px 6px;
 }
 .mini {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   border-radius: 5px;
   padding: 1px 6px;
   flex-shrink: 0;
@@ -2218,8 +2218,8 @@ async function uploadAttachment(event: Event) {
   gap: 6px;
   border: none;
   background: none;
-  color: var(--wao-text-weak);
-  font-size: 12.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-body);
   cursor: pointer;
   padding: 4px 0;
 }
@@ -2268,15 +2268,15 @@ async function uploadAttachment(event: Event) {
   gap: 8px;
 }
 .c-head b {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .c-time {
-  font-size: 11px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .c-text {
   margin-top: 3px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   line-height: 1.7;
 }
@@ -2298,7 +2298,7 @@ async function uploadAttachment(event: Event) {
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
   padding: 0 11px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
@@ -2314,7 +2314,7 @@ async function uploadAttachment(event: Event) {
   color: #fff;
   border: none;
   border-radius: 9px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2329,7 +2329,7 @@ async function uploadAttachment(event: Event) {
 .mention-menu { font: 400 var(--wao-font-body)/1.5 var(--wao-font); position: absolute; z-index: 8; left: 0; right: 62px; bottom: 38px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 8px; box-shadow: var(--wao-shadow-pop); padding: 4px; }
 .mention-menu button { font: inherit; color: var(--wao-text-2); min-height: 34px; width: 100%; border: 0; background: transparent; text-align: left; padding: 6px; display:flex; align-items:center; gap: 7px; border-radius: 6px; cursor:pointer; }
 .mention-menu button:hover { background: var(--wao-primary-soft); }
-.mention-menu span { width: 20px; height:20px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; }
+.mention-menu span { width: 20px; height:20px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:var(--wao-font-body); }
 
 /* 属性栏：关联与评论也在这里，比原来宽一点 */
 .props {
@@ -2345,8 +2345,8 @@ async function uploadAttachment(event: Event) {
   z-index: 88;
 }
 .props-label {
-  font-size: 11px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   letter-spacing: 1.5px;
   margin-bottom: 4px;
 }
@@ -2362,12 +2362,12 @@ async function uploadAttachment(event: Event) {
 }
 .prop-key {
   width: 60px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   flex-shrink: 0;
 }
 .prop-val {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   display: inline-flex;
   align-items: center;
@@ -2400,7 +2400,7 @@ async function uploadAttachment(event: Event) {
 }
 .job-id-copy code {
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: var(--wao-font-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2414,7 +2414,7 @@ async function uploadAttachment(event: Event) {
   flex: 1;
   min-width: 0;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-2);
   background: none;
   border: 1px solid transparent;
@@ -2424,7 +2424,7 @@ async function uploadAttachment(event: Event) {
   cursor: pointer;
 }
 .due-hint {
-  font-size: 11.5px;
+  font-size: var(--wao-font-help);
   flex-shrink: 0;
 }
 .date-input:hover,
@@ -2450,7 +2450,7 @@ async function uploadAttachment(event: Event) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   border: none;
   border-radius: 999px;
   padding: 3px 10px;
@@ -2467,7 +2467,7 @@ async function uploadAttachment(event: Event) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   border: none;
   background: none;
@@ -2502,7 +2502,7 @@ async function uploadAttachment(event: Event) {
   display: flex;
   align-items: center;
 }
-.parts-empty { color: var(--wao-text-faint); font-size: 11.5px; }
+.parts-empty { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .add-part {
   width: 20px;
   height: 20px;
@@ -2530,7 +2530,7 @@ async function uploadAttachment(event: Event) {
   border: none;
   background: none;
   color: var(--wao-primary-text);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   padding: 2px 6px;
   margin-left: -6px;
@@ -2588,7 +2588,7 @@ async function uploadAttachment(event: Event) {
 .pmenu-item:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .pmenu-item .mini { font: inherit; }
 @media (pointer: coarse) { .pmenu-item { min-height: 44px; } }
-.pmenu-empty { padding: 8px; color: var(--wao-text-faint); font-size: 12px; text-align: center; }
+.pmenu-empty { padding: 8px; color: var(--wao-text-3); font-size: var(--wao-font-help); text-align: center; }
 .pmenu-item.plain {
   font: inherit;
   color: var(--wao-text);
@@ -2609,7 +2609,7 @@ async function uploadAttachment(event: Event) {
   font: inherit;
 }
 .chk {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   color: var(--wao-primary-text);
 }
 
@@ -2630,7 +2630,7 @@ async function uploadAttachment(event: Event) {
   border-radius: 9px;
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   cursor: pointer;
 }
@@ -2661,7 +2661,7 @@ async function uploadAttachment(event: Event) {
   border-radius: 7px;
   background: var(--wao-bg-card);
   color: var(--wao-primary-text);
-  font-size: 11.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2671,14 +2671,14 @@ async function uploadAttachment(event: Event) {
 .acceptance-template-btn:disabled { color: var(--wao-text-faint); cursor: default; }
 .custom-name {
   width: 82px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-body);
+  color: var(--wao-text-3);
   flex-shrink: 0;
 }
 .custom-val {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   border: 0;
   background: transparent;
@@ -2721,13 +2721,13 @@ async function uploadAttachment(event: Event) {
   min-width: 0;
 }
 .act-text {
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   line-height: 1.6;
 }
 .act-time {
-  font-size: 11px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 @keyframes waoSubPage {
   from { transform: translateX(14px); opacity: 0.4; }
@@ -2774,7 +2774,7 @@ async function uploadAttachment(event: Event) {
     width: min(236px, calc(100vw - 16px));
   }
   .title-input {
-    font-size: 20px;
+    font-size: var(--wao-font-title);
   }
   .check-row {
     min-height: 32px;
@@ -2800,16 +2800,16 @@ async function uploadAttachment(event: Event) {
 .detail-kicker :deep(.task-labels > button) { color: var(--wao-text-3); }
 .detail-kicker :deep(.label-chip) { font-size: var(--wao-font-help, 13px); }
 .work-item-type { min-height: 32px; padding: 4px var(--wao-space-1); border-color: transparent; background: transparent; font-size: var(--wao-font-body); }
-.comments-title { display: flex; align-items: center; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); font-size: var(--wao-font-reading, 16px); font-weight: 600; }
+.comments-title { display: flex; align-items: center; gap: var(--wao-space-1); margin: 0 0 var(--wao-space-2); font-size: var(--wao-font-section); font-weight: 600; }
 .side-count { color: var(--wao-text-3); font-size: var(--wao-font-body); font-weight: 400; }
 .task-comments .comment-list { gap: var(--wao-space-3); }
 .task-comments .c-head { flex-wrap: wrap; align-items: center; }
 .task-comments .c-head b { font-size: var(--wao-font-body); }
 .task-comments .c-time { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
-.task-comments .c-text { font-size: var(--wao-font-reading, 16px); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
+.task-comments .c-text { font-size: var(--wao-font-body); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-comments .c-av { width: 32px; height: 32px; font-size: var(--wao-font-help, 13px); }
 .task-comments .ci-wrap { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
-.task-comments .ci-wrap textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; padding: var(--wao-space-1) var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-reading, 16px)/1.7 var(--wao-font); }
+.task-comments .ci-wrap textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; padding: var(--wao-space-1) var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-body)/1.7 var(--wao-font); }
 .task-comments .ci-wrap textarea:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .task-comments .ci-wrap textarea::placeholder { color: var(--wao-text-3); }
 .task-comments .send { min-height: 36px; font-size: var(--wao-font-body); border-radius: var(--wao-radius-control); }
@@ -2817,27 +2817,28 @@ async function uploadAttachment(event: Event) {
 .comment-help { margin: var(--wao-space-1) 0 0; color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); }
 .comment:focus-within .c-op { opacity: 1; }
 .c-op:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
-.c-edit-input { color: var(--wao-text); background: var(--wao-bg-card); font-size: var(--wao-font-reading, 16px); }
+.c-edit-input { color: var(--wao-text); background: var(--wao-bg-card); font-size: var(--wao-font-body); }
 .props > .props-label:first-child { display: none; }
 .props-label, .prop-key, .optional-props > summary { color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); letter-spacing: normal; }
 .prop-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); justify-items: start; min-height: 40px; padding: 4px 0; }
 .prop-row > button, .prop-val { min-width: 0; max-width: 100%; }
-.prop-row .date-input, .prop-row .datetime-input { box-sizing: border-box; width: 100%; }
+.prop-row .date-input, .prop-row .datetime-input { box-sizing: border-box; width: 100%; font-size: var(--wao-font-body); }
 .prop-row .due-hint { grid-column: 2; font-size: var(--wao-font-help, 13px); }
 .prop-row .owner-btn { width: 100%; }
 .prop-val, .props .pill, .props .owner-btn, .props .proj-btn, .props .text-btn { font-size: var(--wao-font-body); }
 .props :deep(.subtask-properties label), .props :deep(.subtask-properties summary) { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
 .props :deep(.subtask-properties input), .props :deep(.subtask-properties select) { min-height: 32px; font-size: var(--wao-font-body); }
-.field-label { color: var(--wao-text); font-size: var(--wao-font-reading, 16px); font-weight: 600; letter-spacing: normal; }
+.field-label { color: var(--wao-text); font-size: var(--wao-font-section); font-weight: 600; letter-spacing: normal; }
 .detail-subtasks :deep(.inline-subs) { border: 0; border-radius: 0; }
 .detail-subtasks :deep(.list-head) { background: transparent; padding: 0 0 var(--wao-space-1); height: auto; min-height: 36px; flex-wrap: wrap; }
-.detail-subtasks :deep(.list-title) { font-size: var(--wao-font-reading, 16px); }
+.detail-subtasks :deep(.list-title) { font-size: var(--wao-font-section); }
 .detail-subtasks :deep(.inline-sub) { min-height: 44px; }
 .detail-subtasks :deep(.sub-open) { font-size: var(--wao-font-body); white-space: normal; overflow-wrap: anywhere; text-align: left; padding-block: var(--wao-space-1); }
 .detail-subtasks :deep(.sub-open.done), .detail-subtasks :deep(.done-switch), .detail-subtasks :deep(.list-count), .detail-subtasks :deep(.empty), .detail-subtasks :deep(.number) { color: var(--wao-text-3); }
 .detail-subtasks :deep(.done-switch), .detail-subtasks :deep(.list-count), .detail-subtasks :deep(.empty) { font-size: var(--wao-font-help, 13px); }
 .detail-subtasks :deep(form input) { font: inherit; min-height: 36px; }
 .detail-subtasks :deep(form input::placeholder) { color: var(--wao-text-3); }
+.comments-title, .field-label, .detail-subtasks :deep(.list-title) { line-height: var(--wao-line-heading); font-weight: var(--wao-weight-heading); }
 @media (max-width: 760px) {
   .detail-subtasks :deep(.inline-sub) { flex-wrap: wrap; row-gap: 0; padding-block: var(--wao-space-1); }
   .detail-subtasks :deep(.grip) { display: none; }
@@ -2850,6 +2851,6 @@ async function uploadAttachment(event: Event) {
   .task-comments .send, .work-item-type, .props button, .props :deep(select), .props :deep(input), .detail-subtasks :deep(button), .detail-subtasks :deep(form input) { min-height: 44px; }
 }
 .state-pill.sm { cursor: inherit; }
-.task-hierarchy-links { padding: 8px 24px; border-bottom: 1px solid var(--wao-line); font-size: 13px; }
+.task-hierarchy-links { padding: 8px 24px; border-bottom: 1px solid var(--wao-line); font-size: var(--wao-font-body); }
 .task-hierarchy-links button { border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; margin: 4px 8px 4px 0; text-align: left; }
 </style>

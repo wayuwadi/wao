@@ -164,43 +164,43 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </template>
 
 <style scoped>
-.draft-status { margin: 10px 16px; font-size: 12px; color: var(--wao-warning-strong); }
+.draft-status { margin: 10px 16px; font-size: var(--wao-font-help); color: var(--wao-warning-strong); }
 [id^="notification-"] { scroll-margin-top: 20px; }
 .notification-settings { max-width: 820px; display: grid; gap: 14px; }
 header { display: flex; align-items: center; gap: 16px; }
 header > div { flex: 1; }
 h1, h2, p { margin: 0; }
-h1 { font-size: 20px; }
-header p, .policy-head p { margin-top: 5px; color: var(--wao-text-weak); font-size: 12px; }
-.save-state { color: var(--wao-text-weak); font-size: 12px; display: inline-flex; gap: 5px; }
+h1 { font-size: var(--wao-font-title); }
+header p, .policy-head p { margin-top: 5px; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
+.save-state { color: var(--wao-text-3); font-size: var(--wao-font-caption); display: inline-flex; gap: 5px; }
 .save-state.saved { color: var(--wao-success); }
 .policy-card { border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); overflow: hidden; }
 .policy-head { padding: 15px 16px; background: var(--wao-bg-sub); display: flex; align-items: center; gap: 12px; }
 .policy-head > div { flex: 1; }
-.policy-head h2 { font-size: 14px; }
-.policy-head > span { color: var(--wao-primary-text); font-size: 11px; }
+.policy-head h2 { font-size: var(--wao-font-body); }
+.policy-head > span { color: var(--wao-primary-text); font-size: var(--wao-font-caption); }
 .policy-row { min-height: 58px; padding: 8px 16px; border-top: 1px solid var(--wao-divider); display: flex; align-items: center; gap: 12px; }
 .policy-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
-.policy-row b { font-size: 13px; }
-.policy-row small { color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
+.policy-row b { font-size: var(--wao-font-body); }
+.policy-row small { color: var(--wao-text-3); font-size: var(--wao-font-help); line-height: 1.5; }
 .policy-row input { width: 36px; height: 20px; accent-color: var(--wao-primary); cursor: pointer; }
 .policy-row input:disabled { cursor: default; opacity: .55; }
 .effective-state { margin: 12px 16px 4px; padding: 10px 12px; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: var(--wao-success); background: color-mix(in srgb, var(--wao-success) 9%, transparent); }
 .effective-state.quiet { color: var(--wao-warning-strong); background: var(--wao-warning-bg); }
 .effective-state.off { color: var(--wao-text-weak); background: var(--wao-bg-sub); }
 .effective-state > span { display: grid; gap: 2px; }
-.effective-state small { font-size: 10px; color: var(--wao-text-weak); }
+.effective-state small { font-size: var(--wao-font-caption); color: var(--wao-text-3); }
 .quiet-row { padding: 10px 16px 14px; border-top: 1px solid var(--wao-divider); display: grid; gap: 10px; }
 .quiet-row > label { display: flex; align-items: center; gap: 12px; }
 .quiet-row > label > span { flex: 1; display: grid; gap: 3px; }
-.quiet-row b { font-size: 13px; }
-.quiet-row small { color: var(--wao-text-weak); font-size: 11px; }
+.quiet-row b { font-size: var(--wao-font-body); }
+.quiet-row small { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .quiet-row > label > input { width: 36px; height: 20px; accent-color: var(--wao-primary); }
 .quiet-times { display: flex; align-items: center; gap: 8px; padding-left: 12px; }
 .quiet-times.disabled { opacity: .55; }
 .quiet-times input { padding: 6px 8px; border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text); background: var(--wao-bg-card); }
 footer { position: sticky; bottom: 12px; padding: 10px 12px; border: 1px solid var(--wao-line); border-radius: 10px; background: color-mix(in srgb, var(--wao-bg-card) 94%, transparent); box-shadow: var(--wao-shadow-pop); display: flex; align-items: center; gap: 12px; }
-footer span { flex: 1; color: var(--wao-text-weak); font-size: 12px; }
+footer span { flex: 1; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
 footer button, .panel-state button, .inline-error button { padding: 7px 12px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; }
 footer button:disabled { opacity: .5; cursor: default; }
 .panel-state { min-height: 180px; border: 1px solid var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }

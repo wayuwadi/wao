@@ -110,7 +110,7 @@ async function save() {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--wao-text);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .name-row button,
@@ -120,9 +120,9 @@ async function save() {
   border-radius: 6px;
   padding: 3px 6px;
   background: transparent;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--wao-font-body);
 }
 .name-row button:hover,
 .rename-row button:hover {
@@ -152,8 +152,8 @@ async function save() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .rename-state.saved {
   flex: none;

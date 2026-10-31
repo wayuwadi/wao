@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text);
   box-shadow: var(--wao-shadow-dialog);
   outline: none;
-  font: 14px/1.6 var(--wao-font, 'Segoe UI', 'Microsoft YaHei', sans-serif);
+  font: 400 var(--wao-font-body)/var(--wao-line-body) var(--wao-font);
 }
 .dialog-heading {
   flex-shrink: 0;
@@ -149,14 +149,15 @@ onBeforeUnmount(() => {
 }
 h2 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  font-size: var(--wao-font-title);
+  font-weight: var(--wao-weight-heading);
+  line-height: var(--wao-line-heading);
+  letter-spacing: normal;
 }
 p {
   margin: 3px 0 0;
   color: var(--wao-text-3);
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   line-height: 1.6;
 }
 .title-icon {
@@ -219,7 +220,7 @@ button:focus-visible {
     padding: 18px 16px;
   }
   h2 {
-    font-size: 20px;
+    font-size: var(--wao-font-title);
   }
   .title-icon {
     width: 42px;

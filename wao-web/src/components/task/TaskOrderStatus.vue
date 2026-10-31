@@ -17,6 +17,6 @@ watch(() => [props.scope, session.userId], () => { void order.load(props.scope) 
   </div>
 </template>
 <style scoped>
-.order-status { font-size: 12px; color: var(--wao-text-weak); padding: 4px 0; }
+.order-status { font-size: var(--wao-font-help); color: var(--wao-text-3); padding: 4px 0; }
 .order-status button { color: var(--wao-primary); border: 0; background: none; cursor: pointer; }
 </style>

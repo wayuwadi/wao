@@ -238,7 +238,7 @@ onMounted(() => {
   padding: 1px 6px;
   border: 1px solid var(--wao-line-control);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   font-weight: 400;
   font-style: normal;
   color: var(--wao-text-2);
@@ -259,7 +259,7 @@ onMounted(() => {
 }
 .eyebrow {
   color: var(--wao-text-weak);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   letter-spacing: 1px;
 }
 h1 {
@@ -322,11 +322,11 @@ button:disabled {
   outline: 0;
   background: none;
   color: inherit;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
 }
 .search span,
 .search kbd {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .domains {
@@ -344,7 +344,7 @@ button:disabled {
   border-radius: 8px;
   background: var(--wao-bg-sub);
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .domains .active {
   color: var(--wao-primary-text);
@@ -363,7 +363,7 @@ button:disabled {
 }
 .catalog-section header > span {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .function-list {
   border: 1px solid var(--wao-line);
@@ -473,7 +473,7 @@ small {
   font-size: var(--wao-font-caption);
 }
 select {
-  font-size: 11px;
+  font-size: var(--wao-font-body);
   padding: 5px 8px;
   border: 1px solid var(--wao-line);
   border-radius: 6px;
@@ -500,7 +500,7 @@ select {
   padding: 12px;
   border-radius: 8px;
   background: var(--wao-bg-sub);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
 }
 .error {
   color: var(--wao-danger-strong);
@@ -515,7 +515,7 @@ select {
   color: var(--wao-text-weak);
 }
 .hint {
-  font-size: 12px;
+  font-size: var(--wao-font-help);
 }
 @media (max-width: 720px) {
   .hero {

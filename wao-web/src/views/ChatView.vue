@@ -1148,7 +1148,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text);
 }
 .chat-header h1 span {
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   color: #fff;
   background: var(--wao-primary);
   padding: 3px 7px;
@@ -1158,7 +1158,7 @@ onBeforeUnmount(() => {
 .chat-header p {
   margin: 0;
   color: var(--wao-text-weak);
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .eyebrow {
   color: var(--wao-primary-text) !important;
@@ -1281,12 +1281,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   margin: 0 2px 5px;
-  color: var(--wao-text-faint);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .message-meta strong {
   color: var(--wao-text-2);
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .message-row.mine .message-meta {
   justify-content: flex-end;
@@ -1303,7 +1303,7 @@ onBeforeUnmount(() => {
   border-radius: 4px 13px 13px;
   background: var(--wao-bg-card);
   color: var(--wao-text);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -1354,7 +1354,7 @@ onBeforeUnmount(() => {
   padding: 6px 9px;
   display: flex;
   gap: 5px;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   max-width: 100%;
   overflow: hidden;
 }
@@ -1389,8 +1389,8 @@ onBeforeUnmount(() => {
 .reaction-picker-wrap > button {
   border: 0;
   background: transparent;
-  color: var(--wao-text-faint);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .reaction-picker-wrap,
@@ -1430,7 +1430,7 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-sub);
   border-radius: 999px;
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .reaction-list button.reacted {
@@ -1440,7 +1440,7 @@ onBeforeUnmount(() => {
 .delivery {
   margin: 5px 3px 0;
   color: var(--wao-text-faint);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .delivery.failed,
 .delivery.unavailable {
@@ -1458,7 +1458,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   color: var(--wao-primary-text);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .unread-divider:before,
 .unread-divider:after {
@@ -1470,7 +1470,7 @@ onBeforeUnmount(() => {
 .inline-error {
   align-self: center;
   color: var(--wao-danger);
-  font-size: 10px;
+  font-size: var(--wao-font-help);
 }
 .composer {
   border-top: 1px solid var(--wao-line);
@@ -1490,7 +1490,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text-faint);
 }
 .composer :deep(.md) {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .composer-footer {
   display: flex;
@@ -1502,8 +1502,8 @@ onBeforeUnmount(() => {
 .composer-status {
   display: flex;
   gap: 10px;
-  color: var(--wao-text-faint);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .composer-status .send-error,
 .composer-status .over {
@@ -1557,7 +1557,7 @@ onBeforeUnmount(() => {
 }
 .floating .chat-header h1 {
   margin: 0;
-  font-size: 19px;
+  font-size: var(--wao-font-title);
 }
 .floating .chat-header p {
   display: none;
@@ -1635,7 +1635,7 @@ onBeforeUnmount(() => {
     flex-direction: row;
   }
   .message-text {
-    font-size: 12px;
+    font-size: var(--wao-font-body);
   }
 }
 </style>

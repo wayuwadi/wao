@@ -81,30 +81,30 @@ const stories = [
 
 <style scoped>
 .wao-about { max-width: 840px; color: var(--wao-text); }
-h1 { margin: 0 0 22px; font-size: 22px; font-weight: 650; line-height: 1.4; }
+h1 { margin: 0 0 22px; font-size: var(--wao-font-title); font-weight: 650; line-height: 1.4; }
 h2, h3, p { margin: 0; }
-p { font-size: 13px; line-height: 1.8; color: var(--wao-text-3); }
+p { font-size: var(--wao-font-body); line-height: 1.8; color: var(--wao-text-3); }
 .brand-card { padding: 28px 30px; border: 1px solid var(--wao-line); border-radius: 18px; background: var(--wao-primary-soft); }
 .brand-signature { display: flex; align-items: center; gap: 13px; color: var(--wao-primary-text); }
-.brand-descriptor { padding-left: 13px; border-left: 1px solid var(--wao-line); font-size: 12px; letter-spacing: .06em; color: var(--wao-text-3); }
+.brand-descriptor { padding-left: 13px; border-left: 1px solid var(--wao-line); font-size: var(--wao-font-help); letter-spacing: .06em; color: var(--wao-text-3); }
 .brand-signature :deep(.wao-logo-symbol) { width: 44px; height: 44px; }
 .brand-signature :deep(.wao-logo-name) { font-size: 24px; }
 .brand-card h2 { margin: 24px 0 10px; font-size: clamp(22px, 2.2vw, 28px); line-height: 1.45; font-weight: 600; }
 .brand-card h2 span { display: inline-block; }
 .brand-card p { max-width: 540px; }
 .about-section { margin-top: 30px; }
-.about-section > h2 { font-size: 16px; font-weight: 600; line-height: 1.5; margin-bottom: 14px; }
+.about-section > h2 { font-size: var(--wao-font-card-title); font-weight: 600; line-height: 1.5; margin-bottom: 14px; }
 .principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
 .principle > i { color: var(--wao-primary-text); font-size: 19px; }
-.principle h3 { margin: 9px 0 6px; font-size: 14px; font-weight: 600; }
+.principle h3 { margin: 9px 0 6px; font-size: var(--wao-font-body); font-weight: 600; }
 .section-intro { margin: -6px 0 17px; }
 .companions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .companion-card { min-width: 0; padding: 18px 16px; border: 1px solid var(--wao-line); border-radius: 15px; background: var(--wao-bg-card); }
 .portrait { height: 80px; display: flex; align-items: center; justify-content: center; margin-bottom: 13px; }
-.companion-copy h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; line-height: 1.5; }
-.companion-copy h3 span { font-size: 11px; font-weight: 400; color: var(--wao-primary-text); }
+.companion-copy h3 { display: flex; align-items: center; gap: 8px; font-size: var(--wao-font-card-title); font-weight: 600; line-height: 1.5; }
+.companion-copy h3 span { font-size: var(--wao-font-body); font-weight: 400; color: var(--wao-primary-text); }
 .companion-copy p { margin-top: 8px; }
-blockquote { margin: 13px 0 0; color: var(--wao-primary-text); font-size: 12px; line-height: 1.7; }
+blockquote { margin: 13px 0 0; color: var(--wao-primary-text); font-size: var(--wao-font-caption); line-height: 1.7; }
 .resource-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .about-link { box-sizing: border-box; display: flex; gap: 12px; align-items: center; padding: 16px; border: 1px solid var(--wao-line); border-radius: 12px; color: var(--wao-text); background: var(--wao-bg-card); text-decoration: none; }
 .about-link:hover { border-color: var(--wao-primary-text); }
@@ -112,9 +112,9 @@ blockquote { margin: 13px 0 0; color: var(--wao-primary-text); font-size: 12px; 
 .about-link > i:first-child { color: var(--wao-primary-text); font-size: 20px; }
 .about-link > i:last-child { font-size: 14px; color: var(--wao-text-weak); flex: none; }
 .about-link > span { flex: 1; min-width: 0; }
-.about-link strong { display: block; font-size: 13px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
-.about-link small { display: block; margin-top: 4px; color: var(--wao-text-3); font-size: 12px; line-height: 1.7; }
-.stories-title { margin: 22px 0 8px; font-size: 13px; font-weight: 500; color: var(--wao-text-weak); }
+.about-link strong { display: block; font-size: var(--wao-font-body); font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.about-link small { display: block; margin-top: 4px; color: var(--wao-text-3); font-size: var(--wao-font-help); line-height: 1.7; }
+.stories-title { margin: 22px 0 8px; font-size: var(--wao-font-body); font-weight: 500; color: var(--wao-text-3); }
 .story-link { padding: 13px 0; border: 0; border-radius: 0; background: transparent; }
 .story-link + .story-link { border-top: 1px solid var(--wao-line); }
 .story-link:hover strong { color: var(--wao-primary-text); }

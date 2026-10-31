@@ -452,7 +452,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 .group-manage {
   border: 0;
   background: transparent;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   cursor: pointer;
   border-radius: 6px;
@@ -469,7 +469,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -490,7 +490,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   padding: 11px 16px;
   display: flex;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: #8a5b10;
   line-height: 1.7;
 }
@@ -513,7 +513,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   color: #a4302e;
   border-radius: 8px;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
 }
 .banner.error .retry:disabled {
@@ -554,7 +554,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   cursor: pointer;
   background: transparent;
   color: var(--wao-text-2);
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .group-btn:hover {
   background: var(--wao-bg-tab);
@@ -652,7 +652,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   min-width: 0;
 }
 .item-name {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-text);
   white-space: nowrap;
@@ -692,7 +692,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   color: var(--wao-text-3);
 }
 .d-name {
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   font-weight: 700;
 }
 .d-sub {
@@ -718,18 +718,18 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .f-key {
   width: 56px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   flex-shrink: 0;
 }
 .f-val {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
 }
 .f-pass {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-faint);
   letter-spacing: 2px;
 }
@@ -740,7 +740,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .f-site {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-primary-text);
 }
 .f-btn {
@@ -784,12 +784,12 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 .empty {
   padding: 40px 12px;
   text-align: center;
-  color: var(--wao-text-faint);
-  font-size: 12.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .note {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   line-height: 1.7;
 }
@@ -805,7 +805,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
 }
@@ -850,7 +850,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   border-bottom: 1px solid var(--wao-divider);
 }
 .modal-title {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .icon-btn {
@@ -870,8 +870,8 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .f-label {
   display: block;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   margin: 12px 0 6px;
 }
 .f-label:first-child {
@@ -883,7 +883,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   outline: none;
   background: var(--wao-bg-card);
@@ -906,7 +906,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 .item-go {
   display: none;
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: var(--wao-font-section);
   color: var(--wao-text-faint);
 }
 
@@ -955,7 +955,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 .dp-title {
   min-width: 0;
-  font-size: 14.5px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -1012,7 +1012,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
     min-width: 0;
     word-break: break-all;
   }
-  .f-btn { height: 40px; padding: 0 16px; font-size: 12.5px; }
+  .f-btn { height: 40px; padding: 0 16px; font-size: var(--wao-font-body); }
   .f-icon { width: 40px; height: 40px; }
   .f-icon i { font-size: 16px; }
 }

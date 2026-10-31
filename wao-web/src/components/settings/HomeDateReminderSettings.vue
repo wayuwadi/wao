@@ -199,7 +199,7 @@ watch(
 .home-reminder-settings {
   padding: 18px;
   margin: 16px 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   line-height: 1.7;
 }
 .home-reminder-title {
@@ -214,7 +214,7 @@ watch(
 }
 .home-reminder-settings p {
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .home-reminder-row {
   display: flex;
@@ -231,7 +231,7 @@ watch(
 }
 .home-reminder-row small {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
 }
 .home-reminder-row input {
   appearance: none;
@@ -273,7 +273,7 @@ watch(
 }
 .home-reminder-footer span {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .home-reminder-settings button {
   border: 1px solid var(--wao-line-control);

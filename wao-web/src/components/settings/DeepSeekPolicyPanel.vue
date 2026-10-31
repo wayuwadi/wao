@@ -97,13 +97,13 @@ onMounted(load)
 <style scoped>
 .deepseek-policy { border: 1px solid var(--wao-line); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .policy-heading,.policy-controls,footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-h2 { margin: 0; font-size: 16px; } p,small,.policy-controls span,footer span { font-size: 12px; color: var(--wao-text-weak); }
+h2 { margin: 0; font-size: var(--wao-font-card-title); } p,small,.policy-controls span,footer span { font-size: var(--wao-font-help); color: var(--wao-text-3); }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .policy-controls { justify-content: flex-start; margin: 12px 0; }
 input[type=number] { width: 130px; padding: 6px 8px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-card); color: inherit; }
 .feature-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 .feature { display: flex; gap: 8px; padding: 10px; border: 1px solid var(--wao-line); border-radius: 8px; align-items: flex-start; }
-.feature span { flex: 1; } small { display: block; margin-top: 5px; } em { font-size: 11px; font-style: normal; }
+.feature span { flex: 1; } small { display: block; margin-top: 5px; } em { font-size: var(--wao-font-caption); font-style: normal; }
 .hint { line-height: 1.6; }.error { color: #dc2626; } button { padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 6px; cursor: pointer; background: var(--wao-bg-card); color: inherit; } button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 700px) { .feature-grid { grid-template-columns: 1fr; } }
 </style>

@@ -1562,7 +1562,7 @@ summary:focus-visible {
   }
   .file-search input,
   .title-block input {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
   .canvas-empty {
     padding: var(--wao-space-2);

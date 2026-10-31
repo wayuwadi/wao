@@ -165,13 +165,13 @@ void nextTick(() => search.value?.focus())
 }
 header { display: flex; align-items: flex-start; padding: 18px 18px 12px; }
 header > div { flex: 1; min-width: 0; }
-header b { font-size: 16px; color: var(--wao-text); }
-header p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
+header b { font-size: var(--wao-font-card-title); color: var(--wao-text); }
+header p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
 .close { width: 32px; height: 32px; border: 0; border-radius: 9px; background: var(--wao-bg-hover-2); color: var(--wao-text-3); cursor: pointer; }
 .search { height: 40px; margin: 0 18px 12px; display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 10px; }
 .search:focus-within { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
 .search > i { color: var(--wao-text-weak); }
-.search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 13px; color: var(--wao-text); }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: var(--wao-font-body); color: var(--wao-text); }
 .search button { width: 26px; height: 26px; border: 0; background: none; color: var(--wao-text-faint); cursor: pointer; }
 nav {
   min-height: 42px; flex: 0 0 auto; display: flex; gap: 5px; padding: 0 18px 12px;
@@ -182,7 +182,7 @@ nav button {
   background: transparent; color: var(--wao-text-3); cursor: pointer; white-space: nowrap;
 }
 nav button.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 600; }
-nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
+nav span { margin-left: 5px; color: var(--wao-text-3); font-size: var(--wao-font-body); }
 .relation-list { min-height: 220px; overflow-y: auto; padding: 8px; }
 .relation-row { width: 100%; min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 0; border-radius: 10px; background: var(--wao-bg-card); text-align: left; cursor: pointer; }
 .relation-row:hover { background: var(--wao-bg-hover-2); }
@@ -193,17 +193,17 @@ nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .type-icon.page { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }
 .relation-main { flex: 1; min-width: 0; }
 .relation-main b, .relation-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.relation-main b { color: var(--wao-text); font-size: 12.5px; }
-.relation-main em { margin-top: 3px; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
+.relation-main b { color: var(--wao-text); font-size: var(--wao-font-body); }
+.relation-main em { margin-top: 3px; color: var(--wao-text-weak); font-size: var(--wao-font-caption); font-style: normal; }
 .choice { width: 25px; height: 25px; flex: 0 0 25px; display: grid; place-items: center; border: 1px solid var(--wao-line-control); border-radius: 7px; color: var(--wao-text-weak); }
 .selected .choice { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
-.empty { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--wao-text-weak); font-size: 12px; }
+.empty { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .empty i { font-size: 28px; color: var(--wao-text-faint); }
 .empty .retry { height: 32px; padding: 0 14px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); cursor: pointer; }
 .spin { animation: waoSpin .9s linear infinite; }
 @keyframes waoSpin { to { transform: rotate(360deg); } }
 footer { min-height: 54px; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 18px; border-top: 1px solid var(--wao-divider); }
-footer span { flex: 1; color: var(--wao-text-weak); font-size: 10.5px; }
+footer span { flex: 1; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
 footer button { height: 36px; padding: 0 18px; border: 0; border-radius: 9px; background: var(--wao-primary); color: #fff; cursor: pointer; }
 @media (max-width: 760px) {
   .relation-picker { top: auto; bottom: 0; left: 0; width: 100%; max-height: 88dvh; transform: none; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }

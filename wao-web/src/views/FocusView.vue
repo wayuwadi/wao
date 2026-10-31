@@ -89,7 +89,7 @@ async function retry() { focus.error = ''; await focus.load() }
 <style scoped>
 .focus-page { box-sizing: border-box; container: focus-workspace / inline-size; height: 100%; min-height: 0; display: flex; flex-direction: column; padding: var(--wao-space-2); color: var(--wao-text); }
 .focus-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-2); flex: none; }
-h1 { font-size: var(--wao-font-title); } h2 { font-size: var(--wao-font-body); } h1,h2 { margin: 0; font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); }
+h1 { font-size: var(--wao-font-title); } h2 { font-size: var(--wao-font-section); } h1,h2 { margin: 0; font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading); }
 a { color: var(--wao-primary-text); text-decoration: none; } small,.timer-hint,.note-status,.focus-feedback { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .focus-feedback { height: 28px; flex: none; overflow: auto; } .focus-error { color: var(--wao-danger); }
 .focus-columns { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(320px,1fr); min-height: 0; flex: 1; }
@@ -128,5 +128,5 @@ li>div { flex: 1; min-width: 0; } li strong,li p { display: block; overflow: hid
 button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @container focus-workspace (max-width: 720px) { .focus-columns { grid-template-columns: minmax(0,1fr); overflow: auto; } .timer-panel { min-height: 530px; padding: var(--wao-space-1); } .focus-side { border-left: 0; border-top: 1px solid var(--wao-line); padding: var(--wao-space-2) 0 0; } .focus-history { min-height: 260px; } }
 @media (min-width: 821px) and (max-height: 800px) { .focus-stats { grid-template-columns: repeat(4,minmax(0,1fr)); } .focus-stats>div { padding-inline: var(--wao-space-1); } }
-@media(max-width:760px) { .focus-page { height: auto; } .focus-columns { flex: none; } .timer-panel { min-height: 530px; } .focus-side { min-height: 540px; } input,textarea { font-size: 16px; } }
+@media(max-width:760px) { .focus-page { height: auto; } .focus-columns { flex: none; } .timer-panel { min-height: 530px; } .focus-side { min-height: 540px; } input,textarea { font-size: var(--wao-font-card-title); } }
 </style>

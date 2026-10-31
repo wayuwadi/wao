@@ -55,20 +55,20 @@ async function toggle(id: string) {
 header { display: flex; align-items: center; gap: 12px; padding: 15px 16px; background: var(--wao-bg-sub); }
 header > div { flex: 1; min-width: 0; }
 h2, p { margin: 0; }
-h2 { font-size: 14px; }
-p { margin-top: 5px; color: var(--wao-text-weak); font-size: 11px; }
-header > span { color: var(--wao-primary-text); font-size: 11px; }
+h2 { font-size: var(--wao-font-body); }
+p { margin-top: 5px; color: var(--wao-text-weak); font-size: var(--wao-font-caption); }
+header > span { color: var(--wao-primary-text); font-size: var(--wao-font-caption); }
 .project-row { min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-top: 1px solid var(--wao-divider); }
 .project-row > i { width: 8px; height: 8px; flex: none; border-radius: 50%; }
 .project-row > span { flex: 1; display: grid; gap: 2px; }
-.project-row b { font-size: 12px; }
-.project-row small { color: var(--wao-text-weak); font-size: 10px; }
+.project-row b { font-size: var(--wao-font-caption); }
+.project-row small { color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .project-row button { width: 38px; height: 22px; padding: 2px; border: 0; border-radius: 99px; background: var(--wao-line-control); cursor: pointer; }
 .project-row button span { display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: var(--wao-shadow-sm); transition: transform .16s; }
 .project-row button.enabled { background: var(--wao-primary); }
 .project-row button.enabled span { transform: translateX(16px); }
 .project-row button:disabled { opacity: .55; cursor: default; }
-.empty, .error { padding: 18px 16px; color: var(--wao-text-weak); font-size: 11px; }
+.empty, .error { padding: 18px 16px; color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .error { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 .error button { margin-left: 8px; border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
 .spin { display: inline-block; margin-right: 6px; animation: spin .8s linear infinite; }

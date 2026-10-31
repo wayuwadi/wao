@@ -367,8 +367,8 @@ onMounted(load)
 </template>
 
 <style scoped>
-.attention-summary{margin-top:18px;padding:18px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card);line-height:1.7;overflow-wrap:anywhere}.attention-summary h2{font-size:17px;margin:8px 0}.attention-summary p{margin:8px 0;font-size:13px}.sample-context,.attention-summary details{color:var(--wao-text-3);font-size:12px}.summary-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.summary-actions button{padding:8px 12px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-primary-text);cursor:pointer}.attention-summary summary{cursor:pointer}.table-card:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
-.endpoint-scope{padding:0 16px;color:var(--wao-text-3);font-size:12px;line-height:1.6}
+.attention-summary{margin-top:18px;padding:18px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card);line-height:1.7;overflow-wrap:anywhere}.attention-summary h2{font-size:var(--wao-font-section);margin:8px 0}.attention-summary p{margin:8px 0;font-size:var(--wao-font-help)}.sample-context,.attention-summary details{color:var(--wao-text-3);font-size:var(--wao-font-help)}.summary-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.summary-actions button{padding:8px 12px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-primary-text);cursor:pointer}.attention-summary summary{cursor:pointer}.table-card:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
+.endpoint-scope{padding:0 16px;color:var(--wao-text-3);font-size:var(--wao-font-help);line-height:1.6}
 .monitor-page {
   max-width: none;
   margin: 0 auto;
@@ -384,7 +384,7 @@ onMounted(load)
 .hero span,
 .table-card header span {
   color: #56736b;
-  font-size: 9px;
+  font-size: var(--wao-font-body);
   font-weight: 800;
   letter-spacing: 1.4px;
 }
@@ -395,7 +395,7 @@ onMounted(load)
 .hero p {
   margin: 0;
   color: var(--wao-text-weak);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .actions {
   display: flex;
@@ -462,8 +462,8 @@ onMounted(load)
 }
 .metric-grid small {
   margin-left: 4px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .metric-grid .warning strong,
 .warning {
@@ -496,11 +496,11 @@ onMounted(load)
 }
 .table-card h2 {
   margin: 3px 0 0;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
 }
 .table-card header small {
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .table-scroll {
   margin-top: 12px;
@@ -513,7 +513,7 @@ table {
 }
 .pagination {
   min-height: 38px;
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 th,
 td {
@@ -526,7 +526,7 @@ td {
 th {
   border-top: 0;
   color: var(--wao-text-weak);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .sort-button {
   height: 25px;
@@ -562,7 +562,7 @@ td b {
   display: inline-block;
   min-width: 45px;
   color: #4f7167;
-  font-size: 9px;
+  font-size: var(--wao-font-body);
 }
 td code {
   color: var(--wao-text-2);

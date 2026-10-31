@@ -546,7 +546,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .hero span,
 .activity-card header span {
   color: #356c78;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
   font-weight: 750;
   letter-spacing: 1.5px;
 }
@@ -557,7 +557,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .hero p {
   margin: 0;
   color: var(--wao-text-weak);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .hero button,
 .state button {
@@ -597,7 +597,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .period-refresh {
   border-left: 1px solid var(--wao-line) !important;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
 }
 .period-refresh:disabled {
   opacity: 0.45;
@@ -609,8 +609,8 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .period-select small {
   margin-top: 3px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .period-tabs > .active {
   border-color: #4f8792;
@@ -638,15 +638,15 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .settings-card header small,
 .settings-card footer span {
   margin-top: 3px;
-  color: var(--wao-text-weak);
-  font-size: 9.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .switch-row,
 .settings-card fieldset label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: var(--wao-font-help);
 }
 .settings-grid {
   margin-top: 14px;
@@ -657,8 +657,8 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .settings-grid label > span {
   display: block;
   margin-bottom: 5px;
-  color: var(--wao-text-weak);
-  font-size: 9.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .settings-grid input,
 .settings-grid select {
@@ -681,8 +681,8 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .settings-card legend {
   padding: 0 5px;
-  color: var(--wao-text-weak);
-  font-size: 9.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .settings-card footer {
   margin-top: 13px;
@@ -713,8 +713,8 @@ onMounted(() => Promise.all([load(), loadSettings()]))
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .scope-bar {
   margin-top: 12px;
@@ -742,8 +742,8 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .scope-bar small {
   margin-top: 2px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .state {
   min-height: 240px;
@@ -760,11 +760,11 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .state h2 {
   margin: 0;
   color: var(--wao-text);
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
 }
 .state p {
   margin: 0 0 5px;
-  font-size: 10px;
+  font-size: var(--wao-font-caption);
 }
 .inventory,
 .period-stats {
@@ -791,11 +791,11 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .inventory span {
   color: var(--wao-text-weak);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .inventory strong {
   margin-top: 3px;
-  font-size: 18px;
+  font-size: var(--wao-font-section);
 }
 .period-stats {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -815,11 +815,11 @@ onMounted(() => Promise.all([load(), loadSettings()]))
   display: block;
 }
 .period-stats strong {
-  font-size: 17px;
+  font-size: var(--wao-font-section);
 }
 .period-stats span {
   color: var(--wao-text-weak);
-  font-size: 8.5px;
+  font-size: var(--wao-font-caption);
 }
 .activity-card {
   margin-top: 12px;
@@ -834,12 +834,12 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .activity-card h2 {
   margin: 3px 0 0;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
 }
 .activity-card em {
   font-style: normal;
   color: var(--wao-text-weak);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
 }
 .task-columns {
   margin-top: 12px;
@@ -853,7 +853,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .task-columns h3 {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
 }
 .task-columns a,
 .run-list > a {
@@ -881,13 +881,13 @@ onMounted(() => Promise.all([load(), loadSettings()]))
   white-space: nowrap;
 }
 .task-columns b {
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .task-columns small,
 .run-list small {
   margin-top: 2px;
-  color: var(--wao-text-weak);
-  font-size: 8.5px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .run-list small {
   display: block;
@@ -913,14 +913,14 @@ onMounted(() => Promise.all([load(), loadSettings()]))
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--wao-font-caption);
 }
 .status {
   flex: none;
   padding: 2px 6px;
   border-radius: 99px;
   background: var(--wao-bg-card);
-  font-size: 8px;
+  font-size: var(--wao-font-help);
 }
 .status.succeeded {
   color: #26734d;
@@ -931,14 +931,14 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 .run-list p {
   margin: 6px 0 0;
   color: var(--wao-text-3);
-  font-size: 9px;
+  font-size: var(--wao-font-caption);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .empty-text {
   margin: 16px 0 2px;
-  color: var(--wao-text-weak);
-  font-size: 10px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .pagination {
   margin-top: 9px;
@@ -954,7 +954,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
   color: var(--wao-danger-strong);
   display: flex;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--wao-font-help);
 }
 .inline-error span {
   flex: 1;

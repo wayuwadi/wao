@@ -1041,13 +1041,13 @@ h1 {
 }
 h2 {
   overflow-wrap: anywhere;
-  font-size: 19px;
+  font-size: var(--wao-font-title);
   margin: 0;
 }
 h3 {
   overflow-wrap: anywhere;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   margin: 0;
 }
 p {
@@ -1057,7 +1057,7 @@ p {
 }
 .eyebrow {
   color: var(--wao-primary-text);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .heading,
 .detail-head {
@@ -1147,7 +1147,7 @@ button[aria-pressed='true'] {
   gap: 9px;
 }
 .meta strong {
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   overflow-wrap: anywhere;
 }
 .badge {
@@ -1156,21 +1156,21 @@ button[aria-pressed='true'] {
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
   padding: 3px 9px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   width: max-content;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 .muted {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .capability {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   margin-top: 24px;
 }
 .panel {
@@ -1363,7 +1363,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .savebar > div:first-child {
   display: grid;
@@ -1380,7 +1380,7 @@ fieldset {
   min-width: 0;
 }
 .detail-head p {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 button:focus-visible {
   outline: 2px solid var(--wao-primary);
@@ -1444,7 +1444,7 @@ button:focus-visible {
   .form input,
   .form select,
   .form textarea {
-    font-size: 16px;
+    font-size: var(--wao-font-card-title);
   }
   .detail-head {
     gap: 12px;
@@ -1460,7 +1460,7 @@ button:focus-visible {
     width: 100%;
   }
   .heading h1 {
-    font-size: 24px;
+    font-size: var(--wao-font-title);
   }
 }
 </style>

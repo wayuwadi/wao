@@ -605,7 +605,7 @@ h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {
-  .child-composer input { font-size:16px; }
+  .child-composer input { font-size:var(--wao-font-card-title); }
   .group-add-button { width:44px; height:44px; }
   .checklist-layout { grid-template-columns:minmax(0,1fr) !important; }
   .checklist-divider { display:none; }

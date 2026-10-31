@@ -444,7 +444,7 @@ function add() {
 <style scoped>
 .order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .order-after { box-shadow: inset 0 -2px var(--wao-primary); }
-.sub-priority { border: 0; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; }
+.sub-priority { border: 0; border-radius: 4px; padding: 3px 6px; font-size: var(--wao-font-caption); cursor: pointer; }
 button {
   border: 0;
   background: transparent;
@@ -452,15 +452,15 @@ button {
   text-align: left;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 small {
-  font-size: 11px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .error {
   color: var(--wao-danger-strong);
@@ -482,7 +482,7 @@ small {
   border: 1px solid #338fe5;
   border-radius: 10px;
   color: #338fe5;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   line-height: 1;
   white-space: nowrap;
   flex-shrink: 0;
@@ -519,13 +519,13 @@ small {
   border-bottom: 1px solid var(--wao-line);
 }
 .list-title {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-text);
 }
 .list-count {
-  font-size: 12px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
 }
 .list-spacer {
   flex: 1;
@@ -534,7 +534,7 @@ small {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .done-switch .track {
@@ -582,8 +582,8 @@ small {
   opacity: 1;
 }
 .number {
-  font-size: 12px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-caption);
+  color: var(--wao-text-3);
   min-width: 28px;
 }
 .sub-open {
@@ -606,13 +606,13 @@ small {
   color: var(--wao-text-faint);
 }
 .due {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
 }
 .empty {
   padding: 10px 12px;
-  font-size: 12px;
-  color: var(--wao-text-faint);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   border-bottom: 1px solid var(--wao-line);
 }
 .inline-subs form {
@@ -631,7 +631,7 @@ small {
   border-radius: 6px;
   background: transparent;
   color: var(--wao-text);
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .inline-subs form input:focus {
   border-color: var(--wao-line-control);
@@ -639,7 +639,7 @@ small {
 }
 .inline-subs form button {
   color: var(--wao-primary-text);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .inline-subs > small {
   display: block;
@@ -652,7 +652,7 @@ small {
   border-right: 1px solid var(--wao-line);
   border-bottom: 1px solid var(--wao-line);
   height: 34px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -668,8 +668,8 @@ small {
   background: var(--wao-bg-hover);
 }
 .table-subs .sub-number {
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .sub-title {
   display: flex;
@@ -727,7 +727,7 @@ small {
   background: var(--wao-bg-card);
   color: var(--wao-text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   outline: none;
 }
 .table-subs td.cell-pop {
@@ -746,8 +746,8 @@ small {
   text-overflow: ellipsis;
 }
 .created-date {
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-caption);
 }
 .tree-toggle {
   width: 16px;
@@ -772,7 +772,7 @@ small {
   background: transparent;
   color: var(--wao-text-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   padding: 0 2px;
   cursor: pointer;
 }
@@ -798,14 +798,14 @@ small {
   max-width: 440px;
   background: transparent;
   color: var(--wao-text);
-  font-size: 12px;
+  font-size: var(--wao-font-body);
 }
 .table-subs form input:focus {
   border-color: var(--wao-line-control);
   outline: none;
 }
 .table-subs form button {
-  font-size: 12px;
+  font-size: var(--wao-font-body);
   color: var(--wao-primary-text);
 }
 .table-subs .sub-add-row td {

@@ -576,7 +576,7 @@ button:disabled {
 }
 .result-detail {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   overflow-wrap: anywhere;
 }
@@ -584,7 +584,7 @@ button:disabled {
   display: inline-block;
   margin-top: 5px;
   color: var(--wao-primary-text);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .result-link:focus-visible {
   outline: 2px solid var(--wao-primary);
@@ -642,12 +642,12 @@ button:disabled {
   flex-wrap: wrap;
 }
 .atitle {
-  font-size: 20px;
+  font-size: var(--wao-font-title);
   font-weight: 700;
 }
 .atip {
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 .btn-primary {
   flex-shrink: 0;
@@ -658,7 +658,7 @@ button:disabled {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -685,7 +685,7 @@ button:disabled {
   border: 1px solid var(--wao-line-strong);
   background: var(--wao-bg-card);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
   cursor: pointer;
   display: inline-flex;
@@ -707,7 +707,7 @@ button:disabled {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
 }
 .btn-danger:hover {
@@ -727,7 +727,7 @@ button:disabled {
   background: none;
   border-bottom: 2px solid transparent;
   color: #7a7d89;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   margin-bottom: -1px;
 }
@@ -815,7 +815,7 @@ button:disabled {
   color: var(--wao-text-3);
 }
 .job-link {
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
   color: var(--wao-primary-text);
   white-space: nowrap;
@@ -826,7 +826,7 @@ button:disabled {
   text-decoration: underline;
 }
 .cell {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .cell.muted {
@@ -888,12 +888,12 @@ button:disabled {
   color: var(--wao-text-weak);
 }
 .run-job span {
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
 }
 .foot-note {
   margin-top: 14px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-faint);
 }
 
@@ -905,7 +905,7 @@ button:disabled {
   border: none;
   background: none;
   color: #7a7d89;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
   cursor: pointer;
   padding: 4px 6px;
   margin-left: -6px;
@@ -944,13 +944,13 @@ button:disabled {
   flex-wrap: wrap;
 }
 .jh-title {
-  font-size: 18px;
+  font-size: var(--wao-font-section);
   font-weight: 700;
 }
 .jh-desc {
   margin-top: 2px;
-  font-size: 12.5px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
 }
 
 .job-cols {
@@ -967,7 +967,7 @@ button:disabled {
 }
 .jc-head {
   padding: 12px 16px 9px;
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .grid-aoruns {
@@ -995,7 +995,7 @@ button:disabled {
   padding: 15px 18px;
 }
 .dc-title {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .dc-rows {
@@ -1003,7 +1003,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  font-size: 12.5px;
+  font-size: var(--wao-font-body);
 }
 .dc-row {
   display: flex;
@@ -1023,7 +1023,7 @@ button:disabled {
   padding-top: 12px;
 }
 .dc-eyebrow {
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-weak);
   letter-spacing: 1px;
 }
@@ -1036,7 +1036,7 @@ button:disabled {
 .step {
   display: flex;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text-2);
 }
 .step-n {
@@ -1097,7 +1097,7 @@ button:disabled {
   border-bottom: 1px solid var(--wao-divider);
 }
 .modal-title {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   font-weight: 600;
 }
 .icon-btn {
@@ -1117,8 +1117,8 @@ button:disabled {
 }
 .f-label {
   display: block;
-  font-size: 12px;
-  color: var(--wao-text-weak);
+  font-size: var(--wao-font-help);
+  color: var(--wao-text-3);
   margin: 12px 0 6px;
 }
 .f-label:first-child {
@@ -1130,7 +1130,7 @@ button:disabled {
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
   color: var(--wao-text);
   outline: none;
   background: var(--wao-bg-card);

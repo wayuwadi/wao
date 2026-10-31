@@ -806,16 +806,16 @@ fieldset {
 }
 h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--wao-font-title);
 }
 h3 {
-  font-size: 14px;
+  font-size: var(--wao-font-body);
   margin: 0 0 10px;
 }
 .bot-header p,
 .muted {
   color: var(--wao-text-3);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .toolbar {
   display: flex;
@@ -896,7 +896,7 @@ button:disabled {
   min-width: 0;
 }
 .config-summary small {
-  font-size: 11px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-3);
   overflow-wrap: anywhere;
 }
@@ -910,7 +910,7 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 .name-line em {
-  font-size: 10px;
+  font-size: var(--wao-font-body);
   font-style: normal;
   border-radius: 8px;
   padding: 2px 6px;
@@ -936,7 +936,7 @@ button:disabled {
   background: none;
   color: var(--wao-text-3);
   padding: 6px 0;
-  font-size: 13px;
+  font-size: var(--wao-font-body);
 }
 .detail-tabs button[aria-pressed='true'] {
   color: var(--wao-primary-text);
@@ -950,13 +950,13 @@ button:disabled {
   gap: 14px;
 }
 .editor-title {
-  font-size: 15px;
+  font-size: var(--wao-font-body);
   font-weight: 650;
 }
 .editor label:not(.check-row) {
   display: grid;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-2);
 }
 input,
@@ -992,7 +992,7 @@ select:focus {
 }
 .editor small,
 code {
-  font-size: 11px;
+  font-size: var(--wao-font-help);
   color: var(--wao-text-3);
   overflow-wrap: anywhere;
 }
@@ -1000,7 +1000,7 @@ code {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .check-row input {
   accent-color: var(--wao-primary);
@@ -1035,7 +1035,7 @@ code {
   color: var(--wao-danger-strong) !important;
 }
 .error {
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   overflow-wrap: anywhere;
 }
 .info,
@@ -1044,7 +1044,7 @@ code {
   padding: 13px;
   border-radius: 10px;
   background: var(--wao-primary-soft);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   line-height: 1.65;
 }
 .info p {
@@ -1063,7 +1063,7 @@ code {
 .usage {
   padding: 20px;
   border-top: 1px solid var(--wao-line);
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .usage ul {
   padding-left: 20px;
@@ -1085,7 +1085,7 @@ code {
 }
 .actions > span {
   margin-right: auto;
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .record {
@@ -1094,10 +1094,10 @@ code {
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   padding: 12px;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
 }
 .record time {
-  font-size: 11px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 a {
@@ -1112,11 +1112,11 @@ a {
   min-height: 180px;
   padding: 20px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--wao-font-caption);
   color: var(--wao-text-3);
 }
 .state strong {
-  font-size: 16px;
+  font-size: var(--wao-font-card-title);
   color: var(--wao-text);
 }
 .inline-load-error {
