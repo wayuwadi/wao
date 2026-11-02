@@ -72,7 +72,7 @@ import ImageCopyMenu from './ImageCopyMenu.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { copyText } from '@/utils/clipboard'
-import { Callout, Column, Columns, DocumentTable, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
+import { Callout, Column, createColumns, createDocumentTable, createResourceCards, MermaidBlock } from './richEditorExtensions'
 import { IndentableBulletList, IndentableOrderedList, IndentableTaskList, ListIndentAttributes } from './listIndentExtensions'
 import { LIST_TYPES, listIndent } from '@/utils/listIndent'
 
@@ -212,6 +212,7 @@ const props = withDefaults(
     noteAiOrigin?: NoteAiOrigin
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     slashCommands?: boolean
+    markdownLayout?: boolean
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
     compact?: boolean
@@ -824,7 +825,7 @@ const editor = useEditor({
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     TableKit.configure({ table: false }),
-    DocumentTable.configure({ resizable: true }),
+    createDocumentTable(!!props.markdownLayout).configure({ resizable: true }),
     HighlightedCodeBlock.configure({ lowlight: codeLowlight, enableTabIndentation: true, tabSize: 2 }),
     Mathematics.configure({ katexOptions: { throwOnError: false, strict: 'warn' } }),
     Details.configure({ persist: false }),
@@ -838,12 +839,9 @@ const editor = useEditor({
         : [],
     }),
     Callout,
-    Columns,
+    createColumns(!!props.markdownLayout),
     Column,
-    FileCard,
-    MediaCard,
-    LinkCard,
-    DrawingCard,
+    ...createResourceCards(!!props.markdownLayout),
     MermaidBlock,
   ],
   editorProps: {
@@ -2395,7 +2393,11 @@ function positionAtPoint(left: number, top: number) {
     return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
   } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
 }
-defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference, renameImageAt })
+function currentContent(): RichDocContent | null {
+  const e = editor.value
+  return e && editorReady.value ? { version: 1, document: e.getJSON(), markdown: e.getMarkdown() } : null
+}
+defineExpose({ currentContent, dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference, renameImageAt })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

@@ -62,6 +62,7 @@ async function mountEditor(props: {
   menuZIndex?: number
   slashCommands?: boolean
   advanced?: boolean
+  markdownLayout?: boolean
   articleImageKey?: string
   noteTitleOnImage?: boolean
   compact?: boolean
@@ -2565,11 +2566,11 @@ describe('任务编辑器的路径和真实 URL', () => {
 
 describe('统一编辑器分栏与链接', () => {
   it('合并单元格和列宽在任务 Markdown 重开后保留', async () => {
-    const w = await mountEditor({modelValue:'<table><tr><th colspan="2" colwidth="160,200"><p>合并标题</p></th></tr><tr><td><p>甲</p></td><td><p>乙</p></td></tr></table>',advanced:true})
+    const w = await mountEditor({modelValue:'<table><tr><th colspan="2" colwidth="160,200"><p>合并标题</p></th></tr><tr><td><p>甲</p></td><td><p>乙</p></td></tr></table>',advanced:true,markdownLayout:true})
     const e = (w.vm as unknown as {editor:Editor}).editor
     const markdown = e.getMarkdown()
     w.unmount()
-    const reopened = await mountEditor({modelValue:markdown,advanced:true})
+    const reopened = await mountEditor({modelValue:markdown,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     const doc = restored.getJSON() as import('@tiptap/core').JSONContent
     expect(doc.content![0]!.content![0]!.content![0]).toMatchObject({type:'tableHeader',attrs:{colspan:2,colwidth:[160,200]}})
@@ -2578,11 +2579,11 @@ describe('统一编辑器分栏与链接', () => {
   })
   it('画板通过任务 Markdown 保存重开后仍保留编辑入口和快照', async () => {
     const attrs = { id:'drawing-demo', title:'示例 & 画板', snapshot:'/api/images/demo/raw', url:'/drawings?drawing=drawing-demo' }
-    const w = await mountEditor({modelValue:'',document:{type:'doc',content:[{type:'drawingCard',attrs}]},advanced:true})
+    const w = await mountEditor({modelValue:'',document:{type:'doc',content:[{type:'drawingCard',attrs}]},advanced:true,markdownLayout:true})
     const e = (w.vm as unknown as {editor:Editor}).editor
     const markdown = e.getMarkdown()
     w.unmount()
-    const reopened = await mountEditor({modelValue:markdown,advanced:true})
+    const reopened = await mountEditor({modelValue:markdown,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     expect(restored.getJSON().content![0]).toMatchObject({type:'drawingCard',attrs})
     expect(reopened.text()).toContain('编辑画板')
@@ -2590,7 +2591,7 @@ describe('统一编辑器分栏与链接', () => {
   })
   it('两栏点击加号变三栏，保留内容、可撤销且 Markdown 重开不丢布局', async () => {
     const document: RichDocNode = { type:'doc', content:[{type:'columns',content:['左边','右边'].map(text=>({type:'column',content:[{type:'paragraph',content:[{type:'text',text}]}]}))}] }
-    const w = await mountEditor({modelValue:'',document,advanced:true})
+    const w = await mountEditor({modelValue:'',document,advanced:true,markdownLayout:true})
     const e = (w.vm as unknown as {editor:Editor}).editor
     await w.get('[aria-label="添加第三栏"]').trigger('click')
     expect(e.getJSON().content![0]!.content).toHaveLength(3)
@@ -2600,7 +2601,7 @@ describe('统一编辑器分栏与链接', () => {
     expect(serialized).toContain('data-columns="3"')
     e.commands.undo(); expect(e.getJSON().content![0]!.content).toHaveLength(2)
     w.unmount()
-    const reopened = await mountEditor({modelValue:serialized,advanced:true})
+    const reopened = await mountEditor({modelValue:serialized,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     expect(restored.getJSON().content![0]!.type).toBe('columns')
     expect(restored.getJSON().content![0]!.content).toHaveLength(3)
@@ -2608,7 +2609,7 @@ describe('统一编辑器分栏与链接', () => {
     reopened.unmount()
   })
   it('没有选中文字也能用快捷键插入链接，裸域名自动补全并可修改文字', async () => {
-    const w = await mountEditor({modelValue:'',advanced:true,linkControls:true})
+    const w = await mountEditor({modelValue:'',advanced:true,markdownLayout:true,linkControls:true})
     const e = (w.vm as unknown as {editor:Editor}).editor
     await w.get('.md-body').trigger('keydown',{key:'k',ctrlKey:true})
     await nextTick()
