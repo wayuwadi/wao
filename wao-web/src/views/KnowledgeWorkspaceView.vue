@@ -21,7 +21,7 @@ const directoryWidth = ref(262)
 const folderOpen = ref<Record<string, boolean>>({})
 const query = ref('')
 const index = computed(() => libraries.value.map(kb => ({ kb, rows: directoryRows(kb, id => data.docById(id)?.title || '未命名文档', {}, kb.name.includes(query.value.trim()) ? '' : query.value) })).filter(item => item.rows.length || !query.value.trim() || item.kb.name.includes(query.value.trim())))
-function open(kb = '', doc = '') { void router.push({ path: '/knowledge', query: { ...(kb ? { kb } : {}), ...(doc ? { doc } : {}) } }) }
+function open(kb = '', doc = '') { void router.push({ path: '/knowledge', query: { ...(kb ? { kb } : { home: '1' }), ...(doc ? { doc } : {}) } }) }
 const creating = ref(false), saving = ref(false), name = ref(''), description = ref(''), icon = ref('wao-kb-icon-notebook'), error = ref('')
 function startCreate() { name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''; creating.value = true }
 async function create() {

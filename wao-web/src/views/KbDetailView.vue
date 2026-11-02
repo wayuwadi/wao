@@ -1122,7 +1122,7 @@ async function saveKbSettings() {
     <div v-show="!directoryCollapsed" id="kb-directory" class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
       <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
-        <button class="back" @click="router.push('/knowledge')">
+        <button class="back" @click="router.push('/knowledge?home=1')">
           <i class="ri-arrow-left-line"></i>全部知识库
         </button>
         <div class="side-kb">
