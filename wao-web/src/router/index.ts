@@ -1,3 +1,4 @@
+import { installKnowledgeResume } from '@/utils/knowledgeResume'
 import { createRouter, createWebHistory } from 'vue-router'
 import { legacyCapabilityRedirect } from '@/utils/capabilityRoutes'
 import { useSessionStore } from '@/stores/session'
@@ -309,6 +310,11 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
   }
   return true
+})
+
+installKnowledgeResume(router, () => {
+  const session = useSessionStore()
+  return session.userId ? `${session.account?.accountId ?? ''}:${session.userId}` : ''
 })
 
 export default router
