@@ -5,7 +5,6 @@ import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import { useIsMobile } from '@/composables/viewport'
 import { useNavStore } from '@/stores/nav'
-import { useFavoritesStore } from '@/stores/favorites'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -14,19 +13,14 @@ import { FIXED_NAV_IDS, type NavItemId } from '@/config/nav'
 const emit = defineEmits<{ (e: 'open-search'): void; (e: 'navigate'): void }>()
 const nav = useNavStore()
 const session = useSessionStore()
-const favorites = useFavoritesStore()
 const knowledgeFavorites = useKnowledgeFavoritesStore()
 const data = useDataStore()
-const favoriteProjects = computed(() => favorites.orderedProjects.map(item => ({
-  id: item.targetId, label: data.projectById(item.targetId)?.name || item.label,
-  path: `/todo?list=${encodeURIComponent(item.targetId)}`, icon: 'ri-star-line',
-})))
 const favoriteKnowledge = computed(() => knowledgeFavorites.ids.flatMap(id => {
   const kb = data.kbById(id)
   return kb && !kb.notes ? [{ id, label: kb.name, path: `/kb/${encodeURIComponent(id)}`, icon: kb.icon || 'ri-book-2-line' }] : []
 }))
-function children(id: NavItemId) { return id === 'todo' ? favoriteProjects.value : id === 'knowledge' ? favoriteKnowledge.value : [] }
-onMounted(() => { void favorites.load(); void knowledgeFavorites.load() })
+function children(id: NavItemId) { return id === 'knowledge' ? favoriteKnowledge.value : [] }
+onMounted(() => { void knowledgeFavorites.load() })
 const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
@@ -85,7 +79,7 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
           <i :class="nav.itemMeta(id)?.icon" aria-hidden="true"></i>
           <span :class="isCollapsed ? 'compact-label' : 'item-label'">{{ nav.itemMeta(id)?.label }}</span>
         </button>
-        <div v-if="!isCollapsed && children(id).length" class="favorite-children" :aria-label="id === 'todo' ? '收藏清单' : '收藏知识库'">
+        <div v-if="!isCollapsed && children(id).length" class="favorite-children" :aria-label="'收藏知识库'">
           <RouterLink v-for="item in children(id)" :key="item.id" class="item favorite-link"
             :class="{ active: route.fullPath === item.path }" :to="item.path" :title="item.label"
             :aria-current="route.fullPath === item.path ? 'page' : undefined" @click="emit('navigate')">
