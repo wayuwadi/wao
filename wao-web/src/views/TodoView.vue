@@ -5,7 +5,6 @@ import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
-import { useFavoritesStore } from '@/stores/favorites'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
@@ -23,19 +22,18 @@ import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue
 import type { Project } from '@/types'
 import TodayDates from '@/components/routines/TodayDates.vue'
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), labels = useTaskLabelsStore(), route = useRoute(), router = useRouter()
-const memory = useTaskViewMemory('todo', () => ({ selection: 'all', layout: 'list' as 'list'|'quadrant'|'table' }))
+const memory = useTaskViewMemory('todo', () => ({ navigationCollapsed: false, selection: 'all', layout: 'list' as 'list'|'quadrant'|'table' }))
 const selection = computed({get:()=>memory.value.selection === 'legacy' ? 'all' : memory.value.selection,set:v=>{memory.value.selection=v; if (route.query.list) void router.replace({query:{...route.query,list:undefined}})}})
+const navigationCollapsed = computed({get:()=>!!memory.value.navigationCollapsed,set:v=>{memory.value.navigationCollapsed=v}})
 const layout = computed({get:()=>memory.value.layout,set:v=>{memory.value.layout=v}})
 const scopeMemory = useTaskViewMemory(() => `todo:${selection.value}`, () => ({query:'',collapsed:[] as string[]}))
 const query = computed({get:()=>scopeMemory.value.query,set:v=>{scopeMemory.value.query=v}})
 const collapsed = computed({get:()=>scopeMemory.value.collapsed,set:v=>{scopeMemory.value.collapsed=v}})
-const favorites = useFavoritesStore()
 const listDialog = ref(false), editingList = ref<Project>(), settingsList = ref<Project>()
 const listMenu = ref<InstanceType<typeof ContextActionMenu>>()
 function openListMenu(project: Project, event: MouseEvent) {
  void listMenu.value?.openAt(event, project.name, [
   {id:'rename',label:'重命名清单',run:()=>editList(project)},
-  {id:'favorite',label:favorites.isFav('project',project.id)?'取消收藏':'收藏清单',run:()=>favorites.toggle('project',project.id,project.name)},
   {id:'settings',label:'清单设置',run:()=>{settingsList.value=project}},
  ], event.currentTarget as HTMLElement)
 }
@@ -88,8 +86,8 @@ async function add() {
 function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collapsed.value.filter(x=>x!==id):[...collapsed.value,id] }
 </script>
 <template>
- <div class="task-workspace" :class="{'matrix-workspace':layout==='quadrant' && selection!=='review'}">
-  <nav class="task-navigation" aria-label="任务导航">
+ <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'matrix-workspace':layout==='quadrant' && selection!=='review'}">
+  <nav v-show="!navigationCollapsed" id="todo-navigation" class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <div class="list-heading"><p>清单</p><button aria-label="新建清单" @click="editList()"><i class="ri-add-line" /></button></div>
    <div v-for="project in data.projects" :key="project.id" class="list-entry">
@@ -101,9 +99,10 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <div class="nav-footer"><button :class="{active:selection==='completed'}" @click="selection='completed'"><i class="ri-checkbox-circle-line"></i>已完成</button><button :class="{active:selection==='review'}" @click="selection='review'"><i class="ri-history-line"></i>每日回顾</button></div>
   </nav>
   <main class="workspace-main">
+   <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <header><h1>{{ heading }}</h1><span class="count">{{ searched.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /></div><div class="layout-switch"><button :aria-pressed="layout==='table'" @click="layout='table'">表格</button><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button :aria-pressed="batch" @click="batch=!batch;selectedIds=[]">批量选择</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <header><button class="navigation-toggle" :aria-label="navigationCollapsed ? '展开待办导航' : '收起待办导航'" :title="navigationCollapsed ? '展开待办导航' : '收起待办导航'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed"><i :class="navigationCollapsed ? 'ri-side-bar-line' : 'ri-layout-left-line'" /></button><h1>{{ heading }}</h1><span class="count">{{ searched.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /></div><div class="layout-switch"><button :aria-pressed="layout==='table'" @click="layout='table'">表格</button><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button :aria-pressed="batch" @click="batch=!batch;selectedIds=[]">批量选择</button><button @click="ui.openNewTask()">新建任务</button></div></header>
     <div v-if="batch" class="batch-toolbar"><button @click="selectedIds=searched.map(t=>t.id)">全选当前筛选</button><button @click="selectedIds=[]">清空选择</button><span>已选 {{selectedIds.length}} 项</span><TaskBatchActions v-model:selected-ids="selectedIds" :items="projection.items" :item-refs="projection.refs" /></div>
     <TodayDates v-if="selection==='today'" />
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
@@ -119,6 +118,9 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
  </div>
 </template>
 <style scoped>
+.task-workspace.navigation-collapsed {grid-template-columns:minmax(0,1fr);}
+.navigation-toggle {display:inline-flex;align-items:center;justify-content:center;min-width:var(--wao-control-height);min-height:var(--wao-control-height);color:var(--wao-text-3);}
+
 .list-heading,.list-entry { display:flex; align-items:center; gap:var(--wao-space-1); }
 .list-heading { justify-content:space-between; }
 .list-entry>button:first-child { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; text-align:left; }

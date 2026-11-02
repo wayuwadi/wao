@@ -26,12 +26,29 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('待办导航收起后保留当前清单并可展开，重新挂载恢复收起状态',async()=>{
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.list-entry>button').find(b=>b.text().includes(useDataStore().projects[0]!.name))!.trigger('click')
+  const heading=wrapper.get('h1').text()
+  await wrapper.get('[aria-label="收起待办导航"]').trigger('click')
+  expect(wrapper.get('.task-navigation').isVisible()).toBe(false)
+  expect(wrapper.get('h1').text()).toBe(heading)
+  wrapper.unmount()
+  const restored=mount(TodoView,options);await flushPromises()
+  expect(restored.get('.task-navigation').isVisible()).toBe(false)
+  await restored.get('[aria-label="展开待办导航"]').trigger('click')
+  expect(restored.get('.task-navigation').attributes('style') ?? '').not.toContain('display: none')
+  expect(restored.get('[aria-label="收起待办导航"]').attributes('aria-expanded')).toBe('true')
+  restored.unmount()
+ })
  it('旧项目跳转参数选择对应清单和表格布局',async()=>{
   const data=useDataStore(),project=data.projects[0]!
   testRoute.query={list:project.id,layout:'table'}
   const wrapper=mount(TodoView,options);await flushPromises()
   expect(wrapper.get('h1').text()).toBe(project.name)
   expect(wrapper.find('table[aria-label="任务表格"]').exists()).toBe(true)
+  expect(wrapper.find('.project-task-table .status-pill').exists()).toBe(true)
+  expect(wrapper.find('.project-task-table select').exists()).toBe(false)
   wrapper.unmount()
  })
  it('统一入口提供表格，子项编辑落到原任务且搜索三视图一致',async()=>{

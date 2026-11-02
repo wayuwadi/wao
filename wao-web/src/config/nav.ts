@@ -310,7 +310,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 /** 全体用户共用的主菜单；顺序和名称只随代码发布变更。 */
 export const FIXED_NAV_IDS = [
   'home', 'notes', 'todo', 'knowledge', 'drawings', 'vault',
-  'calendar', 'focus', 'countdowns', 'habits', 'navigation',
+  'calendar', 'focus', 'countdowns', 'navigation',
 ] as const satisfies readonly ModuleId[]
 export const FIXED_BUILTIN_MENUS: BuiltinMenuConfig[] = FIXED_NAV_IDS.map((id, index) => ({
   id, label: MODULES[id].label, icon: MODULES[id].icon,
