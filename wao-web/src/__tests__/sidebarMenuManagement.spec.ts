@@ -11,13 +11,13 @@ import { useSessionStore } from '@/stores/session'
 import type { AuthSession } from '@/api/auth'
 vi.mock('@/components/WaoLogo.vue', () => ({ default: { template: '<span />' } }))
 vi.mock('@/api/system', () => ({ fetchExternalAppRegistry: vi.fn().mockResolvedValue({ apps: [] }) }))
-const labels = ['首页', '小记', '待办', '知识库', '草图', '密码本', '日历', '番茄钟', '倒数日', '全部']
+const labels = ['首页', '小记', '待办', '知识库', '资源库', '草图', '密码本', '日历', '番茄钟', '倒数日', '算一卦', '全部']
 describe('统一主菜单', () => {
   beforeEach(() => {
     localStorage.clear(); setActivePinia(createPinia())
     window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })
   })
-  it('只显示知识库收藏，不再显示任务清单收藏', async () => {
+  it('主菜单不再显示知识库或任务清单收藏', async () => {
     const data = seedDataStore()
     const favorites = useFavoritesStore()
     const knowledge = useKnowledgeFavoritesStore()
@@ -30,11 +30,7 @@ describe('统一主菜单', () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/')
     const w = mount(SideNav, { global: { plugins: [router] } })
-    expect(w.findAll('.favorite-link').map(item => item.text())).toEqual([kb.name])
-    await w.findAll('.favorite-link')[0]!.trigger('click'); await flushPromises()
-    expect(router.currentRoute.value.path).toBe(`/kb/${kb.id}`)
-    expect(w.findAll('.favorite-link')[0]!.attributes('aria-current')).toBe('page')
-    expect(w.get('[title="知识库"]').classes()).not.toContain('active')
+    expect(w.findAll('.favorite-link')).toHaveLength(0)
     favorites.items = []; knowledge.ids = []; await flushPromises()
     expect(w.findAll('.favorite-link')).toHaveLength(0)
     expect(w.findAll('.item').map(item => item.text())).toEqual(labels)

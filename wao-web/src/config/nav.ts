@@ -152,7 +152,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   countdowns: { id: 'countdowns', label: '倒数日', icon: 'ri-calendar-event-line', path: '/countdowns' },
   habits: { id: 'habits', label: '习惯', icon: 'ri-seedling-line', path: '/habits' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
-  files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
+  files: { id: 'files', label: '资源库', icon: 'ri-hard-drive-2-line', path: '/files' },
   'reference-images': {
     id: 'reference-images',
     label: '参考图库',
@@ -234,7 +234,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-speak-line',
     path: '/english-learning',
   },
-  tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
+  tianren: { id: 'tianren', label: '算一卦', icon: 'ri-compass-3-line', path: '/tianren' },
   'workday-rhythm': {
     id: 'workday-rhythm',
     label: '今日节奏',
@@ -309,8 +309,8 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 }
 /** 全体用户共用的主菜单；顺序和名称只随代码发布变更。 */
 export const FIXED_NAV_IDS = [
-  'home', 'notes', 'todo', 'knowledge', 'drawings', 'vault',
-  'calendar', 'focus', 'countdowns', 'navigation',
+  'home', 'notes', 'todo', 'knowledge', 'files', 'drawings', 'vault',
+  'calendar', 'focus', 'countdowns', 'tianren', 'navigation',
 ] as const satisfies readonly ModuleId[]
 export const FIXED_BUILTIN_MENUS: BuiltinMenuConfig[] = FIXED_NAV_IDS.map((id, index) => ({
   id, label: MODULES[id].label, icon: MODULES[id].icon,
@@ -450,7 +450,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'tianren',
-      label: '天人一卦',
+      label: '算一卦',
       icon: 'ri-compass-3-line',
       group: 'PERSONAL',
       order: 70,
@@ -485,7 +485,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'files',
-      label: '文件与图床',
+      label: '资源库',
       icon: 'ri-hard-drive-2-line',
       group: 'TOOLS',
       order: 20,

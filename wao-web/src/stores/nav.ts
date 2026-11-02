@@ -48,11 +48,11 @@ function load(memberId = ''): Persisted {
     const raw =
       (memberId ? localStorage.getItem(NAV_KEY + ':' + memberId) : null) ??
       localStorage.getItem(NAV_KEY)
-    if (raw) return JSON.parse(raw) as Persisted
+    if (raw) { const saved = JSON.parse(raw) as Persisted; return { ...saved, collapsed: typeof saved.collapsed === 'boolean' ? saved.collapsed : true } }
   } catch {
     /* ignore */
   }
-  return { collapsed: false, foldedGroups: {} }
+  return { collapsed: true, foldedGroups: {} }
 }
 
 /** 校正一份存下来的顺序：去掉未知项、补上新增模块，保证不丢菜单。 */

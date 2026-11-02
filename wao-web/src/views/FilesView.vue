@@ -446,7 +446,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="files wao-page-frame">
     <div class="ftop">
-      <div class="ftitle">文件与图床</div>
+      <div class="ftitle">资源库</div>
       <div class="seg">
         <button
           v-for="t in ['files', 'img', 'pages'] as const"

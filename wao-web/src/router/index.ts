@@ -194,13 +194,13 @@ const router = createRouter({
         {
           path: 'knowledge',
           name: 'knowledge',
-          component: () => import('@/views/KnowledgeView.vue'),
+          component: () => import('@/views/KnowledgeWorkspaceView.vue'),
           meta: { module: 'knowledge', tabKind: 'module' },
         },
         {
           path: 'kb/:id',
           name: 'kb',
-          component: () => import('@/views/KbDetailView.vue'),
+          component: () => import('@/views/KnowledgeWorkspaceView.vue'),
           meta: { module: 'knowledge', tabKind: 'kb' },
         },
         {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
@@ -33,9 +34,7 @@ import { blocksToText, textToBlocks } from '@/utils/doc'
 import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
 import { useNow } from '@/composables/now'
 import ResourceMenu from '@/components/ui/ResourceMenu.vue'
-import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import SaveHint from '@/components/ui/SaveHint.vue'
-import { useFavoritesStore } from '@/stores/favorites'
 import {
   apiPatchKb,
   apiCreateDocTemplate,
@@ -59,13 +58,12 @@ const session = useSessionStore()
 const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
-const favorites = useFavoritesStore()
-const knowledgeFavorites = useKnowledgeFavoritesStore()
 const tocOpen = ref(true)
 
-const kbId = computed(() => String(route.params.id))
+const kbId = computed(() => String(route.params.id || route.query.kb || ''))
 const directoryWidth = ref(262)
-const directoryCollapsed = ref(false)
+const paneMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
+const directoryCollapsed = computed({ get: () => paneMemory.value.collapsed, set: value => { paneMemory.value.collapsed = value } })
 const kb = computed(() => data.kbById(kbId.value))
 
 const firstDocId = () => {
@@ -114,15 +112,12 @@ const { peers, setCaretLine, markTyping } = useDocPresence(docId)
 const now = useNow()
 
 watch(
-  () => [route.params.id, route.query.doc],
+  () => [kbId.value, route.query.doc],
   () => {
     flushCurrentDoc()
     docId.value = typeof route.query.doc === 'string' ? route.query.doc : null
   },
 )
-onMounted(() => {
-  void knowledgeFavorites.load()
-})
 
 
 const doc = computed(() => (docId.value && data.docById(docId.value)
@@ -316,7 +311,7 @@ async function addSelectionToTask(text: string) {
 }
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
-  if (k && k.id !== kbId.value) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
+  if (k && k.id !== kbId.value) router.push({ path: '/knowledge', query: { kb: k.id, doc: id } })
   else selectDoc(id)
 }
 const newDocFolderId = ref<string | null>(null)
@@ -1042,7 +1037,7 @@ async function goHome() {
 }
 function switchKb(event: Event) {
   flushCurrentDoc()
-  void router.push(`/kb/${(event.target as HTMLSelectElement).value}`)
+  void router.push({ path: '/knowledge', query: { kb: (event.target as HTMLSelectElement).value } })
 }
 async function createNested(action: string, parent: string) {
   if (creatingDoc.value || treeSaveState.value === 'saving' || !kb.value) return
@@ -1243,15 +1238,7 @@ async function saveKbSettings() {
             <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
-            <button
-              v-if="docId"
-              class="icon-act bar-favorite"
-              :class="{ faved: favorites.isFav('doc', docId) }"
-              :title="favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单'"
-              @click="favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"
-            >
-              <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
-            </button>
+
             <button v-if="pageType === 'spreadsheet'" class="icon-act" title="导出 Excel" aria-label="导出 Excel" :disabled="exportingExcel" @click="exportSheetExcel"><i class="ri-file-excel-2-line"></i></button>
             <div v-if="pageType !== 'drawing'" class="share-wrap bar-share">
               <button class="icon-act" title="复制分享链接" @click="moreMenuOpen = false; shareMenu = !shareMenu">
@@ -1279,7 +1266,6 @@ async function saveKbSettings() {
                 <div v-if="saving || saveFailed || docSavedAt" class="more-save"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></div>
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
                 <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
-                <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
                 <button class="more-share" @click="copyOriginalLink"><i class="ri-file-text-line"></i>复制知识库原文链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; openDocumentShare()"><i class="ri-links-line"></i>限时分享设置</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
@@ -1294,7 +1280,7 @@ async function saveKbSettings() {
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
-            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
+            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
             <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
             <div class="home-tools">
               <label class="home-search"><i class="ri-search-line" aria-hidden="true"></i><input v-model="treeQuery" type="search" aria-label="搜索首页文档" placeholder="搜索文件夹或文档标题" @keydown.esc="treeQuery = ''" /></label>
