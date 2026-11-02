@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { coalescedDraftWriter } from '@/utils/coalescedDraftWriter'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
 import type { IdentitySelection } from '@/api/digitalMembers'
@@ -636,12 +637,12 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save(true)" @keydown.meta.enter.prevent="save(true)">
       <NoteTagContextMenu ref="tagMenu" :choices="choices" :disabled="saving || creatingTag" @saving-change="tagManaging = $event" />
       <div class="composer-editor-layout"><div class="composer-editor-main">
-      <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images note-media-copy
+      <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES" :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images note-media-copy
         :image-references="contained || imageMode === 'references'" :active-image-reference="activeImage" @image-reference="locateDraftImage"
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false" :article-image-upload="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
-        :hide-character-count="inline" @character-count="characterCount = $event" hide-toolbar :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
+        :hide-character-count="inline" @character-count="characterCount = $event" :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" :placeholder="focusRequest ? '先写一句，就很好。想法、点子、提示词、想建设的功能……' : '想法、灵感、工作备忘…随手记在这里，也可以粘贴图片'"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">

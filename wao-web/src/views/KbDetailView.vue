@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
@@ -1338,7 +1339,7 @@ async function saveKbSettings() {
 
             <KnowledgeSheet v-if="pageType === 'spreadsheet'" ref="sheetEditor" :document-id="docId ?? undefined" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
             <KnowledgeDrawing v-else-if="pageType === 'drawing' && base?.drawingId" :key="base.drawingId" :drawing-id="base.drawingId" embedded />
-            <MarkdownEditor v-else
+            <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES" v-else
               :key="docId ?? 'empty-doc'"
               :search-request="String(route.query.findRequest ?? '')"
               :search-term="route.query.match === 'title' ? '' : typeof route.query.find === 'string' ? route.query.find : ''"
@@ -1434,7 +1435,7 @@ async function saveKbSettings() {
               <label>模板名称<input v-model="editTemplateForm.name" maxlength="128" :disabled="editingTemplateSaving" /></label>
               <label>使用说明<textarea v-model="editTemplateForm.description" maxlength="512" rows="2" :disabled="editingTemplateSaving"></textarea></label>
               <label class="template-content-field">模板内容</label>
-              <MarkdownEditor
+              <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES"
                 v-model="editTemplateForm.content"
                 :document="editTemplateRichContent?.document"
                 class="template-content-editor"
@@ -1467,7 +1468,7 @@ async function saveKbSettings() {
                 <div class="template-row-actions"><button @click="beginEditTemplate(item)"><i class="ri-edit-line"></i>编辑内容</button><button class="danger" @click="removeTemplate(item)"><i class="ri-delete-bin-line"></i>删除</button></div>
               </div>
               <div class="template-content-preview">
-                <MarkdownEditor
+                <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES"
                   v-if="item.blocks.length || item.content?.document"
                   :model-value="item.content?.markdown ?? blocksToText(item.blocks)"
                   :document="item.content?.document"

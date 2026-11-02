@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
+import { useTaskEditorUpload } from '@/composables/taskEditorUpload'
+const uploadEditorFile = useTaskEditorUpload()
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
@@ -1112,13 +1115,14 @@ async function uploadAttachment(event: Event) {
               <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
-              <MarkdownEditor
+              <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES"
                 v-model="subDesc"
                 slash-commands
                 placeholder="添加描述…支持 / 命令和粘贴图片"
                 :min-height="compact ? 40 : 200"
                 :hide-character-count="compact"
                 @upload-image="onSubImage"
+                @upload-file="uploadEditorFile"
               />
             </div>
 
@@ -1139,13 +1143,14 @@ async function uploadAttachment(event: Event) {
               <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
-              <MarkdownEditor
+              <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES"
                 v-model="desc"
                 slash-commands
                 placeholder="添加描述…支持 / 命令和粘贴图片"
                 :min-height="compact ? 40 : 200"
                 :hide-character-count="compact"
                 @upload-image="onTaskImage"
+                @upload-file="uploadEditorFile"
               />
             </div>
 

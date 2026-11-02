@@ -125,7 +125,10 @@ describe('TaskDrawer', () => {
     await waitFor(w, '.tiptap')
     const component = w.findComponent((await import('@/components/ui/MarkdownEditor.vue')).default)
     const editor = (component.vm as unknown as { editor: import('@tiptap/core').Editor }).editor
+    await vi.waitFor(() => expect(editor.isInitialized).toBe(true))
+    await flushPromises()
     vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 100, bottom: 120, left: 100, right: 100 })
+    editor.view.focus()
     editor.commands.insertContent('/h2')
     await flushPromises()
     expect(document.querySelector('.slash-menu')).not.toBeNull()

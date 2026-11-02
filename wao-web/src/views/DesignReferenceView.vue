@@ -3,6 +3,8 @@ import { toast } from '@/composables/toast'
 import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
+const unifiedExample = ref('<div data-columns="2"><section data-column><p>左栏：整理想法</p></section><section data-column><p>右栏：补充资料</p></section></div>\n\n[示例链接](https://example.com)\n\n| 内容 | 状态 |\n| --- | --- |\n| 统一编辑体验 | 验证中 |')
 import FocusDial from '@/components/focus/FocusDial.vue'
 import DateCounterCard from '@/components/routines/DateCounterCard.vue'
 import { newRoutine } from '@/api/personalRoutines'
@@ -288,6 +290,9 @@ const detailLabels = ref('')
             <h2>复制与链接 · 示例数据</h2>
             <p>普通复制保留文字与路径；粘贴完整网址后可单击打开。</p>
             <MarkdownEditor v-model="clipboardExample" slash-commands />
+            <h3>统一文档编辑</h3>
+            <p>知识库、小记和任务详情共用工具栏与 / 菜单。两栏点 + 添加第三栏；单击链接编辑，Ctrl/⌘ + 点击打开；Ctrl/⌘ + K 插入链接。表格内用 Tab 切换单元格。</p>
+            <MarkdownEditor v-model="unifiedExample" v-bind="DOCUMENT_EDITOR_FEATURES" />
           </section>
         <section class="reference-section">
             <h3>可调侧栏 · 演示</h3>

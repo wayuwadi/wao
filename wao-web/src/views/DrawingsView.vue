@@ -637,6 +637,12 @@ useSaveBeforeRefresh(async () => {
   if (!(await settleEdits())) throw new Error('草图尚未保存，请先处理保存失败或版本冲突')
 })
 if (inject(routerKey, null)) onBeforeRouteLeave(settleEdits)
+async function flushEmbedded() {
+  await persistDraft()
+  await saveNow()
+  if (dirty.value || conflict.value) throw new Error(error.value || '画板尚未保存，请重试')
+}
+defineExpose({ flush: flushEmbedded })
 </script>
 
 <template>
