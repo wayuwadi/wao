@@ -29,6 +29,21 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('搜索包含已完成子孙任务，清空搜索恢复隐藏规则', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs.push({ id: 'done-search', parentId: 'child', text: '历史归档验收', done: true })
+    const p = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items: p.items, contextItems: p.items, itemRefs: p.refs })
+    const row = '[data-task-id="sub:parent:done-search"]'
+    expect(wrapper.find(row).exists()).toBe(false)
+    await wrapper.setProps({ query: '历史归档' })
+    expect(wrapper.find(row).exists()).toBe(true)
+    expect(wrapper.get(row + ' input[type=checkbox]').element).toHaveProperty('checked', true)
+    await wrapper.setProps({ query: '' })
+    expect(wrapper.find(row).exists()).toBe(false)
+    await wrapper.setProps({ query: '   ' })
+    expect(wrapper.find(row).exists()).toBe(false)
+  })
   async function clickBodyButton(label: string) {
     const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)
     expect(button).toBeTruthy()

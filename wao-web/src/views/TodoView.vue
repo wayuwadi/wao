@@ -8,7 +8,6 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
-import { useMemberPreference } from '@/composables/memberPreference'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import { matchesTaskDate, type TaskDateFilter } from '@/utils/taskWorkspaceFilter'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -30,7 +29,6 @@ const batch = ref(false), selectedIds = ref<string[]>([])
 const toggleSelection=(id:string)=>{selectedIds.value=selectedIds.value.includes(id)?selectedIds.value.filter(key=>key!==id):[...selectedIds.value,id]}
 watch([selection,query,()=>labels.identity],()=>{batch.value=false;selectedIds.value=[]})
 const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-2-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
-const saved = useMemberPreference<{id:string; name:string; selection:string; query:string}[]>('task-workspace-filters-v1', raw => { try { const v=JSON.parse(raw || '[]'); return Array.isArray(v) ? v.filter(x=>typeof x?.id==='string' && typeof x.name==='string' && typeof x.selection==='string' && typeof x.query==='string') : [] } catch { return [] } }, JSON.stringify)
 watch(() => labels.identity, () => { void labels.load() }, { immediate:true })
 watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; selection.value='review' } }, {immediate:true})
 const projection = computed(() => projectWorkItems(data.tasks))
@@ -40,9 +38,9 @@ const scope = computed(()=>selection.value.startsWith('project:') ? projection.v
 const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
 const filtered = computed(() => scope.value.filter(task => {
- if(selection.value==='completed') return isTaskFinished(task)
+ if(selection.value==='completed' && !query.value.trim()) return isTaskFinished(task)
  const sourceId=projection.value.refs[task.id]?.taskId??task.id
- if(isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
+ if(!query.value.trim() && isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
  if(selection.value==='inbox' && task.project) return false
  if(selection.value.startsWith('project:') && task.project!==selection.value.slice(8)) return false
  if(selection.value.startsWith('tag:') && !tagsFor(task.id).includes(selection.value.slice(4))) return false
@@ -69,15 +67,12 @@ async function add() {
  finally { if(identity===labels.identity) creating.value=false }
 }
 function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collapsed.value.filter(x=>x!==id):[...collapsed.value,id] }
-function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUUID(),name:heading.value+(query.value?' · '+query.value:''),selection:selection.value,query:query.value}]) }
 </script>
 <template>
  <div class="task-workspace" :class="{'matrix-workspace':layout==='quadrant' && !['review','legacy'].includes(selection)}">
   <nav class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <p>清单</p><button v-for="project in data.projects" :key="project.id" :class="{active:selection==='project:'+project.id}" @click="selection='project:'+project.id"><i class="ri-list-check"></i>{{ project.name }}</button>
-   <p>筛选器</p><button v-for="filter in saved.value.value" :key="filter.id" @click="selection=filter.selection==='assigned'?'all':filter.selection;query=filter.query"><i class="ri-filter-3-line"></i>{{ filter.name }}<span role="button" tabindex="0" aria-label="删除筛选器" @click.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))" @keydown.enter.stop="saved.set(saved.value.value.filter(x=>x.id!==filter.id))">×</span></button>
-   <button @click="saveFilter"><i class="ri-add-line"></i>保存当前筛选</button><small v-if="saved.error.value" role="alert">{{ saved.error.value }}<button @click="saved.retry()">重试</button></small>
    <p>标签</p><button v-for="tag in visibleTags" :key="tag" :class="{active:selection==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line"></i>{{ tag }}</button>
    <small v-if="labels.error" role="alert">{{ labels.error }}<button @click="labels.load()">重试</button></small>
    <div class="nav-footer"><button :class="{active:selection==='completed'}" @click="selection='completed'"><i class="ri-checkbox-circle-line"></i>已完成</button><button :class="{active:selection==='review'}" @click="selection='review'"><i class="ri-history-line"></i>每日回顾</button><button @click="selection='legacy'"><i class="ri-layout-column-line"></i>原待办视图</button></div>
@@ -86,13 +81,13 @@ function saveFilter() { void saved.set([...saved.value.value,{id:crypto.randomUU
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <TodoLegacyView v-else-if="selection==='legacy'" />
    <template v-else>
-    <header><h1>{{ heading }}</h1><span class="count">{{ filtered.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /><button @click="saveFilter">保存筛选</button></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button :aria-pressed="batch" @click="batch=!batch;selectedIds=[]">批量选择</button><button @click="ui.openNewTask()">新建任务</button></div></header>
+    <header><h1>{{ heading }}</h1><span class="count">{{ searched.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button><button :aria-pressed="batch" @click="batch=!batch;selectedIds=[]">批量选择</button><button @click="ui.openNewTask()">新建任务</button></div></header>
     <div v-if="batch" class="batch-toolbar"><button @click="selectedIds=searched.map(t=>t.id)">全选当前筛选</button><button @click="selectedIds=[]">清空选择</button><span>已选 {{selectedIds.length}} 项</span><TaskBatchActions v-model:selected-ids="selectedIds" :items="projection.items" :item-refs="projection.refs" /></div>
     <TodayDates v-if="selection==='today'" />
     <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView v-else-if="layout==='list'" :key="selection" :state-key="`todo:${selection}:list`" :selection-mode="batch" :selected-ids="selectedIds" @select="toggleSelection" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed'" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
-    <TaskQuadrantView v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :selection-mode="batch" @select="toggleSelection" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="selectedIds" :show-done="selection==='completed'" />
+    <ProjectChecklistView v-else-if="layout==='list'" :key="selection" :state-key="`todo:${selection}:list`" :selection-mode="batch" :selected-ids="selectedIds" @select="toggleSelection" :disable-hierarchy-drag="true" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
+    <TaskQuadrantView v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :selection-mode="batch" @select="toggleSelection" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :selected-ids="selectedIds" :show-done="selection==='completed' || !!query.trim()" />
    </template>
   </main>
  </div>

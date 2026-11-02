@@ -104,6 +104,7 @@ describe('项目关键词查找', () => {
     const { wrapper } = await view()
     const table = wrapper.get('table').element
     await wrapper.findAll('.task-row').find(row => row.text().includes(task.title))!.get('.tree-toggle').trigger('click')
+    const expandedRows = wrapper.findAll('.table-subs').map(row => row.text())
     await wrapper.get('thead th:nth-child(2) button').trigger('click')
     const sort = wrapper.get('thead th:nth-child(2)').attributes('aria-sort')
     const order = JSON.stringify(useTaskOrderStore().state('project:p1').ids), tasks = JSON.stringify(data.tasks)
@@ -116,7 +117,7 @@ describe('项目关键词查找', () => {
     expect(wrapper.get('.project-normal-tasks').attributes('style')).toContain('display: none')
     await wrapper.findAll('button').find(button => button.text() === '清除查找')!.trigger('click')
     expect(wrapper.get('table').element).toBe(table)
-    expect(wrapper.find('.table-subs').exists()).toBe(false)
+    expect(wrapper.findAll('.table-subs').map(row => row.text())).toEqual(expandedRows)
     expect(wrapper.get('thead th:nth-child(2)').attributes('aria-sort')).toBe(sort)
     expect(JSON.stringify(useTaskOrderStore().state('project:p1').ids)).toBe(order)
     expect(JSON.stringify(data.tasks)).toBe(tasks)

@@ -184,7 +184,7 @@ const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => 
 const selectedId = computed({ get: () => viewMemory.value.selectedId, set: value => { viewMemory.value.selectedId = value } })
 const detailOnlySelection = ref(false)
 const matches = computed(() => {
-  const items = props.items.filter(t => props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
+  const items = props.items.filter(t => props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
   const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
