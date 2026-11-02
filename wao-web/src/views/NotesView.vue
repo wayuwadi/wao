@@ -1492,17 +1492,16 @@ button:disabled { cursor: default; opacity: .5; }
 .search { flex: 1 1 auto; min-width: 120px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
 input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: var(--wao-font-body); }
 .search:focus-within { border-color: var(--wao-primary); }
-.filter-control { position: relative; flex: none; }
-.filter-toggle { white-space: nowrap; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
-.filter-toggle i:first-child { margin-right: 5px; }
-.filter-count { display: inline-grid; place-items: center; width: 17px; height: 17px; margin: 0 4px; border-radius: 50%; background: var(--wao-primary); color: white; }
-.filter-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; width: min(340px, calc(100vw - 40px)); max-height: min(68vh, 550px); overflow-y: auto; padding: 15px; border: 1px solid var(--wao-line-control); border-radius: 12px; background: var(--wao-bg-card); box-shadow: 0 12px 38px rgba(30, 24, 55, .15); }
-.filter-group { display: grid; gap: 8px; margin-bottom: 14px; }
+.filter-control { flex: none; }
+.filter-toggle { display: inline-flex; align-items: center; justify-content: center; gap: calc(var(--wao-space-1) / 2); white-space: nowrap; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
+.filter-count { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 1.5em; height: 1.5em; padding-inline: .25em; font-size: var(--wao-font-caption); line-height: 1; font-variant-numeric: tabular-nums; border-radius: var(--wao-radius-pill); background: var(--wao-primary); color: var(--wao-on-primary); }
+.filter-panel { position: absolute; top: 100%; right: 0; z-index: 10; box-sizing: border-box; width: min(460px, 100%); padding: var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
+.filter-group { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); }
 .filter-group strong { color: var(--wao-text-2); font-size: var(--wao-font-caption); }
-.filter-options { display: flex; gap: 6px; flex-wrap: wrap; }
-.filter-options button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); }
+.filter-options { display: flex; gap: calc(var(--wao-space-1) / 2); flex-wrap: wrap; min-width: 0; }
+.filter-options button { min-width: 0; max-width: 100%; padding: var(--wao-space-1); overflow-wrap: anywhere; border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); }
 .filter-options button[aria-pressed="true"] { border-color: var(--wao-primary); background: var(--wao-bg-hover); color: var(--wao-primary-text); }
-.filter-group select { width: 100%; padding: 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-2); }
+.filter-group select { min-width: 0; width: 100%; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-2); }
 .filter-footer { display: flex; justify-content: space-between; border-top: 1px solid var(--wao-line); padding-top: 8px; }
 .tags-toolbar { display: flex; align-items: flex-start; gap: 5px; min-width: 0; }
 .tags-toolbar button { flex: none; padding: 4px 7px; font-size: var(--wao-font-caption); line-height: 1.3; white-space: nowrap; }
@@ -1733,8 +1732,9 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 @media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
 @media (max-width: 600px) {
   .search { flex: 1 1 100%; }
-  .filter-control { position: static; }
-  .filter-panel { width: 100%; max-width: 340px; }
+  .filter-control { display: contents; }
+  .list-toolbar:has(.filter-panel) { position: relative; }
+  .filter-panel { position: static; order: 1; flex-basis: 100%; width: 100%; padding: var(--wao-space-1); }
 }
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top { transition: none; animation: none; } }
 .search button { flex: none; white-space: nowrap; border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; padding: 4px; }
