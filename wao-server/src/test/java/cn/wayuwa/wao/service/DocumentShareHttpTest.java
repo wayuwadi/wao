@@ -34,7 +34,7 @@ class DocumentShareHttpTest {
                 .when(shares).documentSnapshot("document","owner");
         var images=mock(ImageService.class);
         var image=new ImageBlobEntity(); image.setContentType("image/png"); image.setContent(new byte[]{1,2,3});
-        when(images.raw("picture")).thenReturn(image);
+        when(images.rawSharedSnapshot("picture")).thenReturn(image);
         json=new ObjectMapper().findAndRegisterModules();
         var service=new NotePublicShareService(db,shares,images,json);
         var sessions=mock(AuthSessionManager.class);
