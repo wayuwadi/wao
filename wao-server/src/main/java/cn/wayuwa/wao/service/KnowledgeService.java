@@ -77,6 +77,27 @@ import org.springframework.util.StringUtils;
 @Service
 public class KnowledgeService {
     @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService access;
+
+    private List<DocEntity> visibleDocs(List<DocEntity> docs) {
+        if (access == null || access.systemCall()) return docs;
+        Map<String, Boolean> libraries = new java.util.HashMap<>();
+        return docs.stream().filter(doc -> libraries.computeIfAbsent(doc.getKbId(), access::visible)).toList();
+    }
+
+    private void checkTrashAccess(String type, String id) {
+        if (access == null || access.systemCall()) return;
+        String kbId = switch (type) {
+            case "kb" -> id;
+            case "folder" -> { var f = folderMapper.selectById(id); yield f == null ? null : f.getKbId(); }
+            case "doc" -> { var d = docMapper.selectById(id); yield d == null ? null : d.getKbId(); }
+            default -> null;
+        };
+        access.require(kbId);
+        KbEntity kb = kbMapper.selectById(kbId);
+        if ("kb".equals(type) || (kb != null && kb.getDeletedAt() != null)) access.requireOwner(kb);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
     private NoteDiscoveryChangeService discoveryChanges;
 
     private void discoverySaved(DocEntity doc, String origin) {
@@ -236,7 +257,7 @@ public class KnowledgeService {
         Map<String, List<KbFolderEntity>> foldersByKb = folders.stream()
                 .collect(Collectors.groupingBy(KbFolderEntity::getKbId));
 
-        return kbs.stream().map(kb -> toDto(kb, foldersByKb.getOrDefault(kb.getId(), List.of()), docIdsByFolder))
+        return kbs.stream().filter(kb -> access == null || access.visible(kb)).map(kb -> toDto(kb, foldersByKb.getOrDefault(kb.getId(), List.of()), docIdsByFolder))
                 .toList();
     }
 
@@ -259,6 +280,9 @@ public class KnowledgeService {
     @Transactional
     public KbDto createKb(CreateKbRequest req) {
         KbEntity e = new KbEntity();
+        if (access != null && (access.actor() == null || access.actor().isBlank()))
+            throw new cn.wayuwa.wao.common.UnauthorizedException("新建知识库需要成员身份");
+        e.setOwnerId(access == null ? null : access.actor());
         e.setId("kb" + System.currentTimeMillis());
         e.setName(req.name().trim());
         e.setIcon(blankOr(req.icon(), "ri-book-2-line"));
@@ -269,7 +293,7 @@ public class KnowledgeService {
         e.setNotes(false);
         e.setDescription(req.desc());
         e.setGroupId(req.group());
-        e.setPerm(blankOr(req.perm(), "仅自己"));
+        e.setPerm("仅自己");
         e.setOrd(nextOrd(kbMapper.selectCount(null)));
         kbMapper.insert(e);
 
@@ -287,6 +311,7 @@ public class KnowledgeService {
     /** 局部更新知识库（自动化知识库的名称与简介不可改）。 */
     public KbDto updateKb(String id, PatchKbRequest req) {
         KbEntity e = requireKb(id);
+        if (access != null) access.requireOwner(e);
         boolean locked = Boolean.TRUE.equals(e.getAuto());
         if (!locked && req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
@@ -304,6 +329,7 @@ public class KnowledgeService {
             e.setGroupId(req.group().isBlank() ? null : req.group());
         }
         if (req.perm() != null && !req.perm().isBlank()) {
+            if (!Set.of("仅自己", "成员可编辑").contains(req.perm())) throw new BadRequestException("不支持的知识库权限");
             e.setPerm(req.perm());
         }
         kbMapper.updateById(e);
@@ -319,6 +345,7 @@ public class KnowledgeService {
     @Transactional
     public void deleteKb(String id, String memberId) {
         KbEntity kb = requireKb(id);
+        if (access != null) access.requireOwner(kb);
         if (Boolean.TRUE.equals(kb.getNotes())) {
             throw new BadRequestException("小记知识库是「新建小记」的默认落点，不能删除");
         }
@@ -423,6 +450,7 @@ public class KnowledgeService {
     }
 
     private KbFolderEntity requireFolder(String kbId, String folderId) {
+        if (access != null) access.require(kbId);
         KbFolderEntity e = folderMapper.selectById(folderId);
         if (e == null || !e.getKbId().equals(kbId) || e.getDeletedAt() != null) {
             throw new NotFoundException("文件夹不存在：" + folderId);
@@ -431,6 +459,7 @@ public class KnowledgeService {
     }
 
     private KbEntity requireKb(String id) {
+        if (access != null) access.require(id);
         KbEntity kb = kbMapper.selectById(id);
         if (kb == null || kb.getDeletedAt() != null) {
             throw new NotFoundException("知识库不存在：" + id);
@@ -455,7 +484,7 @@ public class KnowledgeService {
         Map<String, DocEntity> notes = noteKbIds.isEmpty() ? Map.of()
                 : docMapper.selectList(activeDocs().in(DocEntity::getKbId, noteKbIds)).stream()
                     .collect(Collectors.toMap(DocEntity::getId, doc -> doc));
-        return entries.stream().map(entry -> {
+        return visibleDocs(entries).stream().map(entry -> {
             DocEntity note = notes.get(entry.getId());
             if (note != null) return toDtoWithBacklinks(note, List.of());
             DocDto metadata = toDtoWithBacklinks(entry, List.of());
@@ -467,7 +496,7 @@ public class KnowledgeService {
 
     /** 列出全部日常文档（含正文与反向链接），不含回收站与归档里的。 */
     public List<DocDto> listDocs() {
-        List<DocEntity> docs = docMapper.selectList(activeDocs());
+        List<DocEntity> docs = visibleDocs(docMapper.selectList(activeDocs()));
         Map<String, List<DocLinkDto>> linksById = docs.stream().collect(Collectors.toMap(
                 DocEntity::getId, doc -> readList(doc.getLinksJson(), LINKS_TYPE)));
         Map<String, List<DocBlockDto>> blocksById = docs.stream().collect(Collectors.toMap(
@@ -486,7 +515,7 @@ public class KnowledgeService {
                 .eq(DocEntity::getKbId, kbId)
                 .isNotNull(DocEntity::getArchivedAt)
                 .orderByDesc(DocEntity::getArchivedAt));
-        List<DocEntity> retained = docMapper.selectList(aliveDocs());
+        List<DocEntity> retained = visibleDocs(docMapper.selectList(aliveDocs()));
         Map<String, List<BacklinkDto>> backlinks = backlinkIndex(retained);
         return archived.stream().map(doc -> toDtoWithBacklinks(doc,
                 backlinks.getOrDefault(doc.getId(), List.of()))).toList();
@@ -494,6 +523,7 @@ public class KnowledgeService {
 
     /** 仅查询未删除文档的当前版本，供高频心跳判断是否需要读取正文。 */
     public int getDocRevision(String id) {
+        if (access != null && !access.systemCall()) access.require(docMapper.selectAliveKbId(id));
         Integer revision = docMapper.selectAliveRevision(id);
         if (revision == null) throw new NotFoundException("文档不存在：" + id);
         return revision;
@@ -513,6 +543,7 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createDoc(CreateDocRequest req, String author) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if(noteAiManaged!=null&&author!=null&&NOTES_KB_ID.equals(req.kbId()))noteAiManaged.lockActor(author);
         KbEntity kb = requireKb(req.kbId());
         String pageType = req.pageType() == null ? "document" : req.pageType();
@@ -576,6 +607,7 @@ public class KnowledgeService {
     @Transactional
     public DocDto createDailyRhythmDoc(String id, String kbId, String folderId, String templateId,
             String title, List<DocBlockDto> suppliedBlocks, String author) {
+        if (access != null) access.require(kbId, author);
         DocEntity existing = docMapper.selectById(id);
         if (existing != null) {
             if (!Objects.equals(existing.getAuthorId(), author)) {
@@ -604,6 +636,7 @@ public class KnowledgeService {
      * @param memberId 当前成员
      */
     public void validateDailyRhythmTarget(String kbId, String folderId, String templateId, String memberId) {
+        if (access != null) access.require(kbId, memberId);
         requireKb(kbId);
         requireFolder(kbId, folderId);
         if (StringUtils.hasText(templateId)) {
@@ -842,6 +875,7 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createNote(String id, CreateNoteRequest req, String author) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if (id == null || !CLIENT_DOC_ID.matcher(id).matches()) {
             throw new BadRequestException("小记文档 id 不合法");
         }
@@ -1246,6 +1280,8 @@ public class KnowledgeService {
         e.setLinksJson(write(links));
         e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(
+                List.of(blankOr(e.getBlocksJson(), ""), blankOr(e.getContentJson(), ""), blankOr(e.getContentMarkdown(), "")));
         docMapper.insert(e);
         discoverySaved(e, NoteAiManagedService.derived()?"AI_DERIVED":"USER");
         return toDto(e);
@@ -1358,6 +1394,7 @@ public class KnowledgeService {
     }
 
     private DocDto updateDocWithOrigin(String id, PatchDocRequest req, String origin) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if("USER".equals(origin)&&req.content()==null&&req.blocks()==null)origin="METADATA";
         // 成员锁先于文档写锁，和调度写回保持一致，防止相互等待。
         String actor=noteActor();
@@ -1571,6 +1608,7 @@ public class KnowledgeService {
         if (e == null || e.getDeletedAt() != null) {
             throw new NotFoundException("文档不存在：" + id);
         }
+        if (access != null) access.require(e.getKbId());
         return e;
     }
 
@@ -1599,12 +1637,14 @@ public class KnowledgeService {
                 .collect(Collectors.toMap(KbFolderEntity::getId, f -> f, (a, b) -> a));
 
         for (KbEntity kb : kbMapper.selectList(new LambdaQueryWrapper<KbEntity>().isNotNull(KbEntity::getDeletedAt))) {
+            if (access != null && !access.visible(kb)) continue;
             out.add(new TrashEntryDto("kb", kb.getId(), kb.getName(), "知识库",
                     iso(kb.getDeletedAt()), kb.getDeletedBy(), iso(expiry(kb.getDeletedAt()))));
         }
         for (KbFolderEntity f : folderMapper.selectList(new LambdaQueryWrapper<KbFolderEntity>()
                 .isNotNull(KbFolderEntity::getDeletedAt).ne(KbFolderEntity::getCascadeDel, true))) {
             KbEntity kb = kbById.get(f.getKbId());
+            if (access != null && !access.visible(kb)) continue;
             out.add(new TrashEntryDto("folder", f.getId(), f.getName(),
                     "文件夹 · " + (kb == null ? "已删除的知识库" : kb.getName()),
                     iso(f.getDeletedAt()), null, iso(expiry(f.getDeletedAt()))));
@@ -1612,6 +1652,7 @@ public class KnowledgeService {
         for (DocEntity d : docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
                 .isNotNull(DocEntity::getDeletedAt).ne(DocEntity::getCascadeDel, true))) {
             KbEntity kb = kbById.get(d.getKbId());
+            if (access != null && !access.visible(kb)) continue;
             KbFolderEntity f = folderById.get(d.getFolderId());
             String parent = (kb == null ? "已删除的知识库" : kb.getName()) + (f == null ? "" : " / " + f.getName());
             out.add(new TrashEntryDto("doc", d.getId(), blankOr(d.getTitle(), "未命名文档"), "文档 · " + parent,
@@ -1632,6 +1673,7 @@ public class KnowledgeService {
      */
     @Transactional
     public void restore(String type, String id) {
+        checkTrashAccess(type, id);
         switch (type) {
             case "kb" -> restoreKb(id);
             case "folder" -> restoreFolder(id);
@@ -1715,6 +1757,7 @@ public class KnowledgeService {
      */
     @Transactional
     public void purge(String type, String id) {
+        checkTrashAccess(type, id);
         switch (type) {
             case "kb" -> {
                 docMapper.delete(new LambdaQueryWrapper<DocEntity>().eq(DocEntity::getKbId, id));
@@ -1892,12 +1935,12 @@ public class KnowledgeService {
                 .toList();
         return new KbDto(kb.getId(), kb.getName(), kb.getIcon(), kb.getColor(), null,
                 kb.getAuto(), kb.getDescription(), folderDtos, kb.getGroupId(), kb.getPerm(),
-                Boolean.TRUE.equals(kb.getNotes()), directoryOverrides(kb), directoryOrder(kb));
+                Boolean.TRUE.equals(kb.getNotes()), directoryOverrides(kb), directoryOrder(kb), kb.getOwnerId());
     }
 
     private DocDto toDto(DocEntity e) {
         List<BacklinkDto> backlinks = e.getDeletedAt() != null ? List.of()
-                : docMapper.selectBacklinkSources(e.getId()).stream()
+                : visibleDocs(docMapper.selectBacklinkSources(e.getId())).stream()
                 .map(source -> new BacklinkDto("doc", source.getId(), snippetOf(source))).toList();
         return toDtoWithBacklinks(e, backlinks);
     }

@@ -53,6 +53,8 @@ import org.springframework.util.StringUtils;
 /** 今日节奏每日面板、必做清单与每日文档的主业务服务。 */
 @Service
 public class WorkdayRhythmDashboardService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
     static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     static final String DAY_KEY_PREFIX = "workday-rhythm-day-";
     private static final String ALTERNATE_WEEK_KEY = "alternate-work-week";
@@ -588,6 +590,7 @@ public class WorkdayRhythmDashboardService {
                 StringUtils.hasText(setting.getDocumentKbId()) && StringUtils.hasText(setting.getDocumentFolderId()) ? "READY" : "UNCONFIGURED",
                 setting.getDocumentKbId(), setting.getDocumentFolderId(), documentTitle(setting, date));
         DocEntity doc = docs.selectById(day.getDocumentId());
+        if (doc != null && knowledgeAccess != null && !knowledgeAccess.visible(doc.getKbId(), memberId)) doc = null;
         if (doc == null) return new WorkdayRhythmDashboardDto.Document(day.getDocumentId(), "MISSING", null, null, null);
         return new WorkdayRhythmDashboardDto.Document(doc.getId(), doc.getDeletedAt() == null ? "CREATED" : "TRASHED",
                 doc.getKbId(), doc.getFolderId(), doc.getTitle());

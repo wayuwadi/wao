@@ -27,6 +27,10 @@ public interface DrawingFileMapper extends BaseMapper<DrawingFileEntity> {
     @Select("SELECT f.id, f.owner_member_id, COALESCE(d.title, f.title) AS title, d.id AS doc_id, d.kb_id, f.scene_json, f.revision, f.created_at, f.updated_at FROM drawing_file f LEFT JOIN doc d ON d.id = f.knowledge_doc_id WHERE f.id = #{id} AND f.owner_member_id = #{ownerMemberId} AND (f.knowledge_doc_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL)) LIMIT 1")
     DrawingFileEntity findOwned(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId);
 
+    /** Service must apply knowledge-base access before returning this linked drawing. */
+    @Select("SELECT f.id, f.owner_member_id, d.title, d.id AS doc_id, d.kb_id, f.scene_json, f.revision, f.created_at, f.updated_at FROM drawing_file f JOIN doc d ON d.id=f.knowledge_doc_id JOIN kb k ON k.id=d.kb_id WHERE f.id=#{id} AND d.deleted_at IS NULL AND k.deleted_at IS NULL")
+    DrawingFileEntity findKnowledge(@Param("id") String id);
+
     @Update("""
             UPDATE drawing_file
             SET scene_json = #{sceneJson}, revision = revision + 1, updated_at = #{updatedAt}

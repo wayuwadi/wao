@@ -98,6 +98,10 @@ public class WorkspaceMcpTools {
     /** 调用经过显式列举的工具；每次都使用令牌成员重新应用业务可见性。 */
     @org.springframework.transaction.annotation.Transactional
     public Object call(String name, JsonNode arguments, AuthenticatedToken token) {
+        return KnowledgeAccessService.asMember(token.memberId(), () -> callForMember(name, arguments, token));
+    }
+
+    private Object callForMember(String name, JsonNode arguments, AuthenticatedToken token) {
         if (arguments == null || !arguments.isObject()) throw new BadRequestException("工具参数必须是对象");
         String member = token.memberId();
         if (!token.canWrite() && !isReadOnly(name)) throw new BadRequestException("令牌没有写权限");

@@ -27,6 +27,9 @@ import org.springframework.web.multipart.MultipartFile;
 /** 通用文件的上传、元数据列表、下载和删除服务。 */
 @Service
 public class FileService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private NoteAssetPrivacyService knowledgeAssets;
+    private void requireKnowledgeAsset(String id) { if (knowledgeAssets != null) knowledgeAssets.requireRead("files", id); }
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     @org.springframework.context.annotation.Lazy
     private NoteOriginalService noteOriginals;
@@ -47,12 +50,17 @@ public class FileService {
         this.objects = objects;
     }
 
+    private List<FileBlobEntity> visibleMetadata() {
+        var hidden = knowledgeAssets == null ? java.util.Set.<String>of() : knowledgeAssets.hiddenAssets("files");
+        return mapper.listMeta().stream().filter(item -> !hidden.contains(item.getId())).toList();
+    }
+
     /** 列出文件元数据，不把二进制正文加载进内存。 */
-    public List<FileItemDto> list() { return mapper.listMeta().stream().map(this::toDto).toList(); }
+    public List<FileItemDto> list() { return visibleMetadata().stream().map(this::toDto).toList(); }
 
     /** 列出当前成员可见的全局/项目文件；指定项目时只返回该项目。 */
     public List<FileItemDto> list(Set<String> visibleProjectIds, String projectId) {
-        return mapper.listMeta().stream()
+        return visibleMetadata().stream()
                 .filter(entity -> projectId != null
                         ? projectId.equals(entity.getProjectId())
                         : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
@@ -138,6 +146,7 @@ public class FileService {
 
     /** 读取文件正文用于下载。 */
     public FileBlobEntity raw(String id) {
+        requireKnowledgeAsset(id);
         FileBlobEntity entity = mapper.findMeta(id);
         if (entity == null) throw new NotFoundException("文件不存在：" + id);
         if (entity.getObjectKey() != null && !entity.getObjectKey().isBlank()) {
@@ -198,6 +207,7 @@ public class FileService {
 
     /** 只读取单个文件的元数据，供权限判断使用，不把二进制正文载入内存。 */
     public FileBlobEntity metadata(String id) {
+        requireKnowledgeAsset(id);
         FileBlobEntity entity = mapper.findMeta(id);
         if (entity == null) throw new NotFoundException("文件不存在：" + id);
         return entity;
@@ -205,6 +215,7 @@ public class FileService {
 
     /** 修改文件在 WAO 内的展示名称；原始文件名和正文均不变。 */
     public FileItemDto renameDisplayName(String id, String displayName) {
+        requireKnowledgeAsset(id);
         String normalized = displayName == null ? "" : displayName.trim();
         if (normalized.isEmpty() || normalized.length() > 255) {
             throw new BadRequestException("文件展示名称须为 1～255 个字符");
@@ -243,6 +254,7 @@ public class FileService {
     /** 删除一个文件。 */
     @org.springframework.transaction.annotation.Transactional
     public void delete(String id) {
+        requireKnowledgeAsset(id);
         if(noteOriginals!=null)noteOriginals.requireAssetUnused("files",id);
         if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id);
     }

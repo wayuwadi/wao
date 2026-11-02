@@ -52,10 +52,10 @@ class NotePublicShareServiceTest {
     }
     @Test void sameCapabilityProtectsImagesAndRejectsCrossSnapshotIds() {
         var created=service.create("owner","note",24);
-        ImageBlobEntity image=new ImageBlobEntity();when(images.raw("pic")).thenReturn(image);
+        ImageBlobEntity image=new ImageBlobEntity();when(images.rawSharedSnapshot("pic")).thenReturn(image);
         assertThat(service.image(created.token(),"pic")).isSameAs(image);
         assertThatThrownBy(()->service.image(created.token(),"other-private")).isInstanceOf(NotFoundException.class);
-        verify(images,never()).raw("other-private");
+        verify(images,never()).rawSharedSnapshot("other-private");
         assertThatThrownBy(()->service.revoke("other","note",created.id())).isInstanceOf(ForbiddenException.class);
         service.revoke("owner","note",created.id());service.revoke("owner","note",created.id());
         assertThatThrownBy(()->service.read(created.token())).isInstanceOf(NotFoundException.class);
@@ -78,8 +78,8 @@ class NotePublicShareServiceTest {
         var created=service.create("owner","note",1);
         assertThat(service.read(created.token()).doc().md()).contains("/api/share/notes/"+created.token()+"/images/own/raw","https://else.example/api/images/foreign/raw");
         assertThatThrownBy(()->service.image(created.token(),"foreign")).isInstanceOf(NotFoundException.class);
-        verify(images,never()).raw("foreign");
-        service.image(created.token(),"own");verify(images).raw("own");
+        verify(images,never()).rawSharedSnapshot("foreign");
+        service.image(created.token(),"own");verify(images).rawSharedSnapshot("own");
     }
 
     @Test void knowledgeDocumentsUseTheSameRevocableSnapshotAndOwnerBoundary() {

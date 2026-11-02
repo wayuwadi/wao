@@ -41,9 +41,17 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class ImageService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private NoteAssetPrivacyService knowledgeAssets;
+    private void requireKnowledgeAsset(String id) { if (knowledgeAssets != null) knowledgeAssets.requireRead("images", id); }
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     @org.springframework.context.annotation.Lazy
     private NoteOriginalService noteOriginals;
+
+    private List<ImageBlobEntity> visibleMetadata() {
+        var hidden = knowledgeAssets == null ? java.util.Set.<String>of() : knowledgeAssets.hiddenAssets("images");
+        return mapper.listMeta().stream().filter(item -> !hidden.contains(item.getId())).toList();
+    }
 
     /** 单张图片基础设施硬上限 10MB；用户主动上传可在设置中进一步调低。 */
     public static final long MAX_BYTES = 10L * 1024 * 1024;
@@ -222,14 +230,14 @@ public class ImageService {
      * @return 图床条目列表
      */
     public List<ImageItemDto> list() {
-        List<ImageItemDto> out = new ArrayList<>(mapper.listMeta().stream().map(this::toDto).toList());
+        List<ImageItemDto> out = new ArrayList<>(visibleMetadata().stream().map(this::toDto).toList());
         content.images().forEach(node -> out.add(fromSeed(node)));
         return out;
     }
 
     /** 列出当前成员可见的全局/项目图片；项目列表不混入历史演示条目。 */
     public List<ImageItemDto> list(Set<String> visibleProjectIds, String projectId) {
-        List<ImageItemDto> out = new ArrayList<>(mapper.listMeta().stream()
+        List<ImageItemDto> out = new ArrayList<>(visibleMetadata().stream()
                 .filter(entity -> projectId != null
                         ? projectId.equals(entity.getProjectId())
                         : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
@@ -246,6 +254,12 @@ public class ImageService {
      * @throws NotFoundException 图片不存在时
      */
     public ImageBlobEntity raw(String id) {
+        requireKnowledgeAsset(id);
+        return rawSharedSnapshot(id);
+    }
+
+    /** Only NotePublicShareService may use this after validating its token and image membership. */
+    ImageBlobEntity rawSharedSnapshot(String id) {
         ImageBlobEntity e = mapper.findMeta(id);
         if (e == null) {
             throw new NotFoundException("图片不存在：" + id);
@@ -277,6 +291,7 @@ public class ImageService {
 
     /** Metadata for access checks without loading the original bytes. */
     public ImageBlobEntity metadata(String id) {
+        requireKnowledgeAsset(id);
         ImageBlobEntity entity = mapper.findMeta(id);
         if (entity == null) throw new NotFoundException("图片不存在：" + id);
         return entity;
@@ -284,6 +299,7 @@ public class ImageService {
 
     /** 小记列表读取轻量预览；原图字节保持不变，放大查看仍走 raw。 */
     public Preview preview(String id) {
+        requireKnowledgeAsset(id);
         ImageBlobEntity meta = mapper.findMeta(id);
         if (meta == null) throw new NotFoundException("图片不存在：" + id);
         if (meta.getPreviewKey() != null && !meta.getPreviewKey().isBlank()) {
@@ -363,6 +379,7 @@ public class ImageService {
      */
     @org.springframework.transaction.annotation.Transactional
     public void delete(String id) {
+        requireKnowledgeAsset(id);
         if(noteOriginals!=null)noteOriginals.requireAssetUnused("images",id);
         mapper.deleteById(id);
     }

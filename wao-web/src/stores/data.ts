@@ -1217,7 +1217,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 单篇详情并发去重；失败保持目录和本地草稿，不能把未加载正文当成空文档。 */
   function ensureDocLoaded(id: string): Promise<boolean> {
-    if (docs[id] && docs[id]!.bodyLoaded !== false && docs[id]!.detailLoaded !== false) return Promise.resolve(true)
+    if (!apiLive.value && docs[id] && docs[id]!.bodyLoaded !== false && docs[id]!.detailLoaded !== false) return Promise.resolve(true)
     const existing = docRequests.get(id)
     if (existing) return existing
     const generation = docMemberGeneration
@@ -1229,8 +1229,10 @@ export const useDataStore = defineStore('data', () => {
       if (docs[id]?.bodyLoaded === false) docLoadErrors[id] = '文档版本已更新，请重试'
       return docs[id]?.bodyLoaded !== false
     }).catch((cause: unknown) => {
-      if (generation === docMemberGeneration)
+      if (generation === docMemberGeneration) {
+        if ([403, 404].includes(Number((cause as { status?: number })?.status))) delete docs[id]
         docLoadErrors[id] = cause instanceof Error ? cause.message : '文档正文加载失败'
+      }
       return false
     }).finally(() => {
       if (docRequests.get(id) === request) docRequests.delete(id)
@@ -1336,7 +1338,11 @@ export const useDataStore = defineStore('data', () => {
     if (!apiLive.value) return
     try {
       const [kb] = await Promise.all([fetchKbs(), refreshDocs()])
-      if (Array.isArray(kb)) kbs.value = kb
+      if (Array.isArray(kb)) {
+        kbs.value = kb
+        const visible = new Set(kb.map(item => item.id))
+        Object.keys(docs).forEach(id => { if (!visible.has(docs[id]!.kbId ?? '')) delete docs[id] })
+      }
     } catch {
       /* 拉取失败时保留现有数据 */
     }

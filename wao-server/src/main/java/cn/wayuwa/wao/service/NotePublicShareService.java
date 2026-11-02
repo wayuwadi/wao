@@ -82,7 +82,7 @@ public class NotePublicShareService {
     /** 只允许读取同一有效分享快照内出现的配图，不接受任意图床 ID。 */
     public ImageBlobEntity image(String token,String imageId) {
         var matcher=IMAGE.matcher(localImages(resolve(token).json()));
-        while(matcher.find()) if(matcher.group(1).equals(imageId)) return images.raw(imageId);
+        while(matcher.find()) if(matcher.group(1).equals(imageId)) return images.rawSharedSnapshot(imageId);
         throw missing();
     }
 

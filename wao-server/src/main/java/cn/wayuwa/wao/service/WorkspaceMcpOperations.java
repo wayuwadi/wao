@@ -104,6 +104,9 @@ public class WorkspaceMcpOperations {
     /** 调用普通或单独授权的个人每日操作，每次校验当前可见性。 */
     @Transactional
     public Object call(String name, JsonNode a, AuthenticatedToken token) {
+        return KnowledgeAccessService.asMember(token.memberId(), () -> callForMember(name, a, token));
+    }
+    private Object callForMember(String name, JsonNode a, AuthenticatedToken token) {
         String member = token.memberId();
         return switch (name) {
             case "get_workspace_info" -> Map.of("version", "2.0.0", "member", Map.of("id", member,
