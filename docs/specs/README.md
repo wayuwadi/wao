@@ -15,6 +15,7 @@
 - [project-list-empty-groups-2026-10-14](project-list-empty-groups-2026-10-14.md)
 - [project-members-management-2026-10-14](project-members-management-2026-10-14.md)
 - [project-quadrant-space-2026-10-14](project-quadrant-space-2026-10-14.md)
+- [统一四象限父子层级](project-quadrant-tree-2026-10-20.md)
 - [project-settings-redesign-2026-10-14](project-settings-redesign-2026-10-14.md)
 - [project-task-optimization-2026-10-14](project-task-optimization-2026-10-14.md)
 - [projects-card-summary-2026-10-14](projects-card-summary-2026-10-14.md)

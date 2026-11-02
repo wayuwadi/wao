@@ -3,7 +3,6 @@ import { useTaskScrollMemory } from '@/composables/taskViewMemory'
 import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
-import { taskTreeRows } from '@/utils/taskHierarchy'
 import TaskOrderStatus from './TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
@@ -18,7 +17,7 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
 import { useSettle } from '@/composables/completion'
-import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
+import { TASK_QUADRANTS, taskQuadrantRows } from '@/utils/taskQuadrants'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { copyText } from '@/utils/clipboard'
@@ -26,7 +25,7 @@ import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const props = defineProps<{ stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -66,17 +65,9 @@ const busy = (id: string) => savingIds.value.includes(id) || itemActions.busy(id
 const treeRows = computed(() => {
   const matches = props.tasks.filter(task => props.showDone || !finished(task) || isSettling(task.id)
     || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error')
-  const visible = props.itemRefs ? withProjectAncestors(matches, props.contextTasks ?? props.tasks) : matches
+  const visible = withProjectAncestors(matches, props.contextTasks ?? props.tasks)
   const sorted = order.sort(orderScope.value, visible, t => t.id)
-  if (!props.itemRefs) return sorted.map(task => ({ ...decoTask(task), depth: 0, quadrantPriority: task.pr }))
-  const priorities = new Map<string, Priority>()
-  return taskTreeRows(sorted, []).map(({ task, depth }) => {
-    const ref = props.itemRefs?.[task.id]
-    // 只有未设置优先级的普通子事项沿父链归属；显式优先级必须立即影响象限。
-    const priority = ref?.priorityUnset && ref.parentKey ? priorities.get(ref.parentKey) ?? task.pr : task.pr
-    priorities.set(task.id, priority)
-    return { ...decoTask(task), depth, quadrantPriority: priority }
-  })
+  return taskQuadrantRows(sorted).map(({ task, ...family }) => ({ ...decoTask(task), ...family }))
 })
 const labels = useTaskLabelsStore()
 watch(() => labels.identity, () => { if (!labels.ready && !labels.loading) void labels.load() }, {immediate:true})
@@ -91,14 +82,14 @@ function resetRule() { if(editingRule.value===null)return; void rules.set(rules.
 const sections = computed(() => TASK_QUADRANTS.map((quadrant,index) => {
  const rule=rules.value.value[index]!
  const candidates=new Set(props.tasks.map(t=>t.id))
- const matching=rule.custom?treeRows.value.filter(task=>{ if(!candidates.has(task.id))return false; const ref=props.itemRefs?.[task.id]; return matchesTaskWorkspaceFilter(task,labels.get(ref?.taskId??task.id,ref?.subId).tags,rule,data.today) }):treeRows.value.filter(task=>candidates.has(task.id)&&task.quadrantPriority===quadrant.priority)
- const visible=props.itemRefs?withProjectAncestors(matching,treeRows.value):matching
- const ids=new Set(matching.map(t=>t.id))
- return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!ids.has(t.id)})),count:matching.length}
+ const matching=treeRows.value.filter(task=>{ if(!candidates.has(task.id))return false; const ref=props.itemRefs?.[task.id]; return rule.custom ? matchesTaskWorkspaceFilter({...task,pr:task.quadrantPriority},labels.get(ref?.taskId??task.id,ref?.subId).tags,rule,data.today) : task.quadrantPriority===quadrant.priority })
+ const roots=new Set(matching.map(task=>task.rootId))
+ const visible=treeRows.value.filter(task=>roots.has(task.rootId))
+ return {...quadrant,label:rule.name,tasks:visible.map(t=>({...t,contextOnly:!candidates.has(t.id)})),count:roots.size}
 }))
 const scrollRoot = ref<HTMLElement | null>(null)
 const rememberScroll = useTaskScrollMemory(scrollRoot, () => props.stateKey ?? `project:${props.projectId ?? 'all'}:quadrant`, () => sections.value.map(s => s.tasks.length).join(','))
-const isChild = (id: string) => !!props.itemRefs?.[id]?.parentKey
+const isChild = (id: string) => treeRows.value.some(task => task.id === id && task.rootId !== id)
 async function save(id: string, change?: () => void) {
   if (!data.taskById(sourceId(id)) || busy(id)) return
   savingIds.value.push(id)
@@ -174,7 +165,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
   <div ref="scrollRoot" class="quadrant-view" @scroll.capture="rememberScroll">
     <div class="quadrant-toolbar">
       <TaskOrderStatus :scope="orderScope" /><span v-if="customized">自定义筛选 · 任务可出现在多个象限</span>
-      <button v-if="doneCount && !itemRefs" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
+      <button v-if="doneCount && (!itemRefs || completionToggle)" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
     </div>
     <div v-if="rules.error.value || labels.error" role="alert">{{ rules.error.value || labels.error }}<button @click="rules.retry(); labels.load()">重试</button></div><div class="quadrants" :class="{ expanded }">
       <section v-for="section in sections" v-show="!expanded || expanded === section.priority" :key="section.priority"

@@ -196,6 +196,31 @@ describe('待办日工作区', () => {
     expect(restored.find('.day-quadrants').exists()).toBe(false)
     restored.unmount()
   })
+  it('完整子任务和多层后代跟随主任务，主任务不在当天时仍沿用其象限', async () => {
+    const data = useDataStore(), base = data.tasks[0]!
+    data.tasks = [
+      { ...base, id: 'root', title: '主任务', pr: 'P1', parentTaskId: null, status: '待办', subs: [] },
+      { ...base, id: 'child', title: '子任务', pr: 'P0', parentTaskId: 'root', status: '待办', subs: [] },
+      { ...base, id: 'nested', title: '孙任务', pr: 'P3', parentTaskId: 'child', status: '待办', subs: [] },
+    ]
+    const tasks = [...data.tasks].reverse().map(task => ({ task, snapshot: task, planned: true, events: [] }))
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks })
+    vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } }); await flushPromises()
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click')
+    const ids = (priority:string) => wrapper.findAll(`[data-group="${priority}"] .day-task`).map(row => row.attributes('data-task-id'))
+    expect(ids('P1')).toEqual(['root', 'child', 'nested'])
+    expect(wrapper.findAll('.task-priority-select')).toHaveLength(1)
+    await wrapper.get('.task-priority-select').setValue('P2'); await flushPromises()
+    expect(ids('P2')).toEqual(['root', 'child', 'nested'])
+    expect(data.taskById('child')!.pr).toBe('P0')
+    wrapper.unmount()
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-04'), tasks: tasks.filter(entry => entry.task.id !== 'root') })
+    const tomorrow = mount(TodoDayView, { props: { date: '2026-10-04' } }); await flushPromises()
+    expect(tomorrow.findAll('[data-group="P2"] .day-task').map(row => row.attributes('data-task-id'))).toEqual(['child','nested'])
+    expect(tomorrow.findAll('.task-priority-select')).toHaveLength(0)
+    tomorrow.unmount()
+  })
   it('四象限调整优先级走串行保存，失败选择留在新象限且可处理保存', async () => {
     const data = useDataStore(), task = data.tasks[0]!
     task.pr = 'P0'; task.status = '进行中'; task.subs = []

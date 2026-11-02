@@ -14,7 +14,7 @@ import { saveTaskLabels } from '@/api/taskLabels'
 vi.mock('vue-router',()=>({useRoute:()=>({query:{}}),useRouter:()=>({push:vi.fn()})}))
 vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[{taskId:'parent',subId:'child',revision:1,tags:['联调']}]),saveTaskLabels:vi.fn(async(v)=>({...v,revision:v.revision+1}))}))
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
-const options={global:{stubs:{MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
+const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
 beforeEach(()=>{
  vi.restoreAllMocks();vi.clearAllMocks()
  localStorage.clear();sessionStorage.clear();setActivePinia(createPinia())
@@ -34,8 +34,11 @@ describe('task workspace',()=>{
   const section=(w:any,n:number)=>w.findAll('.quadrant')[n].text()
   expect(section(project,3)).toContain('独立子任务');expect(section(todo,3)).toContain('独立子任务')
   data.updateSub('parent','child',{pr:'P0'});await flushPromises()
-  expect(section(project,0)).toContain('独立子任务');expect(section(todo,0)).toContain('独立子任务')
-  expect(section(project,3)).not.toContain('独立子任务');expect(section(todo,3)).not.toContain('独立子任务')
+  expect(section(project,0)).not.toContain('独立子任务');expect(section(todo,0)).not.toContain('独立子任务')
+  expect(section(project,3)).toContain('独立子任务');expect(section(todo,3)).toContain('独立子任务')
+  data.patchTask('parent',{pr:'P1'});await flushPromises()
+  expect(section(project,1)).toContain('独立子任务');expect(section(todo,1)).toContain('独立子任务')
+  expect(data.subById('parent','child')?.pr).toBe('P0')
   await todo.findAll('.task-navigation button').find(b=>b.text()==='联调')!.trigger('click');await flushPromises()
   expect(todo.findAll('.quadrant-task').some((r:any)=>r.text().includes('独立子任务'))).toBe(true)
   await labels.save({taskId:'parent',subId:'child',revision:1,tags:['已交接']});await flushPromises()
@@ -48,16 +51,20 @@ describe('task workspace',()=>{
   project.unmount();todo.unmount()
  })
  it('完成保存失败时保留待办及重试线索，成功后才移出',async()=>{
-  const data=useDataStore(),state=ref<'saving'|'error'|'saved'>('saving')
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']})
+  const data=useDataStore(),state=ref<'saving'|'error'|'saved'>('saved')
   vi.spyOn(data,'taskSaveState').mockImplementation(()=>state.value)
+  let finishSave!:()=>void
+  vi.spyOn(data,'flushTask').mockResolvedValueOnce(undefined).mockImplementationOnce(()=>{state.value='saving';return new Promise<void>(resolve=>{finishSave=resolve})})
   const wrapper=mount(TodoView,options);await flushPromises()
-  data.tasks[1]!.status='已完成';await flushPromises()
+  await wrapper.get('[aria-label="完成 其他任务"]').setValue(true)
+  await vi.advanceTimersByTimeAsync(3000);await flushPromises()
   expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(true)
-  state.value='error';await flushPromises()
+  state.value='error';finishSave();await flushPromises()
   expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(true)
   state.value='saved';await flushPromises()
   expect(wrapper.findAll('.checklist-row').some(r=>r.text().includes('其他任务'))).toBe(false)
-  wrapper.unmount()
+  wrapper.unmount();vi.useRealTimers()
  })
 
  it('标签浮层可取消勾选，失败保留草稿并允许重试',async()=>{
@@ -77,14 +84,14 @@ describe('task workspace',()=>{
   expect(vi.mocked(saveTaskLabels).mock.calls.slice(-1)[0]?.[0]).toMatchObject({taskId:'parent',subId:'child',tags:['会议']})
   wrapper.unmount()
  })
- it('收集箱新增不强制安排今天，今天入口才带日期',async()=>{
+ it('收集箱和今天入口新增均不强制填入截止日期',async()=>{
   const data=useDataStore(), add=vi.spyOn(data,'addTask').mockResolvedValue({task:data.tasks[0]!,persisted:true})
   const wrapper=mount(TodoView,options);await flushPromises()
   await wrapper.get('[aria-label="添加任务"]').setValue('无日期任务');await wrapper.get('.quick-add').trigger('submit');await flushPromises()
   expect(add.mock.calls[0]?.[0]).toMatchObject({owner:'wg',project:'',due:''})
   await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click')
   await wrapper.get('[aria-label="添加任务"]').setValue('今日安排');await wrapper.get('.quick-add').trigger('submit');await flushPromises()
-  expect(add.mock.calls[1]?.[0]).toMatchObject({due:data.today})
+  expect(add.mock.calls[1]?.[0]).toMatchObject({due:''})
   wrapper.unmount()
  })
  it('个人汇总不混入他人任务，显式项目清单仍保留共享能力',async()=>{

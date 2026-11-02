@@ -71,7 +71,7 @@ describe('新建任务的落库反馈', () => {
     putTask.mockImplementationOnce(savedTask)
     const creating = data.addTask({ title: '新任务', project: 'p1', pr: 'P2', owner: 'm1', due: '', desc: '最初正文' })
     const original = JSON.parse(JSON.stringify(data.tasks[0]!)) as Task
-    expect(original.due).toBe(todayIso())
+    expect(original.due).toBe('')
     data.patchTask(original.id, { desc: '请求期间继续写的正文' })
     confirm(original)
     const result = await creating
@@ -81,14 +81,17 @@ describe('新建任务的落库反馈', () => {
     expect(putTask.mock.calls[1]?.[1].desc).toBe('请求期间继续写的正文')
   })
 
-  it('个人收集箱关闭默认日期后真实写入仍保持无日期，不影响其他入口', async () => {
+  it('创建保持未指定日期，同时保留显式日期', async () => {
     putTask.mockImplementation(savedTask)
-    const result = await data.addTask({ title:'无日期收集',project:'',pr:'P2',owner:'m1',due:'',desc:'' },'undated-inbox',{defaultDueToToday:false})
+    const result = await data.addTask({ title:'无日期收集',project:'',pr:'P2',owner:'m1',due:'',desc:'' },'undated-inbox')
     expect(result.persisted).toBe(true)
     expect(putTask.mock.calls[0]?.[1].due).toBe('')
     expect(data.taskById('undated-inbox')?.due).toBe('')
-    const planned = await data.addTask({ title:'今日安排',project:'',pr:'P2',owner:'m1',due:todayIso(),desc:'' },'dated-inbox',{defaultDueToToday:false})
+    const planned = await data.addTask({ title:'今日安排',project:'',pr:'P2',owner:'m1',due:todayIso(),desc:'' },'dated-inbox')
     expect(planned.task.due).toBe(todayIso())
+    const range = await data.addTask({ title:'只安排执行',project:'p1',pr:'P1',owner:'m1',due:'',desc:'',startAt:'2026-11-04T09:00',endAt:'2026-11-04T10:00' })
+    expect(range.task.due).toBe('')
+    expect(putTask.mock.calls[2]?.[1].due).toBe('')
   })
 
   it('保存期间新增子任务时只接收服务端编号，不覆盖较新的编辑', async () => {
@@ -143,25 +146,27 @@ describe('新建任务的落库反馈', () => {
     w.unmount()
   })
 
-  it('新建默认今天截止，保存到真实任务', async () => {
+  it('新建默认不设置截止，保存后仍为空', async () => {
     putTask.mockImplementation((id, task) => savedTask(id, task))
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
-    expect(wrapper.find('.pills .pill.on').text()).toBe('今天')
+    expect(wrapper.find('.pills .pill.on').text()).toBe('不设置')
+    await wrapper.get('[aria-label="截止日期"]').setValue('2026-11-04')
+    await wrapper.get('[aria-label="截止日期"]').setValue('')
     await wrapper.find('.title-input').setValue('不排期的任务')
     await wrapper.find('.foot .btn-primary').trigger('click')
     await flushPromises()
-    expect(data.tasks[0]).toMatchObject({ title: '不排期的任务', due: todayIso() })
+    expect(data.tasks[0]).toMatchObject({ title: '不排期的任务', due: '', start: '', startAt: null, endAt: null })
     wrapper.unmount()
   })
 
-  it('日历安排默认今天截止，显式截止仍独立于执行时段', async () => {
+  it('日历选定执行日期不自动补截止，显式截止独立于执行时段', async () => {
     const ui = useUiStore()
     ui.openModal('task'); ui.modalScheduleDate = '2026-10-07'
     putTask.mockImplementation(savedTask)
     let w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
     await w.get('.title-input').setValue('无截止的全天安排')
     await w.get('.foot .btn-primary').trigger('click'); await flushPromises()
-    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: todayIso(), startAt: null, endAt: null })
+    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: '', startAt: null, endAt: null })
     w.unmount()
     ui.openModal('task', '', '', '2026-10-07T23:00', '2026-10-08T02:00')
     w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })

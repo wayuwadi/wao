@@ -13,6 +13,7 @@ import { useUiStore } from '@/stores/ui'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { projectWorkItems, subItemKey, withProjectAncestors } from '@/utils/projectWorkItems'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { defaultQuadrantRules } from '@/utils/taskQuadrantRules'
 
 enableAutoUnmount(afterEach)
 vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
@@ -210,6 +211,16 @@ describe('子任务四视图', () => {
     const wrapper = mount(TaskQuadrantView, { props: { tasks: [sub], contextTasks: projection.items, itemRefs: projection.refs, selectedIds: [], showDone: false } })
     const section = wrapper.findAll('.quadrant').find(n => n.attributes('aria-label') === '不重要紧急')!
     expect(section.findAll('.quadrant-title').map(n=>n.text())).toEqual(['主任务甲','↳ 普通子事项','↳ 嵌套子事项'])
+  })
+  it('自定义优先级条件也按根任务判断，整个可见层级一起表达', async () => {
+    const rules=defaultQuadrantRules(); rules[0]={...rules[0]!,custom:true,name:'主任务筛选',priorities:['P2']}
+    vi.mocked(fetchPreference).mockResolvedValue(JSON.stringify(rules))
+    const projection=projectWorkItems(useDataStore().tasks)
+    const wrapper=mount(TaskQuadrantView,{props:{tasks:projection.items,contextTasks:projection.items,itemRefs:projection.refs,selectedIds:[],showDone:false}})
+    await flushPromises()
+    const section=wrapper.get('[aria-label="主任务筛选"]')
+    expect(section.findAll('.quadrant-title').map(n=>n.text())).toEqual(['主任务甲','↳ 普通子事项','↳ 嵌套子事项','↳ 完整下级任务'])
+    expect(section.get('.quadrant-count').text()).toBe('1')
   })
   it('投影不继承父级属性，历史子项保留稳定键和筛选祖先', () => {
     const data=useDataStore();data.tasks[0]!.subs=[{text:'历史子项',done:false}]

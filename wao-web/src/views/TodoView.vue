@@ -61,7 +61,7 @@ async function add() {
  const identity=labels.identity, key=draftKey.value
  try {
   const existing=data.taskById(quickId.value)
-  const result=existing ? (await data.flushTask(existing.id), {task:existing,persisted:data.taskSaveState(existing.id)==='saved'}) : await data.addTask({desc:'',title:quick.value.trim(),project:selection.value.startsWith('project:')?selection.value.slice(8):'',pr:'P2',owner:session.userId,due:selection.value==='tomorrow'?new Date(Date.parse(data.today+'T12:00:00Z')+86400000).toISOString().slice(0,10):selection.value==='today'?data.today:''},quickId.value,{defaultDueToToday:false})
+  const result=existing ? (await data.flushTask(existing.id), {task:existing,persisted:data.taskSaveState(existing.id)==='saved'}) : await data.addTask({desc:'',title:quick.value.trim(),project:selection.value.startsWith('project:')?selection.value.slice(8):'',pr:'P2',owner:session.userId,due:''},quickId.value)
   if(!result.persisted) throw new Error('任务未保存，请重试')
   localStorage.removeItem(key)
   if(identity===labels.identity){ quick.value='';quickId.value='' }

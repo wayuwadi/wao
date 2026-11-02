@@ -1807,7 +1807,7 @@ export const useDataStore = defineStore('data', () => {
    * @param payload 新建任务负载
    * @return 即时本地任务和最终是否落库
    */
-  async function addTask(payload: NewTaskPayload, taskId = uid('t'), options: { defaultDueToToday?: boolean } = {}): Promise<NewTaskResult> {
+  async function addTask(payload: NewTaskPayload, taskId = uid('t')): Promise<NewTaskResult> {
     const { desc = '', images = [], pdcaCycles = [], ...core } = payload
     const createdAt = nowIso()
     const local: Task = {
@@ -1816,7 +1816,7 @@ export const useDataStore = defineStore('data', () => {
       pdcaCycles,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: createdAt, by: currentAuthor() }],
       ...core,
-      due: core.due || core.endAt?.slice(0, 10) || (options.defaultDueToToday === false ? '' : todayIso()),
+      due: core.due || '',
     }
     tasks.value.unshift(local)
     storeTaskDraft(local)
@@ -2025,7 +2025,7 @@ export const useDataStore = defineStore('data', () => {
     // 与主任务一致：负责人、创建人都不留空，默认就是录入的人。
     const me = useSessionStore().userId
     t.subs.unshift({
-      id, text: title, done: false, desc: '', images: [], parentId: parentId || null, pr: 'P2', due:todayIso(),
+      id, text: title, done: false, desc: '', images: [], parentId: parentId || null, pr: 'P2', due:'',
       owner: me || null, createdBy: me || null, createdAt: nowIso(),
     })
     logActivity(t, `添加了子任务「${title}」`)
