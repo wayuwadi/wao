@@ -565,6 +565,7 @@ const detailLabels = ref('')
           </p>
           <WaoCard class="feedback-examples" padding="roomy">
             <h2>公共反馈组件 · 合成演示</h2>
+            <WaoButton @click="demoDomainStates.docs = demoDomainStates.docs === 'loading' ? 'loaded' : 'loading'">切换读取状态（正文位置保持不变）</WaoButton>
             <SaveHint :saving="stateId === 'saving'" :draft="stateId === 'draft'" :failed="stateId === 'error'" :saved-at="stateId === 'saved' ? '2026-10-29T09:00:00+08:00' : null" />
             <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
             <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
