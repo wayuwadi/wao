@@ -189,7 +189,17 @@ const matches = computed(() => {
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
 })
-const rows = computed(() => taskTreeRows(withProjectAncestors(matches.value, props.contextItems), props.query ? [] : props.collapsed))
+const expandableIds = computed(() => {
+  const result = new Set<string>(), byId = new Map(props.contextItems.map(task => [task.id, task]))
+  for (const task of props.contextItems) {
+    if (isTaskFinished(task)) continue
+    let parent = task.parentTaskId
+    const seen = new Set<string>([task.id])
+    while (parent && !seen.has(parent)) { seen.add(parent); result.add(parent); parent = byId.get(parent)?.parentTaskId }
+  }
+  return result
+})
+const rows = computed(() => taskTreeRows(withProjectAncestors(matches.value, props.contextItems), props.query ? [] : props.collapsed.filter(id => expandableIds.value.has(id))))
 const groupedRows = computed(() => (props.sections ?? [{ id: '__all', name: '', header: false, collapsed: false, itemIds: props.contextItems.map(t => t.id) }]).map(section => ({ ...section, rows: rows.value.filter(row => section.itemIds.includes(row.task.id)) })))
 const dragging = ref<string | null>(null)
 const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
@@ -300,7 +310,7 @@ function finishTitle() {
   void data.flushTask(source.value.taskId)
 }
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
-const hasChildren = (id: string) => props.contextItems.some(t => t.parentTaskId === id)
+const hasChildren = (id: string) => expandableIds.value.has(id)
 const quickAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const deleteTarget = ref<{ id: string; taskId: string; subId?: string; title: string } | null>(null)
@@ -458,16 +468,17 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <div class="detail-secondary-actions">
-        <RouterLink :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
-        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
-        </div>
-        <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
-        <div class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
-          <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @focus="outlineOpen = true" @click="outlineOpen = true"><i class="ri-list-unordered"></i></button>
+        <div v-if="outline.length" class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
+          <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @click="outlineOpen = !outlineOpen"><i class="ri-list-unordered" aria-hidden="true"></i><span>大纲</span></button>
           <nav v-if="outlineOpen && outline.length" class="description-outline" aria-label="任务描述目录">
             <button v-for="(heading, index) in outline" :key="index" :style="{ paddingInlineStart: `calc(var(--wao-space-1) * ${heading.level})` }" @click="jumpToHeading(index)">{{ heading.text }}</button>
           </nav>
         </div>
+
+        <RouterLink :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
+        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
+        </div>
+        <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <div ref="descriptionHost" :key="selected.id" class="checklist-description">
           <MarkdownEditor v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" />
         </div>
@@ -522,10 +533,11 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 @media (max-width: 650px) { .delete-content { padding: var(--wao-space-2); } }
 .detail-secondary-actions { display: flex; align-items: center; gap: var(--wao-space-2); min-width: 0; }
 .detail-secondary-actions > a { flex-shrink: 0; white-space: nowrap; }
-.description-outline-anchor { position: sticky; top: var(--wao-space-1); height: 0; z-index: 3; margin-left: auto; width: fit-content; }
-.outline-trigger { position: absolute; right: 0; width: 44px; height: 44px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
-.description-outline { position: absolute; right: 0; top: 44px; width: min(280px, 65vw); max-height: 50vh; overflow: auto; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
-.description-outline button { display: block; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--wao-text); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.description-outline-anchor { position: relative; order: 1; margin-left: auto; z-index: 3; }
+.outline-trigger { display: inline-flex; align-items: center; gap: var(--wao-space-1); min-height: 32px; padding: 0 var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-3); font: inherit; cursor: pointer; }
+.outline-trigger:hover, .outline-trigger[aria-expanded="true"] { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
+.description-outline { position: absolute; right: 0; top: 100%; width: min(280px, 65vw); max-height: 50vh; overflow: auto; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-card); background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
+.description-outline button { display: block; width: 100%; min-height: 32px; padding-block: var(--wao-space-1); font-size: var(--wao-font-help); border: 0; background: transparent; color: var(--wao-text); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
 .description-outline button:hover { background: var(--wao-primary-soft); }
 .checklist-description { padding-right: var(--wao-space-3); }
 .checklist-description :deep(.tiptap h1) { font-size: calc(var(--wao-font-body) * 1.85); }
@@ -567,7 +579,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .child-draft-error { width:100%; margin:0; color:var(--wao-danger-strong); font-size:var(--wao-font-caption); }
 .add-child-button { margin-top:var(--wao-space-1); color:var(--wao-primary-text); }
 .more-actions { padding:0 var(--wao-space-1); min-height:32px; }
-.checklist-row { display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
+.checklist-row { position:relative; display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); border-bottom:1px solid var(--wao-line); min-height:38px; }
 .checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
 input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--task-priority-color, var(--wao-text-weak)); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
 input[type=checkbox]:checked { background:var(--task-priority-color, var(--wao-primary)); border-color:var(--task-priority-color, var(--wao-primary)); }
@@ -584,10 +596,12 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .priority-option > i { text-align:center; }
 .priority-code { font-variant-numeric:tabular-nums; }
 .cell-menu button.priority-option[aria-checked=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
+.checklist-tasks { padding-bottom: calc(var(--wao-control-height) + var(--wao-space-3)); }
 .root-drop { position:absolute; bottom:0; left:0; right:0; z-index:1; background:var(--wao-bg-card); padding:var(--wao-space-2); border:1px dashed var(--wao-primary); color:var(--wao-primary-text); }
 .drop-inside { outline:1px solid var(--wao-primary); background:var(--wao-primary-soft); }
-.drop-before { border-top:2px solid var(--wao-primary); }
-.drop-after { border-bottom:2px solid var(--wao-primary); }
+.drop-before::before,.drop-after::after { content:""; position:absolute; left:0; right:0; height:2px; background:var(--wao-primary); pointer-events:none; }
+.drop-before::before { top:0; }
+.drop-after::after { bottom:0; }
 .tree-toggle,.tree-spacer { width:16px; flex-shrink:0; }
 .tree-toggle { height:32px; padding:0; color:var(--wao-text-weak); }
 .task-select { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; min-height:38px; padding:0 var(--wao-space-1) 0 0; text-align:left; font-size:var(--wao-font-body); }
