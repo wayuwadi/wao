@@ -483,6 +483,7 @@ function toggleSelection(id: string) {
 }
 const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'list') return tableSections.value.flatMap(section => section.collapsed ? [] : tableRows(section).map(row => row.task.id))
+  if (pdTaskView.value === 'checklist' && searchQuery.value.trim()) return searchProjectTasks(displayItems.value, searchQuery.value).map(hit => hit.task.id)
   if (['checklist','quadrant'].includes(pdTaskView.value)) return displayItems.value.filter(task=>showDone.value || !isFinished(task)).map(task=>task.id)
   if (pdTaskView.value === 'group') return groupViewSections.value.flatMap(group => collapsedGroups.value.includes(group.id) ? [] : groupRows(group.id).filter(row => !itemActions.isSub(row.task.id)).map(row => row.task.id))
   return displayItems.value.filter(task => !itemActions.isSub(task.id) && (showDone.value || !isFinished(task) || ['saving', 'error'].includes(data.taskSaveState(task.id)))).map(task => task.id)

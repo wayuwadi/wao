@@ -24,6 +24,22 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('搜索包含已完成主任务及子项，清空恢复默认且不再提供保存筛选',async()=>{
+  const data=useDataStore()
+  data.tasks[1]!.status='已完成';data.tasks[1]!.title='历史搜索主任务'
+  data.tasks[0]!.subs.push({id:'done-search',text:'历史搜索子任务',done:true})
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  const rows=()=>wrapper.findAll('.checklist-row').map(r=>r.text()).join(' ')
+  expect(rows()).not.toContain('历史搜索')
+  expect(wrapper.text()).not.toContain('保存筛选')
+  expect(wrapper.get('.task-navigation').text()).not.toContain('筛选器')
+  await wrapper.get('[aria-label="搜索任务"]').setValue('历史搜索')
+  expect(rows()).toContain('历史搜索主任务');expect(rows()).toContain('历史搜索子任务')
+  await wrapper.get('[aria-label="搜索任务"]').setValue('')
+  expect(rows()).not.toContain('历史搜索')
+  wrapper.unmount()
+ })
  it('项目与待办共用更新：子项优先级、标签筛选、新增与完成即时响应',async()=>{
   const data=useDataStore(),labels=useTaskLabelsStore()
   vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
