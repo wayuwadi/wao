@@ -18,6 +18,7 @@ import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { copyText } from '@/utils/clipboard'
 import { shareUrl } from '@/utils/share'
 import { type TodoTaskView } from '@/utils/taskQuadrants'
+import { projectWorkItems } from '@/utils/projectWorkItems'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -52,6 +53,8 @@ const myList = computed(() => {
 })
 
 // 已完成默认收起，点分组标题展开；勾完成后先原地停留 3 秒再归到「已完成」里。
+const quadrantItems = computed(() => projectWorkItems(myList.value))
+const quadrantContext = computed(() => projectWorkItems(data.tasks))
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
 /** 已完成任务倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
@@ -200,7 +203,7 @@ function onDropStatus(status: TaskStatus) {
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
 
-    <TaskQuadrantView v-else-if="workspace === 'all' && taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="[]" />
+    <TaskQuadrantView v-else-if="workspace === 'all' && taskView === 'quadrant'" v-model:show-done="showDone" completion-toggle :tasks="quadrantItems.items" :context-tasks="quadrantContext.items" :item-refs="quadrantContext.refs" :selected-ids="[]" />
 
     <div v-else-if="workspace === 'all'" class="board">
       <div

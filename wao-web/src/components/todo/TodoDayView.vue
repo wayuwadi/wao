@@ -22,7 +22,7 @@ import TodoDayLayout from './TodoDayLayout.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
-import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
+import { TASK_QUADRANTS, taskQuadrantRows } from '@/utils/taskQuadrants'
 import type { Priority } from '@/types'
 
 const props = defineProps<{ date: string }>()
@@ -119,15 +119,24 @@ const taskGroups = computed(() => {
 })
 const recordsVisible = computed(() => recordsOpen.value || taskGroups.value[2]!.items.some(entry =>
   noteFor.value === entry.task.id || data.taskSaveState(entry.task.id) === 'saving' || data.taskSaveState(entry.task.id) === 'error'))
+const quadrantRows = computed(() => {
+  const entries = [...taskGroups.value[0]!.items, ...taskGroups.value[1]!.items]
+  const byId = new Map(entries.map(entry => [entry.task.id, entry]))
+  const context = [...data.tasks.filter(task => !byId.has(task.id)), ...entries.map(current)]
+  return taskQuadrantRows(entries.map(current), context).filter(row => byId.has(row.task.id))
+    .map(row => ({ ...row, entry: byId.get(row.task.id)! }))
+})
+const familyFor = (entry: DayTask) => quadrantRows.value.find(row => row.task.id === entry.task.id)
+const childInQuadrant = (entry: DayTask) => { const row=familyFor(entry); return !!row && row.rootId !== entry.task.id }
 const visibleGroups = computed(() => taskView.value === 'list'
   ? taskGroups.value.filter(item => item.id !== 'progress' || item.items.length)
   : [
     ...TASK_QUADRANTS.map(quadrant => ({ id: quadrant.priority, label: `${quadrant.label} · ${quadrant.priority}`,
-      items: [...taskGroups.value[0]!.items, ...taskGroups.value[1]!.items].filter(entry => current(entry).pr === quadrant.priority) })),
+      items: quadrantRows.value.filter(row => row.quadrantPriority === quadrant.priority).map(row => row.entry) })),
     taskGroups.value[2]!,
   ])
 async function changePriority(entry: DayTask, priority: Priority) {
-  if (past.value || !data.taskById(entry.task.id) || data.taskSaveState(entry.task.id) === 'saving' || current(entry).pr === priority) return
+  if (past.value || childInQuadrant(entry) || !data.taskById(entry.task.id) || data.taskSaveState(entry.task.id) === 'saving' || current(entry).pr === priority) return
   data.patchTask(entry.task.id, { pr: priority })
   await data.flushTask(entry.task.id)
 }
@@ -135,7 +144,7 @@ const draggedTask = ref<{ id: string; date: string; member: string } | null>(nul
 const dropPriority = ref<Priority | null>(null)
 function clearDrag() { draggedTask.value = null; dropPriority.value = null }
 watch(() => [props.date, identity(), taskView.value], clearDrag, { flush: 'sync' })
-const canDrag = (entry: DayTask) => taskView.value === 'quadrant' && !past.value && !isTaskFinished(shown(entry))
+const canDrag = (entry: DayTask) => taskView.value === 'quadrant' && !childInQuadrant(entry) && !past.value && !isTaskFinished(shown(entry))
   && !!data.taskById(entry.task.id) && data.taskSaveState(entry.task.id) !== 'saving' && noteFor.value !== entry.task.id
 function startTaskDrag(event: DragEvent, entry: DayTask) {
   if (!canDrag(entry)) { event.preventDefault(); return }
@@ -321,10 +330,10 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
             </header>
             <div v-show="group.id !== 'records' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
               <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有已收尾的任务' : taskView === 'quadrant' ? '这个象限没有当天待办' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
-              <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :data-task-id="entry.task.id" :class="{ 'task-finished': isTaskFinished(shown(entry)), dragging: draggedTask?.id === entry.task.id }">
+              <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :style="taskView === 'quadrant' ? { marginInlineStart: `${Math.min(familyFor(entry)?.depth ?? 0, 6) * 18}px` } : undefined" :data-task-id="entry.task.id" :class="{ 'task-finished': isTaskFinished(shown(entry)), dragging: draggedTask?.id === entry.task.id }">
                 <div class="day-task-main">
                   <div class="task-heading">
-                    <span v-if="taskView === 'quadrant' && !past && group.id !== 'records'" class="task-drag-handle" :class="{ 'drag-ready': canDrag(entry) }" :draggable="canDrag(entry)" title="拖到其他象限，自动保存优先级" aria-hidden="true" @dragstart="startTaskDrag($event, entry)" @dragend="clearDrag"><i class="ri-draggable"></i></span>
+                    <span v-if="taskView === 'quadrant' && !childInQuadrant(entry) && !past && group.id !== 'records'" class="task-drag-handle" :class="{ 'drag-ready': canDrag(entry) }" :draggable="canDrag(entry)" title="拖到其他象限，自动保存优先级" aria-hidden="true" @dragstart="startTaskDrag($event, entry)" @dragend="clearDrag"><i class="ri-draggable"></i></span>
                     <button v-if="!past && !future" type="button" class="task-check" :aria-label="`完成或重新打开：${shown(entry).title}`" :aria-pressed="isTaskFinished(current(entry))" @click="toggle(entry)">{{ isTaskFinished(current(entry)) ? '✓' : '○' }}</button>
                     <button class="task-title" type="button" :draggable="canDrag(entry)" @dragstart="startTaskDrag($event, entry)" @dragend="clearDrag" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button>
                     <span class="task-status">{{ shown(entry).status }}</span>
@@ -332,8 +341,8 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                   </div>
                   <div class="task-meta">
                     <span v-if="data.projectById(entry.task.project)" class="task-project">{{ data.projectById(entry.task.project)?.name }}</span>
-                    <select v-if="!past && taskView === 'quadrant'" class="task-priority-select" :aria-label="`调整象限：${shown(entry).title}`" :value="current(entry).pr" :disabled="data.taskSaveState(entry.task.id) === 'saving'" @change="changePriority(entry, ($event.target as HTMLSelectElement).value as Priority)"><option v-for="quadrant in TASK_QUADRANTS" :key="quadrant.priority" :value="quadrant.priority">{{ quadrant.priority }} · {{ quadrant.label }}</option></select>
-                    <span v-else-if="!past" class="task-priority">{{ current(entry).pr }}</span>
+                    <select v-if="!past && taskView === 'quadrant' && !childInQuadrant(entry)" class="task-priority-select" :aria-label="`调整象限：${shown(entry).title}`" :value="current(entry).pr" :disabled="data.taskSaveState(entry.task.id) === 'saving'" @change="changePriority(entry, ($event.target as HTMLSelectElement).value as Priority)"><option v-for="quadrant in TASK_QUADRANTS" :key="quadrant.priority" :value="quadrant.priority">{{ quadrant.priority }} · {{ quadrant.label }}</option></select>
+                    <span v-else-if="!past" class="task-priority">{{ taskView === 'quadrant' ? familyFor(entry)?.quadrantPriority ?? current(entry).pr : current(entry).pr }}</span><button v-if="taskView === 'quadrant' && childInQuadrant(entry)" type="button" class="task-title" @click="ui.openTask(familyFor(entry)!.rootId)">↳ {{ data.taskById(familyFor(entry)!.rootId)?.title || '主任务' }}</button>
                     <TaskSchedulePopover v-if="!past" :key="`${identity()}:${entry.task.id}`" :task="current(entry)" :day="date" @saved="refresh()" />
                     <span v-else class="past-schedule">当日安排：{{ entry.snapshot.startAt ? entry.snapshot.startAt.slice(11, 16) : entry.snapshot.schedulePeriod === 'MORNING' ? '早晨' : entry.snapshot.schedulePeriod === 'AFTERNOON' ? '下午' : entry.snapshot.schedulePeriod === 'EVENING' ? '晚上' : entry.snapshot.start ? '不定时' : '未排期' }}</span>
                     <span v-if="!entry.planned" class="task-trace">当天留下了进展，未安排在这一天</span>

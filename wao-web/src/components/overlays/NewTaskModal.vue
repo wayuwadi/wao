@@ -23,9 +23,10 @@ const returnFocus = document.activeElement instanceof HTMLElement ? document.act
 
 /**
  * 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。
- * 未填写截止日期时默认今天；截止日期与执行安排独立。
+ * 未填写截止日期时保持空值；截止日期与执行安排独立。
  */
 function dueDate(label: string): string {
+  if (!label || label === '不设置') return ''
   if (/^\d{4}-\d{2}-\d{2}$/.test(label)) return label
   const d = new Date(`${todayIso()}T00:00:00`)
   const dow = d.getDay() || 7
@@ -82,15 +83,15 @@ const owner = ref(draft.pendingTaskId ? draft.owner || session.currentUser.id : 
 const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
 const pr = ref<Priority>(draft.pendingTaskId ? draft.pr || ui.modalPriority || 'P2' : ui.modalPriority || 'P2')
 // 只有明确的截止预设才带入此字段；日历使用独立执行安排预设。
-const QUICK_DUES = ['今天', '明天', '周日', '下周一']
-const due = ref(ui.modalDue || (draft.due === '不设置' ? '' : draft.due) || '今天')
+const QUICK_DUES = ['不设置', '今天', '明天', '周日', '下周一']
+const due = ref(ui.modalDue || (draft.due === '不设置' ? '' : draft.due) || '')
 const dueOptions = computed(() => (ui.modalDue ? [ui.modalDue, ...QUICK_DUES] : QUICK_DUES))
 const scheduleMode = ref<'deadline' | 'date' | 'range'>(
   ui.modalStartAt ? 'range' : ui.modalScheduleDate ? 'date' : draft.scheduleMode || 'deadline',
 )
 const start = ref(ui.modalScheduleDate || draft.start || '')
-const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value) || data.today}T09:00`)
-const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value) || data.today}T10:00`)
+const startAt = ref(ui.modalStartAt || draft.startAt || '')
+const endAt = ref(ui.modalEndAt || draft.endAt || '')
 const desc = ref(draft.desc ?? source?.desc ?? '')
 const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
@@ -293,11 +294,11 @@ useOverlayDismiss(() => true, requestClose)
     </div>
     <p v-if="source && !project" class="label-hint">请选择要存入的项目</p>
     <details class="schedule-details" :open="!!ui.modalScheduleDate || !!ui.modalDue || !!ui.modalStartAt || undefined">
-      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '执行时段' : scheduleMode === 'date' ? '执行日期' : '未安排' }} · {{ due }}</span></summary>
+      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '执行时段' : scheduleMode === 'date' ? '执行日期' : '未安排' }} · {{ due || '无截止日期' }}</span></summary>
       <div class="label">截止日期</div>
       <div class="pills">
-        <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
-        <input aria-label="截止日期" type="date" :value="dueDate(due)" @change="due = ($event.target as HTMLInputElement).value || '今天'" />
+        <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d || (!due && d === '不设置') }" @click="due = d">{{ d }}</button>
+        <input aria-label="截止日期" type="date" :value="dueDate(due)" @change="due = ($event.target as HTMLInputElement).value || ''" />
       </div>
       <div class="label">执行安排 · 不改变截止</div>
       <div class="schedule-switch">
