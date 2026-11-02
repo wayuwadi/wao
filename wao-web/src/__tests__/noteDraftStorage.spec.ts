@@ -14,6 +14,31 @@ const key = 'wao-note-edit-v1:member:note'
 const draft = (text: string) => JSON.stringify({ id: 'note', text })
 
 describe('小记同源页签草稿', () => {
+  it('保存后的恢复副本跨页签保留，但不自动复活为草稿且成员隔离', () => {
+    const a = createNoteDraftStorage(localStorage, new TabStorage(), 'A')
+    a.write(key, draft('完整输入'))
+    a.remove(key, draft('完整输入'))
+    const b = createNoteDraftStorage(localStorage, new TabStorage(), 'B')
+    expect(b.read(key)).toBeNull()
+    expect(b.readRecovery(key)).toBe(draft('完整输入'))
+    expect(b.readRecovery('wao-note-edit-v1:other:note')).toBeNull()
+    a.write(key, draft('明确放弃的内容')); a.remove(key)
+    expect(b.readRecovery(key)).toBe(draft('完整输入'))
+  })
+  it('恢复副本写入失败时不删除唯一草稿', () => {
+    const a = createNoteDraftStorage(localStorage, new TabStorage(), 'A')
+    a.write(key, draft('唯一副本'))
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    expect(() => a.remove(key, draft('唯一副本'))).toThrow('quota')
+    expect(a.read(key)).toBe(draft('唯一副本'))
+  })
+  it('过期提交不能清除新草稿或替换恢复副本', () => {
+    const a = createNoteDraftStorage(localStorage, new TabStorage(), 'A')
+    a.write(key, draft('已提交')); a.remove(key, draft('已提交'))
+    a.write(key, draft('新草稿')); a.remove(key, draft('旧请求'))
+    expect(a.read(key)).toBe(draft('新草稿'))
+    expect(a.readRecovery(key)).toBe(draft('已提交'))
+  })
   beforeEach(() => { localStorage.clear(); vi.restoreAllMocks() })
   it('两页签独立输入、组件重建与整页刷新均保持各自正文', () => {
     const tabA = new TabStorage(), tabB = new TabStorage()

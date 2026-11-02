@@ -1,7 +1,7 @@
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import QuickNotePopover from '@/components/overlays/QuickNotePopover.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useSessionStore } from '@/stores/session'
@@ -14,6 +14,8 @@ vi.mock('@/api/noteAiCompanion', () => ({ saveCompanionDraft: companionSave }))
 
 const Editor = defineComponent({ props: ['modelValue', 'readonly'], emits: ['update:modelValue'], template: '<textarea class="tiptap" :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" />' })
 const options = { attachTo: document.body, global: { stubs: { MarkdownEditor: Editor } } }
+enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia())
   useSessionStore().accept({ member: { id: 'wg', name: '测试成员', initial: '测', color: '#4358d6', role: '成员' } } as never)
@@ -21,6 +23,64 @@ beforeEach(() => {
   companionSave.mockReset()
 })
 describe('原地快速小记', () => {
+  it('提交快照不随原对象变化，迟到的结构修改仍持久保留', async () => {
+    let finish!: (value: string) => void
+    vi.spyOn(useDataStore(), 'addNote').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('正文')
+    const rich = { version: 1, markdown: '正文', document: { type: 'doc', content: [{ type: 'paragraph', attrs: { textAlign: 'left' }, content: [{ type: 'text', text: '正文' }] }] } }
+    wrapper.findComponent(Editor).vm.$emit('content-change', rich)
+    await flushPromises()
+    await wrapper.get('.save-note').trigger('click')
+    rich.document.content[0]!.attrs.textAlign = 'right'
+    finish('saved-note'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('正文')
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).content.document.content[0].attrs.textAlign).toBe('right')
+    expect(wrapper.emitted('saved')).toBeUndefined()
+  })
+  it('保存返回时只有富文本结构变化也保留最新输入', async () => {
+    let finish!: (value: string) => void
+    vi.spyOn(useDataStore(), 'addNote').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('正文')
+    await wrapper.get('.save-note').trigger('click')
+    const rich = { version: 1, markdown: '正文', document: { type: 'doc', content: [{ type: 'paragraph', attrs: { textAlign: 'center' }, content: [{ type: 'text', text: '正文' }] }] } }
+    wrapper.findComponent(Editor).vm.$emit('content-change', rich)
+    await flushPromises()
+    finish('saved-note'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('正文')
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).content).toEqual(rich)
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('成功清空并重开后可找回上次内容为新草稿，不自动重复提交', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote').mockResolvedValue('saved-note')
+    let wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('可找回的计划')
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    const originalId = add.mock.calls[0]![2]
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
+    wrapper.unmount()
+    wrapper = mount(NoteComposer, options); await flushPromises()
+    await wrapper.get('.recover-note').trigger('click'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('可找回的计划')
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id).not.toBe(originalId)
+    expect(add).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('本地存储失败时离开页面会提醒', async () => {
+    const wrapper = mount(NoteComposer, options); await flushPromises()
+    const failing = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.get('textarea').setValue('只能留在内存的输入')
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.text()).toContain('浏览器草稿保存失败')
+    failing.mockRestore(); wrapper.unmount()
+  })
   it('本次人物选择随草稿恢复，重试传递同一选择且成功后清理', async () => {
     const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('离线')).mockResolvedValueOnce('saved-note')
     let wrapper = mount(NoteComposer, options)

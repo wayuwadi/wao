@@ -62,6 +62,7 @@ export function createNoteDraftStorage(persistent: Storage, tab: Storage, owner?
   const prefix = (key: string) => `${key}:window-v2:`
   const target = (key: string) => prefix(key) + windowId()
   const initialized = (key: string) => `${key}:initialized-v2`
+  const recoveryPrefix = (key: string) => `${key}:saved-recovery-v1:`
   function decode(value: string | null): Stored | null {
     if (!value) return null
     try {
@@ -98,10 +99,25 @@ export function createNoteDraftStorage(persistent: Storage, tab: Storage, owner?
   function remove(key: string, expected?: string | null) {
     const own = decode(persistent.getItem(target(key)))
     if (expected !== undefined && own?.raw !== expected) return
+    // 成功提交仅清理活动草稿，保留最后一份完整输入供手动找回。
+    // 备份写入失败时不能删除唯一副本；明确放弃的草稿不进入恢复区。
+    if (expected !== undefined && own) {
+      persistent.setItem(recoveryPrefix(key) + windowId(), JSON.stringify({ raw: own.raw, updatedAt: Date.now() } satisfies Stored))
+    }
     persistent.removeItem(target(key))
     tab.setItem(initialized(key), 'true')
   }
-  return { read, write, remove }
+  function readRecovery(key: string): string | null {
+    let latest: Stored | null = null
+    for (let index = 0; index < persistent.length; index++) {
+      const candidate = persistent.key(index)
+      if (!candidate?.startsWith(recoveryPrefix(key))) continue
+      const row = decode(persistent.getItem(candidate))
+      if (row && (!latest || row.updatedAt > latest.updatedAt)) latest = row
+    }
+    return latest?.raw ?? null
+  }
+  return { read, write, remove, readRecovery }
 }
 
 const current = () => {
@@ -111,3 +127,4 @@ const current = () => {
 export const readNoteDraft = (key: string) => current().read(key)
 export const writeNoteDraft = (key: string, raw: string) => current().write(key, raw)
 export const removeNoteDraft = (key: string, expected?: string | null) => current().remove(key, expected)
+export const readNoteRecovery = (key: string) => current().readRecovery(key)

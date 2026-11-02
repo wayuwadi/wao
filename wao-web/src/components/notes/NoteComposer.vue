@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { coalescedDraftWriter } from '@/utils/coalescedDraftWriter'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import type { IdentitySelection } from '@/api/digitalMembers'
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
@@ -11,7 +12,7 @@ import { saveCompanionDraft } from '@/api/noteAiCompanion'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
-import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
+import { readNoteDraft, writeNoteDraft, removeNoteDraft, readNoteRecovery } from '@/utils/noteDraftStorage'
 import NoteWidthSwitch from './NoteWidthSwitch.vue'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import NoteReadingImages from './NoteReadingImages.vue'
@@ -66,6 +67,13 @@ function readDraft(): Draft {
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
+function readRecovery(): Draft | null {
+  try {
+    const saved = JSON.parse(readNoteRecovery(draftKey) || 'null') as Draft | null
+    return saved && typeof saved.text === 'string' && saved.text.trim() ? saved : null
+  } catch { return null }
+}
+const recovery = ref(readRecovery())
 const identitySelection = ref<IdentitySelection>(initial.identitySelection && ['default','explicit','none'].includes(initial.identitySelection.mode) ? initial.identitySelection : { mode: 'default' })
 const companionMessageId = ref(initial.companionMessageId || '')
 const savedContent = props.note ? latestNoteContent(props.note) : { version: 1 as const, document: null, markdown: '' }
@@ -435,6 +443,15 @@ watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId,
 }, { flush: 'sync' })
 onBeforeUnmount(() => draftWriter.flush())
 function flushDraftWhenHidden() { if (document.hidden) draftWriter.flush() }
+function protectUnsavedOnUnload(event: BeforeUnloadEvent) {
+  draftWriter.flush()
+  if (saving.value || (dirty.value && draftError.value)) {
+    event.preventDefault()
+    event.returnValue = ''
+  }
+}
+onMounted(() => window.addEventListener('beforeunload', protectUnsavedOnUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnsavedOnUnload))
 onMounted(() => { window.addEventListener('pagehide', draftWriter.flush); document.addEventListener('visibilitychange', flushDraftWhenHidden) })
 onBeforeUnmount(() => { window.removeEventListener('pagehide', draftWriter.flush); document.removeEventListener('visibilitychange', flushDraftWhenHidden) })
 
@@ -465,6 +482,7 @@ async function save(explicit = false) {
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
     const submitted = { identitySelection: { ...identitySelection.value }, text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value], companionMessageId: companionMessageId.value }
+    const submittedContent = JSON.stringify(content.value)
     let savedId: string | null
     if (props.submitNote && !submitted.companionMessageId) {
       const aiDefaults = preferences.noteAiDefaults
@@ -509,13 +527,16 @@ async function save(explicit = false) {
       const latest = JSON.parse(raw || 'null') as Draft | null
       // 页面切走又回来时，新组件可能已经继续输入，旧请求不能清掉较新的草稿。
       if (!latest || (latest.id === id.value && latest.text === submitted.text
-        && JSON.stringify(latest.content) === JSON.stringify(submitted.content)
+        && JSON.stringify(latest.content) === submittedContent
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(submitted.tags)
         && (latest.generatedTitle ?? '') === submitted.title && JSON.stringify(latest.identitySelection ?? { mode: 'default' }) === JSON.stringify(submitted.identitySelection))) removeNoteDraft(draftKey, raw)
     } catch { /* 服务端保存已成功。 */ }
+    recovery.value = readRecovery()
     if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
+        || JSON.stringify(content.value) !== submittedContent
         || generatedTitle.value !== submitted.title || JSON.stringify(identitySelection.value) !== JSON.stringify(submitted.identitySelection)) {
-      status.value = '已保存提交内容 · 最新输入已保留，待保存'
+      persistCurrentDraft()
+      if (!draftError.value) status.value = '已保存提交内容 · 最新输入已保留，待保存'
       return
     }
     draftWriter.cancel()
@@ -560,6 +581,20 @@ async function save(explicit = false) {
   } finally {
     saving.value = false
   }
+}
+
+function recoverLastSubmission() {
+  // 只恢复到空白的新建区，不能覆盖在编内容或重写已保存记录。
+  const saved = recovery.value
+  if (!saved || props.note || dirty.value || saving.value || props.loading) return
+  id.value = crypto.randomUUID().replace(/-/g, '')
+  text.value = saved.text
+  content.value = saved.content
+  tags.value = [...(saved.tags ?? [])]
+  generatedTitle.value = saved.generatedTitle ?? ''
+  identitySelection.value = saved.identitySelection ?? { mode: 'default' }
+  draftWriter.flush()
+  status.value = '已找回上次提交内容为新草稿；保存前请核对是否已有记录'
 }
 
 function appendPlainText(value: string, messageId?: string) {
@@ -638,6 +673,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     </div>
     <Teleport to="body"><div v-if="imagePreview" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="imagePreview.alt || '小记图片预览'" @click.self="closeDraftImage" @keydown="imagePreviewKeys"><button ref="imageClose" type="button" aria-label="关闭图片预览" @click="closeDraftImage"><i class="ri-close-line" aria-hidden="true"></i></button><img :src="imagePreview.src" :alt="imagePreview.alt" /><NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" /></div></Teleport>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
+    <p v-if="!note && !dirty && recovery" class="recovery-note"><WaoButton class="recover-note" variant="ghost" :disabled="saving || loading" @click="recoverLastSubmission">找回上次内容</WaoButton><span>仅恢复为新草稿，不会自动重复保存。</span></p>
     <Teleport to="body">
       <div v-if="exitOpen" class="note-exit-mask" @keydown="exitKeys">
         <section class="note-exit-dialog" role="dialog" aria-modal="true" aria-label="保存修改并退出？">
