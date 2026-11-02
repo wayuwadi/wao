@@ -52,7 +52,11 @@ class WorkspaceMcpNetworkIntegrationTest {
                 """));
         assertThat(knowledge.path("result").path("isError").asBoolean()).isFalse();
         assertThat(knowledge.path("result").path("structuredContent").path("data").findValuesAsText("id"))
-                .contains("kb-project");
+                .contains("kb-project", "kb-mine").doesNotContain("kb-other");
+        JsonNode privateLibrary = body(post(readOnly.secret(), """
+                {"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"get_knowledge_base","arguments":{"kb_id":"kb-other"}}}
+                """));
+        assertThat(privateLibrary.path("result").path("isError").asBoolean()).isTrue();
         JsonNode denied = body(post(readOnly.secret(), """
                 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"不应创建"}}}
                 """));

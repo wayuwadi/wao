@@ -22,7 +22,7 @@ CREATE TABLE kb (
     directory_json VARCHAR(100000), id VARCHAR(32) PRIMARY KEY,
     name VARCHAR(128) NOT NULL, icon VARCHAR(64), color CHAR(7),
     project_id VARCHAR(32), auto BOOLEAN NOT NULL, description VARCHAR(512),
-    group_id VARCHAR(32), perm VARCHAR(16), ord INT, notes BOOLEAN NOT NULL,
+    group_id VARCHAR(32), perm VARCHAR(16), owner_id VARCHAR(32), ord INT, notes BOOLEAN NOT NULL,
     deleted_at TIMESTAMP NULL, deleted_by VARCHAR(32) NULL
 );
 CREATE TABLE kb_folder (
@@ -43,3 +43,6 @@ CREATE TABLE doc (
 );
 INSERT INTO kb (id, name, icon, color, auto, description, group_id, perm, ord, notes)
 VALUES ('kb-project', '项目知识', 'ri-book-line', '#5B6FD8', TRUE, '测试项目知识', 'g1', '成员可编辑', 90, FALSE);
+INSERT INTO kb(id,name,auto,perm,owner_id,ord,notes)
+VALUES ('kb-mine','本人私有库',FALSE,'仅自己','wd',91,FALSE),
+       ('kb-other','他人私有库',FALSE,'仅自己','other',92,FALSE);
