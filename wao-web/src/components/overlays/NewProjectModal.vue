@@ -31,7 +31,7 @@ function rememberDraft() {
     else sessionStorage.removeItem(draftKey())
     draftError.value = ''
     return true
-  } catch { draftError.value = '浏览器未能保存草稿，请保持窗口打开，或点击创建项目保存到服务器。'; return false }
+  } catch { draftError.value = '浏览器未能保存草稿，请保持窗口打开，或点击创建清单保存到服务器。'; return false }
 }
 watch(identity, () => {
   restoring = true
@@ -69,7 +69,7 @@ async function create() {
   if (identity() !== owner) return
   await projectLayout.consumeCreateGroupTarget(p.id)
   ui.closeModal()
-  toast(`项目「${p.name}」已创建`, 'ri-checkbox-circle-fill')
+  toast(`清单「${p.name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
   router.push(`/projects/${p.id}`)
   } catch { error.value = '保存失败，输入已保留，请重试。' }
@@ -88,13 +88,13 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   <div class="mask" @click="requestClose"></div>
   <div class="modal" :inert="saving"><p v-if="error || draftError" role="alert">{{ error || draftError }}</p>
     <div class="head">
-      <div class="title">新建项目</div>
-      <span class="head-tip">软件项目或人生大事，都值得立项</span>
+      <div class="title">新建清单</div>
+      <span class="head-tip">将相关任务放在同一份清单</span>
       <div class="spacer"></div>
       <button class="close" aria-label="保留草稿并关闭" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
-    <input v-model="name" class="title-input" placeholder="项目名称，例如「阳台花园改造」" @keydown.enter="create" />
-    <p v-if="restored" class="foot-tip" role="status">已恢复当前页签草稿，点击创建项目后才会保存到服务器。</p>
+    <input v-model="name" class="title-input" placeholder="清单名称，例如「阳台花园改造」" @keydown.enter="create" />
+    <p v-if="restored" class="foot-tip" role="status">已恢复当前页签草稿，点击创建清单后才会保存到服务器。</p>
 
     <div class="label">所属领域</div>
     <div class="pills">
@@ -118,7 +118,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
       <span class="foot-tip">创建后可在项目设置中添加或移除成员</span>
       <div class="spacer"></div>
       <button class="btn-ghost" @click="requestClose">保留草稿并关闭</button>
-      <button class="btn-primary" :disabled="!name.trim() || saving" @click="create">{{ saving ? '创建中…' : '创建项目' }}</button>
+      <button class="btn-primary" :disabled="!name.trim() || saving" @click="create">{{ saving ? '创建中…' : '创建清单' }}</button>
     </div>
   </div>
 </template>

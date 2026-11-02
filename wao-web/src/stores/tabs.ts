@@ -26,7 +26,7 @@ function load(): Persisted {
     if (raw) {
       const parsed = JSON.parse(raw) as Persisted
       const tabs = (parsed.tabs ?? [])
-        .filter((t) => !RETIRED_TAB_KEYS.has(t.key))
+        .filter((t) => !RETIRED_TAB_KEYS.has(t.key) && !t.key.startsWith('proj:'))
         .map((tab) => {
           const normalized = { ...tab, pinned: tab.pinned === true }
           // 系统模块沿用当前名称；显式自定义、动态实体与外部应用标题不覆盖。
@@ -41,7 +41,7 @@ function load(): Persisted {
               }
             : normalized
         })
-      const activeKey = RETIRED_TAB_KEYS.has(parsed.activeKey)
+      const activeKey = (RETIRED_TAB_KEYS.has(parsed.activeKey) || String(parsed.activeKey).startsWith('proj:'))
         ? 'home'
         : parsed.activeKey === 'mediaAgent'
           ? externalAppItemId('media-agent')

@@ -4,7 +4,7 @@ export type ProjectSettingsTab = 'basic' | 'members' | 'more'
 defineProps<{ modelValue: ProjectSettingsTab; memberCount: number }>()
 const emit = defineEmits<{ 'update:modelValue': [value: ProjectSettingsTab] }>()
 const id = useId()
-const tabs = [{ id: 'basic', label: '基本信息' }, { id: 'members', label: '项目成员' }, { id: 'more', label: '更多' }] as const
+const tabs = [{ id: 'basic', label: '基本信息' }, { id: 'members', label: '清单成员' }, { id: 'more', label: '更多' }] as const
 function navigate(event: KeyboardEvent, index: number) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
@@ -16,7 +16,7 @@ function navigate(event: KeyboardEvent, index: number) {
 </script>
 <template>
   <div class="project-settings-layout">
-    <div class="settings-tabs" role="tablist" aria-label="项目设置分项">
+    <div class="settings-tabs" role="tablist" aria-label="清单设置分项">
       <button v-for="(tab, index) in tabs" :id="`${id}-${tab.id}`" :key="tab.id" type="button" role="tab"
         :aria-selected="modelValue === tab.id" :aria-controls="`${id}-${tab.id}-panel`" :tabindex="modelValue === tab.id ? 0 : -1"
         @click="emit('update:modelValue', tab.id)" @keydown="navigate($event, index)">

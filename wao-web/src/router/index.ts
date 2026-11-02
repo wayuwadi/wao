@@ -140,13 +140,13 @@ const router = createRouter({
         {
           path: 'projects',
           name: 'projects',
-          component: () => import('@/views/ProjectsView.vue'),
+          redirect: '/todo',
           meta: { module: 'projects', tabKind: 'module' },
         },
         {
           path: 'projects/:id',
           name: 'project',
-          component: () => import('@/views/ProjectDetailView.vue'),
+          redirect: to => ({ path: '/todo', query: { list: String(to.params.id), ...(to.query.view === 'list' ? { layout: 'table' } : {}) } }),
           meta: { module: 'projects', tabKind: 'project' },
         },
         ...['wao/hub', 'wao/skills', 'wao/skills/:pathMatch(.*)*'].map(path => ({ path, redirect: legacyCapabilityRedirect })),

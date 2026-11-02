@@ -30,7 +30,7 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
       ['⌘/Ctrl J', '打开 AI 助手'],
       ['⌘/Ctrl S', '拦截浏览器另存为'],
       ['/', '打开搜索'],
-      ['Shift N', '新建项目'],
+      ['Shift N', '新建清单'],
       ['?', '显示 / 隐藏快捷键'],
       ['Esc', '逐层关闭浮层'],
     ],

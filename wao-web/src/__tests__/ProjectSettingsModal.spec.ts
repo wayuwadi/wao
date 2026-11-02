@@ -51,7 +51,7 @@ vi.mock('@/api/ai', () => ({
   saveAiProjectSkills: vi.fn(async () => []),
 }))
 
-describe('项目设置', () => {
+describe('清单设置', () => {
   const open = (project = useDataStore().projects[0]!) => mount(ProjectSettingsModal, { props: { project }, global: { stubs: { Teleport: true, RouterLink: true } } })
   const tab = async (wrapper: ReturnType<typeof open>, title: string) => wrapper.findAll('[role="tab"]').find(item => item.text().startsWith(title))!.trigger('click')
   it('分项切换保留输入，未改动完成不提交，方向键导航排除隐藏面板', async () => {
@@ -76,8 +76,8 @@ describe('项目设置', () => {
     const wrapper = open(); await flushPromises()
     await wrapper.get('.title-input').setValue('恢复名称')
     await wrapper.get('.goal').setValue('恢复目标')
-    await wrapper.get('[aria-label="项目截止日期"]').setValue('2027-02-03')
-    await tab(wrapper, '项目成员'); await wrapper.get('#project-member-add').setValue('wd')
+    await wrapper.get('[aria-label="清单截止日期"]').setValue('2027-02-03')
+    await tab(wrapper, '清单成员'); await wrapper.get('#project-member-add').setValue('wd')
     await wrapper.findAll('button').find(button => button.text() === '添加')!.trigger('click')
     await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
     expect(wrapper.get('.btn-primary').text()).toBe('重试保存'); wrapper.unmount()
@@ -144,13 +144,13 @@ describe('项目设置', () => {
     expect(save).toHaveBeenCalledWith(project.id, { name: '我的名称' })
     wrapper.unmount(); save.mockRestore()
   })
-  it('更多中取消删除与失败重试保持项目和草稿', async () => {
+  it('更多中取消删除与失败重试保持清单和草稿', async () => {
     const remove = vi.spyOn(useDataStore(), 'deleteProject').mockRejectedValueOnce(new Error('断网')).mockResolvedValue()
     const wrapper = open(); await tab(wrapper, '更多')
-    await wrapper.findAll('button').find(button => button.text() === '删除项目')!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '删除清单')!.trigger('click')
     await wrapper.findAll('button').find(button => button.text() === '取消删除')!.trigger('click')
     expect(remove).not.toHaveBeenCalled()
-    await wrapper.findAll('button').find(button => button.text() === '删除项目')!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '删除清单')!.trigger('click')
     await wrapper.findAll('button').find(button => button.text() === '确认删除')!.trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('删除失败')
     expect(wrapper.emitted('deleted')).toBeUndefined()
@@ -162,7 +162,7 @@ describe('项目设置', () => {
     const data = useDataStore(), project = data.projects[0]!
     project.owner = 'wg'; project.members = ['wg']
     useSessionStore().account = { member: { id: 'wg' } } as never
-    const save = vi.spyOn(data, 'updateProject').mockRejectedValueOnce(Object.assign(new Error('项目成员已被修改'), { status: 409 })).mockResolvedValue(true)
+    const save = vi.spyOn(data, 'updateProject').mockRejectedValueOnce(Object.assign(new Error('清单成员已被修改'), { status: 409 })).mockResolvedValue(true)
     vi.mocked(apiGetProject).mockResolvedValue({ ...project, members: ['wg', 'third'] })
     const wrapper = mount(ProjectSettingsModal, { global: { stubs: { Teleport: true, RouterLink: true } }, props: { project } })
     await flushPromises(); await wrapper.get('#project-member-add').setValue('wd')
@@ -179,14 +179,14 @@ describe('项目设置', () => {
     const data = useDataStore(), project = data.projects[0]!
     project.owner = 'wg'; project.members = ['wg']
     useSessionStore().account = { member: { id: 'wg' } } as never
-    const save = vi.spyOn(data, 'updateProject').mockRejectedValueOnce(new Error('项目成员已被修改')).mockResolvedValue(true)
+    const save = vi.spyOn(data, 'updateProject').mockRejectedValueOnce(new Error('清单成员已被修改')).mockResolvedValue(true)
     const wrapper = mount(ProjectSettingsModal, { global: { stubs: { Teleport: true, RouterLink: true } }, props: { project } })
     await flushPromises()
     await wrapper.get('#project-member-add').setValue('wd')
     await wrapper.findAll('button').find(b => b.text() === '添加')!.trigger('click')
     expect(wrapper.find('[aria-label="移除成员：甲"]').exists()).toBe(false)
     await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('项目成员已被修改')
+    expect(wrapper.text()).toContain('清单成员已被修改')
     expect(wrapper.find('[aria-label="移除成员：乙"]').exists()).toBe(true)
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(project.members).toEqual(['wg'])
@@ -226,12 +226,12 @@ describe('项目设置', () => {
       global: { stubs: { Teleport: true, RouterLink: true } },
       props: { project },
     })
-    await wrapper.get('[aria-label="项目截止日期"]').setValue('2027-01-15')
+    await wrapper.get('[aria-label="清单截止日期"]').setValue('2027-01-15')
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(wrapper.get('[role="alert"]').text()).toContain('保存失败')
-    expect(wrapper.get('[aria-label="项目截止日期"]').element).toHaveProperty('value', '2027-01-15')
+    expect(wrapper.get('[aria-label="清单截止日期"]').element).toHaveProperty('value', '2027-01-15')
     expect(project.due).toBe('2026-12-03')
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
@@ -249,7 +249,7 @@ describe('项目设置', () => {
       .findAll('button')
       .find((button) => button.text() === '清空日期')!
       .trigger('click')
-    expect(reopened.get('[aria-label="项目截止日期"]').element).toHaveProperty('value', '')
+    expect(reopened.get('[aria-label="清单截止日期"]').element).toHaveProperty('value', '')
     await reopened.get('.btn-primary').trigger('click')
     await flushPromises()
     expect(save).toHaveBeenLastCalledWith(project.id, expect.objectContaining({ due: '' }))
@@ -267,7 +267,7 @@ describe('项目设置', () => {
       props: { project },
     })
     project.due = '2027-01-15'
-    await wrapper.get('.title-input').setValue('只改项目名称')
+    await wrapper.get('.title-input').setValue('只改清单名称')
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
     expect(save.mock.calls[0]![1]).not.toHaveProperty('due')
@@ -282,7 +282,7 @@ describe('项目设置', () => {
     vi.mocked(saveAiProjectConfig).mockClear()
   })
 
-  it('项目状态与 AI 配置都不再出现，保存不会覆盖已有 AI 配置', async () => {
+  it('清单状态与 AI 配置都不再出现，保存不会覆盖已有 AI 配置', async () => {
     const data = useDataStore()
     const project = data.projects.find((item) => item.status === '规划中')!
     const wrapper = mount(ProjectSettingsModal, {
@@ -291,20 +291,20 @@ describe('项目设置', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('select[aria-label="项目状态"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('项目状态')
+    expect(wrapper.find('select[aria-label="清单状态"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('清单状态')
     expect(wrapper.text()).not.toContain('AI 执行配置')
-    await wrapper.get('.title-input').setValue('改名后的项目')
+    await wrapper.get('.title-input').setValue('改名后的清单')
     await wrapper.find('.btn-primary').trigger('click')
     await flushPromises()
 
-    expect(data.projectById(project.id)).toMatchObject({ name: '改名后的项目', status: '规划中' })
+    expect(data.projectById(project.id)).toMatchObject({ name: '改名后的清单', status: '规划中' })
     expect(vi.mocked(saveAiProjectConfig)).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('AI Run 开关打开时仍展示审核 Skill 并允许固定版本到项目', async () => {
+  it('AI Run 开关打开时仍展示审核 Skill 并允许固定版本到清单', async () => {
     flags.ai = true
     const project = useDataStore().projects[0]!
     const wrapper = mount(ProjectSettingsModal, {
