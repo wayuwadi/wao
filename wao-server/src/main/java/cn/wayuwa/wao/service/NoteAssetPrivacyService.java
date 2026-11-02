@@ -15,8 +15,8 @@ public class NoteAssetPrivacyService {
     /** A login alone does not grant access to a private knowledge-base attachment. */
     public boolean canRead(String type, String id) {
         if (knowledgeAccess == null || knowledgeAccess.systemCall()) return true;
-        var references = jdbc.queryForList("SELECT kb_id, deleted_at FROM doc WHERE CONCAT_WS('',content_markdown,content_json,blocks_json) LIKE ?",
-                "%/api/" + type + "/" + id + "/%");
+        var references = jdbc.queryForList("SELECT kb_id, deleted_at FROM doc WHERE LOCATE(?, CONCAT_WS('',content_markdown,content_json,blocks_json)) > 0",
+                "/api/" + type + "/" + id + "/");
         if (references.isEmpty()) return true;
         return references.stream().anyMatch(row -> row.get("deleted_at") == null
                 && knowledgeAccess.visible((String) row.get("kb_id")));
@@ -24,6 +24,15 @@ public class NoteAssetPrivacyService {
 
     public void requireRead(String type, String id) {
         if (!canRead(type, id)) throw new cn.wayuwa.wao.common.NotFoundException("资源不存在或无权访问");
+    }
+
+    /** Validate before persistence: writing a guessed resource URL must not grant access to it. */
+    public void requireReferencedAccess(Object content) {
+        if (knowledgeAccess == null || knowledgeAccess.systemCall()) return;
+        var matcher = ASSET.matcher(json.valueToTree(content).toString());
+        var checked = new java.util.HashSet<String>();
+        while (matcher.find()) if (checked.add(matcher.group(1) + ":" + matcher.group(2)))
+            requireRead(matcher.group(1), matcher.group(2));
     }
 
     /** Batch filtering for resource lists: do not scan documents once per attachment. */

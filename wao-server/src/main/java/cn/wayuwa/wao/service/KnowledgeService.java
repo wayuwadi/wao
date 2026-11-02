@@ -94,7 +94,8 @@ public class KnowledgeService {
             default -> null;
         };
         access.require(kbId);
-        if ("kb".equals(type)) access.requireOwner(kbMapper.selectById(kbId));
+        KbEntity kb = kbMapper.selectById(kbId);
+        if ("kb".equals(type) || (kb != null && kb.getDeletedAt() != null)) access.requireOwner(kb);
     }
     @org.springframework.beans.factory.annotation.Autowired
     private NoteDiscoveryChangeService discoveryChanges;
@@ -542,6 +543,7 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createDoc(CreateDocRequest req, String author) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if(noteAiManaged!=null&&author!=null&&NOTES_KB_ID.equals(req.kbId()))noteAiManaged.lockActor(author);
         KbEntity kb = requireKb(req.kbId());
         String pageType = req.pageType() == null ? "document" : req.pageType();
@@ -873,6 +875,7 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createNote(String id, CreateNoteRequest req, String author) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if (id == null || !CLIENT_DOC_ID.matcher(id).matches()) {
             throw new BadRequestException("小记文档 id 不合法");
         }
@@ -1277,6 +1280,8 @@ public class KnowledgeService {
         e.setLinksJson(write(links));
         e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(
+                List.of(blankOr(e.getBlocksJson(), ""), blankOr(e.getContentJson(), ""), blankOr(e.getContentMarkdown(), "")));
         docMapper.insert(e);
         discoverySaved(e, NoteAiManagedService.derived()?"AI_DERIVED":"USER");
         return toDto(e);
@@ -1389,6 +1394,7 @@ public class KnowledgeService {
     }
 
     private DocDto updateDocWithOrigin(String id, PatchDocRequest req, String origin) {
+        if (noteAssetPrivacy != null) noteAssetPrivacy.requireReferencedAccess(req);
         if("USER".equals(origin)&&req.content()==null&&req.blocks()==null)origin="METADATA";
         // 成员锁先于文档写锁，和调度写回保持一致，防止相互等待。
         String actor=noteActor();

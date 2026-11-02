@@ -15,13 +15,19 @@ class NoteAssetPrivacyServiceTest {
         var mapper = org.mockito.Mockito.mock(cn.wayuwa.wao.mapper.KbMapper.class);
         var kb = new cn.wayuwa.wao.domain.KbEntity(); kb.setId("private"); kb.setOwnerId("owner"); kb.setPerm("仅自己");
         org.mockito.Mockito.when(mapper.selectById("private")).thenReturn(kb);
+        var publicKb = new cn.wayuwa.wao.domain.KbEntity(); publicKb.setId("shared"); publicKb.setPerm("成员可编辑");
+        org.mockito.Mockito.when(mapper.selectById("shared")).thenReturn(publicKb);
+        db.update("INSERT INTO doc(kb_id,content_markdown) VALUES ('private','![private](/api/images/private_pic/raw)'),('shared','![different](/api/images/privateXpic/raw)')");
         var access = new KnowledgeAccessService(mapper, org.mockito.Mockito.mock(cn.wayuwa.wao.auth.CurrentMember.class));
         var privacy = new NoteAssetPrivacyService(db, new ObjectMapper());
         org.springframework.test.util.ReflectionTestUtils.setField(privacy, "knowledgeAccess", access);
         KnowledgeAccessService.asMember("other", () -> {
             assertThat(privacy.canRead("images", "private-pic")).isFalse();
             assertThat(privacy.canRead("files", "private-file")).isFalse();
-            assertThat(privacy.hiddenAssets("images")).containsExactly("private-pic");
+            assertThat(privacy.canRead("images", "private_pic")).isFalse();
+            assertThatThrownBy(() -> privacy.requireReferencedAccess(java.util.Map.of("markdown", "![guessed](/api/images/private_pic/raw)")))
+                    .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+            assertThat(privacy.hiddenAssets("images")).containsExactlyInAnyOrder("private-pic", "private_pic");
             kb.setPerm("成员可编辑");
             assertThat(privacy.canRead("images", "private-pic")).isTrue();
             assertThat(privacy.hiddenAssets("images")).isEmpty();

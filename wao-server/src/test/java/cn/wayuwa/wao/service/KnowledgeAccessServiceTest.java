@@ -88,6 +88,15 @@ class KnowledgeAccessServiceTest {
         assertThat(result.ownerId()).isEqualTo("creator"); assertThat(result.perm()).isEqualTo("仅自己");
     }
 
+    @Test void collaboratorCannotRestoreDeletedLibraryThroughItsChild() {
+        KbEntity kb = library(); kb.setPerm("成员可编辑"); kb.setDeletedAt(java.time.LocalDateTime.now());
+        DocEntity doc = new DocEntity(); doc.setId("child"); doc.setKbId(kb.getId()); doc.setDeletedAt(kb.getDeletedAt());
+        when(docs.selectById("child")).thenReturn(doc);
+        assertThatThrownBy(() -> KnowledgeAccessService.asMember("other", () -> { knowledge.restore("doc", "child"); return null; }))
+                .isInstanceOf(NotFoundException.class);
+        verify(docs, never()).clearDeleted("child");
+    }
+
     @Test void anonymousHttpNeverFallsBackToInternalJobAndContextIsRestored() {
         library();
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
