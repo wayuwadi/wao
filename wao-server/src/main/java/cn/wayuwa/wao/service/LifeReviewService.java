@@ -49,6 +49,8 @@ import org.springframework.util.StringUtils;
 /** 从成员真实任务、私有 AI 对话和飞书归档生成可追溯的周期人生回顾。 */
 @Service
 public class LifeReviewService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
@@ -283,6 +285,7 @@ public class LifeReviewService {
                         .orderByDesc(DocEntity::getTitle)
                         .last("LIMIT 500")) : List.of();
         for (DocEntity doc : chatDocs) {
+            if (knowledgeAccess != null && !knowledgeAccess.visible(doc.getKbId(), memberId)) continue;
             String content = plainText(doc);
             if (!StringUtils.hasText(content)) continue;
             LocalDate date = chatDate(doc.getTitle());

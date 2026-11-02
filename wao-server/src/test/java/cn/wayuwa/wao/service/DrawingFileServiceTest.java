@@ -26,6 +26,22 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class DrawingFileServiceTest {
+    @Test void linkedDrawingUsesLibraryPermissionEvenForOriginalCreator() {
+        var access = mock(KnowledgeAccessService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "knowledgeAccess", access);
+        var drawing = file("linked", OWNER, 1); drawing.setKbId("library"); drawing.setDocId("doc");
+        when(mapper.findOwned("linked", OWNER)).thenReturn(drawing);
+        when(mapper.findKnowledge("linked")).thenReturn(drawing);
+        when(mapper.listOwned(OWNER)).thenReturn(List.of(drawing));
+        assertThatThrownBy(() -> service.get("linked", OWNER)).isInstanceOf(NotFoundException.class);
+        assertThat(service.list(OWNER)).isEmpty();
+        when(access.visible("library", OTHER)).thenReturn(true);
+        assertThat(service.get("linked", OTHER).id()).isEqualTo("linked");
+        when(access.visible("library", OTHER)).thenReturn(false);
+        assertThatThrownBy(() -> service.versions("linked", OTHER)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.restore("linked", 1, 1, OTHER)).isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).findVersion("linked", 1, OWNER);
+    }
 
     private static final String OWNER = "wd";
     private static final String OTHER = "wg";
@@ -135,7 +151,7 @@ class DrawingFileServiceTest {
         DrawingFileEntity restored = file("dr1", OWNER, 6);
         restored.setSceneJson(CHANGED_SCENE);
         DrawingFileVersionEntity version = version("dr1", 3, CHANGED_SCENE);
-        when(mapper.findOwned("dr1", OWNER)).thenReturn(current, current, restored);
+        when(mapper.findOwned("dr1", OWNER)).thenReturn(current, current, current, restored);
         when(mapper.listVersions("dr1", OWNER)).thenReturn(List.of(version));
         when(mapper.findVersion("dr1", 3, OWNER)).thenReturn(version);
         when(mapper.saveScene(eq("dr1"), eq(OWNER), eq(CHANGED_SCENE), eq(5), any(LocalDateTime.class)))
@@ -154,7 +170,7 @@ class DrawingFileServiceTest {
 
         assertThatThrownBy(() -> service.restore("dr1", 2, 4, OTHER))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("草图历史版本不存在");
+                .hasMessage("草图文件不存在");
     }
 
     @Test

@@ -37,6 +37,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ProjectActivityService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     /** 单个项目最多展示的动态条数，避免老项目把时间线拖成长卷。 */
     private static final int LIMIT = 50;
@@ -97,7 +99,7 @@ public class ProjectActivityService {
                 .in("id", docIds).isNull("deleted_at").isNull("archived_at"));
         Map<String, List<DocEntity>> docsByProject = new HashMap<>();
         docIdsByProject.forEach((projectId, linkedIds) -> docsByProject.put(projectId,
-                docs.stream().filter(doc -> linkedIds.contains(doc.getId())).toList()));
+                docs.stream().filter(doc -> knowledgeAccess == null || knowledgeAccess.visible(doc.getKbId())).filter(doc -> linkedIds.contains(doc.getId())).toList()));
 
         Map<String, List<Activity>> out = new HashMap<>();
         for (ProjectEntity p : projects) {

@@ -455,6 +455,7 @@ export interface Folder {
 }
 
 export interface KnowledgeBase {
+  ownerId?: string
   directory?: Record<string, string>
   directoryOrder?: string[]
   id: string

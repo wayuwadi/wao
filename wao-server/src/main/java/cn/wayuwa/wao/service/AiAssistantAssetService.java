@@ -39,6 +39,8 @@ import org.springframework.util.StringUtils;
 /** 把聊天、知识库、项目和任务统一成 AI 助手可检索、可追溯的只读资产。 */
 @Service
 public class AiAssistantAssetService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
     private static final TypeReference<List<FeishuSenderDto>> SENDERS_TYPE = new TypeReference<>() { };
@@ -108,6 +110,10 @@ public class AiAssistantAssetService {
 
     /** 在授权范围内选取可供助手引用的资料。 */
     public String relevantAssets(String question, AssistantSourceFilter requestedFilter, String memberId) {
+        return KnowledgeAccessService.asMember(memberId, () -> relevantMemberAssets(question, requestedFilter));
+    }
+
+    private String relevantMemberAssets(String question, AssistantSourceFilter requestedFilter) {
         Filter filter = normalize(requestedFilter);
         List<Source> candidates = new ArrayList<>();
         if (filter.types().contains(AssetType.CHAT)) addChatSources(candidates, filter);
@@ -279,6 +285,7 @@ public class AiAssistantAssetService {
     private Map<String, KbEntity> knowledgeBases() {
         Map<String, KbEntity> result = new HashMap<>();
         for (KbEntity kb : kbMapper.selectList(new LambdaQueryWrapper<KbEntity>().isNull(KbEntity::getDeletedAt))) {
+            if (knowledgeAccess != null && !knowledgeAccess.visible(kb)) continue;
             result.put(kb.getId(), kb);
         }
         return result;
@@ -286,6 +293,7 @@ public class AiAssistantAssetService {
 
     private List<DocEntity> chatDocuments(String kbId, LocalDate dateFrom, LocalDate dateTo, int limit) {
         if (!StringUtils.hasText(kbId)) return List.of();
+        if (knowledgeAccess != null && !knowledgeAccess.visible(kbId)) return List.of();
         QueryWrapper<DocEntity> query = new QueryWrapper<DocEntity>()
                 .select("id", "kb_id", "title", "blocks_json", "updated_at")
                 .eq("kb_id", kbId)
@@ -300,6 +308,7 @@ public class AiAssistantAssetService {
 
     private LocalDate chatBoundary(String kbId, boolean earliest) {
         if (!StringUtils.hasText(kbId)) return null;
+        if (knowledgeAccess != null && !knowledgeAccess.visible(kbId)) return null;
         QueryWrapper<DocEntity> query = new QueryWrapper<DocEntity>()
                 .select("title")
                 .eq("kb_id", kbId)

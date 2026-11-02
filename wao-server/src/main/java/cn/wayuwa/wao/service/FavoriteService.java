@@ -28,6 +28,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class FavoriteService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     private static final Set<String> TYPES = Set.of("module", "project", "task", "doc");
     private static final Map<String, String> MODULES = Map.of("workday-rhythm", "今日节奏");
@@ -126,7 +128,7 @@ public class FavoriteService {
             }
             case "doc" -> {
                 DocEntity d = docMapper.selectById(row.getTargetId());
-                if (d == null || d.getDeletedAt() != null) {
+                if (d == null || d.getDeletedAt() != null || (knowledgeAccess != null && !knowledgeAccess.visible(d.getKbId(), row.getMemberId()))) {
                     return null;
                 }
                 String title = d.getTitle() == null || d.getTitle().isBlank() ? "未命名文档" : d.getTitle();

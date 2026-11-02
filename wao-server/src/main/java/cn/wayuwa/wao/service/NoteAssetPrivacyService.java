@@ -9,6 +9,40 @@ import java.util.regex.Pattern;
 /** 文档与小记素材的持久私有标记，移除引用不会重新公开。 */
 @Service
 public class NoteAssetPrivacyService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
+
+    /** A login alone does not grant access to a private knowledge-base attachment. */
+    public boolean canRead(String type, String id) {
+        if (knowledgeAccess == null || knowledgeAccess.systemCall()) return true;
+        var references = jdbc.queryForList("SELECT kb_id, deleted_at FROM doc WHERE CONCAT_WS('',content_markdown,content_json,blocks_json) LIKE ?",
+                "%/api/" + type + "/" + id + "/%");
+        if (references.isEmpty()) return true;
+        return references.stream().anyMatch(row -> row.get("deleted_at") == null
+                && knowledgeAccess.visible((String) row.get("kb_id")));
+    }
+
+    public void requireRead(String type, String id) {
+        if (!canRead(type, id)) throw new cn.wayuwa.wao.common.NotFoundException("资源不存在或无权访问");
+    }
+
+    /** Batch filtering for resource lists: do not scan documents once per attachment. */
+    public java.util.Set<String> hiddenAssets(String type) {
+        if (knowledgeAccess == null || knowledgeAccess.systemCall()) return java.util.Set.of();
+        var referenced = new java.util.HashSet<String>();
+        var allowed = new java.util.HashSet<String>();
+        var libraries = new java.util.HashMap<String, Boolean>();
+        for (var row : jdbc.queryForList("SELECT kb_id,deleted_at,CONCAT_WS('',content_markdown,content_json,blocks_json) AS body FROM doc")) {
+            var matcher = ASSET.matcher(String.valueOf(row.get("body")));
+            boolean visible = row.get("deleted_at") == null && libraries.computeIfAbsent((String) row.get("kb_id"), knowledgeAccess::visible);
+            while (matcher.find()) if (type.equals(matcher.group(1))) {
+                referenced.add(matcher.group(2));
+                if (visible) allowed.add(matcher.group(2));
+            }
+        }
+        referenced.removeAll(allowed);
+        return referenced;
+    }
     /** 第二张图入库前识别持久阶段归属，避免产生短暂可匿名访问的图片。 */
     public boolean thinkingImageRun(String runId) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='thinking' AND job_id=?",Integer.class,runId)>0;

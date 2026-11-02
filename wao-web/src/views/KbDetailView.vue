@@ -1002,7 +1002,8 @@ watch(kbId, () => { treeQuery.value = ''; homeOrder.value = 'directory' })
 function isHomeGroupOpen(id: string) { return !!homeSearch.value || homeFolderOpen[id] !== false }
 const kbSettingsOpen = ref(false)
 const kbIconPickerExpanded = ref(false)
-const kbSettings = reactive({ name: '', desc: '', icon: '' })
+const canManageKb = computed(() => !data.apiLive || kb.value?.ownerId === session.userId)
+const kbSettings = reactive({ name: '', desc: '', icon: '', perm: '仅自己' })
 const kbSettingsBusy = ref(false)
 const kbSettingsError = ref('')
 const moveDocId = ref<string | null>(null)
@@ -1092,6 +1093,8 @@ function openKbIconSettings() {
   kbIconPickerExpanded.value = true
 }
 function openKbSettings() {
+  if (!canManageKb.value) return
+  kbSettings.perm = kb.value?.perm || '仅自己'
   kbIconPickerExpanded.value = false
   kbSettings.name = kb.value?.name || ''
   kbSettings.desc = kb.value?.desc || ''
@@ -1103,7 +1106,7 @@ async function saveKbSettings() {
   if (!kbSettings.name.trim() || kbSettingsBusy.value || !kb.value) return
   kbSettingsBusy.value = true
   try {
-    const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim(), icon: kbSettings.icon }
+    const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim(), icon: kbSettings.icon, perm: kbSettings.perm }
     await apiPatchKb(kbId.value, patch)
     Object.assign(kb.value, patch)
     tabs.setMeta(`kb:${kbId.value}`, { label: patch.name, icon: patch.icon })
@@ -1129,7 +1132,7 @@ async function saveKbSettings() {
         <div class="side-kb">
           <div class="side-icon" :style="{ background: isColoredKnowledgeIcon(kb.icon) ? 'transparent' : kb.color }"><i :class="kb.icon"></i></div>
           <select class="kb-switch" :value="kbId" aria-label="切换知识库" @change="switchKb"><option v-for="library in data.kbs" :key="library.id" :value="library.id">{{ library.name }}</option></select>
-          <ResourceMenu label="知识库设置" :items="[{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }, { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
+          <ResourceMenu label="知识库设置" :items="[...(canManageKb ? [{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }] : []), { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
         </div>
 
         <p v-if="creatingDoc" class="tree-save">正在创建文档…</p>
@@ -1281,7 +1284,7 @@ async function saveKbSettings() {
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
-            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
+            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button v-if="canManageKb" class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
             <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
             <div class="home-tools">
               <label class="home-search"><i class="ri-search-line" aria-hidden="true"></i><input v-model="treeQuery" type="search" aria-label="搜索首页文档" placeholder="搜索文件夹或文档标题" @keydown.esc="treeQuery = ''" /></label>
@@ -1399,7 +1402,7 @@ async function saveKbSettings() {
       </div>
     </div>
 
-    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
+    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><label>共享范围<select v-model="kbSettings.perm" :disabled="kbSettingsBusy"><option value="仅自己">仅自己：只有我可以查看和编辑</option><option value="成员可编辑">共享：组织内成员可以查看和编辑</option></select></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
     <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
     <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
       <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">

@@ -8,6 +8,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import { useRouter } from 'vue-router'
 import { useTabsStore } from '@/stores/tabs'
+import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import { relativeTime } from '@/utils/time'
@@ -22,6 +23,8 @@ import type { KnowledgeBase, TrashEntry } from '@/types'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 const knowledgeFavorites = useKnowledgeFavoritesStore()
 const data = useDataStore()
+const session = useSessionStore()
+const canManage = (kb: KnowledgeBase) => !data.apiLive || kb.ownerId === session.userId
 const router = useRouter()
 const tabs = useTabsStore()
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -139,6 +142,7 @@ function commitGroupRename(g: { id: string; name: string }) {
   data.renameGroup(g.id, g.name || '新建分组')
 }
 function openCfg(k: KnowledgeBase) {
+  if (!canManage(k)) return
   if (!k.perm) k.perm = '仅自己'
   cfgKb.value = { ...k }
   cfgOriginal.value = cfgSnapshot(cfgKb.value)
@@ -320,7 +324,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
             <span v-if="k.auto" class="tag auto">自动</span>
             <span v-if="k.perm === '成员可编辑'" class="tag shared">已共享</span>
             <span class="spacer"></span>
-            <button class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
+            <button v-if="canManage(k)" class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
           </div>
         </div>
       </div>

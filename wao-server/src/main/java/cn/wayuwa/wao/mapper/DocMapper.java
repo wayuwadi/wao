@@ -23,9 +23,12 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     @Select("SELECT COALESCE(rev, 1) FROM doc WHERE id = #{id} AND deleted_at IS NULL")
     Integer selectAliveRevision(@Param("id") String id);
 
+    @Select("SELECT kb_id FROM doc WHERE id=#{id} AND deleted_at IS NULL")
+    String selectAliveKbId(@Param("id") String id);
+
     /** 只返回真正引用目标的来源及摘要字段；同类型/id 必须在同一个出链对象内匹配。 */
     @Select("""
-            SELECT id, title, blocks_json, content_markdown
+            SELECT id, kb_id, title, blocks_json, content_markdown
             FROM doc
             WHERE deleted_at IS NULL AND id != #{id}
               AND JSON_CONTAINS(links_json, JSON_OBJECT('type', 'doc', 'id', #{id}))

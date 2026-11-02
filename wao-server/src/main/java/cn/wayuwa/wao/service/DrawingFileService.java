@@ -25,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** 按成员归属管理 Excalidraw 草图文件。 */
 @Service
 public class DrawingFileService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     public static final String DEFAULT_TITLE = "未命名草图";
     public static final String EMPTY_SCENE = "{\"type\":\"excalidraw\",\"version\":2,\"source\":\"https://wao.wayuwa.cn\",\"elements\":[],\"appState\":{},\"files\":{}}";
@@ -39,7 +41,9 @@ public class DrawingFileService {
 
     /** 列出当前成员的草图元数据，不读取大体积场景。 */
     public List<DrawingFileSummaryDto> list(String memberId) {
-        return mapper.listOwned(memberId).stream().map(this::summary).toList();
+        return mapper.listOwned(memberId).stream()
+                .filter(file -> file.getKbId() == null || knowledgeAccess == null || knowledgeAccess.visible(file.getKbId(), memberId))
+                .map(this::summary).toList();
     }
 
     /** 新建当前成员的空草图。 */
@@ -78,9 +82,9 @@ public class DrawingFileService {
         validateScene(request.sceneJson());
         if (sameScene(before.getSceneJson(), request.sceneJson())) return dto(before);
         LocalDateTime now = LocalDateTime.now();
-        int changed = mapper.saveScene(id, memberId, request.sceneJson(), request.revision(), now);
+        int changed = mapper.saveScene(id, before.getOwnerMemberId(), request.sceneJson(), request.revision(), now);
         if (changed == 0) {
-            DrawingFileEntity latest = mapper.findOwned(id, memberId);
+            DrawingFileEntity latest = required(id, memberId);
             if (latest == null) throw notFound();
             if (sameScene(latest.getSceneJson(), request.sceneJson())) return dto(latest);
             throw new ConflictException("草图已在其它页面被修改，当前草稿已保留，请重新加载后处理");
@@ -92,8 +96,8 @@ public class DrawingFileService {
 
     /** 列出当前成员可恢复的最近三个真实内容版本。 */
     public List<DrawingFileVersionDto> versions(String id, String memberId) {
-        required(id, memberId);
-        return mapper.listVersions(id, memberId).stream()
+        DrawingFileEntity file = required(id, memberId);
+        return mapper.listVersions(id, file.getOwnerMemberId()).stream()
                 .map(version -> new DrawingFileVersionDto(version.getRevision(), version.getCreatedAt()))
                 .toList();
     }
@@ -105,7 +109,8 @@ public class DrawingFileService {
      */
     @Transactional
     public DrawingFileDto restore(String id, int historicalRevision, int expectedRevision, String memberId) {
-        DrawingFileVersionEntity historical = mapper.findVersion(id, historicalRevision, memberId);
+        DrawingFileEntity file = required(id, memberId);
+        DrawingFileVersionEntity historical = mapper.findVersion(id, historicalRevision, file.getOwnerMemberId());
         if (historical == null) throw new NotFoundException("草图历史版本不存在");
         return save(id, new SaveDrawingFileRequest(historical.getSceneJson(), expectedRevision), memberId);
     }
@@ -128,7 +133,9 @@ public class DrawingFileService {
 
     private DrawingFileEntity required(String id, String memberId) {
         DrawingFileEntity entity = mapper.findOwned(id, memberId);
+        if (entity == null && knowledgeAccess != null) entity = mapper.findKnowledge(id);
         if (entity == null) throw notFound();
+        if (entity.getKbId() != null && knowledgeAccess != null && !knowledgeAccess.visible(entity.getKbId(), memberId)) throw notFound();
         return entity;
     }
 

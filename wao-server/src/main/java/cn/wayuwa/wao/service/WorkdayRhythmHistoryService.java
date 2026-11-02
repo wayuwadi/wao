@@ -31,6 +31,8 @@ import org.springframework.util.StringUtils;
 /** 从当前成员已经落库的每日偏好中生成有界的今日节奏历史视图。 */
 @Service
 public class WorkdayRhythmHistoryService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeAccessService knowledgeAccess;
 
     static final String CONFIG_KEY = "workday-rhythm-config-v1";
     static final String DAY_KEY_PREFIX = "workday-rhythm-day-";
@@ -207,6 +209,7 @@ public class WorkdayRhythmHistoryService {
                         value.getCompletedOnTime())).toList();
         DocEntity document = rhythmDay == null || !StringUtils.hasText(rhythmDay.getDocumentId())
                 ? null : docs.selectById(rhythmDay.getDocumentId());
+        if (document != null && knowledgeAccess != null && !knowledgeAccess.visible(document.getKbId(), rhythmDay.getMemberId())) document = null;
         return new WorkdayRhythmHistoryDayDto(date, day.path("workdayActive").asBoolean(false),
                 List.copyOf(focus), List.copyOf(focusCompleted), List.of(), energyItems, checklistDto, document == null ? null : document.getId(),
                 document == null ? null : document.getKbId(), document == null ? null : document.getTitle());
@@ -220,6 +223,7 @@ public class WorkdayRhythmHistoryService {
                         value.getCompletedOnTime())).toList();
         DocEntity document = rhythmDay == null || !StringUtils.hasText(rhythmDay.getDocumentId())
                 ? null : docs.selectById(rhythmDay.getDocumentId());
+        if (document != null && knowledgeAccess != null && !knowledgeAccess.visible(document.getKbId(), rhythmDay.getMemberId())) document = null;
         boolean workdayActive = rhythmDay != null && rhythmDay.getWorkdayOverride() != null
                 ? rhythmDay.getWorkdayOverride()
                 : checklist.stream().anyMatch(value -> "WORK".equals(value.getCategory()));

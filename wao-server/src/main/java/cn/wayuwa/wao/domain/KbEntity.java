@@ -25,6 +25,9 @@ public class KbEntity {
     private String description;
     private String groupId;
     private String perm;
+    private String ownerId;
+    public String getOwnerId() { return ownerId; }
+    public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
     private Integer ord;
     private Boolean notes;
     private LocalDateTime deletedAt;

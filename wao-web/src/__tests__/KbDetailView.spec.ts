@@ -62,6 +62,7 @@ describe('知识库详情目录体验', () => {
     seedDataStore()
     vi.mocked(fetchDocTemplates).mockReset()
     vi.mocked(fetchDoc).mockReset()
+    vi.mocked(fetchDoc).mockImplementation(async id => JSON.parse(JSON.stringify(useDataStore().docs[id])))
     vi.mocked(apiPatchDocTemplate).mockReset()
   })
 
@@ -88,6 +89,29 @@ describe('知识库详情目录体验', () => {
     await flushPromises()
     return wrapper
   }
+
+  it('所有者可在设置中管理共享范围', async () => {
+    useDataStore().kbs.find(kb => kb.id === 'k3')!.ownerId = 'm1'
+    const wrapper = await mountView('/kb/k3', true)
+    await wrapper.get('.library-star').trigger('click')
+    expect(wrapper.get('select option[value="仅自己"]').text()).toContain('只有我')
+    expect(wrapper.get('select option[value="成员可编辑"]').text()).toContain('组织内成员')
+  })
+
+  it('共享成员不能打开知识库管理，但仍可使用个人模板', async () => {
+    useDataStore().kbs.find(kb => kb.id === 'k3')!.ownerId = 'another-member'
+    const wrapper = await mountView('/kb/k3', true)
+    expect(wrapper.find('.library-star[title="知识库设置"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="知识库设置"]').exists()).toBe(true)
+  })
+
+  it('已有正文缓存重新打开时仍校验权限，404 后移除可展示正文', async () => {
+    vi.mocked(fetchDoc).mockRejectedValue(Object.assign(new Error('无权访问'), { status: 404 }))
+    await mountView('/kb/k3?doc=d7', true)
+    expect(fetchDoc).toHaveBeenCalledWith('d7')
+    expect(useDataStore().docs.d7).toBeUndefined()
+    expect(useDataStore().docLoadErrors.d7).toContain('无权访问')
+  })
 
   it('收起和展开目录保留编辑器及未保存输入', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7', false, true)
