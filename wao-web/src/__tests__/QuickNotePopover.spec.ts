@@ -21,6 +21,37 @@ beforeEach(() => {
   companionSave.mockReset()
 })
 describe('原地快速小记', () => {
+  it('明确的 id 占用只更换一次标识，图文标签在再次失败及重载后保留', async () => {
+    const key = 'wao-quick-note-draft-v1:wg'
+    const rich = { version: 1, markdown: '重要正文\n![截图](/uploads/test-image.png)', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type:'text', text:'重要正文' }] }, { type:'image', attrs:{ src:'/uploads/test-image.png' } }] } }
+    writeNoteDraft(key, JSON.stringify({ id:'occupied-note', text:rich.markdown, content:rich, tags:['思考'], generatedTitle:'保留的标题' }))
+    const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('小记文档 id 已被占用')).mockRejectedValueOnce(new Error('网络中断')).mockResolvedValueOnce('saved-note')
+    let wrapper = mount(NoteComposer, options)
+    await flushPromises(); await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(2)
+    const replacement = add.mock.calls[1]![2]
+    expect(replacement).not.toBe('occupied-note')
+    expect(replacement).toMatch(/^[a-f0-9]{32}$/)
+    const savedDraft = JSON.parse(readNoteDraft(key)!)
+    expect(savedDraft).toMatchObject({ id:replacement, text:rich.markdown, content:rich, tags:['思考'], generatedTitle:'保留的标题' })
+    expect(add.mock.calls[1]!.slice(3,5)).toEqual([rich,['思考']])
+    wrapper.unmount(); wrapper = mount(NoteComposer, options)
+    await flushPromises(); await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(add.mock.calls[2]![2]).toBe(replacement)
+    expect(readNoteDraft(key)).toBeNull()
+    wrapper.unmount()
+  })
+  it('连续明确占用也不会无限自动重试，保留新的草稿 id', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValue(new Error('小记文档 id 已被占用'))
+    const wrapper = mount(NoteComposer, options)
+    await flushPromises(); await wrapper.get('textarea').setValue('保留输入')
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id).toBe(add.mock.calls[1]![2])
+    expect(wrapper.text()).toContain('小记文档 id 已被占用')
+    wrapper.unmount()
+  })
+
   it('本次人物选择随草稿恢复，重试传递同一选择且成功后清理', async () => {
     const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('离线')).mockResolvedValueOnce('saved-note')
     let wrapper = mount(NoteComposer, options)

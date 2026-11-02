@@ -451,6 +451,19 @@ watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note)
   resetting = false
 }, { flush: 'sync' })
 
+/** Only an explicit rejection proves this id cannot belong to this new note.
+ * Timeouts keep the original id so a lost success response cannot duplicate a note. */
+async function createWithAvailableId<T>(request: (docId: string) => Promise<T>): Promise<T> {
+  try { return await request(id.value) }
+  catch (cause) {
+    if (props.note || !(cause instanceof Error) || cause.message !== '小记文档 id 已被占用') throw cause
+    id.value = crypto.randomUUID().replace(/-/g, '')
+    // Persist the replacement before sending it; a second failure or reload must reuse it.
+    persistCurrentDraft()
+    return await request(id.value)
+  }
+}
+
 async function save(explicit = false) {
   draftWriter.flush()
   if (!canSave.value) return
@@ -468,9 +481,10 @@ async function save(explicit = false) {
     let savedId: string | null
     if (props.submitNote && !submitted.companionMessageId) {
       const aiDefaults = preferences.noteAiDefaults
-      const saved = await props.submitNote({ docId: id.value, title: submitted.title, content: rich, tags: submitted.tags,
+      const submitNote = props.submitNote
+      const saved = await createWithAvailableId(docId => submitNote({ docId, title: submitted.title, content: rich, tags: submitted.tags,
         ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}),
-        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish, ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) })
+        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish, ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) }))
       data.applyRemoteDoc(saved)
       savedId = saved.id
     } else if (props.note) {
@@ -498,8 +512,8 @@ async function save(explicit = false) {
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
-      if(submitted.companionMessageId){const saved=await saveCompanionDraft({ messageId: submitted.companionMessageId, docId:id.value, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags });data.applyRemoteDoc(saved);savedId=saved.id}
-      else savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length || submitted.identitySelection.mode !== 'default' ? { ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}), ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) } : undefined)
+      if(submitted.companionMessageId){const saved=await createWithAvailableId(docId => saveCompanionDraft({ messageId: submitted.companionMessageId, docId, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags }));data.applyRemoteDoc(saved);savedId=saved.id}
+      else savedId = await createWithAvailableId(docId => data.addNote(submitted.text, submitted.title, docId, rich, submitted.tags, submitted.sourceInputIds.length || submitted.identitySelection.mode !== 'default' ? { ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}), ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) } : undefined))
 
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
