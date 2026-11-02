@@ -90,3 +90,16 @@ it('设置搜索只发出导航意图，导航未完成时保留搜索结果', a
   await wrapper.setProps({ currentTab: 'account' })
   expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
 })
+
+it('各模块刷新只显示非占位加载指示，成功后清除', async () => {
+  const states = Object.fromEntries(Object.keys(DATA_DOMAIN_LABELS).map(domain => [domain, 'loaded'])) as Record<DataDomain, DataLoadState>
+  const wrapper = mount(DataLoadStatus, { props: { states, errors: {}, activeDomains: ['docs', 'tasks', 'schedule'] } })
+  for (const domain of ['docs', 'tasks', 'schedule'] as DataDomain[]) {
+    await wrapper.setProps({ states: { ...states, [domain]: 'loading' } })
+    expect(wrapper.get('[role="status"]').classes()).toContain('data-loading')
+    expect(wrapper.get('[role="status"]').text()).toContain(DATA_DOMAIN_LABELS[domain])
+    expect(wrapper.find('.data-load-status').exists()).toBe(false)
+    await wrapper.setProps({ states: { ...states } })
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  }
+})
