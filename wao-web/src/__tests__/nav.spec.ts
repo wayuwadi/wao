@@ -16,10 +16,14 @@ import type { ModuleId } from '@/types'
 import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
-  it('项目目录不宣传已下线的自动执行能力', () => {
+  it('旧项目地址迁移到待办清单，目录不再提供独立项目功能', () => {
+    expect(router.resolve('/projects').matched.slice(-1)[0]?.redirect).toBe('/todo')
+    const redirect = router.resolve('/projects/p1?view=list').matched.slice(-1)[0]?.redirect
+    expect(typeof redirect).toBe('function')
+    if (typeof redirect === 'function') expect(redirect(router.resolve('/projects/p1?view=list'), router.currentRoute.value)).toEqual({path:'/todo',query:{list:'p1',layout:'table'}})
     expect(matchesFunction('projects', '项目', 'AI Run')).toBe(false)
     expect(matchesFunction('projects', '项目', 'AI 工作流')).toBe(false)
-    expect(matchesFunction('projects', '项目', '任务')).toBe(true)
+    expect(matchesFunction('projects', '项目', '任务')).toBe(false)
   })
 
   it('知识库页签保留所选文档，切回后继续编辑同一篇', () => {
@@ -91,9 +95,7 @@ describe('侧边栏导航配置', () => {
 
   it('公共组保留活跃应用且 Agent 旧地址不恢复功能', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual([
-      'projects',
-    ])
+    expect(publicGroup?.items ?? []).toEqual([])
     expect(router.resolve('/media-agent').meta.module).toBeUndefined()
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
@@ -186,18 +188,18 @@ describe('侧边栏导航配置', () => {
 
   it('底部停靠菜单不在分组中重复出现，并按同一注册表顺序合成图标', () => {
     const builtin = DEFAULT_BUILTIN_MENUS.map((menu) =>
-      menu.id === 'projects' ? { ...menu, placement: 'DOCK' as const, order: 20 } : menu,
+      menu.id === 'todo' ? { ...menu, placement: 'DOCK' as const, order: 20 } : menu,
     )
     const external = DEFAULT_EXTERNAL_APPS.map((app) =>
       app.id === 'getnote' ? { ...app, placement: 'DOCK' as const, order: 10 } : app,
     )
 
     const groups = resolveNavGroups(PERSONAL_ITEMS, external, builtin)
-    expect(groups.flatMap((group) => group.items)).not.toContain('projects')
+    expect(groups.flatMap((group) => group.items)).not.toContain('todo')
     expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('getnote'))
     expect(resolveDockItems(external, builtin)).toEqual([
       externalAppItemId('getnote'),
-      'projects',
+      'todo',
     ])
   })
 

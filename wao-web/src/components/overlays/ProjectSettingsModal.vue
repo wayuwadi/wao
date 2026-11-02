@@ -86,7 +86,7 @@ async function refreshMemberSelection() {
 const name = ref(props.project.name)
 const area = ref(props.project.area)
 const goal = ref(
-  props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal,
+  props.project.goal === '尚未填写目标——打开清单后可补充。' ? '' : props.project.goal,
 )
 const icon = ref(props.project.icon || 'ri-stack-line')
 const due = ref(props.project.due || '')
@@ -126,7 +126,7 @@ function toggleSkill(skill: AiSkillCapability, checked: boolean) {
   selectedSkillVersions.value.push(skill.versionId)
 }
 
-/** 可选项目图标（remixicon）。 */
+/** 可选清单图标（remixicon）。 */
 const ICONS = [
   'ri-stack-line',
   'ri-rocket-line',
@@ -189,7 +189,7 @@ function reviewDraft(keep: boolean) {
   const previous = values()
   const edited = new Set(fields.filter(field => previous[field] !== original.value[field]))
   const latest = props.project
-  const current: ProjectSettingsValues = { name: latest.name, area: latest.area, goal: latest.goal === '尚未填写目标——打开项目后可补充。' ? '' : latest.goal, icon: latest.icon || 'ri-stack-line', due: latest.due || '', members: [...latest.members] }
+  const current: ProjectSettingsValues = { name: latest.name, area: latest.area, goal: latest.goal === '尚未填写目标——打开清单后可补充。' ? '' : latest.goal, icon: latest.icon || 'ri-stack-line', due: latest.due || '', members: [...latest.members] }
   const next = Object.fromEntries(fields.map(field => [field, keep && edited.has(field) ? previous[field] : current[field]])) as Pick<ProjectSettingsValues, typeof fields[number]>
   name.value = next.name; area.value = next.area; goal.value = next.goal; icon.value = next.icon; due.value = next.due
   if (!keep) { selectedMembers.value = [...new Set([latest.owner, ...latest.members])]; originalMembers.value = [...latest.members] }
@@ -232,7 +232,7 @@ async function requestClose() {
 async function save() {
   if (saving.value || memberConflict.value || draftConflict.value || session.userId !== draftMember) return
   if (!name.value.trim()) {
-    nameError.value = '请填写项目名称，输入已保留。'
+    nameError.value = '请填写清单名称，输入已保留。'
     activeTab.value = 'basic'
     return
   }
@@ -252,10 +252,10 @@ async function save() {
       ...(due.value !== original.value.due ? { due: due.value } : {}),
       ...(canManageMembers.value && membersChanged.value ? { members: [...selectedMembers.value], expectedMembers: [...originalMembers.value] } : {}),
     })
-    if (!projectSaved) throw new Error('项目设置保存失败，请重试')
+    if (!projectSaved) throw new Error('清单设置保存失败，请重试')
     // AI Run 下线期间不展示、也不读取执行配置，保存时绝不能用空白默认值覆盖服务端已有配置。
     if (!AI_RUN_ENABLED) {
-      toast('项目设置已保存', 'ri-check-line')
+      toast('清单设置已保存', 'ri-check-line')
       clearDraft()
       if (session.userId === draftMember) emit('close')
       return
@@ -272,13 +272,13 @@ async function save() {
       executionPrompt: executionPrompt.value.trim(),
     })
     await saveAiProjectSkills(props.project.id, selectedSkillVersions.value)
-    toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
+    toast('清单设置与 AI Run 配置已保存', 'ri-check-line')
     clearDraft()
     if (session.userId === draftMember) emit('close')
   } catch (error) {
     memberConflict.value = membersChanged.value && typeof error === 'object' && error !== null && 'status' in error && error.status === 409
     if (memberConflict.value) activeTab.value = 'members'
-    saveError.value = error instanceof Error ? error.message : '项目设置保存失败'
+    saveError.value = error instanceof Error ? error.message : '清单设置保存失败'
     toast(saveError.value, 'ri-error-warning-line')
   } finally {
     saving.value = false
@@ -290,7 +290,7 @@ async function remove() {
   saving.value = true
   saveError.value = ''
   try { await data.deleteProject(projectId); clearDraft(); emit('deleted') }
-  catch { saveError.value = '删除失败，项目与输入已保留，请重试。' }
+  catch { saveError.value = '删除失败，清单与输入已保留，请重试。' }
   finally { saving.value = false }
 }
 
@@ -350,16 +350,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 </script>
 
 <template>
-  <SettingsDialogShell title="项目设置" :description="project.name" width="760px" height="auto" @close="requestClose">
+  <SettingsDialogShell title="清单设置" :description="project.name" width="760px" height="auto" @close="requestClose">
     <div class="project-settings-body" :inert="saving || undefined">
       <div v-if="saveError || draftWarning || draftRestored || draftConflict" class="settings-feedback">
         <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
         <p v-if="draftWarning" class="save-error" role="alert">{{ draftWarning }}</p>
         <p v-if="draftRestored && !draftConflict" class="members-help" role="status">已恢复本机未保存的修改。</p>
         <div v-if="draftConflict" class="draft-conflict" role="alert">
-          <p>项目已在其他窗口修改。本机输入已保留，请确认要使用的内容。</p>
+          <p>清单已在其他窗口修改。本机输入已保留，请确认要使用的内容。</p>
           <p>账号当前名称：{{ project.name }}</p>
-          <p>领域：{{ data.areaById(project.area)?.name || '当前领域已不可用' }} · 截止日期：{{ project.due || '无截止日期' }} · 图标：<i :class="project.icon || 'ri-stack-line'" role="img" aria-label="账号当前项目图标"></i></p>
+          <p>领域：{{ data.areaById(project.area)?.name || '当前领域已不可用' }} · 截止日期：{{ project.due || '无截止日期' }} · 图标：<i :class="project.icon || 'ri-stack-line'" role="img" aria-label="账号当前清单图标"></i></p>
           <p>目标：{{ project.goal }}</p>
           <WaoButton @click="reviewDraft(true)">保留我的修改</WaoButton>
           <WaoButton variant="ghost" @click="reviewDraft(false)">使用账号当前设置</WaoButton>
@@ -369,13 +369,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
       <ProjectSettingsLayout v-model="activeTab" :member-count="selectedMembers.length">
         <template #basic>
           <div class="basic-form">
-            <WaoField v-slot="field" label="项目名称" :error="nameError" required>
+            <WaoField v-slot="field" label="清单名称" :error="nameError" required>
               <div class="name-editor">
                 <details ref="iconPicker" class="icon-picker" @keydown.esc.stop.prevent="iconPicker!.open = false">
-                  <summary aria-label="选择项目图标"><i :class="icon" aria-hidden="true"></i></summary>
-                  <div class="icon-grid" aria-label="项目图标">
+                  <summary aria-label="选择清单图标"><i :class="icon" aria-hidden="true"></i></summary>
+                  <div class="icon-grid" aria-label="清单图标">
                     <button v-for="(ic, index) in ICONS" :key="ic" type="button" class="icon-cell" :class="{ on: icon === ic }"
-                      :aria-label="`项目图标 ${index + 1}`" :aria-pressed="icon === ic" @click="chooseIcon(ic)">
+                      :aria-label="`清单图标 ${index + 1}`" :aria-pressed="icon === ic" @click="chooseIcon(ic)">
                       <i :class="ic" aria-hidden="true"></i>
                     </button>
                   </div>
@@ -389,26 +389,26 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
               </WaoField>
               <WaoField v-slot="field" label="截止日期 · 可选">
                 <div class="due-editor">
-                  <input :id="field.id" v-model="due" type="date" aria-label="项目截止日期" />
+                  <input :id="field.id" v-model="due" type="date" aria-label="清单截止日期" />
                   <WaoButton v-if="due" variant="ghost" @click="due = ''">清空日期</WaoButton>
                 </div>
               </WaoField>
             </div>
-            <WaoField v-slot="field" label="项目描述 / 目标">
-              <textarea :id="field.id" v-model="goal" class="goal" rows="4" placeholder="这个项目做成了，会是什么样？"></textarea>
+            <WaoField v-slot="field" label="清单描述 / 目标">
+              <textarea :id="field.id" v-model="goal" class="goal" rows="4" placeholder="这个清单做成了，会是什么样？"></textarea>
             </WaoField>
           </div>
         </template>
         <template #members>
-          <section class="project-members" aria-label="项目成员">
-            <p class="members-help">{{ canManageMembers ? '负责人始终保留。成员调整保存后生效。' : '只有项目负责人可以添加或移除成员。' }}</p>
+          <section class="project-members" aria-label="清单成员">
+            <p class="members-help">{{ canManageMembers ? '负责人始终保留。成员调整保存后生效。' : '只有清单负责人可以添加或移除成员。' }}</p>
             <p v-if="memberReview" class="members-help" role="status">{{ memberReview }}</p>
             <p v-if="membersLoading" role="status">正在读取组织成员…</p>
             <p v-if="membersError" class="save-error" role="alert">{{ membersError }} <WaoButton variant="ghost" @click="loadMembers">重新读取</WaoButton></p>
             <ul class="member-list">
               <li v-for="id in selectedMembers" :key="id">
                 <span class="member-avatar" aria-hidden="true">{{ memberName(id).slice(0, 1) }}</span>
-                <div class="member-info"><span>{{ memberName(id) }}</span><small>{{ id === project.owner ? '负责人' : '项目成员' }}</small></div>
+                <div class="member-info"><span>{{ memberName(id) }}</span><small>{{ id === project.owner ? '负责人' : '清单成员' }}</small></div>
                 <WaoButton v-if="canManageMembers && id !== project.owner" variant="ghost" :aria-label="`移除成员：${memberName(id)}`" @click="removeMember(id)">移除</WaoButton>
               </li>
             </ul>
@@ -465,7 +465,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
             </select>
           </label>
           <label class="form-field">
-            <span>同项目最大并发</span>
+            <span>同清单最大并发</span>
             <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
           </label>
           <label class="form-field">
@@ -504,7 +504,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
         <div v-if="!aiLoading" class="skill-config" :class="{ muted: !aiEnabled }">
           <div class="skill-config-head">
             <div>
-              <b>项目 Skill</b
+              <b>清单 Skill</b
               ><span>固定审核版本，只在隔离的 Codex 运行中加载；升级不会改写历史运行。</span>
             </div>
             <RouterLink to="/wao/skills" target="_blank">打开 Skill 市场</RouterLink>
@@ -512,7 +512,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
           <div v-if="waoApplicationSkills.length" class="application-skill-note">
             WAO 默认将加载：{{
               waoApplicationSkills.map((item) => `${item.displayName} v${item.version}`).join('、')
-            }}。项目选择同一 Skill 时以项目版本为准。
+            }}。清单选择同一 Skill 时以清单版本为准。
           </div>
           <div
             v-if="
@@ -521,7 +521,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
             "
             class="skill-engine-warning"
           >
-            WAO 默认或项目 Skill 当前只支持 Codex；其它工具的运行会在入队前明确拒绝。
+            WAO 默认或清单 Skill 当前只支持 Codex；其它工具的运行会在入队前明确拒绝。
           </div>
           <div v-if="!availableSkills.length" class="skill-empty">
             市场暂无可启用的 Codex Skill，可先发布并通过审核。
@@ -577,12 +577,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 
           <div class="danger-zone">
             <div class="dz-text">
-              <h3>{{ confirming ? `确认删除「${project.name}」？` : '删除项目' }}</h3>
-              <p>{{ confirming ? '此操作不可撤销，请确认。' : '项目和项目下的任务将被删除；知识库与文档保留。' }}</p>
+              <h3>{{ confirming ? `确认删除「${project.name}」？` : '删除清单' }}</h3>
+              <p>{{ confirming ? '此操作不可撤销，请确认。' : '清单和清单下的任务将被删除；知识库与文档保留。' }}</p>
             </div>
             <div class="danger-actions">
               <WaoButton v-if="confirming" @click="confirming = false">取消删除</WaoButton>
-              <WaoButton variant="danger" :loading="saving" @click="confirming ? remove() : confirming = true">{{ confirming ? '确认删除' : '删除项目' }}</WaoButton>
+              <WaoButton variant="danger" :loading="saving" @click="confirming ? remove() : confirming = true">{{ confirming ? '确认删除' : '删除清单' }}</WaoButton>
             </div>
           </div>
         </template>

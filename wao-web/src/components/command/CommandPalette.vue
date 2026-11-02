@@ -133,7 +133,7 @@ const commands = computed<Command[]>(() => {
     // 动作
     {
       id: 'action-project',
-      title: '新建项目',
+      title: '新建清单',
       subtitle: '创建一个新的项目',
       icon: 'ri-add-circle-line',
       keywords: ['new project', 'xinjian xiangmu', 'chuangjian'],

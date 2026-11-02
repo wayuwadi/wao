@@ -92,7 +92,7 @@ describe('手机按需完整导航', () => {
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
 
     expect(wrapper.findAll('.group-label')).toHaveLength(0)
-    expect(labels).toEqual(expect.arrayContaining(['项目', '待办', '日历']))
+    expect(labels).toEqual(expect.arrayContaining(['待办', '日历']))
     expect(wrapper.find('.mobile-more-item').exists()).toBe(false)
     expect(wrapper.get('.item.active').attributes('title')).toBe('日历')
     expect(wrapper.get('.item.active').attributes('draggable')).not.toBe('true')
@@ -106,9 +106,9 @@ describe('手机按需完整导航', () => {
 
   it('手机菜单仍打开原真实路由，设置入口保持可用', async () => {
     const { router, wrapper } = await mountNavigation('/')
-    await wrapper.get('[title="项目"]').trigger('click')
+    await wrapper.get('[title="待办"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/projects')
+    expect(router.currentRoute.value.path).toBe('/todo')
 
     await wrapper.get('.user').trigger('click')
     await flushPromises()
@@ -119,10 +119,10 @@ describe('手机按需完整导航', () => {
   it('手机完整菜单不受桌面侧栏折叠影响，打开当前菜单也发出导航事件', async () => {
     const nav = useNavStore()
     nav.collapsed = true
-    const { wrapper } = await mountNavigation('/projects')
+    const { wrapper } = await mountNavigation('/todo')
     expect(wrapper.classes()).not.toContain('collapsed')
     expect(wrapper.get('.search').isVisible()).toBe(true)
-    await wrapper.get('[title="项目"]').trigger('click')
+    await wrapper.get('[title="待办"]').trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
     expect(nav.collapsed).toBe(true)
     wrapper.unmount()
@@ -140,13 +140,13 @@ describe('手机按需完整导航', () => {
     const { wrapper } = await mountNavigation('/')
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
     expect(labels).toEqual(expect.arrayContaining(['待办', '番茄钟', '习惯']))
-    expect(wrapper.get('[title="项目"]').attributes('draggable')).not.toBe('true')
+    expect(wrapper.get('[title="待办"]').attributes('draggable')).not.toBe('true')
     const nav = useNavStore()
     nav.builtinMenusState = 'loaded'
     nav.externalAppsState = 'loaded'
     nav.layoutLoaded = true
     await flushPromises()
-    expect(wrapper.get('[title="项目"]').attributes('draggable')).not.toBe('true')
+    expect(wrapper.get('[title="待办"]').attributes('draggable')).not.toBe('true')
     wrapper.unmount()
   })
 })

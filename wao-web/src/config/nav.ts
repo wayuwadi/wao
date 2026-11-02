@@ -19,7 +19,7 @@ export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
 /** 已全站下线的独立功能；旧个人布局和历史页签不得使入口重新出现。 */
 export const RETIRED_MODULE_IDS = new Set<ModuleId>([
-  'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
+  'projects', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections',
@@ -31,7 +31,7 @@ export type MobileNavItemId = NavItemId | MobileActionItemId
 
 /** 手机底栏只保留高频动作；固定的“更多”不计入成员可配置名额。 */
 export const MOBILE_NAV_MAX_ITEMS = 4
-export const DEFAULT_MOBILE_NAV_ITEMS: MobileNavItemId[] = ['projects', 'action:note']
+export const DEFAULT_MOBILE_NAV_ITEMS: MobileNavItemId[] = ['todo', 'action:note']
 
 /** 可由系统设置注册的外部应用；菜单和通用嵌入页都由这份配置驱动。 */
 export interface ExternalAppConfig {
@@ -309,7 +309,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 }
 /** 全体用户共用的主菜单；顺序和名称只随代码发布变更。 */
 export const FIXED_NAV_IDS = [
-  'home', 'notes', 'todo', 'projects', 'knowledge', 'drawings', 'vault',
+  'home', 'notes', 'todo', 'knowledge', 'drawings', 'vault',
   'calendar', 'focus', 'countdowns', 'habits', 'navigation',
 ] as const satisfies readonly ModuleId[]
 export const FIXED_BUILTIN_MENUS: BuiltinMenuConfig[] = FIXED_NAV_IDS.map((id, index) => ({

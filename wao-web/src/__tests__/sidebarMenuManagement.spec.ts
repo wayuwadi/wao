@@ -11,7 +11,7 @@ import { useSessionStore } from '@/stores/session'
 import type { AuthSession } from '@/api/auth'
 vi.mock('@/components/WaoLogo.vue', () => ({ default: { template: '<span />' } }))
 vi.mock('@/api/system', () => ({ fetchExternalAppRegistry: vi.fn().mockResolvedValue({ apps: [] }) }))
-const labels = ['首页', '小记', '待办', '项目', '知识库', '草图', '密码本', '日历', '番茄钟', '倒数日', '习惯', '全部']
+const labels = ['首页', '小记', '待办', '知识库', '草图', '密码本', '日历', '番茄钟', '倒数日', '习惯', '全部']
 describe('统一主菜单', () => {
   beforeEach(() => {
     localStorage.clear(); setActivePinia(createPinia())
@@ -46,7 +46,7 @@ describe('统一主菜单', () => {
     await router.push('/')
     const w = mount(SideNav, { global: { plugins: [router] } })
     expect(w.findAll('.item').map(x => x.text())).toEqual(labels)
-    await w.get('[title="项目"]').trigger('contextmenu')
+    await w.get('[title="待办"]').trigger('contextmenu')
     expect(w.find('.menu-actions').exists()).toBe(false)
     expect(w.find('[draggable="true"]').exists()).toBe(false)
     for (const id of FIXED_NAV_IDS) {

@@ -11,12 +11,14 @@ import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
 import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
 import { saveTaskLabels } from '@/api/taskLabels'
-vi.mock('vue-router',()=>({useRoute:()=>({query:{}}),useRouter:()=>({push:vi.fn()})}))
+const testRoute = vi.hoisted(() => ({ query: {} as Record<string,string> }))
+vi.mock('vue-router',()=>({useRoute:()=>testRoute,useRouter:()=>({push:vi.fn(),replace:vi.fn()})}))
 vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[{taskId:'parent',subId:'child',revision:1,tags:['联调']}]),saveTaskLabels:vi.fn(async(v)=>({...v,revision:v.revision+1}))}))
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
 const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
 beforeEach(()=>{
  vi.restoreAllMocks();vi.clearAllMocks()
+ testRoute.query = {}
  localStorage.clear();sessionStorage.clear();setActivePinia(createPinia())
  useSessionStore().accept({accountId:'workspace-test',member:{id:'wg',name:'成员',initial:'测',role:'',color:''},identities:[],createdAt:''})
  const data=seedDataStore();data.taskLoadState='loaded';data.apiLive=false
@@ -24,6 +26,52 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('旧项目跳转参数选择对应清单和表格布局',async()=>{
+  const data=useDataStore(),project=data.projects[0]!
+  testRoute.query={list:project.id,layout:'table'}
+  const wrapper=mount(TodoView,options);await flushPromises()
+  expect(wrapper.get('h1').text()).toBe(project.name)
+  expect(wrapper.find('table[aria-label="任务表格"]').exists()).toBe(true)
+  wrapper.unmount()
+ })
+ it('统一入口提供表格，子项编辑落到原任务且搜索三视图一致',async()=>{
+  const data=useDataStore()
+  vi.spyOn(data,'flushTask').mockResolvedValue()
+  const update=vi.spyOn(data,'updateSub')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  expect(wrapper.text()).not.toContain('原待办视图')
+  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='表格')!.trigger('click')
+  expect(wrapper.find('table[aria-label="任务表格"]').exists()).toBe(true)
+  await wrapper.get('[aria-label="标题 独立子任务"]').setValue('子项改名')
+  expect(update).toHaveBeenCalledWith('parent','child',{text:'子项改名'})
+  expect(data.tasks[0]!.title).toBe('主任务')
+  await wrapper.get('[aria-label="搜索任务"]').setValue('不存在的条目')
+  expect(wrapper.findAll('tbody tr')).toHaveLength(0)
+  await wrapper.get('[aria-label="搜索任务"]').setValue('')
+  expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+  wrapper.unmount()
+ })
+ it('清单创建失败保留名称，成功选择新清单并支持改名',async()=>{
+  const data=useDataStore()
+  const create=vi.spyOn(data,'addProject').mockRejectedValueOnce(new Error('offline'))
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.get('[aria-label="新建清单"]').trigger('click')
+  await wrapper.get('[aria-label="清单名称"]').setValue('工作清单验收')
+  await wrapper.get('#task-list-form').trigger('submit');await flushPromises()
+  expect(wrapper.text()).toContain('保存失败')
+  expect(wrapper.get('[aria-label="清单名称"]').element).toHaveProperty('value','工作清单验收')
+  create.mockRestore()
+  await wrapper.get('#task-list-form').trigger('submit');await flushPromises()
+  const project=data.projects.find(p=>p.name==='工作清单验收')!
+  expect(project).toBeTruthy()
+  expect(wrapper.get('h1').text()).toBe('工作清单验收')
+  await wrapper.get('[aria-label="清单操作 工作清单验收"]').trigger('click');await flushPromises()
+  await wrapper.findAll('[role="menuitem"]').find(b=>b.text()==='重命名清单')!.trigger('click')
+  await wrapper.get('[aria-label="清单名称"]').setValue('改名后的清单')
+  await wrapper.get('#task-list-form').trigger('submit');await flushPromises()
+  expect(data.projectById(project.id)?.name).toBe('改名后的清单')
+  wrapper.unmount()
+ })
  it('搜索包含已完成主任务及子项，清空恢复默认且不再提供保存筛选',async()=>{
   const data=useDataStore()
   data.tasks[1]!.status='已完成';data.tasks[1]!.title='历史搜索主任务'
