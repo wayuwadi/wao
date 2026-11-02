@@ -29,6 +29,18 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('所有子项完成后隐藏箭头，未完成后代恢复箭头且完成项仍可在详情查看', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs[0]!.done = true
+    let p = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items:p.items, contextItems:p.items, itemRefs:p.refs, collapsed:['parent'] })
+    expect(wrapper.find('[data-task-id="parent"] .tree-toggle').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="直属子任务"]').text()).toContain('子任务')
+    data.tasks[0]!.subs.push({id:'grand',parentId:'child',text:'未完成后代',done:false})
+    p = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items:p.items, contextItems:p.items, itemRefs:p.refs })
+    expect(wrapper.find('[data-task-id="parent"] .tree-toggle').exists()).toBe(true)
+  })
   it('搜索包含已完成子孙任务，清空搜索恢复隐藏规则', async () => {
     const { data, wrapper } = setup()
     data.tasks[0]!.subs.push({ id: 'done-search', parentId: 'child', text: '历史归档验收', done: true })
@@ -276,6 +288,7 @@ describe('项目清单详情', () => {
     expect(data.tasks[0]!.desc).toContain('# 一级验收')
     editor.commands.setContent('<h1>重复标题</h1><h2>重复标题</h2>')
     await flushPromises()
+    expect(wrapper.get('.detail-secondary-actions [aria-label="任务描述目录"]').text()).toContain('大纲')
     await wrapper.get('[aria-label="任务描述目录"]').trigger('mouseenter')
     const links = wrapper.findAll('nav[aria-label="任务描述目录"] button')
     expect(links.map(link => link.text())).toEqual(['重复标题', '重复标题'])

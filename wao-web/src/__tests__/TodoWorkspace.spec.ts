@@ -41,31 +41,29 @@ describe('task workspace',()=>{
   expect(restored.get('[aria-label="收起待办导航"]').attributes('aria-expanded')).toBe('true')
   restored.unmount()
  })
- it('旧项目跳转参数选择对应清单和表格布局',async()=>{
-  const data=useDataStore(),project=data.projects[0]!
+ it('旧表格参数回落到清单，移除表格、批量和新建任务入口',async()=>{
+  const project=useDataStore().projects[0]!
   testRoute.query={list:project.id,layout:'table'}
   const wrapper=mount(TodoView,options);await flushPromises()
   expect(wrapper.get('h1').text()).toBe(project.name)
-  expect(wrapper.find('table[aria-label="任务表格"]').exists()).toBe(true)
-  expect(wrapper.find('.project-task-table .status-pill').exists()).toBe(true)
-  expect(wrapper.find('.project-task-table select').exists()).toBe(false)
+  expect(wrapper.find('.checklist-layout').exists()).toBe(true)
+  expect(wrapper.findAll('.layout-switch button').map(b=>b.text())).toEqual(['清单','四象限'])
+  expect(wrapper.find('[aria-label="添加任务"]').exists()).toBe(true)
+  expect(wrapper.get('.checklist-row').attributes('draggable')).toBe('true')
   wrapper.unmount()
  })
- it('统一入口提供表格，子项编辑落到原任务且搜索三视图一致',async()=>{
-  const data=useDataStore()
-  vi.spyOn(data,'flushTask').mockResolvedValue()
-  const update=vi.spyOn(data,'updateSub')
+ it('清单拖放事件连接排序和层级保存，刷新组件后保留个人顺序',async()=>{
+  const data=useDataStore(), relation=vi.spyOn(data,'moveTask').mockResolvedValue()
   const wrapper=mount(TodoView,options);await flushPromises()
-  expect(wrapper.text()).not.toContain('原待办视图')
-  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='表格')!.trigger('click')
-  expect(wrapper.find('table[aria-label="任务表格"]').exists()).toBe(true)
-  await wrapper.get('[aria-label="标题 独立子任务"]').setValue('子项改名')
-  expect(update).toHaveBeenCalledWith('parent','child',{text:'子项改名'})
-  expect(data.tasks[0]!.title).toBe('主任务')
-  await wrapper.get('[aria-label="搜索任务"]').setValue('不存在的条目')
-  expect(wrapper.findAll('tbody tr')).toHaveLength(0)
-  await wrapper.get('[aria-label="搜索任务"]').setValue('')
-  expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+  const target=wrapper.get('[data-task-id="parent"]')
+  vi.spyOn(target.element,'getBoundingClientRect').mockReturnValue({top:100,height:40} as DOMRect)
+  await wrapper.get('[data-task-id="other"]').trigger('dragstart',{dataTransfer:{setData:vi.fn(),effectAllowed:''}})
+  await target.trigger('drop',{clientY:102});await flushPromises()
+  expect(wrapper.findAll('.checklist-row')[0]!.attributes('data-task-id')).toBe('other')
+  expect(relation).not.toHaveBeenCalled()
+  await wrapper.get('[data-task-id="other"]').trigger('dragstart',{dataTransfer:{setData:vi.fn(),effectAllowed:''}})
+  await target.trigger('drop',{clientY:120});await flushPromises()
+  expect(relation).toHaveBeenCalledWith('other','parent')
   wrapper.unmount()
  })
  it('清单创建失败保留名称，成功选择新清单并支持改名',async()=>{
@@ -227,7 +225,7 @@ describe('task workspace',()=>{
  it('keeps daily review and completed navigation accessible',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
   expect(wrapper.text()).toContain('每日回顾');expect(wrapper.text()).toContain('已完成')
-  expect(wrapper.findAll('.checklist-row').every(row=>row.attributes('draggable')==='false')).toBe(true)
+  expect(wrapper.findAll('.checklist-row').every(row=>row.attributes('draggable')==='true')).toBe(true)
   wrapper.unmount()
  })
  it('retries an existing failed creation without inserting a second task',async()=>{
