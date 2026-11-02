@@ -8,13 +8,13 @@ import MermaidNodeView from './MermaidNodeView.vue'
 import { Table, renderTableToMarkdown } from '@tiptap/extension-table'
 
 /** GFM 表格无法表示合并和列宽；仅这些情况回退到可往返的 HTML。 */
-export const DocumentTable = Table.extend({
+export function createDocumentTable(preserveLayout: boolean) { return Table.extend({
   renderMarkdown(node, helpers) {
     const rows = node.content ?? []
     const rich = rows.some(row => row.content?.some(cell =>
       Number(cell.attrs?.colspan ?? 1) > 1 || Number(cell.attrs?.rowspan ?? 1) > 1 || cell.attrs?.colwidth,
     ))
-    if (!rich) return renderTableToMarkdown(node, helpers)
+    if (!preserveLayout || !rich) return renderTableToMarkdown(node, helpers)
     return `<table>${rows.map(row => `<tr>${(row.content ?? []).map(cell => {
       const tag = cell.type === 'tableHeader' ? 'th' : 'td'
       const colspan = Math.max(1, Number(cell.attrs?.colspan) || 1)
@@ -23,7 +23,7 @@ export const DocumentTable = Table.extend({
       return `<${tag} colspan="${colspan}" rowspan="${rowspan}"${widths ? ` colwidth="${widths}"` : ''}>${marked.parse(renderChildren(cell, helpers), {async:false}).trim()}</${tag}>`
     }).join('')}</tr>`).join('')}</table>`
   },
-})
+}) }
 
 function renderChildren(
   node: JSONContent,
@@ -63,7 +63,7 @@ export const Column = Node.create({
   renderMarkdown(node, helpers) { return renderChildren(node, helpers) },
 })
 
-export const Columns = Node.create({
+export function createColumns(preserveLayout: boolean) { return Node.create({
   name: 'columns',
   group: 'block',
   content: 'column{2,3}',
@@ -77,11 +77,12 @@ export const Columns = Node.create({
   addNodeView() { return VueNodeViewRenderer(ColumnsNodeView) },
   renderMarkdown(node, helpers) {
     const columns = node.content ?? []
+    if (!preserveLayout) return columns.map(column => renderChildren(column, helpers)).join('\n\n---\n\n')
     return `<div data-columns="${columns.length}">${columns.map(column => `<section data-column="">${marked.parse(renderChildren(column, helpers), { async: false }).trim()}</section>`).join('')}</div>`
   },
-})
+}) }
 
-function cardNode(name: 'fileCard' | 'mediaCard' | 'linkCard' | 'drawingCard') {
+function cardNode(name: 'fileCard' | 'mediaCard' | 'linkCard' | 'drawingCard', preserveLayout: boolean) {
   return Node.create({
     name,
     group: 'block',
@@ -102,6 +103,7 @@ function cardNode(name: 'fileCard' | 'mediaCard' | 'linkCard' | 'drawingCard') {
       const attrs = node.attrs ?? {}
       const title = String(attrs.title || attrs.name || (name === 'drawingCard' ? '画板' : '链接'))
       const url = String(attrs.url || (attrs.id ? `/files/${attrs.id}` : '#'))
+      if (!preserveLayout) return `[${title}](${url})`
       {
         const escape = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         const attributes = ['id','name','size','mime','title','snapshot','url'].map(key => `${key}="${escape(attrs[key])}"`).join(' ')
@@ -112,10 +114,9 @@ function cardNode(name: 'fileCard' | 'mediaCard' | 'linkCard' | 'drawingCard') {
   })
 }
 
-export const FileCard = cardNode('fileCard')
-export const MediaCard = cardNode('mediaCard')
-export const LinkCard = cardNode('linkCard')
-export const DrawingCard = cardNode('drawingCard')
+export function createResourceCards(preserveLayout: boolean) {
+  return (['fileCard', 'mediaCard', 'linkCard', 'drawingCard'] as const).map(name => cardNode(name, preserveLayout))
+}
 
 export const MermaidBlock = Node.create({
   name: 'mermaid',

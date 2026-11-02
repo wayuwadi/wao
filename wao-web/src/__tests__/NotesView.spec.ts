@@ -1814,6 +1814,25 @@ describe('小记集中记录空间', () => {
     expect(wrapper.emitted('saved')).toEqual([['real-editor']])
     wrapper.unmount()
   })
+  it('恢复旧版分栏草稿后直接重试保存，正文投影无原始 HTML 且 JSON 保留三栏', async () => {
+    const richDocument = {type:'doc',content:[{type:'columns',content:['左','中','右'].map(text=>({type:'column',content:[{type:'paragraph',content:[{type:'text',text}]}]}))}]}
+    const markdown = '<div data-columns="3"><section data-column><p>左</p></section><section data-column><p>中</p></section><section data-column><p>右</p></section></div>'
+    localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({id:'columns-retry',text:markdown,content:{version:1,document:richDocument,markdown}}))
+    const add = vi.spyOn(useDataStore(), 'addNote').mockImplementation(async (_text,_title,_id,content) => {
+      expect(content?.markdown).not.toMatch(/<\s*\/?\s*[a-z][^>]*>/i)
+      expect(content?.document?.content?.[0]?.content).toHaveLength(3)
+      return 'columns-retry'
+    })
+    const wrapper = mount(NoteComposer, {attachTo:document.body})
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.findAll('.editor-columns section')).toHaveLength(3))
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(add).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('saved')).toEqual([['columns-retry']])
+    wrapper.unmount()
+  })
   it('小记润色确认后进入富文本草稿，保存并重新编辑仍保留结果', async () => {
     const source = '这句话写得不是特别顺。'
     localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({ id: 'polish-note', text: source }))

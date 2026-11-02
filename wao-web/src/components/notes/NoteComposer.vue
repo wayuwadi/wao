@@ -37,7 +37,7 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; renameImageAt?: (index: number, event: MouseEvent) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
+const noteEditor = ref<{ currentContent?: () => RichDocContent | null; focusImageReference?: (index: number) => boolean; renameImageAt?: (index: number, event: MouseEvent) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
 const excerptDialog = ref<InstanceType<typeof BookExcerptDialog>>()
 const excerptOpen = ref(false)
 function insertExcerpt(text: string, source: string, reflection: string) {
@@ -466,6 +466,8 @@ async function createWithAvailableId<T>(request: (docId: string) => Promise<T>):
 }
 
 async function save(explicit = false) {
+  const current = noteEditor.value?.currentContent?.()
+  if (current) { content.value = current; text.value = current.markdown }
   draftWriter.flush()
   if (!canSave.value) return
   if (!props.note && !companionMessageId.value && identitySelection.value.mode === 'explicit' && (!identitySelection.value.subjectId || !identitySelection.value.versionId)) { error.value = '请选择成员与已确认的形象版本'; return }
