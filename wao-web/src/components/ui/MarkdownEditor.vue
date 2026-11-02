@@ -71,7 +71,8 @@ import SelectionImageAction from './SelectionImageAction.vue'
 import ImageCopyMenu from './ImageCopyMenu.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
-import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
+import { copyText } from '@/utils/clipboard'
+import { Callout, Column, Columns, DocumentTable, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
 import { IndentableBulletList, IndentableOrderedList, IndentableTaskList, ListIndentAttributes } from './listIndentExtensions'
 import { LIST_TYPES, listIndent } from '@/utils/listIndent'
 
@@ -822,7 +823,8 @@ const editor = useEditor({
     Color,
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    TableKit.configure({ table: { resizable: true } }),
+    TableKit.configure({ table: false }),
+    DocumentTable.configure({ resizable: true }),
     HighlightedCodeBlock.configure({ lowlight: codeLowlight, enableTabIndentation: true, tabSize: 2 }),
     Mathematics.configure({ katexOptions: { throwOnError: false, strict: 'warn' } }),
     Details.configure({ persist: false }),
@@ -1349,6 +1351,8 @@ interface MenuContext {
 }
 
 interface LinkDialog {
+  x: number
+  y: number
   from: number
   to: number
   name: string
@@ -1443,14 +1447,17 @@ function closeImageToolbar() {
   editor.value?.commands.blur()
 }
 
-function openLinkEditor() {
+async function openLinkEditor() {
   const e = editor.value
-  if (!e) return
+  if (!e || props.readonly) return
   if (e.isActive('link')) e.commands.extendMarkRange('link')
   const { from, to } = e.state.selection
-  if (from === to || !e.state.doc.resolve(from).sameParent(e.state.doc.resolve(to))) return
+  if (!e.state.doc.resolve(from).sameParent(e.state.doc.resolve(to))) return
   const attrs = e.getAttributes('link')
+  const anchor = e.view.coordsAtPos(from)
   linkDialog.value = {
+    x: Math.max(8, Math.min(anchor.left, window.innerWidth - 376)),
+    y: Math.max(8, Math.min(anchor.bottom + 8, window.innerHeight - 310)),
     from,
     to,
     name: e.state.doc.textBetween(from, to, ''),
@@ -1463,12 +1470,14 @@ function openLinkEditor() {
     error: '',
   }
   e.commands.blur()
+  await nextTick()
+  shell.value?.querySelector<HTMLInputElement>('.link-editor-popover input')?.focus()
 }
 
 function saveLink() {
   const e = editor.value
   const dialog = linkDialog.value
-  if (!e || !dialog) return
+  if (!e || !dialog || props.readonly) return
   const name = dialog.name.trim()
   const href = normalizedLinkUrl(dialog.url)
   if (!name) {
@@ -1512,6 +1521,11 @@ function removeActiveLink() {
   linkDialog.value = null
 }
 
+function dismissLinkEditor(event: Event) {
+  if (event.target instanceof Element && event.target.closest('.link-editor-popover')) return
+  linkDialog.value = null
+}
+
 function openActiveLink() {
   const href = editor.value?.getAttributes('link').href
   const safeHref = typeof href === 'string' ? normalizedLinkUrl(href) : null
@@ -1540,7 +1554,8 @@ function onEditorContentClick(event: MouseEvent) {
   } catch {
     // 即使第三方节点视图无法反查位置，打开链接仍是确定且安全的用户动作。
   }
-  window.open(href, '_blank', 'noopener,noreferrer')
+  if (event.ctrlKey || event.metaKey || (!props.linkControls && !props.advanced)) window.open(href, '_blank', 'noopener,noreferrer')
+  else e.commands.focus(undefined, { scrollIntoView: false })
 }
 
 function setImageScale(percent: 25 | 50 | 75 | 100) {
@@ -2002,6 +2017,7 @@ function onEditorKeydown(event: KeyboardEvent) {
     imageMenuRequested.value = true
   }
   if (event.key === 'Escape') {
+    linkDialog.value = null
     closeTableMenu()
     hideSelectionMenu()
     slashOpen.value = false
@@ -2025,7 +2041,7 @@ function onEditorKeydown(event: KeyboardEvent) {
     helpOpen.value = !helpOpen.value
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && props.linkControls) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && (props.linkControls || props.advanced)) {
     event.preventDefault()
     openLinkEditor()
     return
@@ -2133,6 +2149,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', dismissSlashMenu, true)
   document.addEventListener('scroll', dismissSlashMenu, true)
   window.addEventListener('resize', dismissSlashMenu)
+  document.addEventListener('pointerdown', dismissLinkEditor, true)
   document.addEventListener('pointerdown', dismissTableMenu, true)
   document.addEventListener('scroll', dismissTableMenu, true)
   window.addEventListener('resize', dismissTableMenu)
@@ -2392,6 +2409,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', dismissSlashMenu, true)
   document.removeEventListener('scroll', dismissSlashMenu, true)
   window.removeEventListener('resize', dismissSlashMenu)
+  document.removeEventListener('pointerdown', dismissLinkEditor, true)
   document.removeEventListener('pointerdown', dismissTableMenu, true)
   document.removeEventListener('scroll', dismissTableMenu, true)
   window.removeEventListener('resize', dismissTableMenu)
@@ -2515,14 +2533,15 @@ onBeforeUnmount(() => {
           :should-show="shouldShowSelection"
           :options="{ strategy: 'fixed', placement: 'top', offset: 8, flip: true, shift: { padding: 8 } }"
         >
-          <div ref="selectionMenuEl" class="selection-menu" role="toolbar" :aria-label="multipleCells(editor) ? '选中单元格操作' : '选中文字操作'" @keydown.esc="hideSelectionMenu(); editor.commands.focus()">
-            <button type="button" title="添加到待办" aria-label="添加到待办" v-if="selectionActionsEnabled && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
-            <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="selectionActionsEnabled && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
-            <button type="button" class="selection-generate" title="根据选中文字生图" aria-label="生图" v-if="selectionImage && selectedText" @mousedown.prevent @click="startSelectionImage"><i class="ri-image-add-line" aria-hidden="true"></i><span>生图</span></button>
+          <div ref="selectionMenuEl" class="selection-menu" :class="{ 'link-actions': linkSelectionActive }" role="toolbar" :aria-label="multipleCells(editor) ? '选中单元格操作' : '选中文字操作'" @keydown.esc="hideSelectionMenu(); editor.commands.focus()">
+            <button type="button" title="添加到待办" aria-label="添加到待办" v-if="selectionActionsEnabled && selectedText && !linkSelectionActive" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
+            <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="selectionActionsEnabled && selectedText && !linkSelectionActive" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
+            <button type="button" class="selection-generate" title="根据选中文字生图" aria-label="生图" v-if="selectionImage && selectedText && !linkSelectionActive" @mousedown.prevent @click="startSelectionImage"><i class="ri-image-add-line" aria-hidden="true"></i><span>生图</span></button>
             <button v-if="selectionCanLink" type="button" :title="linkSelectionActive ? '编辑链接' : '添加链接'" :aria-label="linkSelectionActive ? '编辑链接' : '添加链接'" @mousedown.prevent @click="openLinkEditor"><i class="ri-link" aria-hidden="true"></i></button>
             <button type="button" title="在新窗口打开链接" aria-label="在新窗口打开链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="openActiveLink"><i class="ri-external-link-line" aria-hidden="true"></i></button>
+            <button v-if="selectionCanLink && linkSelectionActive" type="button" aria-label="复制链接" title="复制链接" @mousedown.prevent @click="copyText(editor.getAttributes('link').href)"><i class="ri-file-copy-line" /></button>
             <button type="button" title="移除链接" aria-label="移除链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="removeActiveLink"><i class="ri-link-unlink-m" aria-hidden="true"></i></button>
-            <template v-if="advanced && selectedText"><span class="selection-divider" aria-hidden="true"></span>
+            <template v-if="advanced && selectedText && !linkSelectionActive"><span class="selection-divider" aria-hidden="true"></span>
             <button type="button" title="粗体" aria-label="粗体" :aria-pressed="editor.isActive('bold')" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold" aria-hidden="true"></i></button>
             <button type="button" title="斜体" aria-label="斜体" :aria-pressed="editor.isActive('italic')" @mousedown.prevent @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic" aria-hidden="true"></i></button>
             <button type="button" title="下划线" aria-label="下划线" :aria-pressed="editor.isActive('underline')" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline" aria-hidden="true"></i></button>
@@ -2538,6 +2557,14 @@ onBeforeUnmount(() => {
           </div>
         </BubbleMenu>
       </div>
+      <BubbleMenu v-if="editor && advanced" :editor="editor" plugin-key="documentTableMenu" :append-to="selectionMenuParent" :should-show="() => !!editor && editor.isFocused && !readonly && editor.state.selection.empty && editor.isActive('table') && !multipleCells(editor) && !tableMenu && !linkDialog" :options="{ strategy: 'fixed', placement: 'top', offset: 12, flip: true, shift: { padding: 8 } }">
+        <div class="editor-table-toolbar" role="toolbar" aria-label="表格快捷操作" :style="{ zIndex: menuZIndex }">
+          <button type="button" aria-label="单元格加粗" :aria-pressed="editor.isActive('bold')" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold" /></button>
+          <button type="button" aria-label="单元格居中" @mousedown.prevent @click="editor.chain().focus().setTextAlign('center').run()"><i class="ri-align-center" /></button>
+          <button v-for="action in tableActions.filter(a => ['addRowAfter','addColumnAfter','toggleHeaderRow','mergeCells','splitCell'].includes(a.command))" :key="action.command" type="button" :aria-label="action.label" :title="action.label" :disabled="!editor.can()[action.command]()" @mousedown.prevent @click="runTableAction(action.command)"><i :class="action.icon" /></button>
+          <span>Tab 切换单元格</span>
+        </div>
+      </BubbleMenu>
       <div v-if="editor && imageControls && !imageContextControls" class="bubble-menu-anchor">
         <BubbleMenu
           :editor="editor"
@@ -2691,12 +2718,12 @@ onBeforeUnmount(() => {
       <img :src="previewImage.src" :alt="previewImage.alt" />
       <NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" />
     </div>
-    <div v-if="linkDialog" class="link-dialog-mask" @click.self="linkDialog = null">
-      <form class="link-dialog" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title" @submit.prevent="saveLink">
+    <div v-if="linkDialog" class="link-editor-popover" :style="{ left: `${linkDialog.x}px`, top: `${linkDialog.y}px`, zIndex: menuZIndex + 1 }" @keydown.esc.stop.prevent="linkDialog = null; editor?.commands.focus()">
+      <form class="link-dialog" role="dialog" aria-labelledby="link-dialog-title" @submit.prevent="saveLink">
         <header>
           <div>
             <small>文档超链接</small>
-            <h2 id="link-dialog-title">维护链接名称与地址</h2>
+            <h2 id="link-dialog-title">编辑链接</h2>
           </div>
           <button type="button" aria-label="关闭链接编辑" @click="linkDialog = null"><i class="ri-close-line"></i></button>
         </header>
@@ -3748,8 +3775,8 @@ onBeforeUnmount(() => {
 }
 .md-body :deep(aside[data-callout]) { margin: 12px 0; padding: 10px 13px; border-left: 4px solid var(--wao-primary); border-radius: 8px; background: var(--wao-primary-soft); }
 .md-body :deep(aside[data-callout='success']) { border-color:var(--wao-success); background:var(--wao-success-bg); }.md-body :deep(aside[data-callout='warning']) { border-color:var(--wao-warning); background:var(--wao-warning-bg); }.md-body :deep(aside[data-callout='danger']) { border-color:var(--wao-danger); background:var(--wao-danger-bg); }
-.md-body :deep(div[data-columns]) { display:grid; grid-template-columns:repeat(var(--columns, 2),minmax(0,1fr)); gap:14px; margin:12px 0; }
-.md-body :deep(div[data-columns='2']) { grid-template-columns:repeat(2,minmax(0,1fr)); }.md-body :deep(div[data-columns='3']) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.md-body :deep(div[data-columns]:not(.editor-columns)) { display:grid; grid-template-columns:repeat(var(--columns, 2),minmax(0,1fr)); gap:14px; margin:12px 0; }
+.md-body :deep(div[data-columns='2']:not(.editor-columns)) { grid-template-columns:repeat(2,minmax(0,1fr)); }.md-body :deep(div[data-columns='3']:not(.editor-columns)) { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .md-body :deep(section[data-column]) { min-width:0; padding:10px; border:1px dashed var(--wao-line-control); border-radius:8px; }
 .md-body :deep(.tableWrapper) { overflow-x:auto; margin:12px 0; }.md-body :deep(table) { border-collapse:collapse; width:100%; min-width:440px; }.md-body :deep(th),.md-body :deep(td) { min-width:90px; padding:7px 9px; border:1px solid var(--wao-line-control); vertical-align:top; }.md-body :deep(th) { background:var(--wao-bg-sub); }
 .md-body :deep(details) { margin:12px 0; padding:8px 11px; border:1px solid var(--wao-line-control); border-radius:9px; }.md-body :deep(summary) { cursor:pointer; font-weight:650; }
@@ -3757,11 +3784,29 @@ onBeforeUnmount(() => {
   .advanced-toolbar { top: 0; border-radius: 8px; }
   .find-panel { flex-wrap: wrap; top: 43px; }
   .find-panel span { white-space: normal; overflow-wrap: anywhere; }
-  .md-body :deep(div[data-columns]) { grid-template-columns:1fr !important; }
+  .md-body :deep(div[data-columns]:not(.editor-columns)) { grid-template-columns:1fr !important; }
   .shortcut-grid { grid-template-columns:1fr; }
 }
 </style>
 
 <style scoped>
 .md-body :deep(.image-reference-caret){display:inline-grid;place-items:center;width:20px;min-height:30px;padding:0;border:0;background:transparent;color:var(--wao-text-faint);opacity:.35;cursor:text;vertical-align:middle}.md-body :deep(.reading-image-node:hover .image-reference-caret),.md-body :deep(.image-reference-caret:focus-visible){opacity:1;color:var(--wao-primary-text)}.md-body :deep(.reading-image-node.ProseMirror-selectednode){outline:2px solid var(--wao-primary);outline-offset:2px;border-radius:7px}.image-lightbox img{max-height:calc(100dvh - 150px)}
+</style>
+
+<style scoped>
+.link-editor-popover { position:fixed; width:min(368px,calc(100vw - 16px)); }
+.link-editor-popover .link-dialog { width:100%; box-sizing:border-box; padding:var(--wao-space-2); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); box-shadow:var(--wao-shadow-pop); }
+.link-editor-popover .link-dialog h2 { font-size:var(--wao-font-section); }
+.selection-menu.link-actions,.editor-table-toolbar { background:var(--wao-bg-card); color:var(--wao-text); border:1px solid var(--wao-line-control); box-shadow:var(--wao-shadow-pop); border-radius:var(--wao-radius-control); }
+.selection-menu.link-actions button:hover { background:var(--wao-bg-hover); }
+.editor-table-toolbar { display:flex; align-items:center; gap:4px; padding:4px; max-width:calc(100vw - 24px); overflow-x:auto; }
+.editor-table-toolbar button { flex-shrink:0; min-width:32px; min-height:36px; border:0; border-radius:var(--wao-radius-control); color:inherit; background:transparent; cursor:pointer; }
+.editor-table-toolbar button:hover { background:var(--wao-bg-hover); }
+.editor-table-toolbar button:disabled { opacity:.4; cursor:default; }
+.editor-table-toolbar span { color:var(--wao-text-3); font-size:var(--wao-font-caption); white-space:nowrap; padding-inline:var(--wao-space-1); }
+.md-body :deep(table) { color:var(--wao-text); }
+.md-body :deep(td),.md-body :deep(th) { position:relative; padding:var(--wao-space-1); border-color:var(--wao-line); }
+.md-body :deep(td p),.md-body :deep(th p) { margin:0; min-height:1.5em; }
+.md-body :deep(.selectedCell) { background:var(--wao-primary-soft); }
+.md-body :deep(.column-resize-handle) { background:var(--wao-primary); }
 </style>

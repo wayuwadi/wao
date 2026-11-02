@@ -1,7 +1,29 @@
+import { normalizedLinkUrl } from '@/utils/contentLinks'
+import { marked } from 'marked'
+import ColumnsNodeView from './ColumnsNodeView.vue'
 import { Node, mergeAttributes, type JSONContent } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import RichCardNodeView from './RichCardNodeView.vue'
 import MermaidNodeView from './MermaidNodeView.vue'
+import { Table, renderTableToMarkdown } from '@tiptap/extension-table'
+
+/** GFM 表格无法表示合并和列宽；仅这些情况回退到可往返的 HTML。 */
+export const DocumentTable = Table.extend({
+  renderMarkdown(node, helpers) {
+    const rows = node.content ?? []
+    const rich = rows.some(row => row.content?.some(cell =>
+      Number(cell.attrs?.colspan ?? 1) > 1 || Number(cell.attrs?.rowspan ?? 1) > 1 || cell.attrs?.colwidth,
+    ))
+    if (!rich) return renderTableToMarkdown(node, helpers)
+    return `<table>${rows.map(row => `<tr>${(row.content ?? []).map(cell => {
+      const tag = cell.type === 'tableHeader' ? 'th' : 'td'
+      const colspan = Math.max(1, Number(cell.attrs?.colspan) || 1)
+      const rowspan = Math.max(1, Number(cell.attrs?.rowspan) || 1)
+      const widths = Array.isArray(cell.attrs?.colwidth) ? cell.attrs.colwidth.map(Number).filter(Number.isFinite).join(',') : ''
+      return `<${tag} colspan="${colspan}" rowspan="${rowspan}"${widths ? ` colwidth="${widths}"` : ''}>${marked.parse(renderChildren(cell, helpers), {async:false}).trim()}</${tag}>`
+    }).join('')}</tr>`).join('')}</table>`
+  },
+})
 
 function renderChildren(
   node: JSONContent,
@@ -52,8 +74,10 @@ export const Columns = Node.create({
   renderHTML({ node, HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-columns': String(node.childCount) }), 0]
   },
+  addNodeView() { return VueNodeViewRenderer(ColumnsNodeView) },
   renderMarkdown(node, helpers) {
-    return (node.content ?? []).map((child) => renderChildren(child, helpers)).join('\n\n---\n\n')
+    const columns = node.content ?? []
+    return `<div data-columns="${columns.length}">${columns.map(column => `<section data-column="">${marked.parse(renderChildren(column, helpers), { async: false }).trim()}</section>`).join('')}</div>`
   },
 })
 
@@ -78,8 +102,11 @@ function cardNode(name: 'fileCard' | 'mediaCard' | 'linkCard' | 'drawingCard') {
       const attrs = node.attrs ?? {}
       const title = String(attrs.title || attrs.name || (name === 'drawingCard' ? '画板' : '链接'))
       const url = String(attrs.url || (attrs.id ? `/files/${attrs.id}` : '#'))
-      if (name === 'drawingCard' && attrs.snapshot) return `![${title}](${attrs.snapshot})\n\n[打开画板](${url})`
-      return `[${title}](${url})`
+      {
+        const escape = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const attributes = ['id','name','size','mime','title','snapshot','url'].map(key => `${key}="${escape(attrs[key])}"`).join(' ')
+        return `<div data-rich-card="${name}" ${attributes}><a href="${escape(normalizedLinkUrl(url) || '#')}">${escape(title)}</a></div>`
+      }
     },
     addNodeView() { return VueNodeViewRenderer(RichCardNodeView) },
   })

@@ -1567,6 +1567,8 @@ describe('MarkdownEditor（所见即所得）', () => {
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toContain('noopener')
     await link.trigger('click')
+    expect(open).not.toHaveBeenCalled()
+    await link.trigger('click', { ctrlKey: true })
 
     expect(open).toHaveBeenCalledWith('https://wao.wayuwa.cn', '_blank', 'noopener,noreferrer')
     open.mockRestore()
@@ -1588,7 +1590,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     const markdown = instance.editor.getMarkdown()
     const saved = instance.editor.getJSON()
     expect(markdown).toBe(`[聊天](${href})`)
-    await w.get('.md-body a').trigger('click')
+    await w.get('.md-body a').trigger('click', { ctrlKey: true })
     expect(open).toHaveBeenCalledTimes(1)
     expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer')
     w.unmount()
@@ -2026,7 +2028,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     instance.editor.commands.setTextSelection({ from: 1, to: 8 })
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 300))
-    expect(w.findAllComponents(BubbleMenu)).toHaveLength(1)
+    expect(w.findAllComponents(BubbleMenu).filter(menu => menu.props('pluginKey') === 'documentSelectionMenu')).toHaveLength(1)
     expect(w.findAllComponents(BubbleMenu)[0]!.props('pluginKey')).toBe('documentSelectionMenu')
     expect(document.querySelector('[aria-label="添加到待办"]')).not.toBeNull()
     expect(document.querySelector('[aria-label="润色选中文字"]')).not.toBeNull()
@@ -2550,7 +2552,7 @@ describe('任务编辑器的路径和真实 URL', () => {
     e.view.pasteText(url, new Event('paste') as ClipboardEvent)
     await nextTick()
     expect(w.get('.tiptap a').attributes('href')).toBe(url)
-    await w.get('.tiptap a').trigger('click')
+    await w.get('.tiptap a').trigger('click', { ctrlKey: true })
     expect(open).toHaveBeenCalledExactlyOnceWith(url, '_blank', 'noopener,noreferrer')
     const markdown = e.getMarkdown()
     w.unmount()
@@ -2558,5 +2560,63 @@ describe('任务编辑器的路径和真实 URL', () => {
     expect(restored.get('.tiptap a').attributes('href')).toBe(url)
     restored.unmount()
     open.mockRestore()
+  })
+})
+
+describe('统一编辑器分栏与链接', () => {
+  it('合并单元格和列宽在任务 Markdown 重开后保留', async () => {
+    const w = await mountEditor({modelValue:'<table><tr><th colspan="2" colwidth="160,200"><p>合并标题</p></th></tr><tr><td><p>甲</p></td><td><p>乙</p></td></tr></table>',advanced:true})
+    const e = (w.vm as unknown as {editor:Editor}).editor
+    const markdown = e.getMarkdown()
+    w.unmount()
+    const reopened = await mountEditor({modelValue:markdown,advanced:true})
+    const restored = (reopened.vm as unknown as {editor:Editor}).editor
+    const doc = restored.getJSON() as import('@tiptap/core').JSONContent
+    expect(doc.content![0]!.content![0]!.content![0]).toMatchObject({type:'tableHeader',attrs:{colspan:2,colwidth:[160,200]}})
+    expect(restored.getText()).toContain('合并标题')
+    reopened.unmount()
+  })
+  it('画板通过任务 Markdown 保存重开后仍保留编辑入口和快照', async () => {
+    const attrs = { id:'drawing-demo', title:'示例 & 画板', snapshot:'/api/images/demo/raw', url:'/drawings?drawing=drawing-demo' }
+    const w = await mountEditor({modelValue:'',document:{type:'doc',content:[{type:'drawingCard',attrs}]},advanced:true})
+    const e = (w.vm as unknown as {editor:Editor}).editor
+    const markdown = e.getMarkdown()
+    w.unmount()
+    const reopened = await mountEditor({modelValue:markdown,advanced:true})
+    const restored = (reopened.vm as unknown as {editor:Editor}).editor
+    expect(restored.getJSON().content![0]).toMatchObject({type:'drawingCard',attrs})
+    expect(reopened.text()).toContain('编辑画板')
+    reopened.unmount()
+  })
+  it('两栏点击加号变三栏，保留内容、可撤销且 Markdown 重开不丢布局', async () => {
+    const document: RichDocNode = { type:'doc', content:[{type:'columns',content:['左边','右边'].map(text=>({type:'column',content:[{type:'paragraph',content:[{type:'text',text}]}]}))}] }
+    const w = await mountEditor({modelValue:'',document,advanced:true})
+    const e = (w.vm as unknown as {editor:Editor}).editor
+    await w.get('[aria-label="添加第三栏"]').trigger('click')
+    expect(e.getJSON().content![0]!.content).toHaveLength(3)
+    expect(e.state.doc.textContent).toBe('左边右边')
+    expect(w.find('[aria-label="添加第三栏"]').exists()).toBe(false)
+    const serialized = e.getMarkdown()
+    expect(serialized).toContain('data-columns="3"')
+    e.commands.undo(); expect(e.getJSON().content![0]!.content).toHaveLength(2)
+    w.unmount()
+    const reopened = await mountEditor({modelValue:serialized,advanced:true})
+    const restored = (reopened.vm as unknown as {editor:Editor}).editor
+    expect(restored.getJSON().content![0]!.type).toBe('columns')
+    expect(restored.getJSON().content![0]!.content).toHaveLength(3)
+    expect(restored.state.doc.textContent).toBe('左边右边')
+    reopened.unmount()
+  })
+  it('没有选中文字也能用快捷键插入链接，裸域名自动补全并可修改文字', async () => {
+    const w = await mountEditor({modelValue:'',advanced:true,linkControls:true})
+    const e = (w.vm as unknown as {editor:Editor}).editor
+    await w.get('.md-body').trigger('keydown',{key:'k',ctrlKey:true})
+    await nextTick()
+    expect(w.find('.link-editor-popover').exists()).toBe(true)
+    await w.findAll('.link-dialog input')[0]!.setValue('百度的链接')
+    await w.findAll('.link-dialog input')[1]!.setValue('www.baidu.com')
+    await w.get('.link-dialog').trigger('submit')
+    expect(e.getMarkdown()).toBe('[百度的链接](https://www.baidu.com)')
+    w.unmount()
   })
 })

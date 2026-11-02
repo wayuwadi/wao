@@ -1,9 +1,25 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/vue-3'
 import { fetchDrawing } from '@/api/drawings'
+import SettingsDialogShell from './SettingsDialogShell.vue'
+import WaoButton from './WaoButton.vue'
 import { apiUploadImage } from '@/api/board'
 
+const DrawingsView = defineAsyncComponent(() => import('@/views/DrawingsView.vue'))
+const editing = ref(false), closing = ref(false), closeError = ref('')
+const canvasView = ref<{ flush: () => Promise<void> }>()
+async function finishDrawing() {
+  if (closing.value) return
+  closing.value = true; closeError.value = ''
+  try {
+    if (!canvasView.value) throw new Error('画板仍在加载，请稍后重试')
+    await canvasView.value.flush()
+    await refreshDrawingSnapshot()
+    editing.value = false
+  } catch (cause) { closeError.value = cause instanceof Error ? cause.message : '保存失败，画板已保留' }
+  finally { closing.value = false }
+}
 const props = defineProps<NodeViewProps>()
 const attrs = computed(() => props.node.attrs)
 const kind = computed(() => props.node.type.name)
@@ -27,11 +43,11 @@ async function refreshDrawingSnapshot() {
   refreshError.value = ''
   try {
     const drawing = await fetchDrawing(String(attrs.value.id))
-    const scene = JSON.parse(drawing.sceneJson) as { elements?: unknown[]; viewBackgroundColor?: string; files?: Record<string, unknown> }
+    const scene = JSON.parse(drawing.sceneJson) as { elements?: unknown[]; appState?: Record<string, unknown>; viewBackgroundColor?: string; files?: Record<string, unknown> }
     const { exportToBlob } = await import('@excalidraw/excalidraw')
     const blob = await exportToBlob({
       elements: (scene.elements ?? []) as never,
-      appState: { viewBackgroundColor: scene.viewBackgroundColor ?? '#ffffff', exportBackground: true } as never,
+      appState: { ...scene.appState, viewBackgroundColor: scene.viewBackgroundColor ?? scene.appState?.viewBackgroundColor ?? '#ffffff', exportBackground: true } as never,
       files: (scene.files ?? {}) as never,
       mimeType: 'image/png',
     })
@@ -52,10 +68,15 @@ async function refreshDrawingSnapshot() {
       <i :class="icon"></i>
       <div><b>{{ label }}</b><small>{{ attrs.size || attrs.mime || href }}</small></div>
       <button v-if="kind === 'drawingCard' && props.editor.isEditable" type="button" :disabled="refreshing" @click="refreshDrawingSnapshot">{{ refreshing ? '刷新中…' : '刷新快照' }}</button>
+      <button v-if="kind === 'drawingCard' && props.editor.isEditable" type="button" @click="editing = true">编辑画板</button>
       <a :href="href" target="_blank" rel="noopener noreferrer">{{ kind === 'drawingCard' ? '打开画板' : props.editor.isEditable ? '打开' : '确认下载' }}</a>
     </div>
     <audio v-if="props.editor.isEditable && kind === 'mediaCard' && attrs.mime?.startsWith('audio/')" :src="href" controls preload="metadata"></audio>
     <video v-else-if="props.editor.isEditable && kind === 'mediaCard' && attrs.mime?.startsWith('video/')" :src="href" controls preload="metadata"></video>
+    <SettingsDialogShell v-if="editing" :title="String(label)" description="在正文中编辑画板，完成后保存并更新预览" width="1400px" height="calc(100dvh - 32px)" :close-disabled="closing" @close="finishDrawing">
+      <DrawingsView ref="canvasView" :drawing-id="String(attrs.id)" embedded />
+      <template #footer><span v-if="closeError" role="alert">{{ closeError }}</span><WaoButton :loading="closing" @click="finishDrawing">完成并返回正文</WaoButton></template>
+    </SettingsDialogShell>
     <small v-if="refreshError" class="snapshot-error">{{ refreshError }}</small>
   </NodeViewWrapper>
 </template>

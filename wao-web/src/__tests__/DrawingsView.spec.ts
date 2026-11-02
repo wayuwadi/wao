@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import DrawingsView from '@/views/DrawingsView.vue'
+import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
@@ -46,6 +47,21 @@ function drawing(patch: Partial<DrawingFile> = {}): DrawingFile {
 }
 
 describe('个人草图优化', () => {
+  it('内嵌画板退出前等待保存，失败保留草稿供重试', async () => {
+    vi.mocked(fetchDrawing).mockResolvedValue(drawing())
+    const wrapper = mount(DrawingsView, { props: { drawingId:'dr1', embedded:true } })
+    await flushPromises()
+    const canvas = wrapper.findComponent(DrawingCanvas)
+    canvas.vm.$emit('change', '{"type":"excalidraw","elements":[{"id":"new"}],"appState":{}}')
+    vi.mocked(saveDrawing).mockRejectedValueOnce(new Error('网络不可用'))
+    const view = wrapper.vm as unknown as {flush:()=>Promise<void>}
+    await expect(view.flush()).rejects.toThrow()
+    expect(wrapper.text()).toContain('重试保存')
+    vi.mocked(saveDrawing).mockResolvedValueOnce(drawing({revision:6}))
+    await expect(view.flush()).resolves.toBeUndefined()
+    expect(saveDrawing).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     window.history.replaceState({}, '', '/drawings?drawing=dr1')
