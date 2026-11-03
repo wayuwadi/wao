@@ -639,7 +639,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save(true)" @keydown.meta.enter.prevent="save(true)">
       <NoteTagContextMenu ref="tagMenu" :choices="choices" :disabled="saving || creatingTag" @saving-change="tagManaging = $event" />
       <div class="composer-editor-layout"><div class="composer-editor-main">
-      <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES" :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images note-media-copy
+      <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images note-media-copy
         :image-references="contained || imageMode === 'references'" :active-image-reference="activeImage" @image-reference="locateDraftImage"
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false" :article-image-upload="false"

@@ -93,7 +93,7 @@ async function add() {
 function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collapsed.value.filter(x=>x!==id):[...collapsed.value,id] }
 </script>
 <template>
- <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'matrix-workspace':layout==='quadrant' && selection!=='review'}">
+ <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'bounded-workspace':selection!=='review','matrix-workspace':layout==='quadrant' && selection!=='review'}">
   <nav v-show="!navigationCollapsed" id="todo-navigation" class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon"></i>{{ item.name }}</button>
    <div class="list-heading"><p>清单</p><button aria-label="新建清单" @click="editList()"><i class="ri-add-line" /></button></div>
@@ -128,7 +128,9 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
 .navigation-toggle {display:inline-flex;align-items:center;justify-content:center;min-width:var(--wao-control-height);min-height:var(--wao-control-height);color:var(--wao-text-3);}
 
 .list-heading,.list-entry { display:flex; align-items:center; gap:var(--wao-space-1); }
-.list-heading { justify-content:space-between; }
+.list-heading { justify-content:space-between; margin-top:var(--wao-space-2); padding-inline:var(--wao-space-1); min-height:var(--wao-control-height); }
+.task-navigation .list-heading p { margin:0; }
+.list-heading>button { display:inline-flex; align-items:center; justify-content:center; width:var(--wao-control-height); height:var(--wao-control-height); padding:0; }
 .list-entry>button:first-child { display:flex; align-items:center; gap:var(--wao-space-1); flex:1; min-width:0; text-align:left; }
 .list-entry>button:first-child span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .list-entry>button { min-height:38px; padding:var(--wao-space-1); }
@@ -155,10 +157,16 @@ input { min-width:0; color:var(--wao-text); background:var(--wao-bg-sub); font:i
 .quick-add input { border:0; background:transparent; flex:1; }
 .quick-add button { color:var(--wao-primary-text); }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
-.matrix-workspace { flex:1; width:100%; min-height:0; overflow:hidden; }
-.matrix-workspace .workspace-main { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
-.matrix-workspace .workspace-main>header,.matrix-workspace .quick-add { flex-shrink:0; }
-.matrix-workspace .task-navigation { min-height:0; max-height:none; }
+.bounded-workspace { flex:1; width:100%; min-height:0; overflow:hidden; }
+.bounded-workspace .workspace-main { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.bounded-workspace .workspace-main>header,.bounded-workspace .quick-add { flex-shrink:0; }
+.bounded-workspace .task-navigation { min-height:0; max-height:none; }
+.bounded-workspace :deep(.checklist-layout) { flex:1; min-height:0; overflow:hidden; align-items:stretch; grid-template-rows:minmax(0,1fr); }
+.bounded-workspace :deep(.checklist-tasks),.bounded-workspace :deep(.checklist-detail) { min-height:0; max-height:none; overflow:auto; overscroll-behavior:contain; }
+.bounded-workspace :deep(.checklist-detail) { position:static; }
+.bounded-workspace :deep(.checklist-divider) { min-height:0; }
+.bounded-workspace :deep(.checklist-layout.is-compact) { grid-template-rows:minmax(80px, 30%) minmax(0,1fr); }
+@media(max-width:760px) { .bounded-workspace :deep(.checklist-layout) { grid-template-rows:minmax(80px, 30%) minmax(0,1fr); } }
 @media(max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
-@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .matrix-workspace {display:flex;flex-direction:column;} .matrix-workspace .task-navigation {max-height:120px;flex-shrink:0;} .matrix-workspace .workspace-main {flex:1;}button {min-height:44px;} }
+@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .bounded-workspace {display:flex;flex-direction:column;} .bounded-workspace .task-navigation {max-height:120px;flex-shrink:0;} .bounded-workspace .workspace-main {flex:1;}button {min-height:44px;} }
 </style>

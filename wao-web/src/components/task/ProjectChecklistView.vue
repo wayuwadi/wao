@@ -498,7 +498,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         </div>
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <div ref="descriptionHost" :key="selected.id" class="checklist-description">
-          <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" @upload-file="uploadEditorFile" />
+          <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" @upload-file="uploadEditorFile" />
         </div>
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
           <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu.capture="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
