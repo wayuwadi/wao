@@ -1277,7 +1277,6 @@ async function uploadAttachment(event: Event) {
         <template #properties>
         <!-- 子任务属性：与任务属性栏同一位置、同一版式 -->
         <div v-if="openSub" class="props">
-          <div class="props-label">子任务属性</div>
           <div class="prop-row">
             <span class="prop-key">编号</span>
             <span class="prop-val wao-tabular">#{{ openSub.number ?? '…' }}</span>
@@ -1357,7 +1356,6 @@ async function uploadAttachment(event: Event) {
                 <!-- 属性栏 -->
         <div v-else class="props">
           <div v-if="menu && menu !== 'share'" class="menu-mask" @click="menu = null"></div>
-          <div class="props-label">属性</div>
 
           <div class="prop-row">
             <span class="prop-key">编号</span>
@@ -2830,7 +2828,6 @@ async function uploadAttachment(event: Event) {
 .comment:focus-within .c-op { opacity: 1; }
 .c-op:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .c-edit-input { color: var(--wao-text); background: var(--wao-bg-card); font-size: var(--wao-font-body); }
-.props > .props-label:first-child { display: none; }
 .props-label, .prop-key, .optional-props > summary { color: var(--wao-text-3); font-size: var(--wao-font-help, 13px); letter-spacing: normal; }
 .prop-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); justify-items: start; min-height: 40px; padding: 4px 0; }
 .prop-row > button, .prop-val { min-width: 0; max-width: 100%; }
