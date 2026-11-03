@@ -47,6 +47,20 @@ function drawing(patch: Partial<DrawingFile> = {}): DrawingFile {
 }
 
 describe('个人草图优化', () => {
+  it('内嵌个人画板支持改名，关闭前保存名称，失败不丢输入', async () => {
+    const wrapper = mount(DrawingsView, { props: { drawingId: 'dr1', embedded: true } })
+    await flushPromises()
+    await wrapper.get('.title-trigger').trigger('click')
+    await wrapper.get('[aria-label="草图名称"]').setValue('内嵌新名称')
+    vi.mocked(renameDrawing).mockRejectedValueOnce(new Error('名称保存失败'))
+    const view = wrapper.vm as unknown as { flush: () => Promise<void> }
+    await expect(view.flush()).rejects.toThrow('名称保存失败')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="草图名称"]').element.value).toBe('内嵌新名称')
+    vi.mocked(renameDrawing).mockResolvedValueOnce(drawing({ title: '内嵌新名称' }))
+    await expect(view.flush()).resolves.toBeUndefined()
+    expect(wrapper.get('.title-trigger').text()).toContain('内嵌新名称')
+    wrapper.unmount()
+  })
   it('内嵌画板退出前等待保存，失败保留草稿供重试', async () => {
     vi.mocked(fetchDrawing).mockResolvedValue(drawing())
     const wrapper = mount(DrawingsView, { props: { drawingId:'dr1', embedded:true } })

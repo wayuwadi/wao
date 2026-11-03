@@ -2586,7 +2586,7 @@ describe('统一编辑器分栏与链接', () => {
     const reopened = await mountEditor({modelValue:markdown,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     expect(restored.getJSON().content![0]).toMatchObject({type:'drawingCard',attrs})
-    expect(reopened.text()).toContain('编辑画板')
+    expect(reopened.find('.drawing-preview[role=button]').exists()).toBe(true)
     reopened.unmount()
   })
   it('两栏点击加号变三栏，保留内容、可撤销且 Markdown 重开不丢布局', async () => {
