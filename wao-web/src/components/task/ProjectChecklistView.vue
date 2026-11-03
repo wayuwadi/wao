@@ -444,6 +444,8 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (!task) return
   event.preventDefault()
   event.stopPropagation()
+  detailOnlySelection.value = !rows.value.some(row => row.task.id === id)
+  selectedId.value = id
   void contextMenu.value?.openAt(event, task, [
     { id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:props.busy || actions.busy(id), run:()=>startChild(id) },
     { id:'delete', label:actions.isSub(id)?'删除子任务':'删除任务', icon:'ri-delete-bin-line', danger:true, separatorBefore:true,
