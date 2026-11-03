@@ -89,7 +89,7 @@ function togglePropertyMenu(kind: 'status' | 'pr' | 'owner' | 'group', event: Mo
   menu.value = menu.value === kind ? null : kind
 }
 const currentWorkItemType = computed(() => task.value?.workItemType || 'task')
-const WORK_ITEM_TYPES = [{ id: 'requirement' as const, label: '需求' }, { id: 'task' as const, label: '任务' }, { id: 'bug' as const, label: '缺陷' }]
+const WORK_ITEM_TYPES = [{ id: 'requirement' as const, label: '需求' }, { id: 'task' as const, label: '任务' }, { id: 'bug' as const, label: '缺陷' }, { id: 'note' as const, label: '笔记' }]
 function setWorkItemType(kind: 'task' | 'requirement' | 'bug') {
   if (task.value) data.patchTask(task.value.id, { workItemType: kind }, '修改了工作项类型')
   menu.value = null
@@ -587,6 +587,7 @@ const subDesc = computed({
 /** 分区布局仅保存浏览位置，业务输入继续走原有任务草稿。 */
 const detailLayout = ref<InstanceType<typeof TaskDetailLayout>>()
 const detailContextKey = computed(() => `${task.value?.id ?? ''}/${openSubId.value ?? ''}`)
+const detailIsNote=computed(()=>(openSub.value?.workItemType ?? task.value?.workItemType)==='note')
 const detailDescription = computed(() => openSub.value ? subDesc.value : desc.value)
 const detailImages = computed(() => (openSub.value ? openSub.value.images : task.value?.images) ?? [])
 const detailSubtasks = computed(() => {
@@ -1101,14 +1102,14 @@ async function uploadAttachment(event: Event) {
                   <WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><span>{{ WORK_ITEM_TYPES.find(kind => kind.id === currentWorkItemType)?.label }}</span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>
                 </button>
                 <CellMenu v-if="menu === 'type'" :anchor="typeAnchor" :min-width="160" @close="menu = null">
-                  <button v-for="kind in WORK_ITEM_TYPES" :key="kind.id" class="work-item-type-option" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span class="work-item-type-label">{{ kind.label }}</span></button>
+                  <button v-for="kind in WORK_ITEM_TYPES.filter(item=>item.id!=='note')" :key="kind.id" class="work-item-type-option" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span class="work-item-type-label">{{ kind.label }}</span></button>
                 </CellMenu>
               </div>
               <TaskLabelEditor :key="task.id + (openSubId ?? '')" :task-id="task.id" :sub-id="openSubId ?? undefined" inline />
             </div>
         </template>
         <template #summary="{ propertiesOpen }">
-          <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
+          <button v-if="!propertiesOpen && !detailIsNote" type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
           <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑优先级" @click="detailLayout?.openProperties()">{{ openSub ? openSub.pr || '未设置优先级' : task.pr }}</button>
           <button v-if="!propertiesOpen" type="button" class="detail-meta" aria-label="编辑负责人" @click="detailLayout?.openProperties()">负责人 {{ session.memberById(openSub ? openSub.owner || '' : task.owner).name || '未设置' }}</button>
           <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
@@ -1222,7 +1223,7 @@ async function uploadAttachment(event: Event) {
             <button v-for="child in fullChildren" :key="child.id" type="button" class="full-child-link" @click="ui.openTask(child.id)"><WorkItemIcon :kind="child.workItemType || 'task'" /><span>#{{ child.number ?? '…' }} {{ child.title }}</span></button>
           </div>
           <div class="main detail-subtasks">
-            <KeepAlive :max="30"><InlineSubtasks :key="detailContextKey" :task-id="task.id" :parent-id="openSubId" /></KeepAlive>
+            <KeepAlive :max="30"><InlineSubtasks v-if="!detailIsNote" :key="detailContextKey" :task-id="task.id" :parent-id="openSubId" /></KeepAlive>
           </div>
         </template>
         <template #activity>
@@ -1286,7 +1287,7 @@ async function uploadAttachment(event: Event) {
             <span class="prop-key">编号</span>
             <span class="prop-val wao-tabular">#{{ openSub.number ?? '…' }}</span>
           </div>
-          <div class="prop-row">
+          <div v-if="!detailIsNote" class="prop-row">
             <span class="prop-key">状态</span>
             <button
               ref="subStateAnchor"
@@ -1309,7 +1310,7 @@ async function uploadAttachment(event: Event) {
             <span class="prop-key">所属任务</span>
             <button class="proj-btn" :title="task.title" @click="backToTask"><WorkItemIcon :kind="task.workItemType || 'task'" :size="14" /><span class="ellip">{{ task.title }}</span></button>
           </div>
-          <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
+          <SubtaskProperties v-if="!detailIsNote" :task-id="task.id" :sub-id="openSubId!" />
           <div class="prop-row">
             <span class="prop-key">创建者</span>
             <span class="prop-val">
@@ -1369,7 +1370,7 @@ async function uploadAttachment(event: Event) {
             </button>
           </div>
 
-          <div class="prop-row" data-companion-action>
+          <div v-if="!detailIsNote" class="prop-row" data-companion-action>
             <span class="prop-key">状态</span>
             <button class="pill" data-companion-anchor :style="{ background: tv.stBg, color: tv.stColor }" @click="togglePropertyMenu('status', $event)">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
             <CellMenu v-if="menu === 'status'" :anchor="propertyMenuAnchor" :min-width="150" @close="menu = null">
@@ -1381,7 +1382,7 @@ async function uploadAttachment(event: Event) {
             </CellMenu>
           </div>
 
-          <div class="prop-row">
+          <div v-if="!detailIsNote" class="prop-row">
             <span class="prop-key">优先级</span>
             <button class="pill sq" :style="{ background: tv.prBg, color: tv.prColor }" @click="togglePropertyMenu('pr', $event)">{{ tv.pr }}<i class="ri-arrow-down-s-line"></i></button>
             <CellMenu v-if="menu === 'pr'" :anchor="propertyMenuAnchor" :min-width="190" @close="menu = null">
@@ -1407,7 +1408,7 @@ async function uploadAttachment(event: Event) {
             </CellMenu>
           </div>
 
-          <div class="prop-row">
+          <div v-if="!detailIsNote" class="prop-row">
             <span class="prop-key">截止</span>
             <input
               class="date-input due"

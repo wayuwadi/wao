@@ -29,7 +29,7 @@ export function projectWorkItems(tasks: readonly Task[]) {
       refs[id] = { taskId: task.id, subId: key, parentKey, parentTitle: parentSub?.sub.text ?? task.title, priorityUnset: !sub.pr }
       const status = subtaskState(sub)
       items.push({
-        id, title: sub.text, number: sub.number, project: task.project, parentTaskId: parentKey,
+        id, workItemType: sub.workItemType ?? undefined, title: sub.text, number: sub.number, project: task.project, parentTaskId: parentKey,
         status: status === '未开始' ? '待办' : status, pr: sub.pr ?? 'P2', owner: sub.owner ?? '',
         createdBy: sub.createdBy, createdAt: sub.createdAt, groupId: task.groupId,
         due: sub.due ?? '', desc: sub.desc ?? '', parts: [], steps: [],

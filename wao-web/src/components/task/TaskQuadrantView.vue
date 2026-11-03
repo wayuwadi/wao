@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTaskPinsStore } from '@/stores/taskPins'
 import { useTaskScrollMemory } from '@/composables/taskViewMemory'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
@@ -26,6 +27,7 @@ const props = defineProps<{ addProjectId?: string; hideListName?: boolean; state
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
+const pins=useTaskPinsStore()
 const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const adding = ref<Priority | null>(null)
@@ -59,10 +61,10 @@ const doneCount = computed(() => props.tasks.filter(finished).length)
 const busy = (id: string) => savingIds.value.includes(id) || itemActions.busy(id)
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
 const treeRows = computed(() => {
-  const matches = props.tasks.filter(task => props.showDone || !finished(task) || isSettling(task.id)
-    || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error')
+  const matches = props.tasks.filter(task => task.workItemType!=='note' && task.status!=='已放弃' && ( props.showDone || !finished(task) || isSettling(task.id)
+    || busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error'))
   const visible = withProjectAncestors(matches, props.contextTasks ?? props.tasks)
-  const sorted = order.sort(orderScope.value, visible, t => t.id)
+  const sorted = pins.sort(order.sort(orderScope.value, visible, t => t.id))
   return taskQuadrantRows(sorted).map(({ task, ...family }) => ({ ...decoTask(task), ...family }))
 })
 const labels = useTaskLabelsStore()
@@ -183,7 +185,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
-              <button class="quadrant-title" :title="task.title" :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
+              <button class="quadrant-title" :title="task.title" :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
               <span v-if="itemRefs?.[task.id]?.priorityUnset && itemRefs?.[task.id]?.parentKey" class="save-hint" title="未单独设置优先级，跟随父任务">继承</span>
               <span v-if="task.contextOnly" class="save-hint" title="仅展示父子关系，不计入本象限数量">父任务</span>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
@@ -211,7 +213,6 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           <div v-if="!section.tasks.length" class="quadrant-empty">
             <i class="ri-checkbox-circle-line"></i>
             <span>暂无{{ showDone ? '' : '未完成' }}任务</span>
-            <button @click="createTask(section.priority)">添加任务</button>
           </div>
         </div>
       </section>

@@ -6,9 +6,7 @@ import SaveHint from '@/components/ui/SaveHint.vue'
 import { projectWorkItems, withProjectAncestors, decodeProjectSubtaskDisplay } from '@/utils/projectWorkItems'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { PROJECT_ACTION_FILTERS, matchesProjectAction, type ProjectActionFilter } from '@/utils/projectActionFilters'
-import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
-import ProjectTaskSearch from '@/components/task/ProjectTaskSearch.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskHierarchyDrop } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
@@ -67,10 +65,8 @@ const now = useNow()
 const showTime = (t: string) => relativeTime(t, now.value)
 
 const pid = computed(() => String(route.params.id))
-const searchText = ref('')
 const actionFilter = ref<ProjectActionFilter>('all')
-const searchQuery = computed(() => searchText.value.trim())
-watch(pid, () => { searchText.value = ''; actionFilter.value = 'all' })
+watch(pid, () => { actionFilter.value = 'all' })
 const orderScope = computed(() => `project:${pid.value}`)
 const project = computed(() => data.projectById(pid.value))
 // 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
@@ -134,7 +130,7 @@ function dismissDisplaySettings(event: PointerEvent) {
 }
 onMounted(() => document.addEventListener('pointerdown', dismissDisplaySettings))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissDisplaySettings))
-watch([pid, projTab, pdTaskView, searchQuery], () => closeDisplaySettings())
+watch([pid, projTab, pdTaskView], () => closeDisplaySettings())
 
 const settingsOpen = ref(false)
 const projectInfoOpen = ref(false)
@@ -341,7 +337,7 @@ function onDropReorder(overId: string, event?: DragEvent) {
 const pd = computed(() => (project.value ? decoProj(project.value) : null))
 const activity = computed(() => pd.value?.activity ?? [])
 const { page: activityPage, pageCount: activityPageCount, visible: visibleActivity } = useClientPagination(activity, [pid])
-const ptasks = computed(() => taskOrder.sort(orderScope.value, project.value ? data.tasksByProject(project.value.id) : [], t => t.id))
+const ptasks = computed(() => taskOrder.sort(orderScope.value, project.value ? data.tasksByProject(project.value.id).filter(t=>t.status!=='已放弃') : [], t => t.id))
 // 未读到任务时不渲染各视图的空数量；刷新已有内容时保持视图挂载和输入上下文。
 const tasksUnavailable = computed(() => data.taskLoadState !== 'loaded')
 const hideTaskViews = computed(() => tasksUnavailable.value && !ptasks.value.length)
@@ -398,13 +394,12 @@ const workProjection = computed(() => projectWorkItems(ptasks.value))
 const itemActions = useProjectItemActions(() => workProjection.value.refs)
 const decoratedItems = computed(() => workProjection.value.items.map(decoTask))
 const displayItems = computed(() => decoratedItems.value
+  .filter(t=>t.status!=='已放弃')
   .filter(t => showSubtasks.value || !workProjection.value.refs[t.id]?.parentKey)
   .filter(t => !effectiveOwner.value || t.owner === effectiveOwner.value || (!itemActions.isSub(t.id) && ownsTask(t, effectiveOwner.value)))
   .filter(t => !effectiveCreator.value || t.createdBy === effectiveCreator.value)
   .filter(t => matchesProjectAction(t, actionFilter.value, data.today)))
 const matchedItemIds = computed(() => new Set(displayItems.value.map(t => t.id)))
-const searchableTasks = computed(() => showSubtasks.value ? ptasks.value : ptasks.value
-  .filter(t => !workProjection.value.refs[t.id]?.parentKey).map(t => ({ ...t, subs: [] })))
 function hasItemChildren(id: string) { return workProjection.value.items.some(t => t.parentTaskId === id) }
 function groupRows(groupId: string) {
   const matches = displayItems.value.filter(t => groupIdOf(t) === groupId &&
@@ -429,8 +424,7 @@ function locateItemParent(id: string) {
  * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
  */
 const activeActionLabel = computed(() => PROJECT_ACTION_FILTERS.find(filter => filter.id === actionFilter.value)?.label ?? '')
-const resultTasks = computed(() => searchQuery.value
-  ? searchProjectTasks(allTasks.value, searchQuery.value).map(match => match.task) : allTasks.value)
+const resultTasks = allTasks
 const filteredCompletion = computed(() => projectCompletion(resultTasks.value))
 function clearTaskFilters() { actionFilter.value = 'all'; ownerFilter.value = null; creatorFilter.value = null }
 
@@ -442,7 +436,7 @@ const doneTasks = computed(() =>
   taskOrder.sort(orderScope.value, allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc), t => t.id))
 /** 「显示已完成的任务」开关。 */
 const showFinished = computed(() => showDone.value)
-const hiddenFinishedOnly = computed(() => !tasksUnavailable.value && !searchQuery.value
+const hiddenFinishedOnly = computed(() => !tasksUnavailable.value
   && pdTaskView.value === 'list' && !showFinished.value
   && !openTasks.value.length && doneTasks.value.length > 0)
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
@@ -483,7 +477,6 @@ function toggleSelection(id: string) {
 }
 const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'list') return tableSections.value.flatMap(section => section.collapsed ? [] : tableRows(section).map(row => row.task.id))
-  if (pdTaskView.value === 'checklist' && searchQuery.value.trim()) return searchProjectTasks(displayItems.value, searchQuery.value).map(hit => hit.task.id)
   if (['checklist','quadrant'].includes(pdTaskView.value)) return displayItems.value.filter(task=>showDone.value || !isFinished(task)).map(task=>task.id)
   if (pdTaskView.value === 'group') return groupViewSections.value.flatMap(group => collapsedGroups.value.includes(group.id) ? [] : groupRows(group.id).filter(row => !itemActions.isSub(row.task.id)).map(row => row.task.id))
   return displayItems.value.filter(task => !itemActions.isSub(task.id) && (showDone.value || !isFinished(task) || ['saving', 'error'].includes(data.taskSaveState(task.id)))).map(task => task.id)
@@ -941,7 +934,7 @@ watch(visibleTaskIds, (ids) => {
 
     <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ pd.due ? fmtDate(pd.due) : '未排期' }}</div>
     <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar" aria-label="任务工具栏">
-      <div v-show="!searchQuery" class="seg">
+      <div  class="seg">
         <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['清单', 'ri-list-check-2', 'checklist'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
           <i :class="v[1]"></i>{{ v[0] }}
         </button>
@@ -949,11 +942,7 @@ watch(visibleTaskIds, (ids) => {
       <ProjectSubtaskControls :show="showSubtasks" :show-done="showDone" hide-subtask-toggle :collapsed="collapsedSubTasks.length > 0" :tree="pdTaskView === 'list' || pdTaskView === 'group' || pdTaskView === 'checklist'"
         :error="subtaskDisplay.error.value"
         @update:show="setShowSubtasks" @update:show-done="showDone = $event" @expand="expandAllSubtasks" @collapse="collapseAllSubtasks" @retry="subtaskDisplay.retry" />
-      <div class="project-search-bar">
-        <i class="ri-search-line" aria-hidden="true"></i>
-        <input v-model="searchText" type="search" aria-label="项目内查找" placeholder="查找编号、标题、正文或子任务" autocomplete="off">
-        <button v-if="searchText" @click="searchText = ''">清除查找</button>
-      </div>
+
       <div class="creator-filter">
         <button
           class="creator-filter-btn"
@@ -993,8 +982,8 @@ watch(visibleTaskIds, (ids) => {
           >{{ creator.name }}</button>
         </div>
       </div>
-      <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
-      <template v-if="pdTaskView === 'list' && !searchQuery">
+      <button v-if="pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      <template v-if="pdTaskView === 'list'">
         <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
           <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
         </button>
@@ -1032,13 +1021,12 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <ProjectTaskSearch v-if="searchQuery && pdTaskView !== 'checklist'" :query="searchQuery" :tasks="searchableTasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
       <div v-if="hiddenFinishedOnly" class="task-scope" role="status">
         当前范围内 {{ doneTasks.length }} 项任务已收尾并收起；项目共 {{ ptasks.length }} 项任务。
         <button @click="showDone = true">查看已完成</button>
       </div>
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
-      <div v-show="pdTaskView === 'checklist' || (!searchQuery && !hideTaskViews)" class="project-normal-tasks">
+      <div v-show="pdTaskView === 'checklist' || !hideTaskViews" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
       <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
@@ -1318,7 +1306,7 @@ watch(visibleTaskIds, (ids) => {
         @select="toggleSelection" />
       <ProjectChecklistView v-else-if="pdTaskView === 'checklist'" :key="pid" :state-key="`project:${pid}:checklist`" :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0" @select="toggleSelection"
         :items="displayItems" :context-items="decoratedItems" :item-refs="workProjection.refs"
-        :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" :query="searchQuery" @toggle="toggleSubtasks" @add="startQuickAdd" @reveal="id => { if (!displayItems.some(task => task.id === id)) clearTaskFilters() }">
+        :show-done="showDone" :sections="checklistSections" :busy="!!operationBusy" :collapsed="collapsedSubTasks" @move="moveChecklistItem" @toggle-group="toggleGroup" query="" @toggle="toggleSubtasks" @add="startQuickAdd" @reveal="id => { if (!displayItems.some(task => task.id === id)) clearTaskFilters() }">
         <template #group-add="{ section }">
           <div v-if="quickAddGroup === section.id" class="group-add-wrap">
             <div class="group-add-row" @focusout="onQuickAddFocusOut" :class="{ error: quickAddState === 'error' }">

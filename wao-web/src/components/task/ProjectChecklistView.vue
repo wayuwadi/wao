@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTaskPinsStore } from '@/stores/taskPins'
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskEditorUpload } from '@/composables/taskEditorUpload'
 const uploadEditorFile = useTaskEditorUpload()
@@ -57,9 +58,10 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
+const pins=useTaskPinsStore()
 const deadlineDefaults = useTaskDeadlineDefaults()
 const today = ref(todayIso())
 const refreshToday = () => { today.value = todayIso() }
@@ -210,8 +212,8 @@ watch(() => [...pendingDateChanges.value].map(id => [id, data.taskSaveState(acti
 watch(() => useSessionStore().userId, () => pendingDateChanges.value.clear(), { flush: 'sync' })
 const matches = computed(() => {
   const candidates = [...props.items, ...props.contextItems.filter(t => pendingDateChanges.value.has(t.id) && !props.items.some(item => item.id === t.id))]
-  const items = candidates.filter(t => props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
-  const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
+  const items = candidates.filter(t => (props.showAbandoned || t.status!=='已放弃') && ( props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id))))))
+  const found = pins.sort(props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items)
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
 })
@@ -225,7 +227,7 @@ const expandableIds = computed(() => {
   }
   return result
 })
-const rows = computed(() => taskTreeRows(withProjectAncestors(matches.value, props.contextItems), props.query ? [] : props.collapsed.filter(id => expandableIds.value.has(id))))
+const rows = computed(() => taskTreeRows(pins.sort(withProjectAncestors(matches.value, props.contextItems)), props.query ? [] : props.collapsed.filter(id => expandableIds.value.has(id))))
 const dateSectionsCollapsed = ref(new Set<string>())
 const groupedRows = computed(() => {
   if (props.groupOverdue) {
@@ -494,12 +496,13 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <button v-if="!groupOverdue && hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else-if="!groupOverdue" class="tree-spacer"></span>
         <input v-if="selectionMode" type="checkbox" :checked="selectedIds?.includes(task.id)" :disabled="!matches.some(item=>item.id===task.id)" :aria-label="`选择任务 ${task.title}`" @change="emit('select', task.id)" />
+        <i v-else-if="task.workItemType==='note'" class="ri-sticky-note-line" aria-label="笔记" /><i v-else-if="task.status==='已放弃'" class="ri-close-circle-line" aria-label="已放弃" />
         <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
-          <span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
+          <i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
           <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : task.due">{{ relativeDate(task) }}</span>
         </button>
-        <button class="row-status" :data-status="task.status" :aria-label="`修改 ${task.title} 的状态：${projectStatusLabel(task.status)}`" aria-haspopup="menu" :aria-expanded="rowStatusMenu?.id === task.id" :disabled="actions.busy(task.id) || pendingCompletion.has(task.id)" @click.stop="openRowStatus($event, task.id)" @pointerdown.stop @dragstart.prevent.stop>
+        <button v-if="task.workItemType!=='note' && task.status!=='已放弃'" class="row-status" :data-status="task.status" :aria-label="`修改 ${task.title} 的状态：${projectStatusLabel(task.status)}`" aria-haspopup="menu" :aria-expanded="rowStatusMenu?.id === task.id" :disabled="actions.busy(task.id) || pendingCompletion.has(task.id)" @click.stop="openRowStatus($event, task.id)" @pointerdown.stop @dragstart.prevent.stop>
           <span class="row-status-dot" aria-hidden="true"></span>{{ projectStatusLabel(task.status) }}<i class="ri-arrow-down-s-line" aria-hidden="true"></i>
         </button>
         <button v-if="data.taskSaveState(actions.sourceId(task.id)) === 'error'" class="row-status-retry" :title="data.taskSaveError(actions.sourceId(task.id))" :aria-label="`重试保存 ${task.title}`" @click.stop="data.flushTask(actions.sourceId(task.id))">未保存 · 重试</button>
@@ -510,25 +513,26 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     <div class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
     <WaoCard :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
-        <div class="detail-caption"><label class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="!hideGroups && taskGroups.length" ref="groupAnchor" class="property-anchor">
+        <div class="detail-caption"><span v-if="selected.workItemType==='note'"><i class="ri-sticky-note-line" /> 笔记</span><span v-else-if="selected.status==='已放弃'">已放弃</span><label v-else class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="!hideGroups && taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
             <CellMenu v-if="propertyMenu === 'group'" :anchor="groupAnchor" @close="propertyMenu = null"><button v-for="group in taskGroups" :key="group.id" role="menuitemradio" :aria-checked="group.id === selectedGroup" @click="changeGroup(group.id)">{{ group.name }}<i v-if="group.id === selectedGroup" class="ri-check-line"></i></button></CellMenu>
           </span>
-          <span v-if="selected.status !== '已完成'" ref="statusAnchor" class="property-anchor">
+          <span v-if="selected.status !== '已完成' && selected.status!=='已放弃' && selected.workItemType!=='note'" ref="statusAnchor" class="property-anchor">
             <button class="status-pill" aria-label="任务状态" aria-haspopup="menu" :aria-expanded="propertyMenu === 'status'" :style="{ color: PROJECT_STATUS_COLORS[selected.status], borderColor: PROJECT_STATUS_COLORS[selected.status] }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'status' ? null : 'status'">{{ projectStatusLabel(selected.status) }}</button>
             <CellMenu v-if="propertyMenu === 'status'" :anchor="statusAnchor" @close="propertyMenu = null"><button v-for="status in statusOptions" :key="status" role="menuitemradio" :aria-checked="status === selected.status" @click="changeStatus(status)"><span class="status-pill" :style="{ color: PROJECT_STATUS_COLORS[status], borderColor: PROJECT_STATUS_COLORS[status] }">{{ projectStatusLabel(status) }}</span><i v-if="status === selected.status" class="ri-check-line"></i></button></CellMenu>
           </span>
-          <TaskDueDate :key="selected.id" :due="selected.due" :today="today" :completed="selected.status === '已完成'" :disabled="actions.busy(selected.id)" :missing-count="deadlineDefaults.missingCount.value" :bulk-busy="deadlineDefaults.busy.value" @fill-missing="deadlineDefaults.fill" @change="changeDue" /><span ref="priorityAnchor" class="priority-anchor">
+          <TaskDueDate v-if="selected.workItemType!=='note'" :key="selected.id" :due="selected.due" :today="today" :completed="selected.status === '已完成'" :disabled="actions.busy(selected.id)" :missing-count="deadlineDefaults.missingCount.value" :bulk-busy="deadlineDefaults.busy.value" @fill-missing="deadlineDefaults.fill" @change="changeDue" /><span v-if="selected.workItemType!=='note'" ref="priorityAnchor" class="priority-anchor">
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
-          </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="actions.open(selected.id)"><i class="ri-more-line"></i></WaoButton></div>
+          </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="openChecklistMenu($event,selected.id)"><i class="ri-more-line"></i></WaoButton></div>
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
         <div ref="descriptionHost" :key="selected.id" class="checklist-description">
           <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="hideGroups ? 120 : directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" @upload-file="uploadEditorFile" />
         </div>
         <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
           <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu.capture="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
-            <input type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
+            <i v-if="child.workItemType==='note' || child.status==='已放弃'" :class="child.workItemType==='note'?'ri-sticky-note-line':'ri-close-circle-line'" :aria-label="child.workItemType==='note'?'笔记':'已放弃'"></i>
+            <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
             <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
             <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>
           </div>
@@ -539,7 +543,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           <WaoButton type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
           <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
         </form>
-        <WaoButton v-else class="add-child-button" variant="ghost" :disabled="busy || actions.busy(selected.id)" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
+        <WaoButton v-else-if="selected.workItemType!=='note' && selected.status!=='已放弃'" class="add-child-button" variant="ghost" :disabled="busy || actions.busy(selected.id)" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
         <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
         <div class="detail-secondary-actions">
         <div v-if="outline.length" class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
@@ -549,7 +553,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           </nav>
         </div>
 
-        <RouterLink :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
+        <RouterLink v-if="selected.workItemType!=='note' && selected.status!=='已放弃'" :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
         <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
         </div>
         <TaskDocuments :key="`${useSessionStore().userId}:${selected.id}`" :task-id="source.taskId" :sub-id="source.subId" :title="taskTitle" :description="description" />
@@ -563,7 +567,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <p v-else class="empty">选择左侧任务，在这里查看详情</p>
     </WaoCard>
   </div>
-  <TaskContextMenu ref="contextMenu" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
+  <TaskContextMenu ref="contextMenu" inline-selection @changed="detailOnlySelection=false" @created="selectedId=$event;detailOnlySelection=true" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
   <CellMenu v-if="rowStatusMenu && rowStatusTask" :anchor="rowStatusMenu.anchor" :min-width="140" @close="rowStatusMenu = null">
     <button v-for="status in rowStatusOptions" :key="status" role="menuitemradio" :aria-checked="status === rowStatusTask.status" @click="changeRowStatus(status)">{{ projectStatusLabel(status) }}<i v-if="status === rowStatusTask.status" class="ri-check-line" aria-hidden="true"></i></button>
   </CellMenu>

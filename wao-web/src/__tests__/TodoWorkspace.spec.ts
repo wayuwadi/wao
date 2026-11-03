@@ -136,7 +136,7 @@ describe('task workspace',()=>{
   expect(data.projectById(project.id)?.name).toBe('改名后的清单')
   wrapper.unmount()
  })
- it('搜索包含已完成主任务及子项，清空恢复默认且不再提供保存筛选',async()=>{
+ it('移除搜索后仍按完成状态展示，不受旧搜索条件影响',async()=>{
   const data=useDataStore()
   data.tasks[1]!.status='已完成';data.tasks[1]!.title='历史搜索主任务'
   data.tasks[0]!.subs.push({id:'done-search',text:'历史搜索子任务',done:true})
@@ -146,9 +146,7 @@ describe('task workspace',()=>{
   expect(rows()).not.toContain('历史搜索')
   expect(wrapper.text()).not.toContain('保存筛选')
   expect(wrapper.get('.task-navigation').text()).not.toContain('筛选器')
-  await wrapper.get('[aria-label="搜索任务"]').setValue('历史搜索')
-  expect(rows()).toContain('历史搜索主任务');expect(rows()).toContain('历史搜索子任务')
-  await wrapper.get('[aria-label="搜索任务"]').setValue('')
+  expect(wrapper.find('[aria-label="搜索任务"]').exists()).toBe(false)
   expect(rows()).not.toContain('历史搜索')
   wrapper.unmount()
  })
@@ -286,4 +284,23 @@ describe('task workspace',()=>{
   expect(add).not.toHaveBeenCalled();expect(flush).toHaveBeenCalledWith(existing.id)
   wrapper.unmount()
  })
+})
+
+it('无搜索且忽略旧查询；笔记保留在清单，放弃可找回，四象限仅保留角落添加',async()=>{
+ const data=useDataStore(),base=data.tasks[0]!
+ sessionStorage.setItem('wao-task-view-v1:workspace-test:wg:todo:all',JSON.stringify({query:'不存在的旧查询',collapsed:[]}))
+ data.tasks=[{...base,id:'normal',title:'普通任务',subs:[]},{...base,id:'note',title:'保留笔记',workItemType:'note',subs:[]},{...base,id:'abandoned',title:'暂时放弃',status:'已放弃',subs:[]}]
+ const w=mount(TodoView,options);await flushPromises()
+ expect(w.find('[aria-label="搜索任务"]').exists()).toBe(false)
+ expect(w.findAll('.checklist-row').map(r=>r.text()).join(' ')).toContain('普通任务')
+ expect(w.find('[data-task-id="note"]').exists()).toBe(true)
+ expect(w.find('[data-task-id="note"] input[type="checkbox"]').exists()).toBe(false)
+ expect(w.find('[data-task-id="abandoned"]').exists()).toBe(false)
+ await w.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+ expect(w.find('[aria-label="添加任务"]').exists()).toBe(false)
+ expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).not.toContain('保留笔记')
+ await w.findAll('.layout-switch button').find(b=>b.text()==='清单')!.trigger('click')
+ await w.findAll('.task-navigation button').find(b=>b.text()==='已放弃')!.trigger('click');await flushPromises()
+ expect(w.find('[data-task-id="abandoned"]').exists()).toBe(true)
+ w.unmount()
 })

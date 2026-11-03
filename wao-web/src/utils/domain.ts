@@ -56,6 +56,7 @@ export const TASK_STATUSES: TaskStatus[] = ['待办', '收集中', '进行中', 
 
 /** 看板 / 分布图上的状态圆点色（比胶囊底色更实，用于小面积着色）。 */
 export const TASK_STATUS_DOTS: Record<TaskStatus, string> = {
+  已放弃: 'var(--wao-text-3)',
   待办: '#C9CDDA',
   收集中: '#D172A8',
   进行中: '#4358D6',
@@ -117,7 +118,7 @@ export function taskStatusesForDeliveryStage(stage: TaskDeliveryStage): TaskStat
 }
 
 /** 未完成 = 除「已完成」外的所有状态（含待验证：还没验收就不算做完）。 */
-export const isOpenStatus = (s: TaskStatus) => s !== '已完成'
+export const isOpenStatus = (s: TaskStatus) => s !== '已完成' && s !== '已放弃'
 
 const PRIORITY: Record<Priority, Swatch> = {
   P0: { bg: '#FBEBEB', color: '#BC4141' },

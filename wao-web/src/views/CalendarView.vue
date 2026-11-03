@@ -387,7 +387,7 @@ const events = computed<CalEvt[]>(() => {
     event.go = () => { searchPreview.value = event }; evs.push(event)
   })
   data.tasks
-    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.start || t.startAt)
+    .filter((t) => t.status!=='已放弃' && t.workItemType!=='note' && t.owner === calendarMemberId.value && (t.due || t.start || t.startAt)
       && (showCompletedTasks.value || !isTaskFinished(t)))
     .forEach((t) => taskCalendarEntries(t, `${calY.value - 1}-12-01`, `${calY.value + 1}-01-31`).forEach(entry => evs.push({
       ...entry,
@@ -467,7 +467,7 @@ const searchPreview = ref<CalEvt | null>(null)
 const searchResults = computed(() => {
   const keyword = calendarSearch.value.trim().toLocaleLowerCase()
   if (!keyword) return []
-  return events.value.filter((event) => [event.title, event.kind, event.sourceLabel, event.date]
+  return events.value.filter(event=>event.kind!=='任务').filter((event) => [event.title, event.kind, event.sourceLabel, event.date]
     .some((value) => value?.toLocaleLowerCase().includes(keyword))).slice(0, 30)
 })
 
@@ -1221,7 +1221,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
         </div>
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
-        <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
+        <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
         <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
