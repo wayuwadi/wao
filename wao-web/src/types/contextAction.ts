@@ -5,4 +5,8 @@ export interface ContextAction {
   disabled?: boolean
   danger?: boolean
   separatorBefore?: boolean
+  icon?: string
+  color?: string
+  quickGroup?: string
+  checked?: boolean
 }

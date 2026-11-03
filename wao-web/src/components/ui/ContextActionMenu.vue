@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import type { ContextAction } from '@/types/contextAction'
 
 const menu = ref<HTMLElement | null>(null)
@@ -7,6 +7,15 @@ const open = ref(false)
 const ready = ref(false)
 const label = ref('')
 const actions = ref<ContextAction[]>([])
+const sections = computed(() => {
+  const result: { key:string; title?:string; items:ContextAction[] }[] = []
+  for (const item of actions.value) {
+    const previous = result[result.length - 1]
+    if (item.quickGroup && previous?.title === item.quickGroup) previous.items.push(item)
+    else result.push({ key:item.id, title:item.quickGroup, items:[item] })
+  }
+  return result
+})
 const position = ref({ left: 0, top: 0 })
 let trigger: HTMLElement | null = null
 let anchored = false
@@ -79,13 +88,13 @@ function keydown(event: KeyboardEvent) {
     close(true)
     return
   }
-  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
   const buttons = [...(menu.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
   if (!buttons.length) return
   const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
   const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
-    : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+    : (index + (['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length
   buttons[next]?.focus()
 }
 
@@ -105,10 +114,15 @@ defineExpose({ openAt, close })
       :style="{ left: `${position.left}px`, top: `${position.top}px`, visibility: ready ? 'visible' : 'hidden' }"
       @keydown="keydown" @contextmenu.prevent>
       <div class="wao-context-label" aria-hidden="true">{{ label }}</div>
-      <template v-for="item in actions" :key="item.id">
+      <div v-for="section in sections" :key="section.key" :class="{'quick-section':section.title}">
+       <div v-if="section.title" class="wao-context-label">{{section.title}}</div>
+       <div :class="{'quick-actions':section.title}">
+       <template v-for="item in section.items" :key="item.id">
         <div v-if="item.separatorBefore" class="wao-context-separator" role="separator"></div>
-        <button type="button" role="menuitem" :disabled="item.disabled" :class="{ danger: item.danger }" @click="choose(item)">{{ item.label }}</button>
-      </template>
+        <button type="button" :role="item.checked === undefined ? 'menuitem' : 'menuitemradio'" :aria-checked="item.checked" :aria-label="item.label" :title="item.label" :disabled="item.disabled" :class="{ danger: item.danger, checked:item.checked }" @click="choose(item)"><i v-if="item.icon" :class="item.icon" :style="{color:item.color}" aria-hidden="true" /><span v-if="!section.title">{{ item.label }}</span></button>
+       </template>
+       </div>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -122,4 +136,10 @@ defineExpose({ openAt, close })
 .wao-context-menu button:disabled { opacity: .5; cursor: not-allowed; }
 .wao-context-menu button.danger { color: var(--wao-danger-strong); }
 .wao-context-separator { height: 1px; margin: 4px 5px; background: var(--wao-divider); }
+.quick-actions { display:flex; justify-content:space-between; gap:4px; padding:0 4px var(--wao-space-1); }
+.quick-actions button { display:inline-flex; align-items:center; justify-content:center; min-width:36px; width:auto; min-height:36px; padding:var(--wao-space-1); }
+.wao-context-menu button.checked { background:var(--wao-primary-soft); }
+.wao-context-menu button i { margin-right:var(--wao-space-1); }.quick-actions button i { margin:0; }
+.quick-section + div:not(.quick-section) { border-top:1px solid var(--wao-line); padding-top:4px; }
+@media(pointer:coarse) { .wao-context-menu button { min-height:44px; }.quick-actions button { min-width:40px; } }
 </style>

@@ -19,7 +19,10 @@ import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import TaskListDialog from '@/components/todo/TaskListDialog.vue'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import type { Project } from '@/types'
-import TodayDates from '@/components/routines/TodayDates.vue'
+import TodoListHeader from '@/components/todo/TodoListHeader.vue'
+import OverdueRescheduleDialog from '@/components/todo/OverdueRescheduleDialog.vue'
+import { toast } from '@/composables/toast'
+const reschedule = ref(false)
 const data = useDataStore(), session = useSessionStore(), labels = useTaskLabelsStore(), route = useRoute(), router = useRouter()
 const memory = useTaskViewMemory('todo', () => ({ navigationCollapsed: false, selection: 'all', layout: 'list' as 'list'|'quadrant'|'table' }))
 const selection = computed({get:()=>memory.value.selection === 'legacy' ? 'all' : memory.value.selection,set:v=>{memory.value.selection=v; if (route.query.list) void router.replace({query:{...route.query,list:undefined}})}})
@@ -109,21 +112,24 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <header><button class="navigation-toggle" :aria-label="navigationCollapsed ? '展开待办导航' : '收起待办导航'" :title="navigationCollapsed ? '展开待办导航' : '收起待办导航'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed"><i :class="navigationCollapsed ? 'ri-side-bar-line' : 'ri-layout-left-line'" /></button><h1>{{ heading }}</h1><span class="count">{{ searched.length }}</span><div class="workspace-tools"><input v-model="query" aria-label="搜索任务" placeholder="搜索任务及子任务" /></div><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button></div></header>
+    <TodoListHeader v-if="layout!=='list' || data.taskLoadState==='error'" v-model:query="query" v-model:quick="quick" v-model:layout="layout" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" />
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
-    <TodayDates v-if="selection==='today'" />
-    <form v-if="selection!=='completed'" class="quick-add" @submit.prevent="add"><i class="ri-add-line"></i><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="protect" /><button :disabled="creating || !quick.trim()">{{ creating?'保存中…':'添加' }}</button></form><p v-if="quickError" role="alert">{{ quickError }}</p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView hide-groups v-else-if="layout==='list'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'" />
+    <ProjectChecklistView hide-groups :group-overdue="selection==='today'" v-else-if="layout==='list'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :context-items="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" :collapsed="collapsed" :query="query" @toggle="toggle" @reveal="selection='all'">
+     <template #list-header><TodoListHeader v-model:query="query" v-model:quick="quick" v-model:layout="layout" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" /></template>
+     <template #section-action="{section}"><button v-if="section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
+    </ProjectChecklistView>
     <TaskQuadrantView :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" />
    </template>
   </main>
+  <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
   <ContextActionMenu ref="listMenu" />
   <TaskListDialog v-if="listDialog" :project="editingList" @close="listDialog=false" @saved="listSaved" />
   <ProjectSettingsModal v-if="settingsList" :project="settingsList" @close="settingsList=undefined" @deleted="settingsList=undefined;selection='all'" />
  </div>
 </template>
 <style scoped>
+.reschedule-button { color:var(--wao-primary-text); padding:var(--wao-space-1); margin-left:auto; }
 .task-workspace.navigation-collapsed {grid-template-columns:minmax(0,1fr);}
 .navigation-toggle {display:inline-flex;align-items:center;justify-content:center;min-width:var(--wao-control-height);min-height:var(--wao-control-height);color:var(--wao-text-3);}
 
@@ -165,8 +171,10 @@ button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary);
 .bounded-workspace :deep(.checklist-tasks),.bounded-workspace :deep(.checklist-detail) { min-height:0; max-height:none; overflow:auto; overscroll-behavior:contain; }
 .bounded-workspace :deep(.checklist-detail) { position:static; }
 .bounded-workspace :deep(.checklist-divider) { min-height:0; }
-.bounded-workspace :deep(.checklist-layout.is-compact) { grid-template-rows:minmax(80px, 30%) minmax(0,1fr); }
-@media(max-width:760px) { .bounded-workspace :deep(.checklist-layout) { grid-template-rows:minmax(80px, 30%) minmax(0,1fr); } }
+.bounded-workspace :deep(.checklist-layout.is-compact) { display:flex; flex-direction:column; overflow:auto; }
+.bounded-workspace :deep(.is-compact .checklist-list-pane) { flex:0 0 auto; min-height:320px; height:50dvh; }
+.bounded-workspace :deep(.is-compact .checklist-detail) { flex:1 0 320px; }
+@media(max-width:760px) { .bounded-workspace :deep(.checklist-layout) {display:flex;flex-direction:column;overflow:auto;} .bounded-workspace :deep(.checklist-list-pane) {flex:0 0 auto;min-height:320px;height:50dvh;} .bounded-workspace :deep(.checklist-detail) {flex:1 0 320px;} }
 @media(max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
 @media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .bounded-workspace {display:flex;flex-direction:column;} .bounded-workspace .task-navigation {max-height:120px;flex-shrink:0;} .bounded-workspace .workspace-main {flex:1;}button {min-height:44px;} }
 </style>

@@ -44,7 +44,18 @@ import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import CellMenu from '@/components/task/CellMenu.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 const deadlineExample = ref('2026-10-20')
+const taskMenuExample = ref<InstanceType<typeof ContextActionMenu>>()
+function showTaskMenuExample(event:MouseEvent) {
+ void taskMenuExample.value?.openAt(event,'演示任务',[
+  {id:'today',label:'今天',icon:'ri-sun-line',quickGroup:'日期',run:()=>{deadlineExample.value='2026-10-28'}},
+  {id:'tomorrow',label:'明天',icon:'ri-sun-foggy-line',quickGroup:'日期',run:()=>{deadlineExample.value='2026-10-29'}},
+  {id:'clear',label:'清除日期',icon:'ri-calendar-close-line',quickGroup:'日期',run:()=>{deadlineExample.value=''}},
+  {id:'priority',label:'P1 · 高优先级',icon:'ri-flag-fill',quickGroup:'优先级',run:()=>{feedback.value='演示优先级已选择，不保存账号'}},
+  {id:'child',label:'添加子任务',icon:'ri-node-tree',run:()=>{feedback.value='演示子任务入口，不创建真实任务'}},
+ ],event.currentTarget as HTMLElement)
+}
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
@@ -508,6 +519,8 @@ const detailLabels = ref('')
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
           <p class="demonstration-note">日期弹层支持清除截止日期；未完成的逾期任务同时出现在「今天」，保留原日期和延期提示。</p>
+          <WaoButton variant="ghost" @click="showTaskMenuExample">任务快捷菜单 · 演示</WaoButton><ContextActionMenu ref="taskMenuExample" />
+          <p class="demonstration-note">今天按「已过期／今天」分组，顺延先确认当前筛选范围，失败可重试。列表标题、搜索和新增留在左栏，详情日期与正文从右栏顶部开始；打开菜单不挤动内容。</p>
           <div class="density-examples"><WaoButton variant="ghost" @click="detailDemoDescription = ''">空描述示例</WaoButton><WaoButton variant="ghost" @click="detailDemoDescription = '先说明背景、目标与边界，再把具体执行拆成子任务。\n\n' + '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16)">长描述示例</WaoButton></div>
           <div class="task-detail-demo">
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
