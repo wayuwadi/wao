@@ -71,35 +71,27 @@ it('全局搜索忽略旧全局改名并打开原路由', async () => {
   wrapper.unmount()
 })
 
-it('通过子任务原文找到父任务，点击直接展开匹配的子任务', async () => {
+it('全局搜索不再检索任务和子任务', async () => {
   searchData.tasks = [{ id: 't-find', title: '开发计划', project: 'p1', desc: '', status: '待办', subs: [{ id: 'sub-find', text: '快捷键设计', done: false }] } as import('@/types').Task]
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/notes')
   const wrapper = mount(GlobalSearch, { global: { plugins: [router] } })
   await flushPromises()
   await wrapper.get('input').setValue('快捷键设计')
-  expect(wrapper.text()).toContain('子任务标题命中')
-  expect(wrapper.get('mark').text()).toBe('快捷键设计')
-  await wrapper.get('.result').trigger('click')
-  expect(useUiStore().openTaskId).toBe('t-find')
-  expect(useUiStore().openTaskSubId).toBe('sub-find')
+  expect(wrapper.findAll('.result')).toHaveLength(0)
+  expect(useUiStore().openTaskId).toBeNull()
   wrapper.unmount()
 })
 
-it('任务正文命中显示原文并安全转义，点击不误开同词子任务', async () => {
+it('全局搜索不再检索任务正文', async () => {
   searchData.tasks = [{ id: 'body-find', title: '开发计划', project: 'p1', desc: '上线前检查 <img onerror=alert(1)> 桂花路线，再核对结果', status: '待办', subs: [{ id: 'sub-find', text: '桂花路线', done: false }] } as import('@/types').Task]
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/notes')
   const wrapper = mount(GlobalSearch, { global: { plugins: [router] } })
   await flushPromises()
   await wrapper.get('input').setValue('桂花路线')
-  expect(wrapper.get('.result').text()).toContain('任务正文命中')
-  expect(wrapper.get('mark').text()).toBe('桂花路线')
-  expect(wrapper.get('.r-snippet').text()).toContain('上线前检查')
+  expect(wrapper.findAll('.result')).toHaveLength(0)
   expect(wrapper.find('.r-snippet img').exists()).toBe(false)
-  await wrapper.get('.result').trigger('click')
-  expect(useUiStore().openTaskId).toBe('body-find')
-  expect(useUiStore().openTaskSubId).toBeNull()
   wrapper.unmount()
 })
 

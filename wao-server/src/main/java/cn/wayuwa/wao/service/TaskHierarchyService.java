@@ -32,7 +32,7 @@ public class TaskHierarchyService {
         if (!Objects.equals(current.getParentTaskId(), blank(expectedParentId)))
             throw new ConflictException("父任务已被其他窗口修改，请刷新后重试");
         if (parent != null) {
-            tasks.get(parent, memberId);
+            if ("note".equals(tasks.get(parent, memberId).workItemType())) throw new BadRequestException("笔记不能作为主任务");
             if (!rows.containsKey(parent)) throw new BadRequestException("只能拖到同一项目的任务下面");
             Set<String> seen = new HashSet<>(Set.of(id));
             for (String cursor = parent; cursor != null;) {

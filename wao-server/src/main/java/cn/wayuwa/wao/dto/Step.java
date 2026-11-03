@@ -36,7 +36,11 @@ public record Step(String text, boolean done, String id, String desc, List<Image
         @JsonInclude(JsonInclude.Include.NON_NULL) String createdAt,
         @JsonInclude(JsonInclude.Include.NON_NULL) List<String> docs,
         @JsonInclude(JsonInclude.Include.NON_NULL) List<CommentDto> comments,
-        @JsonInclude(JsonInclude.Include.NON_NULL) String pr) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) String pr,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String workItemType) {
+    public Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number, String parentId, String owner, String due, String status, String createdBy, String createdAt, List<String> docs, List<CommentDto> comments, String pr) {
+        this(text,done,id,desc,images,number,parentId,owner,due,status,createdBy,createdAt,docs,comments,pr,null);
+    }
     /** 兼容已有构造调用，历史优先级缺省为空，不改变快照摘要。 */
     public Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number,
             String parentId, String owner, String due, String status, String createdBy, String createdAt,
@@ -59,13 +63,13 @@ public record Step(String text, boolean done, String id, String desc, List<Image
 
     /** 同一条子任务换一个编号与层级，其余属性原样保留。 */
     public Step with(String id, Long number, String parentId) {
-        return new Step(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments, pr);
+        return new Step(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments, pr, workItemType);
     }
 
     /** 展示用状态：已完成 / 待验证 / 进行中 / 未开始。 */
     @JsonIgnore
     public String statusLabel() {
         if (done) return "已完成";
-        return "进行中".equals(status) || "待验证".equals(status) ? status : "未开始";
+        return "已放弃".equals(status) || "进行中".equals(status) || "待验证".equals(status) ? status : "未开始";
     }
 }

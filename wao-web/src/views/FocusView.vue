@@ -15,15 +15,15 @@ const routines=useRoutinesStore()
 const habitId=computed(()=>typeof route.query.focusHabit==='string'?route.query.focusHabit:'')
 const habit=computed(()=>routines.item(habitId.value))
 watch(()=>[habitId.value,routines.identity],()=>{if(habitId.value)void routines.load()},{immediate:true})
-const mode = ref<FocusMode>('pomodoro'), minutes = ref(25), task = ref(''), search = ref('')
+const mode = ref<FocusMode>('pomodoro'), minutes = ref(25), task = ref('')
 const items = computed(() => projectWorkItems(data.tasks))
-const choices = computed(() => items.value.items.filter(item => item.id === task.value || !search.value || item.title.toLowerCase().includes(search.value.toLowerCase())))
+const choices = computed(() => items.value.items.filter(item => item.workItemType!=='note' && item.status!=='已放弃'))
 watch(() => [route.query.focusTask, route.query.focusSub, focus.identity, items.value.items.length], () => {
   if (focus.active) return
   const match = Object.entries(items.value.refs).find(([, value]) => value.taskId === route.query.focusTask && (value.subId || '') === (route.query.focusSub || ''))
   if (match) task.value = match[0]
 }, { immediate: true })
-watch(() => focus.identity, () => { task.value = ''; search.value = '' })
+watch(() => focus.identity, () => { task.value = '' })
 const display = computed(() => focus.active ? focus.display : mode.value === 'stopwatch' ? '00:00' : focusTime(minutes.value * 60_000))
 const progress = computed(() => focus.active?.plannedMs ? focus.elapsed / focus.active.plannedMs * 100 : 0)
 const caption = computed(() => focus.active?.status === 'paused' ? '已暂停' : (focus.active?.mode ?? mode.value) === 'break' ? '休息一下' : '一次只做一件事')
@@ -31,7 +31,7 @@ const taskPickerOpen = ref(false)
 const recentHistory = computed(() => focus.history.slice(0, 5))
 const taskLabel = computed(() => focus.active?.taskTitle || (habitId.value ? habit.value?.name : items.value.items.find(item => item.id === task.value)?.title) || '自由专注')
 watch(() => focus.active?.id, () => { taskPickerOpen.value = false })
-function selectTask(id: string) { task.value = id; taskPickerOpen.value = false; search.value = '' }
+function selectTask(id: string) { task.value = id; taskPickerOpen.value = false }
 function leavePicker(event: FocusEvent) { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) taskPickerOpen.value = false }
 const selectedRef = computed(() => items.value.refs[task.value])
 const missingTask = computed(() => !!task.value && !selectedRef.value)
@@ -55,7 +55,6 @@ async function retry() { focus.error = ''; await focus.load() }
           <button class="task-trigger" aria-label="选择关联任务" :aria-expanded="taskPickerOpen" :disabled="!focus.ready || !!focus.pendingStart || !!habitId || (!!focus.active && !focus.active.taskId)" @click="focus.active ? ui.openTask(focus.active.taskId, focus.active.subId || undefined) : (taskPickerOpen=!taskPickerOpen)"><i :class="habitId ? 'ri-seedling-line' : 'ri-link'"></i><span>{{ taskLabel }}</span><i v-if="!focus.active && !habitId" class="ri-arrow-down-s-line"></i></button>
           <RouterLink v-if="habitId && !focus.active" class="unlink-habit" to="/focus">取消关联</RouterLink>
           <div v-if="taskPickerOpen" class="task-popover">
-            <input v-model="search" aria-label="搜索关联任务" placeholder="搜索任务或子任务…" />
             <div class="task-options" role="group" aria-label="可关联任务">
               <button :aria-pressed="!task" @click="selectTask('')">自由专注 · 不关联任务</button>
               <button v-for="item in choices" :key="item.id" :aria-pressed="task===item.id" @click="selectTask(item.id)"><i :class="items.refs[item.id]?.subId ? 'ri-node-tree' : 'ri-checkbox-blank-circle-line'"></i><span>{{ item.title }}</span><i v-if="task===item.id" class="ri-check-line"></i></button>

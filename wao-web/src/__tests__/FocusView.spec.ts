@@ -38,10 +38,10 @@ it('计时各状态保留相同区域和按钮节点，只显示最近五条记�
  expect(wrapper.get('.dial-space').element).toBe(dial);expect(wrapper.get('.task-picker').element).toBe(picker);expect(wrapper.get('.focus-actions').element).toBe(actions);expect(wrapper.get('textarea').element).toBe(note)
  expect(wrapper.get('.end-action').classes()).toContain('action-placeholder');wrapper.unmount()
 })
-it('任务浮层支持搜索并选择，关闭后仍保留选择', async () => {
+it('任务浮层直接选择且不再提供搜索，关闭后仍保留选择', async () => {
  const wrapper=mount(FocusView,{global:{stubs:{RouterLink:true}}});await flushPromises()
  await wrapper.get('[aria-label="选择关联任务"]').trigger('click')
- await wrapper.get('[aria-label="搜索关联任务"]').setValue('已授权')
+ expect(wrapper.find('[aria-label="搜索关联任务"]').exists()).toBe(false)
  await wrapper.findAll('.task-options button').find(item=>item.text()==='已授权共享任务')!.trigger('click')
  expect(wrapper.find('.task-popover').exists()).toBe(false)
  expect(wrapper.get('[aria-label="选择关联任务"]').text()).toContain('已授权共享任务');wrapper.unmount()

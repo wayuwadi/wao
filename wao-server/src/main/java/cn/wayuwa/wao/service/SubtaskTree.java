@@ -36,6 +36,7 @@ public final class SubtaskTree {
                 if (!seen.add(parent)) throw new BadRequestException("子任务不能移到自己或后代下面");
                 Step next = byId.get(parent);
                 if (next == null) throw new BadRequestException("父子任务不存在，请刷新后重试");
+                if ("note".equals(next.workItemType())) throw new BadRequestException("笔记不能包含子任务");
                 parent = next.parentId();
             }
         }

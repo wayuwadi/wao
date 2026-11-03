@@ -33,13 +33,14 @@ export function readSubtaskDrag(event: DragEvent): { taskId: string; subId: stri
 /** 子任务四态：完成态以 done 为准，未完成时区分「进行中」「待验证」。 */
 export function subtaskState(sub: Pick<TaskStep, 'done' | 'status'>): SubtaskState {
   if (sub.done) return '已完成'
-  return sub.status === '进行中' || sub.status === '待验证' ? sub.status : '未开始'
+  return sub.status === '已放弃' || sub.status === '进行中' || sub.status === '待验证' ? sub.status : '未开始'
 }
 
 export const SUBTASK_STATES: SubtaskState[] = ['未开始', '进行中', '待验证', '已完成']
 
 /** 子任务四态的描边颜色，与主任务表格的状态胶囊同一套色。 */
 export const SUBTASK_STATE_COLOR: Record<SubtaskState, string> = {
+  已放弃: 'var(--wao-text-3)',
   未开始: '#338fe5',
   进行中: '#f08c00',
   待验证: '#8b5cf6',
