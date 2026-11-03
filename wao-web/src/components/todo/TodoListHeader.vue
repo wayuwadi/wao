@@ -18,7 +18,7 @@ defineEmits<{ navigation:[]; add:[]; protect:[] }>()
 .todo-list-header { flex-shrink:0; min-width:0; padding-bottom:var(--wao-space-2); font:400 var(--wao-font-body)/1.5 var(--wao-font); }
 header { display:flex; align-items:center; gap:var(--wao-space-1); min-height:44px; margin-bottom:var(--wao-space-2); flex-wrap:wrap; }
 h1 { margin:0; min-width:0; overflow-wrap:anywhere; font-size:var(--wao-font-title); font-weight:var(--wao-weight-heading); line-height:var(--wao-line-heading); }
-.count { color:var(--wao-text-3); }.layout-switch { display:flex; margin-left:auto; gap:var(--wao-space-1); }
+.count { color:var(--wao-text-3); }.layout-switch { display:flex; flex-shrink:0; margin-left:var(--wao-space-1); gap:var(--wao-space-1); }
 button { border:0; border-radius:var(--wao-radius-control); background:transparent; padding:var(--wao-space-1); color:var(--wao-text); font:inherit; cursor:pointer; }
 button:hover { background:var(--wao-bg-hover); }button[aria-pressed=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }button:disabled { opacity:.5; cursor:default; }
 .workspace-search,.quick-add { display:flex; align-items:center; gap:var(--wao-space-1); padding-inline:var(--wao-space-1); min-width:0; border-radius:var(--wao-radius-control); }
