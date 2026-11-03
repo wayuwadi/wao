@@ -704,4 +704,9 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:2px soli
   .checklist-detail { position:static; max-height:none; min-height:300px; border-left:0; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
   .task-select { min-height:44px; }
 }
+@container (max-width:420px) {
+  .task-select { flex-wrap:wrap; column-gap:4px; row-gap:0; padding-block:4px; }
+  .task-title { flex:1 0 100%; }
+  .task-select .task-meta { font-size:var(--wao-font-caption); }
+}
 </style>
