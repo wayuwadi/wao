@@ -8,6 +8,8 @@ import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { readNoteDraft, writeNoteDraft } from '@/utils/noteDraftStorage'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
+import { http } from '@/api/http'
+import type { Doc } from '@/types'
 
 const companionSave = vi.hoisted(() => vi.fn())
 vi.mock('@/api/noteAiCompanion', () => ({ saveCompanionDraft: companionSave }))
@@ -21,6 +23,31 @@ beforeEach(() => {
   companionSave.mockReset()
 })
 describe('原地快速小记', () => {
+  it('旧草稿 id 指向已有图文时另存第二篇，第一篇正文和配图保持不变', async () => {
+    const first: Doc = { id: 'first-note', title: '第一篇', author: 'wg', created: '2026-01-01', updated: '2026-01-01',
+      kbId: 'kb-notes', folderId: 'notes-folder', rev: 4, links: [], backlinks: [], blocks: [],
+      content: { version: 1, markdown: '第一篇正文\n\n![第一篇配图](/api/images/first/raw)', document: null } }
+    const data = useDataStore()
+    data.applyRemoteDoc(first)
+    const firstSnapshot = JSON.stringify(data.docById(first.id))
+    writeNoteDraft('wao-quick-note-draft-v1:wg', JSON.stringify({ id: first.id, text: '第二篇独立正文' }))
+    const put = vi.spyOn(http, 'put').mockImplementation(async (url, payload) => {
+      const id = String(url).split('/').pop()!
+      if (id === first.id) throw new Error('小记文档 id 已被占用')
+      const request = payload as { title: string; content: Doc['content']; blocks: Doc['blocks'] }
+      return { data: { data: { ...first, ...request, id, rev: 1 } } }
+    })
+    const wrapper = mount(NoteComposer, options)
+    try {
+      await flushPromises(); await wrapper.get('.save-note').trigger('click'); await flushPromises()
+      expect(put).toHaveBeenCalledTimes(2)
+      const secondId = wrapper.emitted('saved')![0]![0] as string
+      expect(secondId).not.toBe(first.id)
+      expect(data.docById(secondId)?.content?.markdown).toBe('第二篇独立正文')
+      expect(JSON.stringify(data.docById(first.id))).toBe(firstSnapshot)
+      expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
+    } finally { wrapper.unmount(); put.mockRestore() }
+  })
   it('明确的 id 占用只更换一次标识，图文标签在再次失败及重载后保留', async () => {
     const key = 'wao-quick-note-draft-v1:wg'
     const rich = { version: 1, markdown: '重要正文\n![截图](/uploads/test-image.png)', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type:'text', text:'重要正文' }] }, { type:'image', attrs:{ src:'/uploads/test-image.png' } }] } }

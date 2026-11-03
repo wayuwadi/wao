@@ -2659,7 +2659,7 @@ describe('统一编辑器分栏与链接', () => {
     const reopened = await mountEditor({modelValue:markdown,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     expect(restored.getJSON().content![0]).toMatchObject({type:'drawingCard',attrs})
-    expect(reopened.text()).toContain('编辑画板')
+    expect(reopened.find('.drawing-preview[role=button]').exists()).toBe(true)
     reopened.unmount()
   })
   it('两栏点击加号变三栏，保留内容、可撤销且 Markdown 重开不丢布局', async () => {
@@ -2691,6 +2691,72 @@ describe('统一编辑器分栏与链接', () => {
     await w.findAll('.link-dialog input')[1]!.setValue('www.baidu.com')
     await w.get('.link-dialog').trigger('submit')
     expect(e.getMarkdown()).toBe('[百度的链接](https://www.baidu.com)')
+    w.unmount()
+  })
+})
+
+
+describe('图片拖拽尺寸', () => {
+  it('松手后保存尺寸并保留对齐，撤销、Markdown 和 JSON 重载保留正确内容', async () => {
+    const props = { modelValue: '![图片](/api/images/resize/raw)', advanced: true, imageControls: true, imageContextControls: true }
+    const w = await mountEditor(props)
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const image = w.get('.note-image-node img').element as HTMLImageElement
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 200))
+    const pointer = (type: string, x: number) => new MouseEvent(type, { clientX: x, button: 0, bubbles: true })
+    w.get('[data-image-resize="e"]').element.dispatchEvent(pointer('pointerdown', 400))
+    window.dispatchEvent(pointer('pointermove', 240))
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    window.dispatchEvent(pointer('pointerup', 240))
+    await nextTick()
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: 120, indent: 0 })
+    const saved = e.getMarkdown(), document = e.getJSON()
+    expect(saved).toContain('wao-image-size:240x120')
+    e.commands.undo()
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    e.commands.redo()
+    expect(e.getJSON().content![0]!.attrs!.width).toBe(240)
+    w.unmount()
+    for (const content of [{ modelValue: saved }, { modelValue: saved, document }]) {
+      const restored = await mountEditor({ ...props, ...content })
+      expect(restored.get('.note-image-node').attributes('style')).toContain('width: 240px')
+      expect(restored.get('.note-image-node').attributes('style')).not.toContain('margin-left: auto')
+      restored.unmount()
+    }
+  })
+
+  it('取消拖动不保存，卸载清理监听，只读图片不显示控制点', async () => {
+    const w = await mountEditor({ modelValue: '![图片](/api/images/resize/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(w.get('.note-image-node img').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 200))
+    vi.spyOn(w.get('.tiptap').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 500))
+    w.get('[data-image-resize="e"]').element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 400, button: 0, bubbles: true }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 }))
+    expect(w.get('.note-image-node').attributes('style')).toContain('width: 300px')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    expect(w.get('.note-image-node').classes()).not.toContain('image-resizing')
+    await w.setProps({ readonly: true })
+    expect(w.get('.image-resize-controls').attributes('hidden')).toBeDefined()
+    w.unmount()
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
+  })
+})
+
+
+describe('块旁插入入口', () => {
+  it('打开加号不改正文，选择后在目标块后插入且不覆盖已有内容', async () => {
+    const w = await mountEditor({ modelValue: '第一段\n\n第二段', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    w.findComponent({ name: 'DragHandleVue' }).props('onNodeChange')({ pos: 0 })
+    await w.get('[aria-label="在此块后插入内容"]').trigger('click')
+    expect(e.getJSON()).toEqual(before)
+    const option = [...document.querySelectorAll<HTMLButtonElement>('.slash-menu button')].find(b => b.textContent?.includes('二级标题'))!
+    option.click()
+    await nextTick()
+    expect(e.getJSON().content?.map(n => n.type)).toEqual(['paragraph', 'heading', 'paragraph'])
+    expect(e.state.doc.textContent).toBe('第一段第二段')
     w.unmount()
   })
 })

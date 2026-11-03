@@ -29,6 +29,46 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('行内修改子任务状态不切换详情且保存到真实子项', async () => {
+    const { data, wrapper } = setup()
+    const update = vi.spyOn(data, 'setSubState')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    await wrapper.get('[data-task-id="sub:parent:child"] .row-status').trigger('click')
+    const options = wrapper.findAll('[role="menuitemradio"]')
+    expect(options.map(o => o.text())).toEqual(['未开始', '进行中', '待验证', '已完成'])
+    await options.find(o => o.text() === '进行中')!.trigger('click')
+    expect(update).toHaveBeenCalledWith('parent', 'child', '进行中')
+    expect(flush).toHaveBeenCalledWith('parent')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
+  })
+  it('行内完成沿用可撤销等待，保存失败原位重试', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = setup()
+    const patch = vi.spyOn(data, 'patchTask')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    try {
+      await wrapper.get('[data-task-id="parent"] .row-status').trigger('click')
+      await wrapper.findAll('[role="menuitemradio"]').find(o => o.text() === '已完成')!.trigger('click')
+      expect(patch).not.toHaveBeenCalled()
+      expect(wrapper.get('[data-task-id="parent"] input[type=checkbox]').element).toHaveProperty('checked', true)
+      await wrapper.get('[data-task-id="parent"] input[type=checkbox]').setValue(false)
+      await vi.advanceTimersByTimeAsync(3100)
+      expect(patch).not.toHaveBeenCalled()
+      vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+      await wrapper.setProps({ query: '父' })
+      await wrapper.get('[aria-label="重试保存 父任务"]').trigger('click')
+      expect(flush).toHaveBeenCalledWith('parent')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('右键子任务同步选中该项和详情，保留浮层菜单', async () => {
+    const { wrapper } = setup()
+    await wrapper.get('[data-task-id="sub:parent:child"]').trigger('contextmenu')
+    await flushPromises()
+    expect(wrapper.get('[data-task-id="sub:parent:child"]').classes()).toContain('selected')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
+    expect(document.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('任务：子任务的操作')
+  })
   it('所有子项完成后隐藏箭头，未完成后代恢复箭头且完成项仍可在详情查看', async () => {
     const { data, wrapper } = setup()
     data.tasks[0]!.subs[0]!.done = true
@@ -380,15 +420,15 @@ describe('项目清单详情', () => {
     await divider.trigger('keydown', { key: 'ArrowRight' }); await flushPromises()
     expect(savePreference).toHaveBeenCalledWith('project-checklist-split-v1', expect.any(String))
     const saved = [...vi.mocked(savePreference).mock.calls].reverse().find(call => call[0] === 'project-checklist-split-v1')
-    expect(Number(saved?.[1])).toBeCloseTo(.415)
-    expect(divider.attributes('aria-valuenow')).toBe('42')
+    expect(Number(saved?.[1])).toBeCloseTo(.57)
+    expect(divider.attributes('aria-valuenow')).toBe('57')
     wrapper.unmount()
     const restored = setup().wrapper
     await flushPromises()
-    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('42')
+    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('57')
     session.accept({ accountId: 'test', member: { id: 'two', name: '乙', initial: '乙', role: '', color: '' }, identities: [], createdAt: '' })
     await flushPromises()
-    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('40')
+    expect(restored.get('[role=separator]').attributes('aria-valuenow')).toBe('55')
     await restored.get('[role=separator]').trigger('keydown', { key: 'End' }); await flushPromises()
     expect(Number(restored.get('[role=separator]').attributes('aria-valuenow'))).toBeLessThanOrEqual(75)
   })

@@ -440,7 +440,13 @@ function cancelTitleEdit() {
   editingTitle.value = false
 }
 
+let renamePromise: Promise<void> | null = null
 async function saveTitle() {
+  if (renamePromise) return renamePromise
+  renamePromise = performSaveTitle()
+  try { await renamePromise } finally { renamePromise = null }
+}
+async function performSaveTitle() {
   if (!current.value || renaming.value) return
   const title = titleDraft.value.trim()
   if (!title) {
@@ -638,6 +644,7 @@ useSaveBeforeRefresh(async () => {
 })
 if (inject(routerKey, null)) onBeforeRouteLeave(settleEdits)
 async function flushEmbedded() {
+  if (!(await settleEdits())) throw new Error(error.value || '画板尚未保存，请重试')
   await persistDraft()
   await saveNow()
   if (dirty.value || conflict.value) throw new Error(error.value || '画板尚未保存，请重试')
@@ -784,7 +791,7 @@ defineExpose({ flush: flushEmbedded })
         >
           <i class="ri-menu-line"></i>
         </button>
-        <div v-if="!embedded" class="title-block">
+        <div class="title-block">
           <input
             v-if="current && editingTitle"
             ref="titleInput"

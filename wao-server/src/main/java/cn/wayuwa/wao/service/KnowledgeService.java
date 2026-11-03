@@ -863,15 +863,14 @@ public class KnowledgeService {
     /**
      * 用客户端提供的稳定 id 幂等创建小记。
      *
-     * <p>第一次请求已落库但响应丢失时，重试会命中同一篇文档。若用户在重试前继续修改了草稿，
-     * 这里把同一作者的同一篇小记更新到最新正文；不会再次插入，也不会再次发送飞书创建通知。
-     * createOnly 为 true 时，同作者重试只返回现有正文，不修改版本、通知或重新调度 AI。
-     * 其他作者或其他知识库已经占用该 id 时拒绝写入，避免把碰撞伪装成成功。
+     * <p>第一次请求已落库但响应丢失时，仅相同创建请求可重放，返回当前文档且不覆盖 AI 或用户编辑。
+     * 不同请求使用已占用 id 时明确拒绝，让新建入口保留草稿并更换 id。修改已有小记必须走版本检查。
+     * 升级前没有创建回执的记录只接受与当前正文一致的重试；旧 createOnly 调用仍只读返回。
      *
      * @param id     客户端草稿持有的文档 id
      * @param req    小记内容
      * @param author 作者 member id
-     * @return 新建或更新后的同一篇小记
+     * @return 新建或安全重放后的同一篇小记
      */
     @Transactional
     public DocDto createNote(String id, CreateNoteRequest req, String author) {
@@ -888,6 +887,11 @@ public class KnowledgeService {
                     || !Objects.equals(resolvedAuthor, existing.getAuthorId())) {
                 throw new BadRequestException("小记文档 id 已被占用");
             }
+            Boolean replay = noteOriginal == null ? null : noteOriginal.matchesCreation(resolvedAuthor,id,req);
+            if (replay != null) {
+                if (!replay) throw new BadRequestException("小记文档 id 已被占用");
+                return toDto(existing);
+            }
             if (Boolean.TRUE.equals(req.createOnly())) return toDto(existing);
             List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
             RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
@@ -902,17 +906,9 @@ public class KnowledgeService {
                     || !Objects.equals(blocksJson, existing.getBlocksJson())
                     || !sameRichContent(existing, content);
             if (changed) {
-                existing.setSystemGenerated(systemGenerated);
-                existing.setTagsJson(tagsJson);
-                existing.setTitle(title);
-                existing.setBlocksJson(blocksJson);
-                applyRichContent(existing, content);
-                existing.setRev(rev(existing) + 1);
-                existing.setUpdatedAt(LocalDateTime.now());
-                docMapper.updateContentSnapshot(existing);
+                throw new BadRequestException("小记文档 id 已被占用");
             }
-            discoverySaved(existing, NoteAiManagedService.derived()?"AI_DERIVED":"USER");
-            return noteSaved(toDto(existing),author,req.title(),req);
+            return toDto(existing);
         }
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
@@ -920,6 +916,7 @@ public class KnowledgeService {
         RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
                 author, blocks, content, List.of(), tags, Boolean.TRUE.equals(req.systemGenerated()));
+        if (noteOriginal != null) noteOriginal.recordCreation(resolvedAuthor,id,req);
         announceNote(kb.getId(), doc, author);
         return noteSaved(doc,author,req.title(),req,true);
     }

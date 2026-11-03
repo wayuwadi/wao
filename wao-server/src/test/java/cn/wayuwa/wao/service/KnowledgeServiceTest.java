@@ -1515,11 +1515,56 @@ class KnowledgeServiceTest {
         assertThat(dto.id()).isEqualTo(id);
         verify(docMapper, never()).insert(any(DocEntity.class));
         verify(docMapper, never()).updateById(any(DocEntity.class));
+        verify(docMapper, never()).updateContentSnapshot(any());
         verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
     }
 
     @Test
-    void createNoteRetryUpdatesTheSameDocumentWhenDraftChanged() {
+    void replayOfOriginalCreationKeepsLaterAiImageBodyAndRevision() {
+        String id = "created-note";
+        DocEntity existing = doc(id, "kb-notes", "f");
+        existing.setAuthorId("wg"); existing.setTitle("整理后的标题"); existing.setRev(6);
+        existing.setContentVersion(1);
+        existing.setContentMarkdown("![总览图](/api/images/first/raw)\n\n整理后的第一篇正文");
+        when(docMapper.selectById(id)).thenReturn(existing);
+        NoteOriginalService originals = mock(NoteOriginalService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "noteOriginal", originals);
+        var request = new CreateNoteRequest("原始标题", List.of(), new RichDocContentDto(1, null, "第一篇原始正文"));
+        when(originals.matchesCreation("wg", id, request)).thenReturn(true);
+
+        DocDto replay = service.createNote(id, request, "wg");
+        assertThat(replay.rev()).isEqualTo(6);
+        assertThat(replay.content().markdown()).isEqualTo(existing.getContentMarkdown());
+        assertThat(replay.title()).isEqualTo("整理后的标题");
+        verify(docMapper, never()).updateContentSnapshot(any());
+        verify(originals, never()).saved(any(), any(), anyBoolean(), any());
+        verify(originals, never()).recordCreation(any(), any(), any());
+
+        var different = new CreateNoteRequest("第二篇标题", List.of(), new RichDocContentDto(1, null, "第二篇正文"));
+        when(originals.matchesCreation("wg", id, different)).thenReturn(false);
+        assertThatThrownBy(() -> service.createNote(id, different, "wg"))
+                .hasMessage("小记文档 id 已被占用");
+        assertThat(existing.getContentMarkdown()).contains("/api/images/first/raw", "第一篇正文");
+        assertThat(existing.getRev()).isEqualTo(6);
+    }
+
+    @Test
+    void firstCreationRecordsReceiptBeforeNotifyingOrSchedulingAi() {
+        when(kbMapper.selectById("kb-notes")).thenReturn(kb("kb-notes"));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder("f", "kb-notes")));
+        var originals = mock(NoteOriginalService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "noteOriginal", originals);
+        var request = new CreateNoteRequest("第一篇", List.of());
+        service.createNote("new-note", request, "wg");
+        var order = org.mockito.Mockito.inOrder(docMapper, originals, taskNotifier);
+        order.verify(docMapper).insert(any(DocEntity.class));
+        order.verify(originals).recordCreation("wg", "new-note", request);
+        order.verify(taskNotifier).notifyNoteCreated(any(), any(), any(), any());
+        order.verify(originals).saved(any(), eq("wg"), eq(true), eq("第一篇"));
+    }
+
+    @Test
+    void createNoteRejectsDifferentDraftWithoutOverwritingSameAuthorsNote() {
         String id = "fedcba9876543210fedcba9876543210";
         DocEntity existing = doc(id, KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
         existing.setAuthorId("wg");
@@ -1528,13 +1573,14 @@ class KnowledgeServiceTest {
         when(docMapper.selectById(id)).thenReturn(existing);
         when(docMapper.selectList(any())).thenReturn(List.of(existing));
 
-        DocDto dto = service.createNote(id, new CreateNoteRequest("重试前补充过",
-                List.of(new DocBlockDto(null, null, "重试前补充过", null, null))), "wg");
+        assertThatThrownBy(() -> service.createNote(id, new CreateNoteRequest("另一篇小记",
+                List.of(new DocBlockDto(null, null, "完全不同的正文", null, null))), "wg"))
+                .isInstanceOf(BadRequestException.class).hasMessage("小记文档 id 已被占用");
 
-        assertThat(dto.id()).isEqualTo(id);
-        assertThat(dto.title()).isEqualTo("重试前补充过");
-        assertThat(dto.rev()).isEqualTo(2);
-        verify(docMapper).updateContentSnapshot(existing);
+        assertThat(existing.getTitle()).isEqualTo("旧草稿");
+        assertThat(existing.getBlocksJson()).isEqualTo("[{\"p\":\"旧草稿\"}]");
+        assertThat(existing.getRev()).isEqualTo(1);
+        verify(docMapper, never()).updateContentSnapshot(any());
         verify(docMapper, never()).insert(any(DocEntity.class));
         verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
     }
@@ -1596,15 +1642,18 @@ class KnowledgeServiceTest {
     }
 
     @Test
-    void idempotentNoteRetryPreservesOmittedTagsAndAcceptsExplicitTags() {
+    void legacyNoteRetryPreservesOmittedTagsAndRejectsDifferentExplicitTags() {
         DocEntity note = doc("tag-retry", "kb-notes", "f");
         note.setTagsJson("[\"工作\"]");
         note.setAuthorId("wg");
+        note.setTitle("重试");
         when(docMapper.selectById("tag-retry")).thenReturn(note);
         DocDto legacy = service.createNote("tag-retry", new CreateNoteRequest("重试", List.of()), "wg");
         assertThat(legacy.tags()).containsExactly("工作");
-        DocDto tagged = service.createNote("tag-retry", new CreateNoteRequest("重试", List.of(), null, List.of("灵感")), "wg");
-        assertThat(tagged.tags()).containsExactly("灵感");
+        assertThatThrownBy(() -> service.createNote("tag-retry", new CreateNoteRequest("重试", List.of(), null, List.of("灵感")), "wg"))
+                .hasMessage("小记文档 id 已被占用");
+        assertThat(note.getTagsJson()).isEqualTo("[\"工作\"]");
+        verify(docMapper, never()).updateContentSnapshot(any());
         verify(docMapper, never()).insert(any(DocEntity.class));
     }
 

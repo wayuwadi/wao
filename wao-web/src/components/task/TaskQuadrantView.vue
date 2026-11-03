@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useTaskScrollMemory } from '@/composables/taskViewMemory'
-import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import { useProjectItemActions } from '@/composables/projectItemActions'
 import { withProjectAncestors, type ProjectItemRefs } from '@/utils/projectWorkItems'
 import TaskOrderStatus from './TaskOrderStatus.vue'
@@ -14,24 +13,22 @@ import { matchesTaskWorkspaceFilter } from '@/utils/taskWorkspaceFilter'
 import TaskFilterSelect from './TaskFilterSelect.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { useDataStore } from '@/stores/data'
-import { useUiStore } from '@/stores/ui'
+import QuadrantQuickAdd from './QuadrantQuickAdd.vue'
 import { useDeco } from '@/composables/deco'
 import { useSettle } from '@/composables/completion'
 import { TASK_QUADRANTS, taskQuadrantRows } from '@/utils/taskQuadrants'
 import SaveHint from '@/components/ui/SaveHint.vue'
-import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
-import { copyText } from '@/utils/clipboard'
-import { shareUrl } from '@/utils/share'
+import TaskContextMenu from './TaskContextMenu.vue'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const props = defineProps<{ addProjectId?: string; hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
-const ui = useUiStore()
+const adding = ref<Priority | null>(null)
 const itemActions = useProjectItemActions(() => props.itemRefs)
 const sourceId = itemActions.sourceId
 function openItem(id: string) { itemActions.open(id) }
@@ -49,8 +46,7 @@ function locateParent(id: string) {
   }
   else openItem(key)
 }
-const quickAction = ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}|null>(null)
-const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const contextMenu = ref<InstanceType<typeof TaskContextMenu> | null>(null)
 const { decoTask } = useDeco()
 const { begin, cancel, isSettling } = useSettle()
 const dragId = ref<string | null>(null)
@@ -136,11 +132,9 @@ async function dropOnTask(event: DragEvent, target: Task) {
   await order.move(orderScope.value, props.tasks.filter(t => !itemActions.isSub(t.id)).map(t => t.id), source.id, target.id, after)
 }
 function createTask(priority: Priority) {
-  ui.openModal('task', props.projectId ?? '')
-  ui.modalPriority = priority
+  adding.value = priority
 }
 function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
-  const ref = itemActions.source(id)
   const task = (props.contextTasks ?? props.tasks).find(t => t.id === id)
   if (!task) return
   if (event instanceof KeyboardEvent) {
@@ -149,14 +143,8 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
   } else {
     if (event.target instanceof Element && event.target.closest('input:not([type=checkbox]), textarea, [contenteditable="true"]')) return
   }
-  contextMenu.value?.openAt(event, `任务：${task.title}`, [
-    { id:'tags',label:'设置标签',run:()=>{quickAction.value={...ref,mode:'tags'}} },
-    { id:'child',label:'添加子任务',disabled:busy(id),run:()=>{quickAction.value={...ref,mode:'child'}} },
-    { id:'priority',label:'修改优先级',disabled:busy(id),run:()=>{quickAction.value={...ref,mode:'priority'}} },
-    { id: 'open', label: '打开任务', run: () => openItem(id) },
-    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(ref.taskId, ref.subId), '任务分享链接已复制') },
-    { id: 'id', label: '复制任务编号', run: () => copyText(String(task.number ?? ref.subId ?? ref.taskId), '任务编号已复制') },
-    { id: 'complete', label: task.status === '已完成' ? '重新打开任务' : '完成任务', separatorBefore: true, disabled: busy(id), run: () => toggleComplete(id) },
+  contextMenu.value?.openAt(event, task, [
+    { id:'complete',label:task.status==='已完成'?'重新打开任务':'完成任务',icon:'ri-checkbox-circle-line',separatorBefore:true,disabled:busy(id),run:()=>toggleComplete(id) },
   ])
 }
 </script>
@@ -183,6 +171,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           </div>
         </header>
         <div :data-task-scroll="section.priority" class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
+          <QuadrantQuickAdd v-if="adding === section.priority" :priority="section.priority" :label="section.label" :project-id="addProjectId ?? projectId ?? ''" @close="adding = null" />
           <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ 'context-only': task.contextOnly, done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
@@ -203,7 +192,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
                 <button v-if="itemRefs?.[task.id]?.parentKey" class="quadrant-parent" :title="`定位父任务：${itemRefs[task.id]!.parentTitle}`" @click="locateParent(task.id)">↳ {{ itemRefs[task.id]!.parentTitle }}</button>
-                <span v-else class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
+                <span v-else-if="!hideListName" class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
               </div>
               <div v-if="busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error' || touchedIds.includes(task.id)" class="quadrant-save" aria-live="polite">
                 <SaveHint :saving="busy(task.id)" :failed="data.taskSaveState(sourceId(task.id)) === 'error'" :saved-at="data.taskSavedAt(sourceId(task.id))" />
@@ -237,7 +226,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
  <div class="rule-field rule-priorities" role="group" aria-label="优先级"><span>优先级</span><div><label v-for="q in TASK_QUADRANTS" :key="q.priority"><input v-model="draftRule.priorities" type="checkbox" :value="q.priority" />{{ q.priority }}</label></div></div>
  <p>清单、标签、优先级留空表示所有；日期匹配执行安排或截止日期。</p>
  <footer><button type="button" @click="resetRule">恢复默认</button><button type="button" @click="editingRule=null">取消</button><button type="submit">保存</button></footer>
- </form></SettingsDialogShell><TaskQuickActionDialog v-if="quickAction" v-bind="quickAction" @close="quickAction=null" /><ContextActionMenu ref="contextMenu" />
+ </form></SettingsDialogShell><TaskContextMenu ref="contextMenu" :item-refs="itemRefs" />
   </div>
 </template>
 
