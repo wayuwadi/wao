@@ -186,8 +186,16 @@ onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
 const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => ({ selectedId: '' }))
 const selectedId = computed({ get: () => viewMemory.value.selectedId, set: value => { viewMemory.value.selectedId = value } })
 const detailOnlySelection = ref(false)
+// A date edit can remove its own row from the active filter. Keep its save/retry UI
+// until the server acknowledges the write, including a later retry after failure.
+const pendingDateChanges = ref(new Set<string>())
+watch(() => [...pendingDateChanges.value].map(id => [id, data.taskSaveState(actions.sourceId(id))] as const), states => {
+  for (const [id, state] of states) if (state === 'saved') pendingDateChanges.value.delete(id)
+})
+watch(() => useSessionStore().userId, () => pendingDateChanges.value.clear(), { flush: 'sync' })
 const matches = computed(() => {
-  const items = props.items.filter(t => props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
+  const candidates = [...props.items, ...props.contextItems.filter(t => pendingDateChanges.value.has(t.id) && !props.items.some(item => item.id === t.id))]
+  const items = candidates.filter(t => props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id)))))
   const found = props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
@@ -290,9 +298,16 @@ const description = computed({
   },
 })
 async function changeDue(due:string) {
-  if (!selected.value) return
+  if (!selected.value || actions.busy(selected.value.id)) return
+  const id = selected.value.id
   const { taskId, subId } = source.value
-  await actions.save(selected.value.id, () => subId ? data.updateSub(taskId, subId, { due }) : data.patchTask(taskId, { due }))
+  pendingDateChanges.value.add(id)
+  try {
+    await actions.save(id, () => subId ? data.updateSub(taskId, subId, { due }) : data.patchTask(taskId, { due }))
+    if (data.taskSaveState(taskId) === 'saved') pendingDateChanges.value.delete(id)
+  } catch {
+    toast('日期未保存，请重试', 'ri-error-warning-line')
+  }
 }
 const taskTitle = computed(() => source.value.subId
   ? data.subById(source.value.taskId, source.value.subId)?.text ?? ''

@@ -10,6 +10,8 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
 import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
+import TaskDueDate from '@/components/task/TaskDueDate.vue'
+import { shiftTaskDate } from '@/utils/taskWorkspaceFilter'
 import { saveTaskLabels } from '@/api/taskLabels'
 const testRoute = vi.hoisted(() => ({ query: {} as Record<string,string> }))
 vi.mock('vue-router',()=>({useRoute:()=>testRoute,useRouter:()=>({push:vi.fn(),replace:vi.fn()})}))
@@ -26,6 +28,53 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('今天清单和四象限均包含本人逾期主任务与子项，排除已完成、他人及未来任务',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!, yesterday=shiftTaskDate(data.today,-1)
+  data.tasks=[
+   {...base,id:'overdue',title:'逾期主任务',due:yesterday,start:'',startAt:undefined,subs:[]},
+   {...base,id:'parent',title:'无日期父任务',due:'',start:'',startAt:undefined,subs:[{id:'child',text:'逾期子任务',done:false,due:yesterday}]},
+   {...base,id:'done',title:'已完成逾期',status:'已完成',due:yesterday,subs:[]},
+   {...base,id:'other',title:'他人逾期',owner:'other',due:yesterday,subs:[]},
+   {...base,id:'future',title:'未来任务',due:shiftTaskDate(data.today,1),start:'',startAt:undefined,subs:[]},
+  ]
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  const rows=wrapper.findAll('.checklist-row').map(row=>row.text()).join(' ')
+  expect(rows).toContain('逾期主任务');expect(rows).toContain('逾期子任务')
+  expect(rows).not.toContain('已完成逾期');expect(rows).not.toContain('他人逾期');expect(rows).not.toContain('未来任务')
+  expect(wrapper.get('[data-task-id="overdue"] .overdue').attributes('title')).toBe('已延期 1 天')
+  expect(wrapper.get('.count').text()).toBe('2')
+  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  const quadrants=wrapper.findAll('.quadrant-task').map(row=>row.text()).join(' ')
+  expect(quadrants).toContain('逾期主任务');expect(quadrants).toContain('逾期子任务')
+  expect(quadrants).not.toContain('已完成逾期');expect(quadrants).not.toContain('他人逾期');expect(quadrants).not.toContain('未来任务')
+  expect(data.taskById('overdue')?.due).toBe(yesterday)
+  wrapper.unmount()
+ })
+ it.each(['parent','child'])('今天清除 %s 日期后保存失败仍保留重试入口，成功才退出筛选且不改其他日期',async(kind)=>{
+  const data=useDataStore(), base=data.tasks[0]!, yesterday=shiftTaskDate(data.today,-1)
+  data.tasks=[{...base,id:'parent',title:'清除父任务',due:kind==='parent'?yesterday:'',start:'',startAt:undefined,subs:[{id:'child',text:'清除子任务',done:false,due:kind==='child'?yesterday:'2027-01-01'}]}]
+  const state=ref<'saving'|'error'|'saved'>('saved')
+  vi.spyOn(data,'taskSaveState').mockImplementation(()=>state.value)
+  vi.spyOn(data,'taskSaveError').mockReturnValue('版本冲突，请重试')
+  vi.spyOn(data,'patchTask').mockImplementation((id,fields)=>{Object.assign(data.taskById(id)!,fields);state.value='saving'})
+  vi.spyOn(data,'updateSub').mockImplementation((id,subId,fields)=>{Object.assign(data.subById(id,subId)!,fields);state.value='saving'})
+  let finish!:()=>void
+  vi.spyOn(data,'flushTask').mockImplementation(()=>new Promise<void>(resolve=>{finish=resolve}))
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  wrapper.getComponent(TaskDueDate).vm.$emit('change','');await flushPromises()
+  expect(wrapper.findComponent(TaskDueDate).exists()).toBe(true)
+  expect(kind==='parent'?data.taskById('parent')?.due:data.subById('parent','child')?.due).toBe('')
+  state.value='error';finish();await flushPromises()
+  expect(wrapper.findComponent(TaskDueDate).exists()).toBe(true)
+  expect(wrapper.text()).toContain('版本冲突')
+  expect(kind==='parent'?data.subById('parent','child')?.due:data.taskById('parent')?.due).toBe(kind==='parent'?'2027-01-01':'')
+  state.value='saved';await flushPromises()
+  expect(wrapper.findAll('.checklist-row')).toHaveLength(0)
+  wrapper.unmount()
+ })
  it('待办导航收起后保留当前清单并可展开，重新挂载恢复收起状态',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
   await wrapper.findAll('.list-entry>button').find(b=>b.text().includes(useDataStore().projects[0]!.name))!.trigger('click')

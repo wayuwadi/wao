@@ -21,7 +21,8 @@ export function matchesTaskDate(task: Partial<Pick<Task, 'start' | 'startAt' | '
   const scheduled = task.startAt?.slice(0, 10) || task.start || ''
   const dates = [scheduled, task.due || ''].filter(Boolean)
   switch (date) {
-    case 'today': return dates.includes(today)
+    // Completion and ownership are handled by the workspace, including pending saves.
+    case 'today': return dates.includes(today) || (!!task.due && task.due < today)
     case 'tomorrow': return dates.includes(shiftTaskDate(today, 1))
     case 'week': return dates.some(day => day >= today && day <= shiftTaskDate(today, 6))
     case 'overdue': return !!task.due && task.due < today
