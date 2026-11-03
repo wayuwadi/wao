@@ -34,7 +34,7 @@ describe('统一主菜单', () => {
     favorites.items = []; knowledge.ids = []; await flushPromises()
     expect(w.findAll('.favorite-link')).toHaveLength(0)
     expect(w.findAll('.item').map(item => item.attributes('aria-label'))).toEqual(labels)
-    expect(w.findAll('.item').every(item => item.text() === '')).toBe(true)
+    expect(w.findAll('.item').map(item => item.text())).toEqual(labels)
     await w.get('.side-collapse').trigger('click')
     expect(w.findAll('.item').map(item => item.text())).toEqual(labels)
     w.unmount()

@@ -69,7 +69,7 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
           :aria-label="nav.itemMeta(id)?.label" :title="nav.itemMeta(id)?.label" @click="go(id)">
           <BaguaIcon v-if="id === 'tianren'" class="bagua-icon" />
           <i v-else :class="nav.itemMeta(id)?.icon" aria-hidden="true"></i>
-          <span v-if="!isCollapsed" class="item-label">{{ nav.itemMeta(id)?.label }}</span>
+          <span :class="isCollapsed ? 'compact-label' : 'item-label'">{{ nav.itemMeta(id)?.label }}</span>
         </button>
         </template>
       </div>
@@ -111,7 +111,8 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
   .favorite-unfavorite { opacity: 0; pointer-events: none; }
   .favorite-child:hover .favorite-unfavorite, .favorite-child:focus-within .favorite-unfavorite { opacity: 1; pointer-events: auto; }
 }
-.side.collapsed .item.center { height: 40px; min-height: 40px; padding: 0; }
+.side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
+.side.collapsed .item .compact-label { display:block; width:100%; text-align:center; font-size:var(--wao-font-caption); line-height:1.4; white-space:nowrap; }
 .side-heading {
   display: flex;
   align-items: center;

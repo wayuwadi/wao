@@ -29,6 +29,38 @@ function setup(error = false, realEditor = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('行内修改子任务状态不切换详情且保存到真实子项', async () => {
+    const { data, wrapper } = setup()
+    const update = vi.spyOn(data, 'setSubState')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    await wrapper.get('[data-task-id="sub:parent:child"] .row-status').trigger('click')
+    const options = wrapper.findAll('[role="menuitemradio"]')
+    expect(options.map(o => o.text())).toEqual(['未开始', '进行中', '待验证', '已完成'])
+    await options.find(o => o.text() === '进行中')!.trigger('click')
+    expect(update).toHaveBeenCalledWith('parent', 'child', '进行中')
+    expect(flush).toHaveBeenCalledWith('parent')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
+  })
+  it('行内完成沿用可撤销等待，保存失败原位重试', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = setup()
+    const patch = vi.spyOn(data, 'patchTask')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    try {
+      await wrapper.get('[data-task-id="parent"] .row-status').trigger('click')
+      await wrapper.findAll('[role="menuitemradio"]').find(o => o.text() === '已完成')!.trigger('click')
+      expect(patch).not.toHaveBeenCalled()
+      expect(wrapper.get('[data-task-id="parent"] input[type=checkbox]').element).toHaveProperty('checked', true)
+      await wrapper.get('[data-task-id="parent"] input[type=checkbox]').setValue(false)
+      await vi.advanceTimersByTimeAsync(3100)
+      expect(patch).not.toHaveBeenCalled()
+      vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+      await wrapper.setProps({ query: '父' })
+      await wrapper.get('[aria-label="重试保存 父任务"]').trigger('click')
+      expect(flush).toHaveBeenCalledWith('parent')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
   it('右键子任务同步选中该项和详情，保留浮层菜单', async () => {
     const { wrapper } = setup()
     await wrapper.get('[data-task-id="sub:parent:child"]').trigger('contextmenu')
