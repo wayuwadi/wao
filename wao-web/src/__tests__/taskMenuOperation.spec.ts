@@ -46,5 +46,6 @@ it('菜单写入期间的新正文不会被回执覆盖',async()=>{
  finish({selectedId:'source',tasks:[abandoned]});await job
  expect(data.taskById('source')?.desc).toBe('等待期间继续输入的正文');expect(data.taskById('source')?.status).toBe('已放弃')
  await data.flushTask('source')
- expect(vi.mocked(apiPutTask).mock.calls.at(-1)?.[1].desc).toBe('等待期间继续输入的正文')
+ const calls=vi.mocked(apiPutTask).mock.calls
+ expect(calls[calls.length-1]?.[1].desc).toBe('等待期间继续输入的正文')
 })
