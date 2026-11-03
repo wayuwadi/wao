@@ -215,11 +215,11 @@ describe('TODO 四象限', () => {
     expect(wrapper.findAll('.quadrant').filter((section) => (section.element as HTMLElement).style.display !== 'none')).toHaveLength(4)
     for (const quadrant of TASK_QUADRANTS) {
       await wrapper.get(`[aria-label="在${quadrant.label}新建任务"]`).trigger('click')
-      expect(useUiStore().modal).toBe('task')
-      expect(useUiStore().modalPriority).toBe(quadrant.priority)
+      expect(wrapper.find(`[aria-label="${quadrant.label}任务名称"]`).exists()).toBe(true)
+      expect(useUiStore().modal).not.toBe('task')
     }
     useUiStore().openModal('task')
-    expect(useUiStore().modalPriority).toBe('P3')
+    expect(useUiStore().modalPriority).toBeNull()
     useUiStore().closeModal()
     useUiStore().openModal('task')
     expect(useUiStore().modalPriority).toBeNull()

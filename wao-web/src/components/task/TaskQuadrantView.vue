@@ -13,7 +13,7 @@ import { matchesTaskWorkspaceFilter } from '@/utils/taskWorkspaceFilter'
 import TaskFilterSelect from './TaskFilterSelect.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { useDataStore } from '@/stores/data'
-import { useUiStore } from '@/stores/ui'
+import QuadrantQuickAdd from './QuadrantQuickAdd.vue'
 import { useDeco } from '@/composables/deco'
 import { useSettle } from '@/composables/completion'
 import { TASK_QUADRANTS, taskQuadrantRows } from '@/utils/taskQuadrants'
@@ -22,13 +22,13 @@ import TaskContextMenu from './TaskContextMenu.vue'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const props = defineProps<{ addProjectId?: string; hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
-const ui = useUiStore()
+const adding = ref<Priority | null>(null)
 const itemActions = useProjectItemActions(() => props.itemRefs)
 const sourceId = itemActions.sourceId
 function openItem(id: string) { itemActions.open(id) }
@@ -132,8 +132,7 @@ async function dropOnTask(event: DragEvent, target: Task) {
   await order.move(orderScope.value, props.tasks.filter(t => !itemActions.isSub(t.id)).map(t => t.id), source.id, target.id, after)
 }
 function createTask(priority: Priority) {
-  ui.openModal('task', props.projectId ?? '')
-  ui.modalPriority = priority
+  adding.value = priority
 }
 function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
   const task = (props.contextTasks ?? props.tasks).find(t => t.id === id)
@@ -172,6 +171,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           </div>
         </header>
         <div :data-task-scroll="section.priority" class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
+          <QuadrantQuickAdd v-if="adding === section.priority" :priority="section.priority" :label="section.label" :project-id="addProjectId ?? projectId ?? ''" @close="adding = null" />
           <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ 'context-only': task.contextOnly, done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
