@@ -394,6 +394,18 @@ class KnowledgeServiceTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"\"borderWidth\":9", "\"borderWidth\":1.5", "\"borderWidth\":null", "\"borderStyle\":\"double\"", "\"borderColor\":\"red;position:fixed\""})
+    void invalidImageBorderCannotBeSaved(String attribute) throws Exception {
+        DocEntity existing = doc("d-border-invalid", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        var content = new RichDocContentDto(1, new ObjectMapper().readTree(
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"image\",\"attrs\":{\"src\":\"/api/images/test/raw\"," + attribute + "}}]}"), "");
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(), new PatchDocRequest(null, null, content, null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("图片边框");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"0", "1", "8"})
     void imageIndentSavesAndReloads(String indent) throws Exception {
         DocEntity existing = doc("d-image", "k1", "f1");
@@ -429,6 +441,19 @@ class KnowledgeServiceTest {
         return new RichDocContentDto(1, new ObjectMapper().readTree("""
                 {"type":"doc","content":[{"type":"%s","attrs":{"indent":%s,"src":"/api/images/test/raw"}}]}
                 """.formatted(type, indent)), "![验收图](/api/images/test/raw)");
+    }
+
+    @Test
+    void imageBorderPersistsThroughDocumentSave() throws Exception {
+        DocEntity existing = doc("d-border", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        var content = new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"image","attrs":{"src":"/api/images/test/raw","width":240,"height":120,"borderWidth":3,"borderStyle":"dashed","borderColor":"#245bdb"}}]}
+                """), "![示例](/api/images/test/raw \"wao-image-size:240x120;border=3,dashed,245bdb\")");
+        var saved = service.updateDoc(existing.getId(), new PatchDocRequest(null, List.of(), content, null, null, 1));
+        assertThat(saved.content()).isEqualTo(content);
+        assertThat(new ObjectMapper().readTree(existing.getContentJson())).isEqualTo(content.document());
     }
 
     @ParameterizedTest
