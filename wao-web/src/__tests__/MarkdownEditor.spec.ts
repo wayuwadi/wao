@@ -2621,3 +2621,69 @@ describe('统一编辑器分栏与链接', () => {
     w.unmount()
   })
 })
+
+
+describe('图片拖拽尺寸', () => {
+  it('松手后保存尺寸并左对齐，撤销、Markdown 和 JSON 重载保留正确内容', async () => {
+    const props = { modelValue: '![图片](/api/images/resize/raw)', advanced: true, imageControls: true, imageContextControls: true }
+    const w = await mountEditor(props)
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const image = w.get('.note-image-node img').element as HTMLImageElement
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
+    const pointer = (type: string, x: number) => new MouseEvent(type, { clientX: x, button: 0, bubbles: true })
+    w.get('.resize-se').element.dispatchEvent(pointer('pointerdown', 400))
+    window.dispatchEvent(pointer('pointermove', 240))
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    window.dispatchEvent(pointer('pointerup', 240))
+    await nextTick()
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: null, align: 'left', indent: 0 })
+    const saved = e.getMarkdown(), document = e.getJSON()
+    expect(saved).toContain('wao-image-size:240xauto')
+    e.commands.undo()
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    e.commands.redo()
+    expect(e.getJSON().content![0]!.attrs!.width).toBe(240)
+    w.unmount()
+    for (const content of [{ modelValue: saved }, { modelValue: saved, document }]) {
+      const restored = await mountEditor({ ...props, ...content })
+      expect(restored.get('.note-image-node').attributes('style')).toContain('width: 240px')
+      expect(restored.get('.note-image-node').attributes('style')).not.toContain('margin-left: auto')
+      restored.unmount()
+    }
+  })
+
+  it('取消拖动不保存，卸载清理监听，只读图片不显示控制点', async () => {
+    const w = await mountEditor({ modelValue: '![图片](/api/images/resize/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(w.get('.note-image-node img').element, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
+    w.get('.resize-se').element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 400, button: 0, bubbles: true }))
+    Object.defineProperty(w.get('.note-image-node').element.parentElement!, 'clientWidth', { configurable: true, value: 300 })
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 }))
+    expect(w.get('.note-image-node').attributes('style')).toContain('width: 300px')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
+    expect(w.get('.note-image-node').classes()).not.toContain('image-resizing')
+    await w.setProps({ readonly: true })
+    expect(w.findAll('.image-resize-handle').every(h => h.attributes('hidden') !== undefined)).toBe(true)
+    w.unmount()
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
+  })
+})
+
+
+describe('块旁插入入口', () => {
+  it('打开加号不改正文，选择后在目标块后插入且不覆盖已有内容', async () => {
+    const w = await mountEditor({ modelValue: '第一段\n\n第二段', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    w.findComponent({ name: 'DragHandleVue' }).props('onNodeChange')({ pos: 0 })
+    await w.get('[aria-label="在此块后插入内容"]').trigger('click')
+    expect(e.getJSON()).toEqual(before)
+    const option = [...document.querySelectorAll<HTMLButtonElement>('.slash-menu button')].find(b => b.textContent?.includes('二级标题'))!
+    option.click()
+    await nextTick()
+    expect(e.getJSON().content?.map(n => n.type)).toEqual(['paragraph', 'heading', 'paragraph'])
+    expect(e.state.doc.textContent).toBe('第一段第二段')
+    w.unmount()
+  })
+})
