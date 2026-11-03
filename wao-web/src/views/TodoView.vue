@@ -119,7 +119,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
      <template #list-header><TodoListHeader v-model:query="query" v-model:quick="quick" v-model:layout="layout" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" /></template>
      <template #section-action="{section}"><button v-if="section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
-    <TaskQuadrantView :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" />
+    <TaskQuadrantView :hide-list-name="selection.startsWith('project:')" :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="selection==='completed' || !!query.trim()" />
    </template>
   </main>
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
