@@ -8,7 +8,6 @@ import { useMemberPreference } from '@/composables/memberPreference'
 import { useSessionStore } from '@/stores/session'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
-import { useTaskLabelsStore } from '@/stores/taskLabels'
 import CellMenu from '@/components/task/CellMenu.vue'
 import { PROJECT_STATUS_COLORS, PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS, projectStatusLabel } from '@/utils/projectStatusPresentation'
 import { selectableTaskStatuses } from '@/config/features'
@@ -61,8 +60,6 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const props = defineProps<{ groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
-const labels = useTaskLabelsStore()
-const tagsFor = (id: string) => { const ref = props.itemRefs[id]; return labels.get(ref?.taskId ?? id, ref?.subId).tags }
 const deadlineDefaults = useTaskDeadlineDefaults()
 const today = ref(todayIso())
 const refreshToday = () => { today.value = todayIso() }
@@ -116,6 +113,25 @@ function toggleCompletion(id: string) {
   completionTimers.set(id, setTimeout(() => { void commitCompletion(id) }, 3000))
 }
 const isComplete = (task: Task) => task.status === '已完成' || pendingCompletion.value.has(task.id)
+const rowStatusMenu = ref<{ id: string; anchor: HTMLElement } | null>(null)
+const rowStatusTask = computed(() => props.contextItems.find(task => task.id === rowStatusMenu.value?.id))
+const rowStatusOptions = computed<TaskStatus[]>(() => rowStatusTask.value && actions.isSub(rowStatusTask.value.id)
+  ? ['待办', '进行中', '待验证', '已完成'] : selectableTaskStatuses(rowStatusTask.value?.status))
+function openRowStatus(event: MouseEvent, id: string) {
+  propertyMenu.value = null
+  rowStatusMenu.value = rowStatusMenu.value?.id === id ? null : { id, anchor: event.currentTarget as HTMLElement }
+}
+async function changeRowStatus(status: TaskStatus) {
+  const id = rowStatusMenu.value?.id
+  rowStatusMenu.value = null
+  if (!id || actions.busy(id) || props.contextItems.find(task => task.id === id)?.status === status) return
+  cancelCompletion(id)
+  if (status === '已完成') { toggleCompletion(id); return }
+  await actions.status(id, status)
+}
+watch(() => useSessionStore().userId, () => { rowStatusMenu.value = null })
+watch(rowStatusTask, task => { if (!task) rowStatusMenu.value = null })
+
 watch(() => useSessionStore().userId, () => {
   retainedCompletion.value.clear()
   for (const id of [...pendingCompletion.value]) cancelCompletion(id)
@@ -481,8 +497,13 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
           <span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
-          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="tagsFor(task.id).length" class="task-meta" :title="tagsFor(task.id).join('，')"># {{ tagsFor(task.id)[0] }}</span><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : task.due">{{ relativeDate(task) }}</span>
-        </button><button class="row-more" :aria-label="`任务操作 ${task.title}`" @click="openChecklistMenu($event,task.id)"><i class="ri-more-line" /></button>
+          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : task.due">{{ relativeDate(task) }}</span>
+        </button>
+        <button class="row-status" :data-status="task.status" :aria-label="`修改 ${task.title} 的状态：${projectStatusLabel(task.status)}`" aria-haspopup="menu" :aria-expanded="rowStatusMenu?.id === task.id" :disabled="actions.busy(task.id) || pendingCompletion.has(task.id)" @click.stop="openRowStatus($event, task.id)" @pointerdown.stop @dragstart.prevent.stop>
+          <span class="row-status-dot" aria-hidden="true"></span>{{ projectStatusLabel(task.status) }}<i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+        </button>
+        <button v-if="data.taskSaveState(actions.sourceId(task.id)) === 'error'" class="row-status-retry" :title="data.taskSaveError(actions.sourceId(task.id))" :aria-label="`重试保存 ${task.title}`" @click.stop="data.flushTask(actions.sourceId(task.id))">未保存 · 重试</button>
+        <button class="row-more" :aria-label="`任务操作 ${task.title}`" @click="openChecklistMenu($event,task.id)"><i class="ri-more-line" /></button>
       </div>
       </div></section>
     </WaoCard></div>
@@ -543,6 +564,9 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
   </div>
   <TaskContextMenu ref="contextMenu" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
+  <CellMenu v-if="rowStatusMenu && rowStatusTask" :anchor="rowStatusMenu.anchor" :min-width="140" @close="rowStatusMenu = null">
+    <button v-for="status in rowStatusOptions" :key="status" role="menuitemradio" :aria-checked="status === rowStatusTask.status" @click="changeRowStatus(status)">{{ projectStatusLabel(status) }}<i v-if="status === rowStatusTask.status" class="ri-check-line" aria-hidden="true"></i></button>
+  </CellMenu>
   <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" icon="ri-delete-bin-line" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
     <div class="delete-content">
       <p class="delete-description">确定删除「{{ deleteTarget.title }}」？</p>
@@ -560,6 +584,16 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 </template>
 
 <style scoped>
+.row-status { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; min-height:28px; padding:0 6px; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-3); font:inherit; font-size:var(--wao-font-caption); white-space:nowrap; cursor:pointer; }
+.row-status:hover, .row-status[aria-expanded="true"] { background:var(--wao-bg-hover); color:var(--wao-text); }
+.row-status:disabled { cursor:wait; opacity:.65; }
+.row-status-dot { width:6px; height:6px; border-radius:var(--wao-radius-pill); background:var(--wao-text-3); }
+.row-status[data-status="进行中"] .row-status-dot { background:var(--wao-primary); }
+.row-status[data-status="待验证"] .row-status-dot, .row-status[data-status="收集中"] .row-status-dot { background:var(--wao-warning-strong); }
+.row-status[data-status="已完成"] .row-status-dot { background:var(--wao-success-strong); }
+.row-status-retry { flex-shrink:0; border:0; background:transparent; color:var(--wao-danger-strong); font:inherit; font-size:var(--wao-font-caption); cursor:pointer; }
+@media (pointer:coarse) { .row-status { min-height:44px; } }
+
 .delete-content { display: flex; flex-direction: column; gap: var(--wao-space-1); padding: var(--wao-space-3); overflow-wrap: anywhere; }
 .delete-description { margin: 0; color: var(--wao-text); font-size: var(--wao-font-body); }
 .delete-consequence { margin: 0; color: var(--wao-text-3); font-size: var(--wao-font-help); }
@@ -669,5 +703,10 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:2px soli
   .checklist-tasks { max-height:260px; padding:0; }
   .checklist-detail { position:static; max-height:none; min-height:300px; border-left:0; border-top:1px solid var(--wao-line); padding:var(--wao-space-2) 0 0; }
   .task-select { min-height:44px; }
+}
+@container (max-width:420px) {
+  .task-select { flex-wrap:wrap; column-gap:4px; row-gap:0; padding-block:4px; }
+  .task-title { flex:1 0 100%; }
+  .task-select .task-meta { font-size:var(--wao-font-caption); }
 }
 </style>
