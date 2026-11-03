@@ -24,6 +24,34 @@ public class NoteOriginalService {
     public record Snapshot(String id,String title,String markdown,JsonNode document,List<DocBlockDto> blocks,List<DocLinkDto> links,String sourceType,Integer sourceRev,String createdAt){}
     public record Originals(Snapshot before,Snapshot initial,String explanation,Integer appliedRev){}
     public record DraftResult(String taskId,Content content){}
+    /** null 表示升级前记录；false 表示同一 id 被不同创建请求使用。 */
+    public Boolean matchesCreation(String member,String doc,CreateNoteRequest request){
+        var receipt=one("SELECT member_id,request_hash FROM note_creation_receipt WHERE doc_id=?",doc);
+        return receipt==null?null:Objects.equals(member,str(receipt,"member_id"))
+                && creationHash(request).equals(str(receipt,"request_hash"));
+    }
+    /** 与首次插入正文同事务写入，不在 AI 更新或请求重放时改写。 */
+    public void recordCreation(String member,String doc,CreateNoteRequest request){
+        db.update("INSERT INTO note_creation_receipt(doc_id,member_id,request_hash) VALUES(?,?,?)",
+                doc,member,creationHash(request));
+    }
+    private String creationHash(CreateNoteRequest request){
+        // JsonNode 对象字段顺序不影响请求身份，数组顺序和正文空白保持精确。
+        return NoteAiSettingsService.hash(canonical(json.valueToTree(request)));
+    }
+    private String canonical(JsonNode value){
+        if(value.isObject()){
+            var fields=new TreeMap<String,String>();
+            value.fields().forEachRemaining(entry->fields.put(entry.getKey(),canonical(entry.getValue())));
+            return fields.entrySet().stream().map(entry->settings.write(entry.getKey())+":"+entry.getValue())
+                    .collect(java.util.stream.Collectors.joining(",","{","}"));
+        }
+        if(value.isArray()){
+            var items=new ArrayList<String>();value.forEach(item->items.add(canonical(item)));
+            return String.join(",",items).transform(itemsJson->"["+itemsJson+"]");
+        }
+        return value.toString();
+    }
     private Map<String,Object> one(String sql,Object...args){var rows=db.queryForList(sql,args);return rows.isEmpty()?null:rows.get(0);}
     private String str(Map<String,Object> row,String key){Object v=row.get(key);return v==null?null:v.toString();}
     private <T>T read(String value,Class<T> type){try{return json.readValue(value,type);}catch(Exception e){throw new IllegalStateException("来源快照读取失败",e);}}

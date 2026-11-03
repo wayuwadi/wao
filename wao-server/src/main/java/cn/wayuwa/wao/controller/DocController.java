@@ -89,7 +89,7 @@ public class DocController {
     }
 
     /**
-     * 幂等新建一条小记：客户端为草稿保留稳定 id，弱网重试只会更新同一篇，不会生成重复小记。
+     * 幂等新建小记：相同请求重放返回当前记录；不同创建请求不能更新已占用的 id。
      */
     @PutMapping("/notes/{id}")
     public ApiResponse<DocDto> putNote(@PathVariable String id, @RequestBody CreateNoteRequest request,
