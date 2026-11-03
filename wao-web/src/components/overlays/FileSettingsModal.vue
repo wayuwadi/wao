@@ -75,7 +75,7 @@ onMounted(load)
     title="文件与图床设置"
     description="管理上传上限与公开下载验证"
     width="760px"
-    height="auto"
+    height="min(560px, calc(100dvh - 48px))"
     @close="close"
   >
     <form id="file-settings-form" class="file-settings-body" @submit.prevent="save">

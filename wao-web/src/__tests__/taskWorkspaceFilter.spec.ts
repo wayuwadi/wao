@@ -5,6 +5,15 @@ import { matchesTaskDate, matchesTaskWorkspaceFilter, shiftTaskDate, type TaskWo
 const task = { project: 'project-a', pr: 'P1', start: '2026-10-29', due: '2026-11-03' } as Task
 const filter: TaskWorkspaceFilter = { projects: [], tags: [], tagMode: 'any', date: 'all', priorities: [] }
 describe('task workspace filters', () => {
+  it('今天包含逾期截止日期，不将过去的执行日期视为逾期，也不扩大明天或最近七天', () => {
+    const overdue = { due:'2026-10-31', startAt:'2026-11-05T09:00:00' }
+    expect(matchesTaskDate(overdue, 'today', '2026-11-03')).toBe(true)
+    expect(matchesTaskDate(overdue, 'tomorrow', '2026-11-03')).toBe(false)
+    expect(matchesTaskDate({ due:'2026-10-31' }, 'week', '2026-11-03')).toBe(false)
+    expect(matchesTaskDate({ start:'2026-10-31' }, 'today', '2026-11-03')).toBe(false)
+    expect(matchesTaskDate({ due:'' }, 'today', '2026-11-03')).toBe(false)
+    expect(matchesTaskDate({ due:'', start:'2026-11-03' }, 'today', '2026-11-03')).toBe(true)
+  })
   it('crosses month and leap-year boundaries', () => {
     expect(shiftTaskDate('2026-10-31', 1)).toBe('2026-11-01')
     expect(shiftTaskDate('2028-02-28', 1)).toBe('2028-02-29')

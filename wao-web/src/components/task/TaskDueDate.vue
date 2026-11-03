@@ -39,6 +39,7 @@ function navigate(event:KeyboardEvent, day:string) {
   event.preventDefault(); choose(shiftDay(day, offset)); void focusDay()
 }
 function save() { emit('change', draft.value); close() }
+function clear() { emit('change', ''); close() }
 </script>
 
 <template>
@@ -52,7 +53,7 @@ function save() { emit('change', draft.value); close() }
       <div class="calendar-grid"><span v-for="day in ['日','一','二','三','四','五','六']" :key="day" class="weekday">{{ day }}</span>
         <button v-for="day in days" :key="day" :data-day="day" :aria-label="day" :aria-pressed="draft === day" :aria-current="day === today ? 'date' : undefined" :tabindex="day === draft || (!draft.startsWith(month) && day === month + '-01') ? 0 : -1" :class="{ selected:draft === day, outside:!day.startsWith(month), today:day === today }" @click="choose(day)" @keydown="navigate($event, day)">{{ Number(day.slice(8,10)) }}</button>
       </div>
-      <div class="date-footer"><WaoButton variant="primary" @click="save">确定</WaoButton><WaoButton variant="ghost" @click="close">取消</WaoButton></div>
+      <div class="date-footer"><WaoButton v-if="due" variant="ghost" @click="clear">清除</WaoButton><WaoButton variant="ghost" @click="close">取消</WaoButton><WaoButton variant="primary" @click="save">确定</WaoButton></div>
       <WaoButton v-if="missingCount" class="fill-defaults" variant="ghost" :disabled="bulkBusy" @click="emit('fillMissing'); close()">为所有项目补齐默认日期（{{ missingCount }}）</WaoButton>
     </section>
   </CellMenu>

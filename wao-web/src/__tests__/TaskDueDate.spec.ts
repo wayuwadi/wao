@@ -11,6 +11,20 @@ import { seedDataStore } from './helpers/seedDataStore'
 enableAutoUnmount(afterEach)
 beforeEach(() => { setActivePinia(createPinia()); localStorage.clear(); seedDataStore() })
 describe('截止日期', () => {
+  it('清除直接提交空日期，重新打开可重新选日期，无日期时不显示清除', async () => {
+    const wrapper = mount(TaskDueDate, { props:{ due:'2026-11-01', today:'2026-11-03' }, global:{ stubs:{ CellMenu:{ template:'<div><slot /></div>' } } } })
+    await wrapper.get('.due-trigger').trigger('click')
+    await wrapper.findAll('button').find(b => b.text() === '清除')!.trigger('click')
+    expect(wrapper.emitted('change')).toEqual([['']])
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.setProps({ due:'' })
+    expect(wrapper.get('.due-trigger').text()).not.toContain('已延期')
+    await wrapper.get('.due-trigger').trigger('click')
+    expect(wrapper.findAll('button').some(b => b.text() === '清除')).toBe(false)
+    await wrapper.findAll('button').find(b => b.text() === '明天')!.trigger('click')
+    await wrapper.findAll('button').find(b => b.text() === '确定')!.trigger('click')
+    expect(wrapper.emitted('change')).toEqual([[''], ['2026-11-04']])
+  })
   it('按日计算延期，今天与完成项不标延期，跨月和闰年正确', () => {
     expect(deadlineInfo('2026-10-20', '2026-10-28')).toEqual({ label:'10月20日', overdue:8 })
     expect(deadlineInfo('2026-10-28', '2026-10-28')).toEqual({ label:'10月28日，今天', overdue:0 })

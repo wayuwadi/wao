@@ -350,7 +350,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 </script>
 
 <template>
-  <SettingsDialogShell title="清单设置" :description="project.name" width="760px" height="auto" @close="requestClose">
+  <SettingsDialogShell title="清单设置" :description="project.name" width="760px" height="min(640px, calc(100dvh - 48px))" @close="requestClose">
     <div class="project-settings-body" :inert="saving || undefined">
       <div v-if="saveError || draftWarning || draftRestored || draftConflict" class="settings-feedback">
         <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>

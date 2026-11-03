@@ -224,10 +224,13 @@ describe('舞台登录与认证生命周期', () => {
     await open()
     await wrapper.get('.authorization-cta').trigger('click')
     const beforeNavigate = vi.mocked(startFeishuLogin).mock.calls[0]![1]!
+    // 打开登录弹窗会保存欢迎提示已读标记；迟到授权不能新增任何快照。
+    const storedBeforeLeave = { ...sessionStorage }
     wrapper.unmount()
     await router.push('/notes')
     expect(beforeNavigate('https://auth.example/?state=late')).toBe(false)
-    expect(sessionStorage.length).toBe(0)
+    expect({ ...sessionStorage }).toEqual(storedBeforeLeave)
+    expect(sessionStorage.getItem('wao-breathing-auth:v1')).toBeNull()
     expect(router.currentRoute.value.path).toBe('/notes')
   })
   it('二维码和授权失败可见且可以重试', async () => {

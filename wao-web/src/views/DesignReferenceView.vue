@@ -468,8 +468,8 @@ const detailLabels = ref('')
           </section>
           <section class="reference-section">
             <h2>项目设置分项</h2>
-            <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
-            <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
+            <p>基本信息直接编辑，成员与危险操作分开。切换时标题、页签、底栏保持原位，长内容仅在面板内滚动。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
+            <SettingsDialogShell title="项目设置示例" description="合成演示：切换分项时标题、页签与底栏保持原位，内容独立滚动" width="760px" height="min(640px, calc(100dvh - 48px))" embedded :theme="theme">
               <p>项目四象限：子任务缩进跟随主任务，整组以主任务优先级归类。</p>
               <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree :collapsed="demoCollapsed" @expand="demoCollapsed = false; feedback = '示例：全部展开'" @collapse="demoCollapsed = true; feedback = '示例：全部收起'" />
               <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
@@ -507,6 +507,7 @@ const detailLabels = ref('')
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <TaskDueDate :due="deadlineExample" today="2026-10-28" @change="deadlineExample = $event" />
+          <p class="demonstration-note">日期弹层支持清除截止日期；未完成的逾期任务同时出现在「今天」，保留原日期和延期提示。</p>
           <div class="density-examples"><WaoButton variant="ghost" @click="detailDemoDescription = ''">空描述示例</WaoButton><WaoButton variant="ghost" @click="detailDemoDescription = '先说明背景、目标与边界，再把具体执行拆成子任务。\n\n' + '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16)">长描述示例</WaoButton></div>
           <div class="task-detail-demo">
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">

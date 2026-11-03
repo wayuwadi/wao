@@ -118,6 +118,27 @@ describe('TaskDrawer', () => {
     useToastHost().items.splice(0)
   })
 
+  it('属性菜单开关不增加重复标题或改变属性行内容', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+    const props = w.get('.detail-properties')
+    const rows = () => props.findAll('.prop-row').map(row => row.get('.prop-key').text())
+    const before = rows()
+    for (const label of ['状态', '优先级', '负责人', '分组']) {
+      const row = props.findAll('.prop-row').find(row => row.get('.prop-key').text() === label)!
+      await row.get('button').trigger('click')
+      expect(props.find('.menu-mask').exists()).toBe(true)
+      expect(document.querySelector('.cell-menu')).not.toBeNull()
+      expect(props.findAll('.props > .props-label')).toHaveLength(0)
+      expect(props.findAll('.properties-heading h3').map(el => el.text())).toEqual(['属性'])
+      expect(rows()).toEqual(before)
+      await props.get('.menu-mask').trigger('click')
+      expect(document.querySelector('.cell-menu')).toBeNull()
+      expect(rows()).toEqual(before)
+    }
+  })
+
   it('任务描述用斜线插入标题并写回任务草稿', async () => {
     data.taskById(taskId)!.desc = ''
     ui.openTask(taskId)
@@ -681,7 +702,8 @@ describe('TaskDrawer', () => {
     expect(w.find('.type-line').text()).toContain('子任务')
     expect((w.find('.main .title-input').element as HTMLTextAreaElement).value).toBe('扫描身份证')
     expect(w.findAll('.crumb-item')).toHaveLength(2)
-    expect(w.find('.props').text()).toContain('子任务属性')
+    expect(w.get('.detail-properties .properties-heading').text()).toContain('属性')
+    expect(w.get('.props').text()).toContain('所属任务')
     expect(w.find('.props').text()).not.toContain('自定义属性')
     expect(w.find('[aria-label="删除当前子任务"]').exists()).toBe(true)
     expect(w.find('.share-wrap').exists()).toBe(true)
@@ -1251,7 +1273,8 @@ describe('TaskDrawer', () => {
 
     const groupRow = w.findAll('.prop-row').find((r) => r.text().startsWith('分组'))!
     await groupRow.find('.owner-btn').trigger('click')
-    await groupRow.findAll('.pmenu-item')[1]!.trigger('click')
+    document.querySelectorAll<HTMLButtonElement>('.cell-menu .pmenu-item')[1]!.click()
+    await flushPromises()
 
     expect(data.taskById(taskId)!.groupId).toBe('g2')
   })
