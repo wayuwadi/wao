@@ -2,6 +2,7 @@
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges } from '@/utils/contentSearch'
 import { bookExcerptContent } from '@/utils/bookExcerpt'
+import { imageResizeControls } from '@/utils/editorImageResize'
 import { indentEditorSelection } from '@/utils/editorIndent'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
@@ -609,6 +610,19 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         imageApplyAll.value = false
         showImageMenu(current.attrs.src, event.clientX, event.clientY)
       })
+      const resize = imageResizeControls({
+        dom, image,
+        editable: () => !props.readonly && !props.imageReferences && !!editor.value?.isEditable,
+        restore: () => update(),
+        commit: width => {
+          const e = editor.value, pos = getPos()
+          if (!e || props.readonly || !e.isEditable || pos == null) return update()
+          const latest = e.state.doc.nodeAt(pos)
+          if (latest?.type !== current.type || latest.attrs.src !== current.attrs.src) return update()
+          e.view.dispatch(closeHistory(e.state.tr).setNodeMarkup(pos, undefined, { ...latest.attrs, width, height: null, align: 'left', indent: 0 }))
+          e.view.dispatch(closeHistory(e.state.tr))
+        },
+      })
       const update = () => {
         const attrs = current.attrs
         dom.classList.toggle('reading-image-node', props.imageReferences)
@@ -625,7 +639,8 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
           if (!dom.contains(reference)) { image.removeAttribute('src'); dom.replaceChildren(before, reference, after) }
           return
         }
-        if (dom.firstChild !== image) dom.replaceChildren(image, button)
+        if (dom.firstChild !== image) dom.replaceChildren(image, button, ...resize.controls)
+        resize.controls.forEach(control => { control.hidden = props.readonly || !props.imageControls })
         image.src = usePreview ? notePreviewSource(attrs.src) : attrs.src
         image.dataset.fullSrc = attrs.src
         image.alt = attrs.alt || ''
@@ -635,7 +650,8 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         dom.style.cssText = 'max-width:100%;'
         const indent = imageIndent(attrs.indent) * 24
         if (indent) { dom.style.marginLeft = `min(${indent}px,50%)`; dom.style.maxWidth = `calc(100% - min(${indent}px,50%))` }
-        dom.classList.toggle('image-aligned', !!indent || width === null && !!attrs.align)
+        dom.classList.toggle('image-aligned', !!indent || !!attrs.align)
+        if (attrs.align === 'left') { dom.style.marginLeft = '0'; dom.style.marginRight = 'auto' }
         if (attrs.align === 'center') { dom.style.marginLeft = 'auto'; dom.style.marginRight = 'auto' }
         if (attrs.align === 'right') { dom.style.marginLeft = 'auto'; dom.style.marginRight = '0' }
         if (typeof width === 'string') dom.style.width = `calc(${width} - 8px)`
@@ -647,7 +663,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
       }
       update()
       imageNodeViews.add(update)
-      return { dom, destroy() { imageNodeViews.delete(update) }, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+      return { dom, destroy() { resize.destroy(); imageNodeViews.delete(update) }, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
         selectNode() { dom.classList.add('ProseMirror-selectednode') }, deselectNode() { dom.classList.remove('ProseMirror-selectednode') },
         stopEvent(event) { return event.target instanceof Element && !!event.target.closest('button') }, ignoreMutation: () => true }
     }
@@ -1664,6 +1680,8 @@ function openSelectedImage() {
 const shell = ref<HTMLElement | null>(null)
 const imagePicker = ref<HTMLInputElement | null>(null)
 const filePicker = ref<HTMLInputElement | null>(null)
+const blockPosition = ref(-1)
+const blockInsertPosition = ref<number | null>(null)
 const slashOpen = ref(false)
 const slashMenuEl = ref<HTMLElement | null>(null)
 const slashPosition = ref({ left: '12px', top: '12px', maxHeight: '360px' })
@@ -1951,6 +1969,7 @@ const filteredSlashActions = computed(() => {
 
 function updateSlashMenu(e: Editor) {
   if (!(props.advanced || props.slashCommands) || props.readonly || composing.value) return
+  blockInsertPosition.value = null
   if (e.isActive('codeBlock')) {
     slashOpen.value = false
     slashFromInput.value = false
@@ -1969,6 +1988,12 @@ function updateSlashMenu(e: Editor) {
 function chooseSlash(action: SlashAction) {
   const e = editor.value
   if (!e) return
+  if (blockInsertPosition.value !== null) {
+    const pos = blockInsertPosition.value
+    blockInsertPosition.value = null
+    if (pos > e.state.doc.content.size) return
+    e.chain().focus().insertContentAt(pos, { type: 'paragraph' }).setTextSelection(pos + 1).run()
+  }
   if (slashFromInput.value) {
     const { $from } = e.state.selection
     const from = $from.start()
@@ -1979,7 +2004,16 @@ function chooseSlash(action: SlashAction) {
   action.run()
 }
 
+function insertAtBlock(event: MouseEvent) {
+  const e = editor.value, pos = blockPosition.value
+  const node = e && pos >= 0 ? e.state.doc.nodeAt(pos) : null
+  if (!e || !node || props.readonly) return
+  toggleInsertMenu(event)
+  blockInsertPosition.value = pos + node.nodeSize
+}
+
 function toggleInsertMenu(event?: MouseEvent) {
+  blockInsertPosition.value = null
   positionSlashMenu(event?.currentTarget as HTMLElement | undefined)
   slashFromInput.value = false
   slashQuery.value = ''
@@ -2403,7 +2437,7 @@ watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
   () => props.readonly,
   // 只读切换不是正文修改；不能回发 content-change 把父组件的保存中状态重置为 idle。
-  (ro) => { closeTableMenu(); editor.value?.setEditable(!ro, false) },
+  (ro) => { closeTableMenu(); editor.value?.setEditable(!ro, false); for (const update of imageNodeViews) update() },
 )
 
 onBeforeUnmount(() => {
@@ -2523,7 +2557,7 @@ onBeforeUnmount(() => {
         >
       </template>
     </div>
-    <div class="md-editor-wrap">
+    <div class="md-editor-wrap" :class="{ 'block-controls': advanced && !readonly }">
       <!-- BubbleMenu 会把自己的根节点移出原位置；保留 Vue 管理的外壳，
            避免保存时切换 readonly 后 v-if 在已脱离 DOM 的节点上插入占位符。 -->
       <div v-if="editor && (advanced || linkControls || polishable || taskable || selectionImage) && !readonly" class="bubble-menu-anchor">
@@ -2628,8 +2662,8 @@ onBeforeUnmount(() => {
         @compositionend="composing = false; editor && updateSlashMenu(editor)"
         @click="onEditorContentClick"
       />
-      <DragHandle v-if="editor && advanced && !readonly" :editor="editor" class="block-drag-handle">
-        <i class="ri-draggable"></i>
+      <DragHandle v-if="editor && advanced && !readonly" :editor="editor" :on-node-change="({ pos }) => blockPosition = pos" class="block-drag-handle">
+        <button type="button" aria-label="在此块后插入内容" title="插入内容" @mousedown.prevent @click.stop="insertAtBlock"><i class="ri-add-line" aria-hidden="true"></i></button>
       </DragHandle>
       <Teleport to="body">
       <div v-if="slashOpen && !readonly" ref="slashMenuEl" class="slash-menu" :style="{ ...slashPosition, zIndex: menuZIndex }" role="listbox" aria-label="插入内容块">
@@ -3811,4 +3845,19 @@ onBeforeUnmount(() => {
 .md-body :deep(td p),.md-body :deep(th p) { margin:0; min-height:1.5em; }
 .md-body :deep(.selectedCell) { background:var(--wao-primary-soft); }
 .md-body :deep(.column-resize-handle) { background:var(--wao-primary); }
+</style>
+
+<style scoped>
+.md-editor-wrap.block-controls { padding-inline:26px 6px; }
+.block-drag-handle { padding:0; border:0; box-shadow:none; background:transparent; }
+.block-drag-handle button { display:grid; place-items:center; width:22px; height:24px; padding:0; border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text-3); cursor:pointer; }
+.block-drag-handle button:hover { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
+.md-body :deep(.image-resize-handle) { position:absolute; width:12px; height:12px; padding:0; border:2px solid var(--wao-bg-card); border-radius:50%; background:var(--wao-primary); opacity:0; touch-action:none; z-index:2; }
+.md-body :deep(.image-resize-handle[hidden]) { display:none; }
+.md-body :deep(.note-image-node:hover .image-resize-handle), .md-body :deep(.note-image-node:focus-within .image-resize-handle), .md-body :deep(.ProseMirror-selectednode .image-resize-handle), .md-body :deep(.image-resizing .image-resize-handle) { opacity:1; }
+.md-body :deep(.resize-nw) { top:0; left:0; cursor:nwse-resize; }
+.md-body :deep(.resize-ne) { top:0; right:0; cursor:nesw-resize; }
+.md-body :deep(.resize-sw) { bottom:0; left:0; cursor:nesw-resize; }
+.md-body :deep(.resize-se) { bottom:0; right:0; cursor:nwse-resize; }
+.md-body :deep(.image-resizing) { outline:2px solid var(--wao-primary); user-select:none; }
 </style>
