@@ -101,6 +101,7 @@ onMounted(load)
         </button>
       </header>
 
+      <div class="history-content">
       <div v-if="loading" class="state"><i class="ri-loader-4-line spin"></i>正在读取巡检历史…</div>
       <div v-else-if="error" class="state error" role="alert">
         <i class="ri-error-warning-line"></i><b>巡检历史暂时不可用</b><span>{{ error }}</span>
@@ -165,6 +166,7 @@ onMounted(load)
         />
       </template>
 
+      </div>
       <footer><button type="button" @click="emit('close')">关闭</button></footer>
     </section>
   </div>
@@ -182,8 +184,11 @@ onMounted(load)
 }
 .dialog {
   width: min(720px, 100%);
-  max-height: calc(100vh - 36px);
-  overflow: auto;
+  height: min(720px, calc(100dvh - 36px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 20px;
   border: 1px solid var(--wao-line);
   border-radius: 14px;
@@ -191,6 +196,7 @@ onMounted(load)
   box-shadow: var(--wao-shadow-modal);
 }
 .dialog > header {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -222,6 +228,7 @@ onMounted(load)
   color: var(--wao-text-3);
   cursor: pointer;
 }
+.history-content { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .state {
   min-height: 250px;
   display: grid;
@@ -334,6 +341,7 @@ onMounted(load)
 .detail-state.error { color: var(--wao-danger-strong); }
 .detail-state button { height: 30px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .dialog > footer {
+  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   margin-top: 18px;

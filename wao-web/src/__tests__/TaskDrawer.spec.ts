@@ -129,12 +129,12 @@ describe('TaskDrawer', () => {
       const row = props.findAll('.prop-row').find(row => row.get('.prop-key').text() === label)!
       await row.get('button').trigger('click')
       expect(props.find('.menu-mask').exists()).toBe(true)
-      expect(props.find('.pmenu').exists()).toBe(true)
+      expect(document.querySelector('.cell-menu')).not.toBeNull()
       expect(props.findAll('.props > .props-label')).toHaveLength(0)
       expect(props.findAll('.properties-heading h3').map(el => el.text())).toEqual(['属性'])
       expect(rows()).toEqual(before)
       await props.get('.menu-mask').trigger('click')
-      expect(props.find('.pmenu').exists()).toBe(false)
+      expect(document.querySelector('.cell-menu')).toBeNull()
       expect(rows()).toEqual(before)
     }
   })
@@ -1273,7 +1273,8 @@ describe('TaskDrawer', () => {
 
     const groupRow = w.findAll('.prop-row').find((r) => r.text().startsWith('分组'))!
     await groupRow.find('.owner-btn').trigger('click')
-    await groupRow.findAll('.pmenu-item')[1]!.trigger('click')
+    document.querySelectorAll<HTMLButtonElement>('.cell-menu .pmenu-item')[1]!.click()
+    await flushPromises()
 
     expect(data.taskById(taskId)!.groupId).toBe('g2')
   })

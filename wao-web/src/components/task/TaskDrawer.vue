@@ -83,6 +83,11 @@ async function copyLocalTask() {
 
 const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | 'type' | null>(null)
 const typeAnchor = ref<HTMLButtonElement | null>(null)
+const propertyMenuAnchor = ref<HTMLElement | null>(null)
+function togglePropertyMenu(kind: 'status' | 'pr' | 'owner' | 'group', event: MouseEvent) {
+  propertyMenuAnchor.value = event.currentTarget as HTMLElement
+  menu.value = menu.value === kind ? null : kind
+}
 const currentWorkItemType = computed(() => task.value?.workItemType || 'task')
 const WORK_ITEM_TYPES = [{ id: 'requirement' as const, label: '需求' }, { id: 'task' as const, label: '任务' }, { id: 'bug' as const, label: '缺陷' }]
 function setWorkItemType(kind: 'task' | 'requirement' | 'bug') {
@@ -1366,40 +1371,40 @@ async function uploadAttachment(event: Event) {
 
           <div class="prop-row" data-companion-action>
             <span class="prop-key">状态</span>
-            <button class="pill" data-companion-anchor :style="{ background: tv.stBg, color: tv.stColor }" @click="menu = menu === 'status' ? null : 'status'">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
-            <div v-if="menu === 'status'" class="pmenu w150">
+            <button class="pill" data-companion-anchor :style="{ background: tv.stBg, color: tv.stColor }" @click="togglePropertyMenu('status', $event)">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
+            <CellMenu v-if="menu === 'status'" :anchor="propertyMenuAnchor" :min-width="150" @close="menu = null">
               <button v-for="o in statusOptions" :key="o" class="pmenu-item" :aria-pressed="task.status === o" @click="setStatus(o)">
                 <span class="mini pill-mini" :style="{ background: statusMeta(o).bg, color: statusMeta(o).color }">{{ o }}</span>
                 <span class="spacer"></span>
                 <i v-if="task.status === o" class="ri-check-line chk"></i>
               </button>
-            </div>
+            </CellMenu>
           </div>
 
           <div class="prop-row">
             <span class="prop-key">优先级</span>
-            <button class="pill sq" :style="{ background: tv.prBg, color: tv.prColor }" @click="menu = menu === 'pr' ? null : 'pr'">{{ tv.pr }}<i class="ri-arrow-down-s-line"></i></button>
-            <div v-if="menu === 'pr'" class="pmenu w190">
+            <button class="pill sq" :style="{ background: tv.prBg, color: tv.prColor }" @click="togglePropertyMenu('pr', $event)">{{ tv.pr }}<i class="ri-arrow-down-s-line"></i></button>
+            <CellMenu v-if="menu === 'pr'" :anchor="propertyMenuAnchor" :min-width="190" @close="menu = null">
               <button v-for="o in PR_OPTS" :key="o.key" class="pmenu-item" :aria-pressed="task.pr === o.key" @click="setPriority(o.key)">
                 <span class="mini" :style="{ background: priorityMeta(o.key).bg, color: priorityMeta(o.key).color }">{{ o.key }}</span>
                 <span class="pmenu-sub">{{ o.sub }}</span>
                 <i v-if="task.pr === o.key" class="ri-check-line chk"></i>
               </button>
-            </div>
+            </CellMenu>
           </div>
 
           <div class="prop-row">
             <span class="prop-key">负责人</span>
-            <button class="owner-btn" @click="menu = menu === 'owner' ? null : 'owner'">
+            <button class="owner-btn" @click="togglePropertyMenu('owner', $event)">
               <span class="mini-av" :style="{ background: tv.ownerColor }">{{ tv.ownerInitial }}</span><span class="ellip" :title="tv.ownerName">{{ tv.ownerName }}</span><i class="ri-arrow-down-s-line"></i>
             </button>
-            <div v-if="menu === 'owner'" class="pmenu w150">
+            <CellMenu v-if="menu === 'owner'" :anchor="propertyMenuAnchor" :min-width="150" @close="menu = null">
               <button v-for="m in session.members" :key="m.id" class="pmenu-item" :aria-pressed="task.owner === m.id" @click="setOwner(m.id)">
                 <span class="mini-av" :style="{ background: m.color }">{{ m.initial }}</span>
                 <span class="pmenu-name">{{ m.name }}</span>
                 <i v-if="task.owner === m.id" class="ri-check-line chk"></i>
               </button>
-            </div>
+            </CellMenu>
           </div>
 
           <div class="prop-row">
@@ -1420,15 +1425,15 @@ async function uploadAttachment(event: Event) {
           </div>
           <div class="prop-row">
             <span class="prop-key">分组</span>
-            <button class="owner-btn" title="分组视图里这条任务归在哪一堆" @click="menu = menu === 'group' ? null : 'group'">
+            <button class="owner-btn" title="分组视图里这条任务归在哪一堆" @click="togglePropertyMenu('group', $event)">
               <i class="ri-folder-2-line group-ico"></i>{{ currentGroup?.name ?? '未分组' }}<i class="ri-arrow-down-s-line"></i>
             </button>
-            <div v-if="menu === 'group'" class="pmenu w150">
+            <CellMenu v-if="menu === 'group'" :anchor="propertyMenuAnchor" :min-width="150" @close="menu = null">
               <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" :aria-pressed="currentGroup?.id === g.id" @click="setGroup(g.id)">
                 <span class="pmenu-name">{{ g.name }}</span>
                 <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
               </button>
-            </div>
+            </CellMenu>
           </div>
           <!-- 关联：任务与子任务都能关联文档，放在属性栏里随手可见 -->
           <div class="prop-section side-relations">

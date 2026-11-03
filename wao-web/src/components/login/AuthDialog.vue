@@ -302,6 +302,7 @@ onBeforeUnmount(() => {
           :size="36"
         />
       </div>
+      <div class="auth-method-content">
       <template v-if="method === 'feishu'">
         <template v-if="inAppTrying">
           <p class="subtitle">检测到飞书环境，正在免登…</p>
@@ -400,6 +401,7 @@ onBeforeUnmount(() => {
         </form>
       </template>
 
+      </div>
       <div class="other-methods">
         <span>其他登录方式</span>
         <button
@@ -468,9 +470,14 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(12px);
 }
 .card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   padding: 30px;
   position: relative;
 }
+.card > :not(.auth-method-content) { flex-shrink: 0; }
+.auth-method-content { flex: 1; min-height: 120px; overflow-y: auto; scrollbar-gutter: stable; }
 .close {
   position: absolute;
   right: 14px;
@@ -618,6 +625,8 @@ onBeforeUnmount(() => {
   top: calc(var(--login-viewport-top, 0px) + var(--login-viewport-height, 100dvh) / 2);
   transform: translate(-50%, -50%);
   margin: 0;
+  box-sizing: border-box;
+  height: min(720px, calc(var(--login-viewport-height, 100dvh) - 24px));
   max-height: calc(var(--login-viewport-height, 100dvh) - 24px);
   overscroll-behavior: contain;
 }

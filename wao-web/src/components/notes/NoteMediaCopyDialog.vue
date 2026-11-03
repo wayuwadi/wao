@@ -67,7 +67,8 @@ function next() { if (!busy.value && step.value < images.value.length) { step.va
 
 <style scoped>
 .note-media-copy-mask { position:fixed; inset:0; z-index:4600; background:rgb(24 28 46 / .28); display:grid; place-items:center; padding:16px; }
-.note-media-copy-dialog { width:min(760px,100%); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; box-sizing:border-box; border:1px solid var(--wao-line-control); border-radius:16px; background:var(--wao-bg-card); color:var(--wao-text-1); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
+.note-media-copy-dialog { width:min(760px,100%); height:min(760px,calc(100dvh - 32px)); display:flex; flex-direction:column; overflow:auto; padding:24px; box-sizing:border-box; border:1px solid var(--wao-line-control); border-radius:16px; background:var(--wao-bg-card); color:var(--wao-text-1); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
+.note-media-copy-dialog > :not(.copy-content) { flex-shrink:0; }
 header, header > div, footer { display:flex; align-items:center; gap:8px; }
 header { justify-content:space-between; } header h3 { margin:0; font-size:17px; } header i { color:var(--wao-primary); }
 button { border:1px solid var(--wao-line-control); border-radius:8px; padding:8px 11px; color:var(--wao-text-1); background:var(--wao-bg-card); cursor:pointer; font-size:12px; }
@@ -77,7 +78,7 @@ nav { display:flex; gap:7px; flex-wrap:wrap; max-height:110px; overflow:auto; pa
 nav button { display:inline-flex; align-items:center; gap:5px; } nav button[aria-current] { background:var(--wao-bg-hover); border-color:var(--wao-primary); color:var(--wao-primary-text); }
 nav i { color:#248455; }
 .copy-target { margin-top:16px; }
-.copy-content { height:clamp(240px,46dvh,440px); margin:16px 0 12px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--wao-bg-sub); border:1px solid var(--wao-line); border-radius:10px; overflow:hidden; }
+.copy-content { flex:1; min-height:120px; margin:16px 0 12px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--wao-bg-sub); border:1px solid var(--wao-line); border-radius:10px; overflow:hidden; }
 .copy-content img { max-width:100%; max-height:180px; object-fit:contain; } .copy-content small { margin:8px; font-size:11px; color:var(--wao-text-faint); }
 .copy-content pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; width:100%; height:100%; box-sizing:border-box; padding:20px; margin:0; font-family:inherit; font-size:13px; line-height:1.8; }
 .copy-error, .copy-status { font-size:12px; line-height:1.7; min-height:20px; color:var(--wao-text-2); } .copy-error { color:var(--wao-danger-strong); }

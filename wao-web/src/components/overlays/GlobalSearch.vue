@@ -238,6 +238,9 @@ function openSelected(event: KeyboardEvent) {
   right: 0;
   margin-inline: auto;
   width: min(620px, calc(100vw - 40px));
+  height: min(600px, 78dvh);
+  display: flex;
+  flex-direction: column;
   background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 111;
@@ -245,6 +248,7 @@ function openSelected(event: KeyboardEvent) {
   animation: waoPop 0.16s ease;
   overflow: hidden;
 }
+.panel > :not(.results) { flex-shrink: 0; }
 .bar {
   display: flex;
   align-items: center;
@@ -274,7 +278,9 @@ function openSelected(event: KeyboardEvent) {
   color: var(--wao-text-weak);
 }
 .results {
-  max-height: 50vh;
+  flex: 1;
+  min-height: 0;
+  scrollbar-gutter: stable;
   overflow-y: auto;
   padding: 8px;
 }

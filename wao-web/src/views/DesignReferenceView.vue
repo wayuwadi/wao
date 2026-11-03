@@ -468,8 +468,8 @@ const detailLabels = ref('')
           </section>
           <section class="reference-section">
             <h2>项目设置分项</h2>
-            <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
-            <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
+            <p>基本信息直接编辑，成员与危险操作分开。切换时标题、页签、底栏保持原位，长内容仅在面板内滚动。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
+            <SettingsDialogShell title="项目设置示例" description="合成演示：切换分项时标题、页签与底栏保持原位，内容独立滚动" width="760px" height="min(640px, calc(100dvh - 48px))" embedded :theme="theme">
               <p>项目四象限：子任务缩进跟随主任务，整组以主任务优先级归类。</p>
               <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree :collapsed="demoCollapsed" @expand="demoCollapsed = false; feedback = '示例：全部展开'" @collapse="demoCollapsed = true; feedback = '示例：全部收起'" />
               <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
