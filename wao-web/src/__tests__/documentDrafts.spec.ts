@@ -34,4 +34,16 @@ describe('document drafts in IndexedDB', () => {
     expect(await readDocumentDraft(first.memberId, first.id)).toBeNull()
     expect(await readDocumentDraft(second.memberId, second.id)).toEqual(second)
   })
+
+  it('recovers image presentation attributes from an isolated offline draft', async () => {
+    const edited = draft()
+    edited.content.document!.content!.push({ type: 'image', attrs: {
+      src: '/api/images/local-test/raw', alt: '离线图片', width: 240, height: 120,
+      align: 'right', borderWidth: 3, borderStyle: 'dashed', borderColor: '#245bdb',
+    } })
+    edited.content.markdown += '\n\n![离线图片](/api/images/local-test/raw "wao-image-size:240x120;align=right;border=3,dashed,245bdb")'
+    await writeDocumentDraft(reactive(edited))
+    expect(await readDocumentDraft(edited.memberId, edited.id)).toEqual(edited)
+    expect(await readDocumentDraft('another-member', edited.id)).toBeNull()
+  })
 })

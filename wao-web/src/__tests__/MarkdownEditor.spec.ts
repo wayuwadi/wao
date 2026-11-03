@@ -89,6 +89,79 @@ async function mountEditor(props: {
   return w
 }
 
+describe('图片拖动缩放', () => {
+  it('选中工具条设置边框和对齐，保存重开及恢复原尺寸保留边框且不上传', async () => {
+    const w = await mountEditor({ modelValue: '![示例](/api/images/border/raw "wao-image-size:240x120;title=说明")', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setNodeSelection(0); await nextTick()
+    await w.get('[aria-label="图片边框粗细"]').setValue('3')
+    await w.get('[aria-label="图片边框样式"]').setValue('dashed')
+    await w.get('[aria-label="图片边框颜色"]').setValue('#245bdb')
+    await w.get('[aria-label="图片对齐"]').setValue('right')
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ borderWidth: 3, borderStyle: 'dashed', borderColor: '#245bdb', align: 'right', width: 240, height: 120, title: '说明' })
+    const restored = await mountEditor({ modelValue: e.getMarkdown(), imageContextControls: true, readonly: true })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+    expect((restored.get('img.md-img').element as HTMLElement).style.border).toContain('3px dashed')
+    await w.get('[aria-label="恢复图片原尺寸"]').trigger('click')
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: null, height: null, borderWidth: 3, align: 'right' })
+    expect(e.getMarkdown()).toContain('border=3,dashed,245bdb')
+    expect(w.emitted('upload-image')).toBeUndefined()
+    restored.unmount(); w.unmount()
+  })
+  it('限制正文宽度，Esc 与指针取消不写正文，键盘可调整且只读禁用', async () => {
+    const w = await mountEditor({ modelValue: '![示例](/api/images/resize/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    vi.spyOn(w.get('img.md-img').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 100))
+    vi.spyOn(w.get('.tiptap').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 500))
+    e.commands.setNodeSelection(0); await nextTick()
+    const handle = w.get('[data-image-resize="e"]')
+    for (const cancel of ['escape', 'pointercancel']) {
+      handle.element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 }))
+      expect(w.get('[data-image-size]').text()).toBe('300 × 150 px')
+      if (cancel === 'escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      else window.dispatchEvent(new MouseEvent('pointercancel'))
+      window.dispatchEvent(new MouseEvent('pointerup'))
+      expect(e.getJSON()).toEqual(original)
+    }
+    await handle.trigger('keydown', { key: 'ArrowRight' })
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 201, height: 101 })
+    e.commands.undo(); expect(e.getJSON()).toEqual(original)
+    await w.setProps({ readonly: true })
+    await handle.trigger('keydown', { key: 'ArrowRight' })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+  it('八个方向等比例预览，松手保存且一次撤销恢复，Markdown 重开保留尺寸', async () => {
+    const w = await mountEditor({ modelValue: '![示例](/api/images/resize/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    const img = w.get('img.md-img').element
+    vi.spyOn(img, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 100))
+    vi.spyOn(w.get('.tiptap').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 500))
+    for (const [direction, x, y] of [ ['e', 40, 0], ['w', -40, 0], ['n', 0, -20], ['s', 0, 20], ['ne', 40, -20], ['nw', -40, -20], ['se', 40, 20], ['sw', -40, 20] ] as const) {
+      e.commands.setNodeSelection(0); await nextTick()
+      const handle = w.get(`[data-image-resize="${direction}"]`)
+      handle.element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y }))
+      expect(e.getJSON()).toEqual(original)
+      expect(w.get('[role="status"][data-image-size]').text()).toBe('240 × 120 px')
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: x, clientY: y }))
+      await nextTick()
+      expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: 120, src: '/api/images/resize/raw' })
+      const restored = await mountEditor({ modelValue: e.getMarkdown(), imageContextControls: true })
+      expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+      restored.unmount()
+      e.commands.undo(); expect(e.getJSON()).toEqual(original)
+      e.commands.redo(); expect(e.getJSON().content![0]!.attrs?.width).toBe(240)
+      e.commands.undo()
+    }
+    expect(w.emitted('upload-image')).toBeUndefined()
+    w.unmount()
+  })
+})
+
 describe('代码块', () => {
   it('SQL 高亮、语言切换、撤销与序列化保留原文', async () => {
     const source = "-- 示例\nSELECT name, 42 FROM demo WHERE name = '<tag>';"
@@ -913,7 +986,7 @@ describe('文章总览配图', () => {
     expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-astra', expect.stringMatching(/^[a-f0-9]{32}$/))
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
-    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
+    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto;align=center"\)/)
     expect(latest).toContain('第一段。')
     expect(latest).toContain('第二段。')
     const image = (w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]
@@ -2624,21 +2697,21 @@ describe('统一编辑器分栏与链接', () => {
 
 
 describe('图片拖拽尺寸', () => {
-  it('松手后保存尺寸并左对齐，撤销、Markdown 和 JSON 重载保留正确内容', async () => {
+  it('松手后保存尺寸并保留对齐，撤销、Markdown 和 JSON 重载保留正确内容', async () => {
     const props = { modelValue: '![图片](/api/images/resize/raw)', advanced: true, imageControls: true, imageContextControls: true }
     const w = await mountEditor(props)
     const e = (w.vm as unknown as { editor: Editor }).editor
     const image = w.get('.note-image-node img').element as HTMLImageElement
-    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 200))
     const pointer = (type: string, x: number) => new MouseEvent(type, { clientX: x, button: 0, bubbles: true })
-    w.get('.resize-se').element.dispatchEvent(pointer('pointerdown', 400))
+    w.get('[data-image-resize="e"]').element.dispatchEvent(pointer('pointerdown', 400))
     window.dispatchEvent(pointer('pointermove', 240))
     expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
     window.dispatchEvent(pointer('pointerup', 240))
     await nextTick()
-    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: null, align: 'left', indent: 0 })
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: 120, indent: 0 })
     const saved = e.getMarkdown(), document = e.getJSON()
-    expect(saved).toContain('wao-image-size:240xauto')
+    expect(saved).toContain('wao-image-size:240x120')
     e.commands.undo()
     expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
     e.commands.redo()
@@ -2655,16 +2728,16 @@ describe('图片拖拽尺寸', () => {
   it('取消拖动不保存，卸载清理监听，只读图片不显示控制点', async () => {
     const w = await mountEditor({ modelValue: '![图片](/api/images/resize/raw)', imageControls: true, imageContextControls: true })
     const e = (w.vm as unknown as { editor: Editor }).editor
-    vi.spyOn(w.get('.note-image-node img').element, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
-    w.get('.resize-se').element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 400, button: 0, bubbles: true }))
-    Object.defineProperty(w.get('.note-image-node').element.parentElement!, 'clientWidth', { configurable: true, value: 300 })
+    vi.spyOn(w.get('.note-image-node img').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 200))
+    vi.spyOn(w.get('.tiptap').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 500))
+    w.get('[data-image-resize="e"]').element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 400, button: 0, bubbles: true }))
     window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 }))
     expect(w.get('.note-image-node').attributes('style')).toContain('width: 300px')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(e.getJSON().content![0]!.attrs!.width).toBeNull()
     expect(w.get('.note-image-node').classes()).not.toContain('image-resizing')
     await w.setProps({ readonly: true })
-    expect(w.findAll('.image-resize-handle').every(h => h.attributes('hidden') !== undefined)).toBe(true)
+    expect(w.get('.image-resize-controls').attributes('hidden')).toBeDefined()
     w.unmount()
     window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
   })

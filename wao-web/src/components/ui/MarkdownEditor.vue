@@ -2,7 +2,6 @@
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges } from '@/utils/contentSearch'
 import { bookExcerptContent } from '@/utils/bookExcerpt'
-import { imageResizeControls } from '@/utils/editorImageResize'
 import { indentEditorSelection } from '@/utils/editorIndent'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
@@ -38,6 +37,8 @@ import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewIma
 import { imageDisplayName } from '@/utils/imageDisplayName'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
+import { imageResizeControls } from './imageResizeControls'
+import { imageToolbar } from './imageToolbar'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
 import { Color, TextStyle } from '@tiptap/extension-text-style'
@@ -410,21 +411,21 @@ function decodeImageTitle(value: unknown) {
   if (!title.startsWith(IMAGE_SIZE_PREFIX)) {
     return { title: title || null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   }
-  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;indent=([1-8]))?(?:;title=(.*))?$/.exec(title)
+  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;indent=([1-8]))?(?:;align=(left|center|right))?(?:;border=([0-8]),(solid|dashed),(auto|[0-9a-fA-F]{6}))?(?:;title=(.*))?$/.exec(title)
   if (!match) return { title: null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   const width = match[1] === 'auto' ? null : parseImageDimension(match[1])
   const height = match[2] === 'auto' ? null : parseImageDimension(match[2])
   const valid = (typeof width === 'string' && height == null)
-    || (typeof width !== 'string' && typeof height !== 'string' && (width != null || height != null || !!match[3]))
+    || (typeof width !== 'string' && typeof height !== 'string' && (width != null || height != null || !!match[3] || !!match[4] || !!match[5]))
   if ((match[1] !== 'auto' && width == null)
     || (match[2] !== 'auto' && height == null)
     || !valid) {
     return { title: null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   }
   let originalTitle: string | null = null
-  if (match[4]) {
+  if (match[8]) {
     try {
-      originalTitle = decodeURIComponent(match[4])
+      originalTitle = decodeURIComponent(match[8])
     } catch {
       originalTitle = null
     }
@@ -434,26 +435,41 @@ function decodeImageTitle(value: unknown) {
     width,
     height,
     indent: imageIndent(match[3]),
+    align: match[4] || null,
+    borderWidth: Number(match[5] || 0),
+    borderStyle: match[6] || 'solid',
+    borderColor: match[7] && match[7] !== 'auto' ? `#${match[7].toLowerCase()}` : null,
   }
 }
 
-function encodeImageTitle(width: unknown, height: unknown, title: unknown, indent: unknown): string {
+function encodeImageTitle(width: unknown, height: unknown, title: unknown, indent: unknown, attrs: Record<string, unknown> = {}): string {
   const level = imageIndent(indent)
   const safeWidth = parseImageDimension(width)
   const safeHeight = parseImageDimension(height)
   const originalTitle = typeof title === 'string' ? title : ''
-  if (safeWidth == null && safeHeight == null && !level) return originalTitle
+  const align = ['left', 'center', 'right'].includes(String(attrs.align)) ? `;align=${attrs.align}` : ''
+  const border = Number.isInteger(attrs.borderWidth) && Number(attrs.borderWidth) > 0 && Number(attrs.borderWidth) <= 8
+    ? `;border=${attrs.borderWidth},${attrs.borderStyle === 'dashed' ? 'dashed' : 'solid'},${typeof attrs.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(attrs.borderColor) ? attrs.borderColor.slice(1).toLowerCase() : 'auto'}` : ''
+  if (safeWidth == null && safeHeight == null && !level && !align && !border) return originalTitle
   if (typeof safeHeight === 'string' || (typeof safeWidth === 'string' && safeHeight != null)) {
     return originalTitle
   }
   const suffix = originalTitle ? `;title=${encodeURIComponent(originalTitle)}` : ''
-  return `${IMAGE_SIZE_PREFIX}${safeWidth ?? 'auto'}x${safeHeight ?? 'auto'}${level ? `;indent=${level}` : ''}${suffix}`
+  return `${IMAGE_SIZE_PREFIX}${safeWidth ?? 'auto'}x${safeHeight ?? 'auto'}${level ? `;indent=${level}` : ''}${align}${border}${suffix}`
+}
+
+function imageBorderStyle(attrs: Record<string, unknown>): string {
+  const width = Number(attrs.borderWidth)
+  if (!Number.isInteger(width) || width < 1 || width > 8) return ''
+  const color = typeof attrs.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(attrs.borderColor) ? attrs.borderColor : 'currentColor'
+  return `border:${width}px ${attrs.borderStyle === 'dashed' ? 'dashed' : 'solid'} ${color};box-sizing:border-box`
 }
 
 function imageStyle(attributes: Record<string, unknown>): string {
   const width = parseImageDimension(attributes.width)
   const height = parseImageDimension(attributes.height)
   const styles: string[] = []
+  styles.push(imageBorderStyle(attributes))
   const indent = imageIndent(attributes.indent) * 24
   if (indent) styles.push(`margin-left:min(${indent}px,50%)`, 'margin-right:auto', `max-width:calc(100% - min(${indent}px,50%))`)
   else if (attributes.align === 'center') styles.push('margin-left:auto', 'margin-right:auto')
@@ -480,7 +496,11 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
     return { ...this.parent!(), previewImages: false, contextControls: false }
   },
   addAttributes() {
-    return { ...this.parent?.(), align: { default: null }, indent: { default: 0,
+    return { ...this.parent?.(),
+      borderWidth: { default: 0, parseHTML: el => Number(el.getAttribute('data-image-border-width') || 0), renderHTML: attrs => ({ 'data-image-border-width': attrs.borderWidth }) },
+      borderStyle: { default: 'solid', parseHTML: el => el.getAttribute('data-image-border-style') === 'dashed' ? 'dashed' : 'solid', renderHTML: attrs => ({ 'data-image-border-style': attrs.borderStyle }) },
+      borderColor: { default: null, parseHTML: el => el.getAttribute('data-image-border-color'), renderHTML: attrs => attrs.borderColor ? ({ 'data-image-border-color': attrs.borderColor }) : {} },
+      align: { default: null }, indent: { default: 0,
       parseHTML: (element: HTMLElement) => imageIndent(element.getAttribute('data-image-indent')),
       renderHTML: (attrs: Record<string, unknown>) => ({ 'data-image-indent': imageIndent(attrs.indent) }),
     } }
@@ -494,12 +514,16 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
       width: size.width,
       height: size.height,
       indent: size.indent,
+      align: size.align ?? null,
+      borderWidth: size.borderWidth ?? 0,
+      borderStyle: size.borderStyle ?? 'solid',
+      borderColor: size.borderColor ?? null,
     })
   },
   renderMarkdown: (node) => {
     const src = node.attrs?.src ?? ''
     const alt = String(node.attrs?.alt ?? '').replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
-    const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title, node.attrs?.indent)
+    const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title, node.attrs?.indent, node.attrs)
     return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`
   },
   renderHTML({ HTMLAttributes }) {
@@ -511,7 +535,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         attributes.src = preview
       }
     }
-    const style = imageStyle({ ...attributes, indent: attributes['data-image-indent'] })
+    const style = imageStyle({ ...attributes, indent: attributes['data-image-indent'], borderWidth: attributes['data-image-border-width'], borderStyle: attributes['data-image-border-style'], borderColor: attributes['data-image-border-color'] })
     delete attributes.width
     delete attributes.height
     delete attributes.style
@@ -610,19 +634,6 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         imageApplyAll.value = false
         showImageMenu(current.attrs.src, event.clientX, event.clientY)
       })
-      const resize = imageResizeControls({
-        dom, image,
-        editable: () => !props.readonly && !props.imageReferences && !!editor.value?.isEditable,
-        restore: () => update(),
-        commit: width => {
-          const e = editor.value, pos = getPos()
-          if (!e || props.readonly || !e.isEditable || pos == null) return update()
-          const latest = e.state.doc.nodeAt(pos)
-          if (latest?.type !== current.type || latest.attrs.src !== current.attrs.src) return update()
-          e.view.dispatch(closeHistory(e.state.tr).setNodeMarkup(pos, undefined, { ...latest.attrs, width, height: null, align: 'left', indent: 0 }))
-          e.view.dispatch(closeHistory(e.state.tr))
-        },
-      })
       const update = () => {
         const attrs = current.attrs
         dom.classList.toggle('reading-image-node', props.imageReferences)
@@ -639,8 +650,9 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
           if (!dom.contains(reference)) { image.removeAttribute('src'); dom.replaceChildren(before, reference, after) }
           return
         }
-        if (dom.firstChild !== image) dom.replaceChildren(image, button, ...resize.controls)
-        resize.controls.forEach(control => { control.hidden = props.readonly || !props.imageControls })
+        if (dom.firstChild !== image) dom.replaceChildren(image, button, resize.dom, toolbar.dom)
+        resize.dom.hidden = !props.imageControls || props.readonly
+        toolbar.update(attrs)
         image.src = usePreview ? notePreviewSource(attrs.src) : attrs.src
         image.dataset.fullSrc = attrs.src
         image.alt = attrs.alt || ''
@@ -656,16 +668,53 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         if (attrs.align === 'right') { dom.style.marginLeft = 'auto'; dom.style.marginRight = '0' }
         if (typeof width === 'string') dom.style.width = `calc(${width} - 8px)`
         else if (typeof width === 'number') dom.style.width = `${width}px`
-        image.style.cssText = 'display:block;margin:0;max-width:100%;object-fit:contain;'
+        image.style.cssText = `display:block;margin:0;max-width:100%;object-fit:contain;${imageBorderStyle(attrs)}`
         if (width !== null) image.style.width = '100%'
-        if (typeof height === 'number') image.style.height = `${height}px`
+        if (typeof height === 'number' && typeof width === 'number') {
+          image.style.aspectRatio = `${width}/${height}`
+          image.style.height = 'auto'
+        } else if (typeof height === 'number') image.style.height = `${height}px`
         else image.style.height = 'auto'
       }
+      const changeImageAttrs = (attrs: Record<string, unknown>) => {
+        const e = editor.value, pos = getPos()
+        if (!e?.isEditable || props.readonly || pos == null || e.state.doc.nodeAt(pos) !== current) return
+        e.view.dispatch(closeHistory(e.state.tr).setNodeMarkup(pos, undefined, { ...current.attrs, ...attrs }))
+        e.view.dispatch(closeHistory(e.state.tr))
+      }
+      const toolbar = imageToolbar({
+        anchor: dom,
+        enabled: () => props.imageControls && !props.readonly && !props.imageReferences,
+        change: changeImageAttrs,
+        dimensions(anchor) {
+          const e = editor.value, pos = getPos()
+          if (!e || pos == null) return
+          e.commands.setNodeSelection(pos); syncSelectionControls(e); imageApplyAll.value = false
+          const rect = anchor.getBoundingClientRect()
+          showImageMenu(current.attrs.src, rect.left, rect.bottom)
+        },
+        close() { const e = editor.value, pos = getPos(); if (e && pos != null) e.chain().setTextSelection(Math.min(pos + current.nodeSize, e.state.doc.content.size)).focus().run() },
+      })
+      const resize = imageResizeControls({ dom, image,
+        enabled: () => !!editor.value?.isEditable && props.imageControls && !props.readonly && !props.imageReferences,
+        restore: update,
+        commit(width, height) {
+          const e = editor.value, pos = getPos()
+          if (!e || pos == null || e.state.doc.nodeAt(pos) !== current) return
+          e.view.dispatch(closeHistory(e.state.tr).setNodeMarkup(pos, undefined, { ...current.attrs, width, height }))
+          e.view.dispatch(closeHistory(e.state.tr))
+        },
+      })
+      const cancelOnChange = ({ transaction }: { transaction: import('@tiptap/pm/state').Transaction }) => {
+        if (transaction.docChanged) resize.cancel()
+      }
+      this.editor.on('transaction', cancelOnChange)
       update()
       imageNodeViews.add(update)
-      return { dom, destroy() { resize.destroy(); imageNodeViews.delete(update) }, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
-        selectNode() { dom.classList.add('ProseMirror-selectednode') }, deselectNode() { dom.classList.remove('ProseMirror-selectednode') },
-        stopEvent(event) { return event.target instanceof Element && !!event.target.closest('button') }, ignoreMutation: () => true }
+      const owningEditor = this.editor
+      return { dom, destroy() { resize.destroy(); toolbar.destroy(); owningEditor.off('transaction', cancelOnChange); imageNodeViews.delete(update) }, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+        selectNode() { dom.classList.add('ProseMirror-selectednode'); toolbar.position() }, deselectNode() { dom.classList.remove('ProseMirror-selectednode') },
+        stopEvent(event) { return event.target instanceof Element && !!event.target.closest('button, .image-inline-toolbar') }, ignoreMutation: () => true }
     }
   },
 })
@@ -2866,6 +2915,43 @@ onBeforeUnmount(() => {
 .md-body :deep(.note-image-node.image-aligned) { display: block; }
 .md-body :deep(.note-image-node img) { border-radius: 9px; cursor: default; }
 .md-body :deep(.note-image-node.ProseMirror-selectednode) { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.md-body :deep(.image-resize-controls) { display: none; }
+.md-body :deep(.image-inline-toolbar) { box-sizing: border-box; }
+.md-body :deep(.image-inline-toolbar) { display: none; position: absolute; left: 0; top: calc(100% + 12px); z-index: 5; width: max-content; max-width: min(360px, calc(100vw - 48px)); flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); box-shadow: var(--wao-shadow-pop); font: var(--wao-font-body) / 1.5 var(--wao-font); }
+.md-body :deep(.ProseMirror-selectednode .image-inline-toolbar:not([hidden])) { display: flex; }
+.md-body :deep(.image-resizing .image-inline-toolbar) { display: none; }
+.md-body :deep(.image-inline-toolbar button), .md-body :deep(.image-inline-toolbar select), .md-body :deep(.image-inline-toolbar summary) { min-height: 32px; padding: 4px 8px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; cursor: pointer; }
+.md-body :deep(.image-inline-toolbar button:focus-visible), .md-body :deep(.image-inline-toolbar select:focus-visible), .md-body :deep(.image-inline-toolbar summary:focus-visible) { outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+.md-body :deep(.image-inline-toolbar label) { display: flex; align-items: center; gap: 4px; font-size: var(--wao-font-help); }
+.md-body :deep(.image-inline-toolbar details[open]) { flex-basis: 100%; order: 1; }
+.md-body :deep(.image-border-fields) { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; }
+@media (pointer: coarse) {
+  .md-body :deep(.image-inline-toolbar button), .md-body :deep(.image-inline-toolbar select), .md-body :deep(.image-inline-toolbar summary) { min-height: 44px; }
+}
+.md-body :deep(.ProseMirror-selectednode .image-resize-controls:not([hidden])) { display: contents; }
+.md-body :deep(.image-resize-handle) { position: absolute; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; touch-action: none; z-index: 3; }
+.md-body :deep(.image-resize-handle::after) { content: ''; position: absolute; inset: 5px; border: 1px solid var(--wao-primary); border-radius: var(--wao-radius-checkbox); background: var(--wao-bg-card); }
+.md-body :deep(.image-resize-handle:focus-visible) { outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+.md-body :deep(.image-resize-n) { top: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.md-body :deep(.image-resize-s) { bottom: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.md-body :deep(.image-resize-e) { right: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.md-body :deep(.image-resize-w) { left: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.md-body :deep(.image-resize-ne) { top: -10px; right: -10px; cursor: nesw-resize; }
+.md-body :deep(.image-resize-nw) { top: -10px; left: -10px; cursor: nwse-resize; }
+.md-body :deep(.image-resize-se) { bottom: -10px; right: -10px; cursor: nwse-resize; }
+.md-body :deep(.image-resize-sw) { bottom: -10px; left: -10px; cursor: nesw-resize; }
+.md-body :deep(.image-resize-size) { display: none; position: absolute; left: 0; bottom: 100%; background: var(--wao-bg-card); color: var(--wao-text); border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); padding: 4px 8px; font-size: var(--wao-font-caption); line-height: 1.5; white-space: nowrap; z-index: 4; }
+.md-body :deep(.image-resizing .image-resize-size), .md-body :deep(.image-resize-controls:focus-within .image-resize-size) { display: block; }
+@media (pointer: coarse) {
+  .md-body :deep(.image-resize-handle) { width: 44px; height: 44px; transform: translate(0, 0); }
+  .md-body :deep(.image-resize-handle::after) { inset: 16px; }
+  .md-body :deep(.image-resize-n), .md-body :deep(.image-resize-ne), .md-body :deep(.image-resize-nw) { top: -8px; }
+  .md-body :deep(.image-resize-s), .md-body :deep(.image-resize-se), .md-body :deep(.image-resize-sw) { bottom: -8px; }
+  .md-body :deep(.image-resize-e), .md-body :deep(.image-resize-ne), .md-body :deep(.image-resize-se) { right: -8px; }
+  .md-body :deep(.image-resize-w), .md-body :deep(.image-resize-nw), .md-body :deep(.image-resize-sw) { left: -8px; }
+  .md-body :deep(.image-resize-n), .md-body :deep(.image-resize-s) { left: calc(50% - 22px); }
+  .md-body :deep(.image-resize-e), .md-body :deep(.image-resize-w) { top: calc(50% - 22px); }
+}
 .md-body :deep(.note-image-fullscreen) { position: absolute; right: 7px; top: 7px; opacity: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); font: 12px/1.4 inherit; cursor: pointer; }
 .md-body :deep(.note-image-node:hover .note-image-fullscreen), .md-body :deep(.note-image-node:focus-within .note-image-fullscreen) { opacity: 1; }
 .note-image-menu { width: 232px; max-width: calc(100vw - 34px); color: var(--wao-text); font: inherit; }
@@ -3854,12 +3940,4 @@ onBeforeUnmount(() => {
 .block-drag-handle { padding:0; border:0; box-shadow:none; background:transparent; }
 .block-drag-handle button { display:grid; place-items:center; width:22px; height:24px; padding:0; border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text-3); cursor:pointer; }
 .block-drag-handle button:hover { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
-.md-body :deep(.image-resize-handle) { position:absolute; width:12px; height:12px; padding:0; border:2px solid var(--wao-bg-card); border-radius:50%; background:var(--wao-primary); opacity:0; touch-action:none; z-index:2; }
-.md-body :deep(.image-resize-handle[hidden]) { display:none; }
-.md-body :deep(.note-image-node:hover .image-resize-handle), .md-body :deep(.note-image-node:focus-within .image-resize-handle), .md-body :deep(.ProseMirror-selectednode .image-resize-handle), .md-body :deep(.image-resizing .image-resize-handle) { opacity:1; }
-.md-body :deep(.resize-nw) { top:0; left:0; cursor:nwse-resize; }
-.md-body :deep(.resize-ne) { top:0; right:0; cursor:nesw-resize; }
-.md-body :deep(.resize-sw) { bottom:0; left:0; cursor:nesw-resize; }
-.md-body :deep(.resize-se) { bottom:0; right:0; cursor:nwse-resize; }
-.md-body :deep(.image-resizing) { outline:2px solid var(--wao-primary); user-select:none; }
 </style>
