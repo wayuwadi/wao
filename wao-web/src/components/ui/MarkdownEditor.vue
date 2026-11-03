@@ -897,6 +897,7 @@ const editor = useEditor({
     },
     handleClick: (_view, pos, event) => {
       const target = event.target
+      if (target instanceof Element && target.closest('.drawingCard')) return false
       imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.imageContextControls && !props.readonly
       if (target instanceof HTMLImageElement) {
         if (props.imageControls && !props.readonly) {
@@ -916,6 +917,7 @@ const editor = useEditor({
     },
     handleDoubleClick: (_view, _pos, event) => {
       const target = event.target
+      if (target instanceof Element && target.closest('.drawingCard')) return false
       if (!(target instanceof HTMLImageElement)) return false
       if (props.imageContextControls) return true
       previewImage.value = { src: fullImageSource(target), alt: target.alt }
