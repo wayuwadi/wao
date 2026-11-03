@@ -22,7 +22,7 @@ import TaskContextMenu from './TaskContextMenu.vue'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const props = defineProps<{ hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -192,7 +192,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
                 <button v-if="itemRefs?.[task.id]?.parentKey" class="quadrant-parent" :title="`定位父任务：${itemRefs[task.id]!.parentTitle}`" @click="locateParent(task.id)">↳ {{ itemRefs[task.id]!.parentTitle }}</button>
-                <span v-else class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
+                <span v-else-if="!hideListName" class="quadrant-project" :title="task.projName"><i class="ri-inbox-2-line"></i>{{ task.projName }}</span>
               </div>
               <div v-if="busy(task.id) || data.taskSaveState(sourceId(task.id)) === 'error' || touchedIds.includes(task.id)" class="quadrant-save" aria-live="polite">
                 <SaveHint :saving="busy(task.id)" :failed="data.taskSaveState(sourceId(task.id)) === 'error'" :saved-at="data.taskSavedAt(sourceId(task.id))" />
