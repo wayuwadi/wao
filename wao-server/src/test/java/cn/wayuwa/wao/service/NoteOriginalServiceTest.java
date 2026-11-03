@@ -17,11 +17,33 @@ class NoteOriginalServiceTest extends NoteAiManagedServiceTest {
  NoteOriginalService originals; ObjectMapper json=new ObjectMapper();
  @BeforeEach void originalsSetup() throws Exception {
   try(var c=db.getDataSource().getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V177__note_original_snapshots.sql"));}
+  try(var c=db.getDataSource().getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V202__note_creation_receipt.sql"));}
   db.execute("CREATE TABLE note_polish_version(doc_id VARCHAR(32),member_id VARCHAR(32),source_markdown CLOB,polished_markdown CLOB,updated_at TIMESTAMP)");
   db.execute("CREATE TABLE image_blob(id VARCHAR(32) PRIMARY KEY)");db.execute("CREATE TABLE file_blob(id VARCHAR(32) PRIMARY KEY)");
   db.execute("CREATE TABLE text_polish_job(id VARCHAR(34) PRIMARY KEY,member_id VARCHAR(32),original_text CLOB)");
   ObjectProvider<KnowledgeService> provider=mock(ObjectProvider.class);when(provider.getObject()).thenReturn(knowledge);
   originals=new NoteOriginalService(db,json,settings,provider,text,image);ReflectionTestUtils.setField(managed,"originals",originals);
+ }
+ @Test void creationReceiptIsImmutableTransactionalAndIndependentOfAiContent() throws Exception {
+  var first=new CreateNoteRequest("标题",List.of(),new RichDocContentDto(1,json.readTree("{\"type\":\"doc\",\"content\":[]}"),"原始正文"),List.of("思考"));
+  assertThat(originals.matchesCreation("m","n",first)).isNull();
+  tx.executeWithoutResult(t->{originals.recordCreation("m","n",first);t.setRollbackOnly();});
+  assertThat(originals.matchesCreation("m","n",first)).isNull();
+  tx.executeWithoutResult(t->originals.recordCreation("m","n",first));
+  var reordered=new CreateNoteRequest("标题",List.of(),new RichDocContentDto(1,json.readTree("{\"content\":[],\"type\":\"doc\"}"),"原始正文"),List.of("思考"));
+  assertThat(originals.matchesCreation("m","n",reordered)).isTrue();
+  assertThat(originals.matchesCreation("other","n",first)).isFalse();
+  for(var different:List.of(
+      new CreateNoteRequest("第二篇",List.of(),first.content(),first.tags()),
+      new CreateNoteRequest("标题",List.of(),new RichDocContentDto(1,null,"第二篇正文"),first.tags()),
+      new CreateNoteRequest("标题",List.of(),first.content(),List.of("另一标签")))) {
+   assertThat(originals.matchesCreation("m","n",different)).isFalse();
+  }
+  // AI 写入及原稿留存不能改变首次创建的回执。
+  tx.executeWithoutResult(t->originals.saved(doc("![总览图](/api/images/cover/raw)\n\n润色后正文","新标题",4),"m",true,"标题"));
+  assertThat(originals.matchesCreation("m","n",first)).isTrue();
+  assertThatThrownBy(()->tx.executeWithoutResult(t->originals.recordCreation("m","n",first))).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+  assertThat(db.queryForObject("SELECT COUNT(*) FROM note_creation_receipt",Integer.class)).isEqualTo(1);
  }
  @Test void draftPolishAcceptsOnlyCompletePresentationEquivalentOutputAndRetainsItIdempotently(){
   String request="1".repeat(32), task="pj"+request, input="选区原文";
