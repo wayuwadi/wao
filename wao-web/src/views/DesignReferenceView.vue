@@ -4,8 +4,10 @@ import { recapDocument } from '@/utils/noteVisualRecap'
 import recapExample from '@/data/design/noteRecapExample.html?raw'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
+const imageExample = '\n\n![图片交互示例](/companions/painter.png "wao-image-size:240xauto;align=center;border=2,dashed,auto")\n\n选中图片可从四边或四角等比例缩放，也可设置边框、对齐与原尺寸。方向键微调，Shift 加速，Esc 取消拖动。'
 const unifiedExample = ref('<div data-columns="2"><section data-column><p>左栏：整理想法</p></section><section data-column><p>右栏：补充资料</p></section></div>\n\n[示例链接](https://example.com)\n\n| 内容 | 状态 |\n| --- | --- |\n| 统一编辑体验 | 验证中 |')
 import FocusDial from '@/components/focus/FocusDial.vue'
+unifiedExample.value += imageExample
 import DateCounterCard from '@/components/routines/DateCounterCard.vue'
 import { newRoutine } from '@/api/personalRoutines'
 const sampleDate={...newRoutine('countdown','2026-12-31'),name:'迎接新年 · 示例',emoji:'🎉',color:'pink',style:'outline'}

@@ -2157,6 +2157,17 @@ public class KnowledgeService {
         if (attrs == null || attrs.isNull()) return;
         if (!attrs.isObject()) throw new BadRequestException("文档节点属性不合法");
         attrs.fields().forEachRemaining(entry -> {
+            if ("image".equals(nodeType) && Set.of("borderWidth", "borderStyle", "borderColor").contains(entry.getKey())) {
+                JsonNode value = entry.getValue();
+                boolean valid = switch (entry.getKey()) {
+                    case "borderWidth" -> value.isIntegralNumber() && value.canConvertToInt()
+                            && value.intValue() >= 0 && value.intValue() <= 8;
+                    case "borderStyle" -> value.isTextual() && Set.of("solid", "dashed").contains(value.asText());
+                    default -> value.isNull() || (value.isTextual() && value.asText().matches("#[0-9a-fA-F]{6}"));
+                };
+                if (!valid) throw new BadRequestException("图片边框属性不合法");
+                return;
+            }
             // 编辑器会为普通有序列表生成 type:null；粘贴列表还可能带 HTML 编号样式。
             if ("orderedList".equals(nodeType) && "type".equals(entry.getKey())) {
                 JsonNode style = entry.getValue();
