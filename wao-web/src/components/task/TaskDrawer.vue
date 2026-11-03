@@ -1115,7 +1115,7 @@ async function uploadAttachment(event: Event) {
               <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
-              <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES"
+              <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar
                 v-model="subDesc"
                 slash-commands
                 placeholder="添加描述…支持 / 命令和粘贴图片"
@@ -1143,7 +1143,7 @@ async function uploadAttachment(event: Event) {
               <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
-              <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES"
+              <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar
                 v-model="desc"
                 slash-commands
                 placeholder="添加描述…支持 / 命令和粘贴图片"

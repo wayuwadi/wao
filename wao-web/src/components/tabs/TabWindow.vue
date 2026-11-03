@@ -78,8 +78,8 @@ function startDrag(event: PointerEvent) {
   height: 100%;
 }
 /* 四象限在普通页签和悬浮窗口都沿容器铺满，列表使用组件内部滚动。 */
-.tab-page-window:not(.floating):has(.quadrant-view) { flex: 1; width: 100%; }
-.window-content:has(.quadrant-view) { display: flex; flex-direction: column; }
+.tab-page-window:not(.floating):has(.quadrant-view, .bounded-workspace) { flex: 1; width: 100%; }
+.window-content:has(.quadrant-view, .bounded-workspace) { display: flex; flex-direction: column; }
 .floating {
   position: fixed;
   top: 90px;
@@ -142,4 +142,8 @@ function startDrag(event: PointerEvent) {
     height: 55dvh;
   }
 }
+</style>
+
+<style scoped>
+.window-content:has(.bounded-workspace) { overflow:hidden; }
 </style>
