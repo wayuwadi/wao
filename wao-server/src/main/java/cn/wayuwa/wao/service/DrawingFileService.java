@@ -28,6 +28,10 @@ public class DrawingFileService {
     @org.springframework.beans.factory.annotation.Autowired
     private KnowledgeAccessService knowledgeAccess;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private KnowledgeService knowledge;
+
     public static final String DEFAULT_TITLE = "未命名草图";
     public static final String EMPTY_SCENE = "{\"type\":\"excalidraw\",\"version\":2,\"source\":\"https://wao.wayuwa.cn\",\"elements\":[],\"appState\":{},\"files\":{}}";
 
@@ -115,12 +119,18 @@ public class DrawingFileService {
         return save(id, new SaveDrawingFileRequest(historical.getSceneJson(), expectedRevision), memberId);
     }
 
-    /** 重命名当前成员的草图文件。 */
+    /** 关联画板通过知识库文档改名，沿用文档权限、修订与发现更新链路。 */
+    @Transactional
     public DrawingFileSummaryDto rename(String id, RenameDrawingFileRequest request, String memberId) {
-        required(id, memberId);
-        if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中重命名");
+        DrawingFileEntity file = required(id, memberId);
         String title = normalizeTitle(request.title(), false);
-        if (mapper.renameOwned(id, memberId, title, LocalDateTime.now()) == 0) throw notFound();
+        if (file.getDocId() != null) {
+            KnowledgeAccessService.asMember(memberId, () -> knowledge.updateDoc(file.getDocId(),
+                    new cn.wayuwa.wao.dto.PatchDocRequest(title, null, null, null)));
+        } else if (mapper.linkedDocumentCount(id) > 0) {
+            throw notFound();
+        }
+        if (mapper.renameOwned(id, file.getOwnerMemberId(), title, LocalDateTime.now()) == 0) throw notFound();
         return summary(required(id, memberId));
     }
 

@@ -414,11 +414,6 @@ async function newFile() {
   }
 }
 
-async function renameFile(file: DrawingFileSummary) {
-  await openFile(file.id)
-  if (current.value?.id === file.id) await startTitleEdit()
-}
-
 async function startTitleEdit() {
   if (
     !current.value ||
@@ -732,50 +727,9 @@ defineExpose({ flush: flushEmbedded })
             :disabled="transitioning || !!deletingId || restoringVersion !== null"
             @click="openFile(file.id)"
           >
-            <i class="ri-draft-line file-icon"></i>
-            <span class="file-main">
-              <strong>{{ file.title }}</strong>
-              <small
-                >编辑于
-                {{
-                  new Date(file.updatedAt).toLocaleString('zh-CN', {
-                    month: 'numeric',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                }}</small
-              >
-            </span>
+            <span class="file-main"><strong>{{ file.title }}</strong></span>
           </button>
-          <span class="file-actions">
-            <a
-              v-if="file.docId && file.kbId"
-              :href="`/kb/${file.kbId}?doc=${file.docId}`"
-              title="在知识库管理"
-              >知识库</a
-            >
-            <button
-              v-if="!file.docId"
-              type="button"
-              title="重命名"
-              :aria-label="`重命名 ${file.title}`"
-              :disabled="transitioning || !!deletingId"
-              @click="renameFile(file)"
-            >
-              <i class="ri-pencil-line"></i>
-            </button>
-            <button
-              v-if="!file.docId"
-              type="button"
-              title="删除"
-              :aria-label="`删除 ${file.title}`"
-              :disabled="transitioning || !!deletingId"
-              @click="removeFile(file)"
-            >
-              <i class="ri-delete-bin-line"></i>
-            </button>
-          </span>
+
         </div>
       </div>
     </aside>
@@ -804,17 +758,22 @@ defineExpose({ flush: flushEmbedded })
             @keydown.esc.prevent="cancelTitleEdit"
           />
           <button
-            v-else-if="current && !current.docId"
+            v-else-if="current"
             type="button"
             class="title-trigger"
             title="点击修改草图名称"
             @click="startTitleEdit"
           >
-            <strong>{{ current.title }}</strong
-            ><i class="ri-pencil-line"></i>
+            <strong>{{ current.title }}</strong>
           </button>
-          <strong v-else>{{ current?.title || '个人草图' }}</strong>
+          <strong v-else>个人草图</strong>
           <span v-if="current">{{ renaming ? '正在保存名称' : `版本 ${revision}` }}</span>
+        </div>
+        <div v-if="current" class="drawing-meta">
+          <span class="edited-at">编辑于 {{ new Date(current.updatedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) }}</span>
+          <button class="icon-button" :aria-label="`重命名 ${current.title}`" title="重命名" :disabled="renaming || transitioning || !!deletingId" @click="startTitleEdit"><i class="ri-pencil-line" aria-hidden="true" /></button>
+          <button v-if="!current.docId && !embedded" class="icon-button" :aria-label="`删除 ${current.title}`" title="删除" :disabled="transitioning || !!deletingId" @click="removeFile(current)"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
+          <a v-if="current.docId && current.kbId && !embedded" :href="`/kb/${current.kbId}?doc=${current.docId}`" title="在知识库查看" aria-label="在知识库查看"><i class="ri-book-open-line" aria-hidden="true" /></a>
         </div>
         <details v-if="current" class="version-menu">
           <summary :title="loadingVersions ? '正在读取版本' : '查看最近三个版本'">
@@ -977,6 +936,10 @@ defineExpose({ flush: flushEmbedded })
 </template>
 
 <style scoped>
+.drawing-meta { display:flex; align-items:center; gap:var(--wao-space-1); color:var(--wao-text-3); font-size:var(--wao-font-caption); }
+.drawing-meta a { color:var(--wao-primary-text); }
+.edited-at { white-space:nowrap; }
+
 .drawings-page {
   position: relative;
   height: 100%;
@@ -1077,7 +1040,7 @@ defineExpose({ flush: flushEmbedded })
   overscroll-behavior: contain;
   display: grid;
   align-content: start;
-  gap: var(--wao-space-1);
+  gap: 2px;
 }
 .file-row {
   box-sizing: border-box;
@@ -1098,29 +1061,18 @@ defineExpose({ flush: flushEmbedded })
 }
 .file-open {
   min-width: 0;
-  min-height: 68px;
+  min-height: 34px;
   flex: 1;
   display: flex;
   align-items: center;
   gap: var(--wao-space-1);
-  padding: var(--wao-space-1);
+  padding: 4px var(--wao-space-1);
   border: 0;
   border-radius: var(--wao-radius-control);
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
-}
-.file-icon {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--wao-radius-control);
-  background: var(--wao-bg-sub);
-  color: var(--wao-primary-text);
-  font-size: 18px;
 }
 .file-main {
   min-width: 0;
@@ -1132,47 +1084,9 @@ defineExpose({ flush: flushEmbedded })
   overflow: hidden;
   color: inherit;
   font-size: var(--wao-font-body);
-  font-weight: 600;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.file-main small {
-  color: var(--wao-text-3);
-  font-size: var(--wao-font-caption);
-}
-.file-actions {
-  display: flex;
-  flex-direction: column;
-  padding-right: 4px;
-  opacity: 0;
-}
-.file-row:hover .file-actions,
-.file-row.active .file-actions,
-.file-row:focus-within .file-actions {
-  opacity: 1;
-}
-.file-actions button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--wao-radius-control);
-  background: transparent;
-  color: var(--wao-text-3);
-  cursor: pointer;
-}
-.file-actions a {
-  font-size: var(--wao-font-caption);
-  color: var(--wao-primary-text);
-}
-.file-actions button:hover {
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-}
-.file-actions button:last-child:hover {
-  color: var(--wao-danger-strong);
 }
 .list-state {
   display: flex;
@@ -1566,13 +1480,6 @@ summary:focus-visible {
   .error-banner span {
     flex-basis: calc(100% - 28px);
   }
-  .file-actions {
-    opacity: 1;
-  }
-  .file-actions button {
-    width: 44px;
-    height: 44px;
-  }
   .file-search input,
   .title-block input {
     font-size: var(--wao-font-card-title);
@@ -1582,13 +1489,7 @@ summary:focus-visible {
   }
 }
 @media (pointer: coarse) {
-  .file-actions {
-    opacity: 1;
-  }
-  .file-actions button {
-    width: 44px;
-    height: 44px;
-  }
+  .file-open { min-height:44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spin {
