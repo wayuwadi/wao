@@ -104,6 +104,67 @@ describe('task workspace',()=>{
   expect(reopened.find('.board-columns').exists()).toBe(true)
   reopened.unmount()
  })
+ it('今天清单像所有一样展示多级任务，切换视图后保留折叠状态',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[{...base,due:data.today,start:'',startAt:undefined,subs:[
+   {id:'child',text:'子任务',done:false,due:data.today},
+   {id:'grand',parentId:'child',text:'孙任务',done:false,due:data.today},
+   {id:'future',text:'未来子任务',done:false,due:shiftTaskDate(data.today,1)},
+  ]}]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  const ids=()=>wrapper.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))
+  expect(ids()).toEqual(['parent','sub:parent:child','sub:parent:grand'])
+  expect(wrapper.get('[data-task-id="parent"]').attributes('style')).toContain('padding-inline-start: 8px')
+  expect(wrapper.get('[data-task-id="sub:parent:child"]').attributes('style')).toContain('padding-inline-start: 24px')
+  expect(wrapper.get('[data-task-id="sub:parent:grand"]').attributes('style')).toContain('padding-inline-start: 40px')
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(ids()).toEqual(['parent'])
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='所有')!.trigger('click')
+  expect(ids()).toContain('sub:parent:grand')
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click')
+  expect(ids()).toEqual(['parent'])
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(ids()).toEqual(['parent','sub:parent:child','sub:parent:grand'])
+  wrapper.unmount()
+ })
+ it('今天分组补回跨日期父级，折叠今天父项不隐藏逾期子项且计数不含上下文',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[{...base,due:data.today,start:'',startAt:undefined,subs:[
+   {id:'child',text:'逾期子任务',done:false,due:shiftTaskDate(data.today,-1)},
+   {id:'today-child',text:'今天子任务',done:false,due:data.today},
+  ]}]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  const sections=wrapper.findAll('.checklist-tasks section')
+  expect(sections).toHaveLength(2)
+  expect(sections[0]!.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))).toEqual(['parent','sub:parent:child'])
+  expect(sections[0]!.get('.group-heading small').text()).toBe('1')
+  expect(sections[1]!.get('.group-heading small').text()).toBe('2')
+  await sections[0]!.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
+  await sections[1]!.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(sections[0]!.get('[data-task-id="sub:parent:child"]').classes()).toContain('selected')
+  expect(wrapper.get('[aria-label="任务标题"]').element).toHaveProperty('value','逾期子任务')
+  expect(sections[1]!.find('[data-task-id="sub:parent:today-child"]').exists()).toBe(false)
+  expect(wrapper.get('.count').text()).toBe('3')
+  wrapper.unmount()
+ })
+ it('仅下级任务在今天时补回未排期的完整父任务，不带入未来兄弟任务',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[
+   {...base,id:'parent',due:'',start:'',startAt:undefined,subs:[]},
+   {...base,id:'child-task',parentTaskId:'parent',title:'今天的完整子任务',due:data.today,start:'',startAt:undefined,subs:[]},
+   {...base,id:'sibling',parentTaskId:'parent',title:'未来兄弟任务',due:shiftTaskDate(data.today,1),start:'',startAt:undefined,subs:[]},
+  ]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  expect(wrapper.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))).toEqual(['parent','child-task'])
+  expect(wrapper.get('[data-task-id="child-task"]').attributes('style')).toContain('padding-inline-start: 24px')
+  expect(wrapper.get('.group-heading small').text()).toBe('1')
+  expect(wrapper.get('.count').text()).toBe('1')
+  wrapper.unmount()
+ })
  it('今天清单和四象限均包含本人逾期主任务与子项，排除已完成、他人及未来任务',async()=>{
   const data=useDataStore(), base=data.tasks[0]!, yesterday=shiftTaskDate(data.today,-1)
   data.tasks=[
