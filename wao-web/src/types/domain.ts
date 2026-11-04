@@ -310,6 +310,8 @@ export interface Task {
   createdBy?: string | null
   /** 任务真实创建时间；极早期没有可靠来源的历史任务可能为空。 */
   createdAt?: string | null
+  /** 持久化任务的最近修改时间，未记录时为空。 */
+  updatedAt?: string | null
   /** 完成时间由服务端在状态进入「已完成」时写入，重新打开时清空。 */
   completedAt?: string | null
   /** 所属任务分组 id（项目分组视图）；未归组时为空，视为落在第一个分组。 */

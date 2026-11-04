@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 /** 新建任务请求。due 为 ISO 日期（YYYY-MM-DD）。 */
 public record CreateTaskRequest(
         @NotBlank String title,
-        @NotBlank String project,
+        @jakarta.validation.constraints.Size(max = 32) String project,
         String pr,
         String owner,
         String due,

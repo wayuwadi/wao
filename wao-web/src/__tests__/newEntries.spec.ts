@@ -141,7 +141,7 @@ describe('新建任务的所属项目', () => {
     localStorage.setItem('wao-new-task-draft-v1', JSON.stringify({ title: '全局草稿', project: data.projects[0]!.id }))
     const r = router(); await r.push(`/projects/${project.id}`)
     const first = mount(NewTaskModal, { global: { plugins: [r] } })
-    expect(first.get('[aria-label="所属项目"]').element).toHaveProperty('value', project.id)
+    expect(first.get('[aria-label="所属清单"]').element).toHaveProperty('value', project.id)
     expect(first.get('.title-input').element).toHaveProperty('value', '')
     await first.get('.title-input').setValue('项目草稿'); first.unmount()
     await r.push(`/projects/${project.id}`)
@@ -150,7 +150,7 @@ describe('新建任务的所属项目', () => {
     expect(JSON.parse(localStorage.getItem('wao-new-task-draft-v1')!).title).toBe('全局草稿'); second.unmount()
   })
 
-  it('真实项目列表替换后，失效默认留空要求确认，不自动改归属', async () => {
+  it('真实清单替换加载期间，未指定清单始终显示收集箱', async () => {
     const data = useDataStore()
     const fixtureProject = data.projects[0]!
     const realProject = { ...fixtureProject, id: 'real-project', name: '真实项目' }
@@ -158,7 +158,7 @@ describe('新建任务的所属项目', () => {
       global: { stubs: { MarkdownEditor: true } },
     })
 
-    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', fixtureProject.id)
+    expect(wrapper.get('[aria-label="所属清单"]').element).toHaveProperty('value', '')
     expect(wrapper.find('[aria-label="负责人"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="优先级"]').exists()).toBe(false)
     expect(wrapper.get('.schedule-details').attributes('open')).toBeUndefined()
@@ -167,8 +167,8 @@ describe('新建任务的所属项目', () => {
     data.projects = [realProject]
     await flushPromises()
 
-    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', '')
-    expect(wrapper.findAll('[aria-label="所属项目"] option').map((pill) => pill.text())).not.toContain(fixtureProject.name)
+    expect(wrapper.get('[aria-label="所属清单"]').element).toHaveProperty('value', '')
+    expect(wrapper.findAll('[aria-label="所属清单"] option').map((pill) => pill.text())).not.toContain(fixtureProject.name)
     wrapper.unmount()
   })
 

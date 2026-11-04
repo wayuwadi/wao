@@ -72,9 +72,9 @@ describe('待办日工作区', () => {
     data.loadStates.projects = 'loaded'; await flushPromises()
     expect(JSON.parse(localStorage.getItem(key)!).project).toBe(project)
     data.projects = projects; data.apiLive = true; await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(project)
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe(project)
     data.projects = []; await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe(project)
     expect(JSON.parse(localStorage.getItem(key)!).title).toBe('继续填写')
     wrapper.unmount()
   })
@@ -97,25 +97,25 @@ describe('待办日工作区', () => {
     expect(wrapper.text()).not.toContain('重试保护草稿')
     wrapper.unmount()
   })
-  it('有效默认项目跨日期带入，现有日期草稿优先；失效选择清空但标题保留', async () => {
+  it('未选清单时跨日期使用收集箱，恢复草稿的显式清单和标题', async () => {
     const data = useDataStore(), first = data.projects[0]!.id, second = data.projects[1]!.id
     localStorage.setItem('wao-day-task-recent-project-v1:a:wg', first)
     localStorage.setItem('wao-day-task-draft-v1:a:wg:2026-10-04', JSON.stringify({ id: 'draft', title: '继续填写', project: second }))
     fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
     const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } })
     await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(first)
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe('')
     await wrapper.setProps({ date: '2026-10-04' })
     await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(second)
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe(second)
     data.projects = data.projects.filter(project => project.id !== second)
     await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe(second)
     expect(wrapper.get<HTMLInputElement>('[aria-label="当天要做的事"]').element.value).toBe('继续填写')
     wrapper.unmount()
   })
 
-  it('首次读取项目后恢复有效默认，成员切换不沿用其他人的选择', async () => {
+  it('清单加载不改变默认落点，成员切换不沿用其他人的显式选择', async () => {
     const data = useDataStore(), projects = [...data.projects]
     localStorage.setItem('wao-day-task-recent-project-v1:a:wg', projects[0]!.id)
     data.projects = []; data.loadStates.projects = 'loading'
@@ -124,21 +124,23 @@ describe('待办日工作区', () => {
     await flushPromises()
     data.projects = projects; data.loadStates.projects = 'loaded'
     await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(projects[0]!.id)
+    const select = wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]')
+    expect(select.element.value).toBe('')
+    await select.setValue(projects[0]!.id)
     useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '其他', initial: '?', color: '', role: '' }, identities: [], createdAt: '' })
     await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]').element.value).toBe('')
     wrapper.unmount()
   })
-  it('指定默认优先于最近项目，迟到默认不能覆盖手选和输入中的归属', async () => {
+  it('旧项目偏好不改变收集箱默认落点，也不覆盖手选清单', async () => {
     const data = useDataStore(), prefs = usePreferenceStore()
     const first = data.projects[0]!.id, second = data.projects[1]!.id
     localStorage.setItem('wao-day-task-recent-project-v1:a:wg', first)
     prefs.defaultProject = second
     fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
     const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } }); await flushPromises()
-    const select = wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]')
-    expect(select.element.value).toBe(second)
+    const select = wrapper.get<HTMLSelectElement>('[aria-label="任务所属清单"]')
+    expect(select.element.value).toBe('')
     await select.setValue(first); prefs.defaultProject = first; await flushPromises()
     prefs.defaultProject = second; await flushPromises()
     expect(select.element.value).toBe(first)

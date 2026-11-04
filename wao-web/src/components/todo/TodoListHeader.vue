@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import TodayDates from '@/components/routines/TodayDates.vue'
-defineProps<{ heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string }>()
+import TodoViewControls from './TodoViewControls.vue'
+import type { TodoViewSettings, TodoDisplaySettings } from '@/utils/todoViewSettings'
+withDefaults(defineProps<{ heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
 const query=defineModel<string>('query',{default:''})
 const completed=defineModel<boolean>('completed',{default:false})
 const quick=defineModel<string>('quick',{required:true})
-const layout=defineModel<'list'|'quadrant'>('layout',{required:true})
-defineEmits<{ navigation:[]; add:[]; protect:[] }>()
+defineEmits<{ navigation:[]; add:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
 </script>
 <template>
  <div class="todo-list-header">
-  <header><button class="navigation-toggle" :aria-label="navigationCollapsed?'展开待办导航':'收起待办导航'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="$emit('navigation')"><i class="ri-layout-left-line" /></button><h1>{{heading}}</h1><span class="count">{{count}}</span><div class="layout-switch"><button :aria-pressed="layout==='list'" @click="layout='list'">清单</button><button v-if="selection!=='abandoned'" :aria-pressed="layout==='quadrant'" @click="layout='quadrant'">四象限</button></div>
- <button v-if="!['completed','abandoned'].includes(selection)" class="completed-toggle" :aria-pressed="completed" @click="completed=!completed"><i class="ri-checkbox-circle-line" aria-hidden="true" />{{completed?'返回未完成':'已完成'}}</button>
+  <header><button class="navigation-toggle" :aria-label="navigationCollapsed?'展开待办导航':'收起待办导航'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="$emit('navigation')"><i class="ri-layout-left-line" /></button><h1>{{heading}}</h1><span class="count">{{count}}</span>
+   <button v-if="!['completed','abandoned'].includes(selection)" class="completed-toggle" :aria-pressed="completed" @click="completed=!completed"><i class="ri-checkbox-circle-line" aria-hidden="true" />{{completed?'返回未完成':'已完成'}}</button>
    <label class="task-search"><i class="ri-search-line" aria-hidden="true" /><input v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务（含已完成）" /><button v-if="query" aria-label="清空搜索" @click="query=''" type="button"><i class="ri-close-line" aria-hidden="true" /></button></label>
+   <TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" />
 </header>
   <TodayDates v-if="selection==='today'" />
-  <form v-if="layout==='list' && !completed && !['completed','abandoned'].includes(selection)" class="quick-add" @submit.prevent="$emit('add')"><i class="ri-add-line" aria-hidden="true" /><input v-model="quick" aria-label="添加任务" :placeholder="selection.startsWith('project:')?'添加任务到当前清单':'添加任务到收集箱'" :disabled="creating" @input="$emit('protect')" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':'添加'}}</button></form>
+  <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" class="quick-add" @submit.prevent="$emit('add')"><i class="ri-add-line" aria-hidden="true" /><input v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating" @input="$emit('protect')" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':'添加'}}</button></form>
   <p v-if="error" role="alert">{{error}}</p>
  </div>
 </template>
@@ -26,7 +28,7 @@ defineEmits<{ navigation:[]; add:[]; protect:[] }>()
 .todo-list-header { flex-shrink:0; min-width:0; padding-bottom:var(--wao-space-2); font:400 var(--wao-font-body)/1.5 var(--wao-font); }
 header { display:flex; align-items:center; gap:var(--wao-space-1); min-height:44px; margin-bottom:var(--wao-space-2); flex-wrap:wrap; }
 h1 { margin:0; min-width:0; overflow-wrap:anywhere; font-size:var(--wao-font-title); font-weight:var(--wao-weight-heading); line-height:var(--wao-line-heading); }
-.count { color:var(--wao-text-3); }.layout-switch { display:flex; flex-shrink:0; margin-left:var(--wao-space-1); gap:var(--wao-space-1); }
+.count { color:var(--wao-text-3); }
 button { border:0; border-radius:var(--wao-radius-control); background:transparent; padding:var(--wao-space-1); color:var(--wao-text); font:inherit; cursor:pointer; }
 button:hover { background:var(--wao-bg-hover); }button[aria-pressed=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }button:disabled { opacity:.5; cursor:default; }
 .quick-add { display:flex; align-items:center; gap:var(--wao-space-1); padding-inline:var(--wao-space-1); min-width:0; border-radius:var(--wao-radius-control); }

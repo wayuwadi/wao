@@ -28,7 +28,7 @@ export function useDeco() {
       checkBg: done ? '#4358D6' : '#FFFFFF',
       checkBorder: done ? '#4358D6' : '#C9CDDA',
       checkOp: done ? 1 : 0,
-      projName: p?.name ?? '未关联',
+      projName: p?.name ?? (t.project ? '未知清单' : '收集箱'),
       projColor: data.areaColor(p?.area ?? ''),
       prBg: pr.bg,
       prColor: pr.color,

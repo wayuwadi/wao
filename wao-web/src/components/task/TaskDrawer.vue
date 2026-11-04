@@ -383,7 +383,7 @@ const relationTasks = computed(() => data.tasks
   .map((item) => ({
     id: item.id,
     title: item.title,
-    projectName: data.projectById(item.project)?.name ?? '未关联项目',
+    projectName: data.projectById(item.project)?.name ?? (item.project ? '未知清单' : '收集箱'),
     createdAt: item.createdAt,
   })))
 // 没有稳定 id 的历史展示附件并不存在可下载正文，不能把它伪装成可关联文件。
@@ -876,6 +876,7 @@ function gotoProject() {
   const pid = task.value?.project
   close()
   if (pid) router.push(`/projects/${pid}`)
+  else router.push({ path:'/todo', query:{scope:'inbox'} })
 }
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
@@ -1421,7 +1422,7 @@ async function uploadAttachment(event: Event) {
             <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
           </div>
           <div class="prop-row">
-            <span class="prop-key">所属项目</span>
+            <span class="prop-key">所属清单</span>
             <button class="proj-btn" @click="gotoProject"><span class="pdot" :style="{ background: tv.projColor }"></span><span class="ellip">{{ tv.projName }}</span></button>
           </div>
           <div class="prop-row">

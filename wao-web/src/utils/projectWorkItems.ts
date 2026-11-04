@@ -31,7 +31,7 @@ export function projectWorkItems(tasks: readonly Task[]) {
       items.push({
         id, workItemType: sub.workItemType ?? undefined, title: sub.text, number: sub.number, project: task.project, parentTaskId: parentKey,
         status: status === '未开始' ? '待办' : status, pr: sub.pr ?? 'P2', owner: sub.owner ?? '',
-        createdBy: sub.createdBy, createdAt: sub.createdAt, groupId: task.groupId,
+        createdBy: sub.createdBy, createdAt: sub.createdAt, updatedAt: task.updatedAt, groupId: task.groupId,
         due: sub.due ?? '', desc: sub.desc ?? '', parts: [], steps: [],
         // 仅保留直接后代的完成语义，避免已完成父事项隐藏未完成后代。
         subs: rows.filter(row => row.sub.parentId === key).map(row => row.sub),

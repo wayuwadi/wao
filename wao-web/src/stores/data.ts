@@ -1510,6 +1510,7 @@ export const useDataStore = defineStore('data', () => {
       task.editVersion = saved.editVersion
       task.subtaskVersion = saved.subtaskVersion
       task.number = saved.number
+      task.updatedAt = saved.updatedAt
       taskSubBases[id] = clone(saved.subs ?? snapshot.subs)
       taskConflictRetries[id] = 0
       delete taskSaveErrors[id]

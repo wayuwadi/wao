@@ -25,6 +25,10 @@ public class TaskEntity {
     private String ownerId;
     private String createdBy;
     private LocalDateTime createdAt;
+    @com.baomidou.mybatisplus.annotation.TableField(
+        insertStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER,
+        updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private LocalDateTime updatedAt;
     private String startDate;
     private String dueDate;
     private String waiting;
@@ -48,6 +52,8 @@ public class TaskEntity {
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public String getStartDate() { return startDate; }
     public void setStartDate(String startDate) { this.startDate = startDate; }
     public String getDueDate() { return dueDate; }

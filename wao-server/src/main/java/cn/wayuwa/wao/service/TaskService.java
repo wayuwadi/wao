@@ -126,14 +126,15 @@ public class TaskService {
      */
     @org.springframework.transaction.annotation.Transactional
     public TaskDto create(CreateTaskRequest req, String createdBy) {
-        requireProjectVisible(req.project(), createdBy);
+        String projectId = StringUtils.hasText(req.project()) ? req.project().trim() : "";
+        requireProjectVisible(projectId, createdBy);
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(req.title().trim());
-        e.setProjectId(req.project() == null ? "" : req.project());
+        e.setProjectId(projectId);
         e.setStatus("待办");
         e.setPr(StringUtils.hasText(req.pr()) ? req.pr() : "P2");
-        e.setOwnerId(!StringUtils.hasText(req.project()) && StringUtils.hasText(createdBy) ? createdBy : StringUtils.hasText(req.owner()) ? req.owner() : "wg");
+        e.setOwnerId(projectId.isEmpty() && StringUtils.hasText(createdBy) ? createdBy : StringUtils.hasText(req.owner()) ? req.owner() : "wg");
         e.setCreatedBy(createdBy);
         e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
         // 没选截止日期就不排期，不再默认落在今天。
@@ -184,6 +185,7 @@ public class TaskService {
                 detail.set("activity", json.valueToTree(activity));
                 String stored = json.writeValueAsString(detail);
                 taskMapper.updateDetail(id, stored);
+                entity.setUpdatedAt(taskMapper.findUpdatedAt(id));
                 entity.setDetailJson(stored);
                 recordTodo(before, entity, memberId, "STEP_CHANGED", null);
                 return toDto(entity);
@@ -252,6 +254,7 @@ public class TaskService {
                 StringUtils.hasText(e.getStartDate()) && !StringUtils.hasText(d.startAt()) ? d.schedulePeriod() : null);
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
+        e.setUpdatedAt(taskMapper.findUpdatedAt(e.getId()));
         recordTodo(before, e, memberId, "TASK_CHANGED", null);
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
@@ -334,6 +337,7 @@ public class TaskService {
             announceCreated(e, memberId);
         } else {
             taskMapper.updateById(e);
+            e.setUpdatedAt(taskMapper.findUpdatedAt(id));
             recordTodo(previous, e, memberId, "TASK_CHANGED", null);
             announceNewSubs(e, previous, dto.subs(), memberId);
         }
@@ -354,7 +358,7 @@ public class TaskService {
      * @param memberId       当前操作人成员 id
      */
     private void announceCollecting(TaskEntity entity, String previousStatus, String memberId) {
-        if (!COLLECTING.equals(entity.getStatus()) || COLLECTING.equals(previousStatus)) {
+        if (!StringUtils.hasText(entity.getProjectId()) || !COLLECTING.equals(entity.getStatus()) || COLLECTING.equals(previousStatus)) {
             return;
         }
         afterCommit(() -> {
@@ -370,6 +374,7 @@ public class TaskService {
 
     /** 新建任务后同步到飞书群；通知失败只记日志，不影响创建结果。 */
     private void announceCreated(TaskEntity entity, String creatorId) {
+        if (!StringUtils.hasText(entity.getProjectId())) return;
         afterCommit(() -> {
         try {
             taskNotifier.notifyTaskCreated(entity.getId(), entity.getProjectId(), entity.getTitle(),
@@ -385,7 +390,7 @@ public class TaskService {
      * 创意收集卡片，这里跳过避免同一次变化打两次扰。
      */
     private void announceStatusChanged(TaskEntity entity, String previousStatus, String memberId) {
-        if (entity.getStatus() == null || entity.getStatus().equals(previousStatus)
+        if (!StringUtils.hasText(entity.getProjectId()) || entity.getStatus() == null || entity.getStatus().equals(previousStatus)
                 || COLLECTING.equals(entity.getStatus()) || previousStatus == null) {
             return;
         }
@@ -413,6 +418,7 @@ public class TaskService {
      * @param memberId 当前操作人成员 id
      */
     private void announceNewSubs(TaskEntity entity, TaskEntity previous, List<Step> subs, String memberId) {
+        if (!StringUtils.hasText(entity.getProjectId())) return;
         Set<String> known = nn(parse(previous.getDetailJson()).subs()).stream()
                 .map(Step::id).filter(StringUtils::hasText).collect(Collectors.toSet());
         List<String> added = nn(subs).stream()
@@ -797,7 +803,8 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId()).withWorkItemType(d.workItemType() == null ? "task" : d.workItemType()).withSchedule(e.getStartDate(), d.startAt(), d.endAt(), d.schedulePeriod());
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId()).withWorkItemType(d.workItemType() == null ? "task" : d.workItemType()).withSchedule(e.getStartDate(), d.startAt(), d.endAt(), d.schedulePeriod())
+                .withUpdatedAt(e.getUpdatedAt() == null ? null : e.getUpdatedAt().toString());
     }
 
     /**

@@ -181,7 +181,8 @@ export const fetchGoals = () => get<GoalDto[]>('/api/goals')
 export interface CreateTaskPayload {
   workItemType?: Task['workItemType']
   title: string
-  project: string
+  /** 不指定或为空时存入本人收集箱。 */
+  project?: string
   pr: string
   owner: string
   due: string

@@ -9,7 +9,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
  * 第一次按 Esc、点菜单外任意处或滚动页面都会收起，Esc 不会再冒泡去关掉外层弹框。
  */
 defineOptions({ inheritAttrs: false })
-const props = defineProps<{ anchor: HTMLElement | null; minWidth?: number; customContent?: boolean }>()
+const props = defineProps<{ anchor: HTMLElement | null; minWidth?: number; customContent?: boolean; alignEnd?: boolean }>()
 const emit = defineEmits<{ close: []; ready: [] }>()
 const menu = ref<HTMLElement | null>(null)
 const theme = ref<string | undefined>()
@@ -28,7 +28,7 @@ function place() {
   const below = rect.bottom + 4
   const preferredTop = below + height > window.innerHeight - 8 && rect.top - height - 4 > 8 ? rect.top - height - 4 : below
   const top = Math.max(8, Math.min(preferredTop, window.innerHeight - height - 8))
-  const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8)
+  const left = Math.min(Math.max(8, props.alignEnd ? rect.right - width : rect.left), window.innerWidth - width - 8)
   style.value = { top: `${top}px`, left: `${left}px`, minWidth: `${minWidth}px` }
 }
 function onKey(event: KeyboardEvent) {

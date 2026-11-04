@@ -10,7 +10,7 @@ export function useMemberPreference<T>(preferenceKey: MaybeRefOrGetter<string>, 
   const cachePrefix = 'wao-member-preference-v1'
   function field() {
     const value = ref<T>(decode(null))
-    const state = ref<SyncState>('idle'), error = ref('')
+    const state = ref<SyncState>('idle'), error = ref(''), loaded = ref(false)
     let epoch = 0, version = 0, pending = false
     let queue = Promise.resolve()
     const cacheKey = (member: string) => `${cachePrefix}:${member}`
@@ -46,7 +46,7 @@ export function useMemberPreference<T>(preferenceKey: MaybeRefOrGetter<string>, 
         try {
           await savePreference(key, raw)
           if (generation !== epoch || member !== owner.value || revision !== version) return
-          pending = false; cache(member, raw, false); state.value = 'saved'; error.value = ''
+          pending = false; cache(member, raw, false); loaded.value = true; state.value = 'saved'; error.value = ''
         } catch {
           if (generation !== epoch || member !== owner.value || revision !== version) return
           state.value = 'error'
@@ -64,6 +64,7 @@ export function useMemberPreference<T>(preferenceKey: MaybeRefOrGetter<string>, 
       try {
         const remote = await fetchPreference(key)
         if (generation !== epoch || member !== owner.value || revision !== version) return
+        loaded.value = true
         if (pending) {
           if (remote && encode(decode(remote)) === encode(currentValue())) {
             pending = false; cache(member, encode(currentValue()), false); state.value = 'saved'
@@ -91,11 +92,12 @@ export function useMemberPreference<T>(preferenceKey: MaybeRefOrGetter<string>, 
     function retry() { return pending ? save() : load() }
     watch(owner, member => {
       epoch++; version++; queue = Promise.resolve(); pending = false
+      loaded.value = false
       value.value = decode(readLocal(member)) as typeof value.value
       state.value = 'idle'; error.value = ''
       void load()
     }, { immediate: true, flush: 'sync' })
-    return { value, state, error, set, retry, load }
+    return { value, state, error, loaded, set, retry, load }
   }
 
   return field()
