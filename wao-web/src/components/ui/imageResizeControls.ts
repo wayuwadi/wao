@@ -20,9 +20,14 @@ export function imageResizeControls(options: {
     const rect = image.getBoundingClientRect()
     const parent = dom.parentElement
     const parentStyle = parent ? getComputedStyle(parent) : null
+    const style = getComputedStyle(dom)
+    // Alignment's auto margins consume leftover space, not the resize budget.
+    // Explicit margins still reserve space for document indentation.
+    const leftIndent = dom.style.marginLeft === 'auto' ? 0 : parseFloat(style.marginLeft) || 0
+    const rightIndent = dom.style.marginRight === 'auto' ? 0 : parseFloat(style.marginRight) || 0
     const available = (parent?.getBoundingClientRect().width || rect.width)
       - (parseFloat(parentStyle?.paddingLeft || '') || 0) - (parseFloat(parentStyle?.paddingRight || '') || 0)
-      - (parseFloat(getComputedStyle(dom).marginLeft) || 0) - (parseFloat(getComputedStyle(dom).marginRight) || 0)
+      - leftIndent - rightIndent
     return { width: rect.width, height: rect.height, ratio: rect.width / rect.height, max: Math.max(1, available) }
   }
   const dimensions = (width: number, ratio: number, max: number) => {
