@@ -3,7 +3,7 @@
  * 工作项类型图标：主任务与子任务各一个，参照 ONES 的蓝底白标方块，
  * 列表、表格与详情弹框的面包屑共用这一份，保证同一类型处处长得一样。
  */
-withDefaults(defineProps<{ kind: 'task' | 'subtask' | 'requirement' | 'bug'; size?: number }>(), { size: 16 })
+withDefaults(defineProps<{ kind: 'task' | 'subtask' | 'requirement' | 'bug' | 'note'; size?: number }>(), { size: 16 })
 </script>
 
 <template>
@@ -11,11 +11,11 @@ withDefaults(defineProps<{ kind: 'task' | 'subtask' | 'requirement' | 'bug'; siz
     class="work-item-icon"
     :class="kind"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * 0.72)}px` }"
-    :title="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷' }[kind]"
-    :aria-label="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷' }[kind]"
+    :title="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷', note: '笔记' }[kind]"
+    :aria-label="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷', note: '笔记' }[kind]"
     role="img"
   >
-    <i :class="{ task: 'ri-checkbox-line', subtask: 'ri-node-tree', requirement: 'ri-lightbulb-line', bug: 'ri-bug-line' }[kind]"></i>
+    <i :class="{ task: 'ri-checkbox-line', subtask: 'ri-node-tree', requirement: 'ri-lightbulb-line', bug: 'ri-bug-line', note: 'ri-sticky-note-line' }[kind]"></i>
   </span>
 </template>
 
@@ -37,4 +37,5 @@ withDefaults(defineProps<{ kind: 'task' | 'subtask' | 'requirement' | 'bug'; siz
 }
 .work-item-icon.requirement { background: #3b9a62; }
 .work-item-icon.bug { background: #dc5353; }
+.work-item-icon.note { background:var(--wao-text-3); }
 </style>

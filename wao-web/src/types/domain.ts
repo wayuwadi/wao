@@ -107,6 +107,7 @@ export interface Project {
 }
 
 export interface TaskStep {
+  workItemType?: WorkItemType | null
   /** 子任务独立优先级；历史未设置的记录为空，新建默认 P2。 */
   pr?: Priority | null
   /** 同一主任务内的父子任务 id；空值表示根节点。 */
@@ -129,7 +130,7 @@ export interface TaskStep {
   /** 子任务内嵌图片。 */
   images?: ImageRef[]
   /** 未完成时的细分状态：支持「进行中」「待验证」；空表示未开始。完成态仍以 done 为准。 */
-  status?: '进行中' | '待验证' | null
+  status?: '进行中' | '待验证' | '已放弃' | null
   /** 子任务创建人成员 id；历史子任务没有。 */
   createdBy?: string | null
   /** 子任务创建时间（ISO）；历史子任务没有。 */
@@ -141,7 +142,7 @@ export interface TaskStep {
 }
 
 /** 子任务在表格与详情里展示的三态。 */
-export type SubtaskState = '未开始' | '进行中' | '待验证' | '已完成'
+export type SubtaskState = '未开始' | '进行中' | '待验证' | '已完成' | '已放弃'
 
 export interface Comment {
   /** 评论稳定 id（`c` + 时间戳）。历史评论没有，改 / 删时按数组下标兜底。 */
@@ -184,7 +185,7 @@ export interface PdcaCycle {
  * <p>老的「阻塞」已下线（V16 迁移到「进行中」）：等待他人由 {@link Task#waiting} 表达，
  * 不必再占一个状态位。
  */
-export type TaskStatus = '待办' | '收集中' | '进行中' | 'AI 进行中' | '待验证' | '已完成'
+export type TaskStatus = '待办' | '收集中' | '进行中' | 'AI 进行中' | '待验证' | '已完成' | '已放弃'
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3'
 
 export type IdeaStage =
@@ -289,7 +290,7 @@ export interface Idea {
   updatedAt: string
 }
 
-export type WorkItemType = 'task' | 'requirement' | 'bug'
+export type WorkItemType = 'task' | 'requirement' | 'bug' | 'note'
 
 export interface Task {
   workItemType?: WorkItemType

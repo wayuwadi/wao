@@ -37,7 +37,7 @@ public class SubtaskMoveService {
         for (String id : new TreeSet<>(List.of(sourceId, targetId))) locked.put(id, mapper.lockById(id));
         if (locked.values().contains(null)) throw new BadRequestException("任务已变更，请刷新");
         tasks.get(sourceId, memberId);
-        tasks.get(targetId, memberId);
+        if ("note".equals(tasks.get(targetId, memberId).workItemType())) throw new BadRequestException("笔记不能添加子任务");
         if (mapper.countUnfinishedRuns(sourceId, targetId) > 0) throw new BadRequestException("任务仍有未结束的 AI 执行，请结束后再移动子任务");
         TaskEntity source = locked.get(sourceId), target = locked.get(targetId);
         TaskEntity sourceBefore = todoHistory == null ? null : todoHistory.copy(source);
@@ -101,7 +101,7 @@ public class SubtaskMoveService {
         target.setProjectId(source.getProjectId());
         target.setTitle(root.text());
         target.setDescription(root.desc());
-        target.setStatus(root.done() ? "已完成" : Set.of("进行中", "待验证").contains(Objects.toString(root.status(), "")) ? root.status() : "待办");
+        target.setStatus(root.done() ? "已完成" : Set.of("进行中", "待验证", "已放弃").contains(Objects.toString(root.status(), "")) ? root.status() : "待办");
         target.setPr(blank(root.pr()) == null ? "P2" : root.pr());
         target.setOwnerId(blank(root.owner()) == null ? source.getOwnerId() : root.owner());
         target.setDueDate(root.due());
@@ -121,7 +121,7 @@ public class SubtaskMoveService {
             detail.set("docs", json.valueToTree(root.docs() == null ? List.of() : root.docs()));
             detail.set("comments", json.valueToTree(root.comments() == null ? List.of() : root.comments()));
             detail.put("groupId", json.readTree(source.getDetailJson()).path("groupId").asText(""));
-            detail.put("workItemType", "task");
+            detail.put("workItemType", root.workItemType()==null?"task":root.workItemType());
             target.setDetailJson(json.writeValueAsString(detail));
         } catch (Exception ex) { throw new BadRequestException("子任务详情无法转换，未执行提升"); }
         mapper.insert(target);
@@ -158,7 +158,7 @@ public class SubtaskMoveService {
             result.add(new Step(sub.text(), sub.done(), blank(sub.id()) == null ? taskId + "#" + i : sub.id(),
                     sub.desc() == null ? "" : sub.desc(), sub.images() == null ? List.of() : sub.images(), null,
                     blank(sub.parentId()), blank(sub.owner()), blank(sub.due()), blank(sub.status()),
-                    blank(sub.createdBy()), blank(sub.createdAt()), sub.docs(), sub.comments(), sub.pr()));
+                    blank(sub.createdBy()), blank(sub.createdAt()), sub.docs(), sub.comments(), sub.pr(), sub.workItemType()));
         }
         return result;
     }

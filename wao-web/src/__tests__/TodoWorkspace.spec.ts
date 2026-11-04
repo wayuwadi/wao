@@ -28,6 +28,67 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('今天清单像所有一样展示多级任务，切换视图后保留折叠状态',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[{...base,due:data.today,start:'',startAt:undefined,subs:[
+   {id:'child',text:'子任务',done:false,due:data.today},
+   {id:'grand',parentId:'child',text:'孙任务',done:false,due:data.today},
+   {id:'future',text:'未来子任务',done:false,due:shiftTaskDate(data.today,1)},
+  ]}]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  const ids=()=>wrapper.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))
+  expect(ids()).toEqual(['parent','sub:parent:child','sub:parent:grand'])
+  expect(wrapper.get('[data-task-id="parent"]').attributes('style')).toContain('padding-inline-start: 8px')
+  expect(wrapper.get('[data-task-id="sub:parent:child"]').attributes('style')).toContain('padding-inline-start: 24px')
+  expect(wrapper.get('[data-task-id="sub:parent:grand"]').attributes('style')).toContain('padding-inline-start: 40px')
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(ids()).toEqual(['parent'])
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='所有')!.trigger('click')
+  expect(ids()).toContain('sub:parent:grand')
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click')
+  expect(ids()).toEqual(['parent'])
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(ids()).toEqual(['parent','sub:parent:child','sub:parent:grand'])
+  wrapper.unmount()
+ })
+ it('今天分组补回跨日期父级，折叠今天父项不隐藏逾期子项且计数不含上下文',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[{...base,due:data.today,start:'',startAt:undefined,subs:[
+   {id:'child',text:'逾期子任务',done:false,due:shiftTaskDate(data.today,-1)},
+   {id:'today-child',text:'今天子任务',done:false,due:data.today},
+  ]}]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  const sections=wrapper.findAll('.checklist-tasks > section')
+  expect(sections).toHaveLength(2)
+  expect(sections[0]!.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))).toEqual(['parent','sub:parent:child'])
+  expect(sections[0]!.get('.group-heading small').text()).toBe('1')
+  expect(sections[1]!.get('.group-heading small').text()).toBe('2')
+  await sections[0]!.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
+  await sections[1]!.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  expect(sections[0]!.get('[data-task-id="sub:parent:child"]').classes()).toContain('selected')
+  expect(wrapper.get('[aria-label="任务标题"]').element).toHaveProperty('value','逾期子任务')
+  expect(sections[1]!.find('[data-task-id="sub:parent:today-child"]').exists()).toBe(false)
+  expect(wrapper.get('.count').text()).toBe('3')
+  wrapper.unmount()
+ })
+ it('仅下级任务在今天时补回未排期的完整父任务，不带入未来兄弟任务',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[
+   {...base,id:'parent',due:'',start:'',startAt:undefined,subs:[]},
+   {...base,id:'child-task',parentTaskId:'parent',title:'今天的完整子任务',due:data.today,start:'',startAt:undefined,subs:[]},
+   {...base,id:'sibling',parentTaskId:'parent',title:'未来兄弟任务',due:shiftTaskDate(data.today,1),start:'',startAt:undefined,subs:[]},
+  ]
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.get('[data-task-id="parent"] .tree-toggle').trigger('click')
+  await wrapper.findAll('.task-navigation button').find(b=>b.text()==='今天')!.trigger('click');await flushPromises()
+  expect(wrapper.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))).toEqual(['parent','child-task'])
+  expect(wrapper.get('[data-task-id="child-task"]').attributes('style')).toContain('padding-inline-start: 24px')
+  expect(wrapper.get('.group-heading small').text()).toBe('1')
+  expect(wrapper.get('.count').text()).toBe('1')
+  wrapper.unmount()
+ })
  it('今天清单和四象限均包含本人逾期主任务与子项，排除已完成、他人及未来任务',async()=>{
   const data=useDataStore(), base=data.tasks[0]!, yesterday=shiftTaskDate(data.today,-1)
   data.tasks=[
@@ -136,7 +197,7 @@ describe('task workspace',()=>{
   expect(data.projectById(project.id)?.name).toBe('改名后的清单')
   wrapper.unmount()
  })
- it('搜索包含已完成主任务及子项，清空恢复默认且不再提供保存筛选',async()=>{
+ it('移除搜索后仍按完成状态展示，不受旧搜索条件影响',async()=>{
   const data=useDataStore()
   data.tasks[1]!.status='已完成';data.tasks[1]!.title='历史搜索主任务'
   data.tasks[0]!.subs.push({id:'done-search',text:'历史搜索子任务',done:true})
@@ -146,9 +207,7 @@ describe('task workspace',()=>{
   expect(rows()).not.toContain('历史搜索')
   expect(wrapper.text()).not.toContain('保存筛选')
   expect(wrapper.get('.task-navigation').text()).not.toContain('筛选器')
-  await wrapper.get('[aria-label="搜索任务"]').setValue('历史搜索')
-  expect(rows()).toContain('历史搜索主任务');expect(rows()).toContain('历史搜索子任务')
-  await wrapper.get('[aria-label="搜索任务"]').setValue('')
+  expect(wrapper.find('[aria-label="搜索任务"]').exists()).toBe(false)
   expect(rows()).not.toContain('历史搜索')
   wrapper.unmount()
  })
@@ -286,4 +345,23 @@ describe('task workspace',()=>{
   expect(add).not.toHaveBeenCalled();expect(flush).toHaveBeenCalledWith(existing.id)
   wrapper.unmount()
  })
+})
+
+it('无搜索且忽略旧查询；笔记保留在清单，放弃可找回，四象限仅保留角落添加',async()=>{
+ const data=useDataStore(),base=data.tasks[0]!
+ sessionStorage.setItem('wao-task-view-v1:workspace-test:wg:todo:all',JSON.stringify({query:'不存在的旧查询',collapsed:[]}))
+ data.tasks=[{...base,id:'normal',title:'普通任务',subs:[]},{...base,id:'note',title:'保留笔记',workItemType:'note',subs:[]},{...base,id:'abandoned',title:'暂时放弃',status:'已放弃',subs:[]}]
+ const w=mount(TodoView,options);await flushPromises()
+ expect(w.find('[aria-label="搜索任务"]').exists()).toBe(false)
+ expect(w.findAll('.checklist-row').map(r=>r.text()).join(' ')).toContain('普通任务')
+ expect(w.find('[data-task-id="note"]').exists()).toBe(true)
+ expect(w.find('[data-task-id="note"] input[type="checkbox"]').exists()).toBe(false)
+ expect(w.find('[data-task-id="abandoned"]').exists()).toBe(false)
+ await w.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+ expect(w.find('[aria-label="添加任务"]').exists()).toBe(false)
+ expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).not.toContain('保留笔记')
+ await w.findAll('.layout-switch button').find(b=>b.text()==='清单')!.trigger('click')
+ await w.findAll('.task-navigation button').find(b=>b.text()==='已放弃')!.trigger('click');await flushPromises()
+ expect(w.find('[data-task-id="abandoned"]').exists()).toBe(true)
+ w.unmount()
 })

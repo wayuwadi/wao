@@ -1,3 +1,4 @@
+import { saveTaskMenuOperation, type TaskMenuAction, type TaskMenuRequest } from '@/api/taskMenu'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
 import { quickDraftRecoveryId, isRecoveredQuickDraft, sameQuickDraftContent } from '@/utils/quickDraftRecovery'
 import type { IdentitySelection } from '@/api/digitalMembers'
@@ -1642,6 +1643,46 @@ export const useDataStore = defineStore('data', () => {
     try { return await job } finally { if (taskOperationChains.get(id) === job) taskOperationChains.delete(id) }
   }
 
+  /** 批量菜单事务：保护在途编辑，同一操作失败重试沿用持久化回执。 */
+  async function taskMenuOperation(id:string, subId:string|undefined, action:TaskMenuAction) {
+    if(movingSubtasks.value || movingTask.value)throw new Error('任务正在保存或移动，请稍后重试')
+    const session=useSessionStore(), member=session.userId, account=session.account?.accountId
+    if(!account)throw new Error('请先登录')
+    const storageKey='wao-task-menu:'+account+':'+member+':'+id
+    const ids=new Set([id]); if(!subId){let changed=true;while(changed){changed=false;for(const t of tasks.value)if(t.parentTaskId&&ids.has(t.parentTaskId)&&!ids.has(t.id)){ids.add(t.id);changed=true}}}
+    const bases=new Map<string,Task>(), versions=new Map<string,number>()
+    movingSubtasks.value=true
+    try {
+      for(const key of ids){await flushTask(key);if(taskSaveState(key)==='error'||taskConflicts[key])throw new Error('请先处理任务或子任务的保存问题')}
+      if(member!==session.userId||account!==session.account?.accountId)throw new Error('账号已切换')
+      for(const key of ids){const t=taskById(key);if(!t?.editVersion)throw new Error('任务尚未保存');bases.set(key,clone(t));versions.set(key,taskPersistVersions[key]??0);taskPersisting[key]=true}
+      let pending: {operation:string;change:TaskMenuRequest}|null=JSON.parse(localStorage.getItem(storageKey)||'null')
+      const recoveringOther=!!pending && (pending.change.action!==action||pending.change.subId!==subId)
+      pending ??= {operation:crypto.randomUUID(),change:{action,subId,versions:Object.fromEntries([...bases].map(([key,t])=>[key,t.editVersion!]))}}
+      localStorage.setItem(storageKey,JSON.stringify(pending))
+      let result:Awaited<ReturnType<typeof saveTaskMenuOperation>>
+      try {result=await saveTaskMenuOperation(id,pending.operation,account,pending.change)}
+      catch(error){const status=(error as {response?:{status?:number};status?:number}).response?.status??(error as {status?:number}).status;if(status&&[400,403,404,409].includes(status))localStorage.removeItem(storageKey);throw error}
+      if(member!==session.userId||account!==session.account?.accountId)throw new Error('账号已切换，请在原账号下核对结果')
+      // 回执可能早于后续编辑，先读取最新内容；任何本机新输入都不得被覆盖。
+      const latest=await Promise.all(result.tasks.map(t=>apiGetTask(t.id).catch(()=>t)))
+      if(member!==session.userId||account!==session.account?.accountId)throw new Error('账号已切换，请在原账号下核对结果')
+      for(const remote of latest){
+        const current=taskById(remote.id),base=bases.get(remote.id)
+        if(!current)tasks.value.push(remote)
+        else if(base){for(const key of Object.keys(remote) as (keyof Task)[])if(JSON.stringify(current[key])===JSON.stringify(base[key]))Object.assign(current,{[key]:remote[key]});current.editVersion=remote.editVersion;current.subtaskVersion=remote.subtaskVersion}
+        taskSubBases[remote.id]=clone(remote.subs);taskTouchedAt[remote.id]=Date.now()
+        if(current&&base&&(taskPersistVersions[remote.id]??0)!==versions.get(remote.id))storeTaskDraft(current)
+      }
+      localStorage.removeItem(storageKey);void useTaskLabelsStore().load()
+      if(recoveringOther)throw new Error('上次操作已确认，请核对结果后重新选择当前操作')
+      return result.selectedId
+    } finally {
+      movingSubtasks.value=false
+      for(const key of bases.keys()){taskPersisting[key]=false;if(member===session.userId&&(taskPersistVersions[key]??0)!==versions.get(key))void drainTask(key)}
+    }
+  }
+
   /** 刷新工作区前等待所有任务、文档写入；失败保留页面与草稿。 */
   async function flushWorkspace(): Promise<boolean> {
     const taskIds = Object.keys(taskDrafts.value)
@@ -2663,7 +2704,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs, ensureDocLoaded, docLoadErrors,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, runTaskOperation, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    taskMenuOperation, taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, runTaskOperation, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingTask, moveTask, movingSubtasks, moveSubtask, promoteSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,

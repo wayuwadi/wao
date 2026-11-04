@@ -17,7 +17,8 @@ export function shiftTaskDate(day: string, offset: number): string {
 }
 
 /** Execution dates and deadlines may both qualify, but activity dates never do. */
-export function matchesTaskDate(task: Partial<Pick<Task, 'start' | 'startAt' | 'due'>>, date: TaskDateFilter, today: string): boolean {
+export function matchesTaskDate(task: Partial<Pick<Task, 'start' | 'startAt' | 'due' | 'status' | 'workItemType'>>, date: TaskDateFilter, today: string): boolean {
+  if(task.status==='已放弃' || (task.workItemType==='note' && date!=='all'))return false
   const scheduled = task.startAt?.slice(0, 10) || task.start || ''
   const dates = [scheduled, task.due || ''].filter(Boolean)
   switch (date) {

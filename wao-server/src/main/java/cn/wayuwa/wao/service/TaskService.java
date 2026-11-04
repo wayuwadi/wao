@@ -325,6 +325,8 @@ public class TaskService {
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
                 dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages(), workItemType(dto.workItemType(), previous),
                 compatiblePeriod(dto, previous, startAt));
+        if ("note".equals(detail.workItemType()) && (!nn(detail.subs()).isEmpty() || taskMapper.countChildTasks(id)>0))
+            throw new cn.wayuwa.wao.common.BadRequestException("笔记不能包含子任务，请先转换为任务");
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
@@ -779,8 +781,8 @@ public class TaskService {
     private String workItemType(String requested, TaskEntity previous) {
         String type = requested != null ? requested : previous == null ? "task" : parse(previous.getDetailJson()).workItemType();
         if (type == null) return "task";
-        if (!java.util.Set.of("task", "requirement", "bug").contains(type)) {
-            throw new cn.wayuwa.wao.common.BadRequestException("工作项类型必须是需求、任务或缺陷");
+        if (!java.util.Set.of("task", "requirement", "bug", "note").contains(type)) {
+            throw new cn.wayuwa.wao.common.BadRequestException("工作项类型必须是需求、任务、缺陷或笔记");
         }
         return type;
     }
