@@ -355,7 +355,7 @@ watch(displayedRows, value => {
   if (!value.length && data.taskLoadState !== 'loaded') return
   if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
   const visibleMatches = value.filter(row => matches.value.some(t => t.id === row.task.id))
-  const selectableRows = props.groupOverdue ? value : visibleMatches
+  const selectableRows = props.todoView || props.groupOverdue ? value : visibleMatches
   if (!selectableRows.some(row => row.task.id === selectedId.value)) selectedId.value = visibleMatches[0]?.task.id ?? value[0]?.task.id ?? ''
 }, { immediate: true })
 const rememberScroll = useTaskScrollMemory(layout, () => `${props.stateKey ?? 'checklist'}:scroll`, () => `${displayedRows.value.length}:${selectedId.value}`)

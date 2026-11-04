@@ -22,9 +22,11 @@ function toggle(kind: 'view' | 'order') {
   menu.value = menu.value === kind ? null : kind
   orderPage.value = null
 }
-function closeAndFocus(anchor: HTMLElement | null) {
+async function closeAndFocus(anchor: HTMLElement | null) {
   menu.value = null
-  anchor?.focus()
+  await nextTick()
+  if (anchor?.isConnected) anchor.focus()
+  else document.querySelector<HTMLButtonElement>('.view-controls [aria-label="更多视图选项"]')?.focus()
 }
 async function orderSection(page: typeof orderPage.value, focusLabel?: string) {
   orderPage.value = page
@@ -51,9 +53,14 @@ watch(() => props.selection, () => { menu.value = null; settingsOpen.value = fal
   </div>
   <CellMenu v-if="menu==='view'" :anchor="more" :min-width="224" align-end aria-label="视图选项" @close="menu=null">
     <span class="menu-caption" role="presentation">视图</span>
-    <button v-for="item in layouts" :key="item.id" type="button" role="menuitemradio" :aria-checked="view.layout===item.id"
-      @click="emit('view',{layout:item.id}); closeAndFocus(more)">
-      <span><i :class="item.icon" aria-hidden="true" /> {{ item.label }}</span><i v-if="view.layout===item.id" class="ri-check-line" aria-hidden="true" />
+    <div class="view-grid" role="none">
+      <button v-for="item in layouts.filter(item=>item.id!=='quadrant')" :key="item.id" type="button" role="menuitemradio" :aria-label="item.label" :title="item.label" :aria-checked="view.layout===item.id"
+        @click="emit('view',{layout:item.id}); closeAndFocus(more)">
+        <i :class="item.icon" aria-hidden="true" /><span>{{ item.label }}</span>
+      </button>
+    </div>
+    <button v-if="layouts.some(item=>item.id==='quadrant')" type="button" role="menuitemradio" :aria-checked="view.layout==='quadrant'" @click="emit('view',{layout:'quadrant'}); closeAndFocus(more)">
+      <span><i class="ri-layout-grid-line" aria-hidden="true" /> 四象限</span><i v-if="view.layout==='quadrant'" class="ri-check-line" aria-hidden="true" />
     </button>
     <button v-if="canToggleCompleted" class="menu-section" type="button" role="menuitemcheckbox" :aria-checked="view.showDone" @click="emit('view',{showDone:!view.showDone})">
       <span><i class="ri-checkbox-circle-line" aria-hidden="true" /> 显示已完成</span><i v-if="view.showDone" class="ri-check-line" aria-hidden="true" />
@@ -112,6 +119,11 @@ watch(() => props.selection, () => { menu.value = null; settingsOpen.value = fal
 .control:hover,.control[aria-expanded=true] { background:var(--wao-bg-hover); color:var(--wao-primary-text); }
 .control i { font-size:var(--wao-font-card-title); }
 .menu-caption { display:block; padding:4px 8px; color:var(--wao-text-3); font-size:var(--wao-font-help); }
+.view-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; padding:4px; }
+.view-grid button { display:flex; flex-direction:column; align-items:center; gap:4px; min-height:56px; padding:6px 2px; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-2); font:inherit; font-size:var(--wao-font-caption); cursor:pointer; }
+.view-grid i { font-size:var(--wao-font-title); }
+.view-grid button:hover { background:var(--wao-bg-hover); }
+.view-grid button[aria-checked=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 .menu-section { border-top:1px solid var(--wao-line) !important; margin-top:4px; }
 .order-panel button { display:flex; width:100%; justify-content:space-between; align-items:center; min-height:34px; padding:6px 8px; border:0; background:transparent; border-radius:var(--wao-radius-control); color:var(--wao-text); font:inherit; text-align:left; cursor:pointer; }
 .order-panel button:hover,.order-panel button:focus-visible { background:var(--wao-bg-hover); }
