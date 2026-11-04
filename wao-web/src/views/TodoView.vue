@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import { useTodoTaskMove } from '@/composables/todoTaskMove'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
@@ -44,6 +45,10 @@ function updateView(patch: Partial<TodoViewSettings>) {
  changeView(patch)
 }
 const scopeMemory = useTaskViewMemory(() => `todo:${selection.value}`, () => ({collapsed:[] as string[]}))
+const query = ref('')
+const completedOnly = ref(false)
+watch([selection, () => session.userId], () => { query.value=''; completedOnly.value=false })
+const showingCompleted = computed(() => selection.value==='completed' || completedOnly.value)
 const collapsed = computed({get:()=>scopeMemory.value.collapsed,set:v=>{scopeMemory.value.collapsed=v}})
 const listDialog = ref(false), editingList = ref<Project>(), settingsList = ref<Project>()
 const listMenu = ref<InstanceType<typeof ContextActionMenu>>()
@@ -82,20 +87,20 @@ const filtered = computed(() => scope.value.filter(task => {
  if(selection.value==='abandoned') return task.status==='已放弃'
  if(task.status==='已放弃') return false
  if(task.workItemType==='note' && (['timeline','quadrant'].includes(layout.value)||['today','tomorrow','week','completed'].includes(selection.value)))return false
- if(selection.value==='completed') return isTaskFinished(task)
+ if(showingCompleted.value && !isTaskFinished(task)) return false
  const sourceId=projection.value.refs[task.id]?.taskId??task.id
- if(!view.value.showDone && isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
+ if(!showingCompleted.value && !view.value.showDone && !query.value.trim() && isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
  if(selection.value==='inbox' && task.project) return false
  if(selection.value.startsWith('project:') && task.project!==selection.value.slice(8)) return false
  if(selection.value.startsWith('tag:') && !tagsFor(task.id).includes(selection.value.slice(4))) return false
  if(['today','tomorrow','week'].includes(selection.value) && !matchesTaskDate(task,selection.value as TaskDateFilter,data.today)) return false
  return true
 }))
-const searched = filtered
+const searched = computed(()=>query.value.trim() ? searchProjectTasks(filtered.value,query.value).map(hit=>hit.task) : filtered.value)
 const heading = computed(() => nav.find(x=>x.id===selection.value)?.name ?? (selection.value.startsWith('project:') ? data.projects.find(p=>p.id===selection.value.slice(8))?.name : selection.value.startsWith('tag:') ? '# '+selection.value.slice(4) : ({completed:'已完成',abandoned:'已放弃',review:'每日回顾',legacy:'所有'} as Record<string,string>)[selection.value]) ?? '任务')
 const destinationProject = computed(() => selection.value.startsWith('project:') ? data.projectById(selection.value.slice(8)) : undefined)
 const destinationName = computed(() => destinationProject.value?.name ?? (selection.value.startsWith('project:') ? '当前清单' : '收集箱'))
-const showDone = computed(() => selection.value==='completed' || view.value.showDone)
+const showDone = computed(() => showingCompleted.value || view.value.showDone || !!query.value.trim())
 const quick = ref(''), quickError = ref(''), creating = ref(false), quickId = ref('')
 const draftKey = computed(() => `wao-todo-quick:${labels.identity}`)
 watch(draftKey,()=>{ creating.value=false; quickError.value=''; try { const v=JSON.parse(localStorage.getItem(draftKey.value)||'null'); quick.value=v?.title||'';quickId.value=v?.id||'' } catch { quickError.value='无法读取新任务草稿' } },{immediate:true})
@@ -133,12 +138,12 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <TodoListHeader v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" />
+    <TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" />
     <p v-if="preferenceError" class="move-error" role="status">{{preferenceError}} <button @click="retryPreferences()">重试同步视图</button></p>
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups :group-overdue="selection==='today'" v-else-if="layout!=='quadrant'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="projection.items" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" query="" @toggle="toggle" @reveal="selection='all'">
-     <template #list-header><TodoListHeader v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" /></template>
+    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups :group-overdue="selection==='today'" v-else-if="layout!=='quadrant'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="projection.items" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
+     <template #list-header><TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" /></template>
      <template #section-action="{section}"><button v-if="selection==='today' && section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
     <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="showDone" />

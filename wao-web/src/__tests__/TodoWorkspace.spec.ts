@@ -274,7 +274,7 @@ describe('task workspace',()=>{
   expect(data.projectById(project.id)?.name).toBe('改名后的清单')
   wrapper.unmount()
  })
- it('移除搜索后仍按完成状态展示，不受旧搜索条件影响',async()=>{
+ it('搜索包含已完成任务，清空后恢复未完成列表',async()=>{
   const data=useDataStore()
   data.tasks[1]!.status='已完成';data.tasks[1]!.title='历史搜索主任务'
   data.tasks[0]!.subs.push({id:'done-search',text:'历史搜索子任务',done:true})
@@ -284,7 +284,14 @@ describe('task workspace',()=>{
   expect(rows()).not.toContain('历史搜索')
   expect(wrapper.text()).not.toContain('保存筛选')
   expect(wrapper.get('.task-navigation').text()).not.toContain('筛选器')
-  expect(wrapper.find('[aria-label="搜索任务"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="搜索任务"]').exists()).toBe(true)
+  await wrapper.get('[aria-label="搜索任务"]').setValue('历史搜索')
+  expect(rows()).toContain('历史搜索子任务')
+  await wrapper.get('[aria-label="清空搜索"]').trigger('click')
+  expect(rows()).not.toContain('历史搜索')
+  await wrapper.get('.completed-toggle').trigger('click')
+  expect(rows()).toContain('历史搜索子任务')
+  await wrapper.get('.completed-toggle').trigger('click')
   expect(rows()).not.toContain('历史搜索')
   wrapper.unmount()
  })
@@ -425,12 +432,12 @@ describe('task workspace',()=>{
  })
 })
 
-it('无搜索且忽略旧查询；笔记保留在清单，放弃可找回，四象限仅保留角落添加',async()=>{
+it('恢复搜索且忽略旧查询；笔记保留在清单，放弃可找回，四象限仅保留角落添加',async()=>{
  const data=useDataStore(),base=data.tasks[0]!
  sessionStorage.setItem('wao-task-view-v1:workspace-test:wg:todo:all',JSON.stringify({query:'不存在的旧查询',collapsed:[]}))
  data.tasks=[{...base,id:'normal',title:'普通任务',subs:[]},{...base,id:'note',title:'保留笔记',workItemType:'note',subs:[]},{...base,id:'abandoned',title:'暂时放弃',status:'已放弃',subs:[]}]
  const w=mount(TodoView,options);await flushPromises()
- expect(w.find('[aria-label="搜索任务"]').exists()).toBe(false)
+ expect(w.find('[aria-label="搜索任务"]').exists()).toBe(true)
  expect(w.findAll('.checklist-row').map(r=>r.text()).join(' ')).toContain('普通任务')
  expect(w.find('[data-task-id="note"]').exists()).toBe(true)
  expect(w.find('[data-task-id="note"] input[type="checkbox"]').exists()).toBe(false)
@@ -441,5 +448,24 @@ it('无搜索且忽略旧查询；笔记保留在清单，放弃可找回，四�
  await switchView(w,'列表视图')
  await w.findAll('.task-navigation button').find(b=>b.text()==='已放弃')!.trigger('click');await flushPromises()
  expect(w.find('[data-task-id="abandoned"]').exists()).toBe(true)
+ w.unmount()
+})
+
+it('当前共享清单的已完成入口保留范围，搜索与四象限均覆盖已完成',async()=>{
+ const data=useDataStore(),base=data.tasks[0]!,project=data.projects[0]!
+ data.tasks=[{...base,id:'shared-done',project:project.id,owner:'other',title:'共享完成记录',status:'已完成',subs:[]},{...base,id:'outside-done',project:'outside',owner:'wg',title:'其他清单完成记录',status:'已完成',subs:[]}]
+ testRoute.query={list:project.id}
+ const w=mount(TodoView,options);await flushPromises()
+ expect(w.find('[data-task-id="shared-done"]').exists()).toBe(false)
+ await w.get('.completed-toggle').trigger('click')
+ expect(w.find('[data-task-id="shared-done"]').exists()).toBe(true)
+ expect(w.find('[data-task-id="outside-done"]').exists()).toBe(false)
+ await w.get('.completed-toggle').trigger('click')
+ await w.get('[aria-label="搜索任务"]').setValue('共享完成记录')
+ expect(w.find('[data-task-id="shared-done"]').exists()).toBe(true)
+ await w.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+ expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).toContain('共享完成记录')
+ await w.get('[aria-label="清空搜索"]').trigger('click')
+ expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).not.toContain('共享完成记录')
  w.unmount()
 })
