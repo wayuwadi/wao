@@ -90,6 +90,42 @@ async function mountEditor(props: {
 }
 
 describe('图片拖动缩放', () => {
+  it.each(['left', 'center', 'right'])('%s 对齐图片缩小后仍能放大到正文边界', async (align) => {
+    const w = await mountEditor({ modelValue: '![示例](/api/images/resize/raw "wao-image-size:240x120")', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const image = w.get('img.md-img').element
+    const node = image.parentElement!
+    const computedStyle = window.getComputedStyle.bind(window)
+    // jsdom 不做布局；模拟浏览器将 auto margin 解析为实际剩余空间。
+    const styleSpy = vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = computedStyle(element, pseudo)
+      if (element !== node) return style
+      const remaining = 600 - Number.parseFloat(node.style.width)
+      return new Proxy(style, { get(target, key) {
+        if (key === 'marginLeft') return `${align === 'left' ? 0 : align === 'center' ? remaining / 2 : remaining}px`
+        if (key === 'marginRight') return `${align === 'right' ? 0 : align === 'center' ? remaining / 2 : remaining}px`
+        return Reflect.get(target, key)
+      } })
+    })
+    vi.spyOn(image, 'getBoundingClientRect').mockImplementation(() => {
+      const width = Number.parseFloat(node.style.width)
+      return new DOMRect(0, 0, width, width / 2)
+    })
+    vi.spyOn(w.get('.tiptap').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 500))
+    try {
+      e.commands.setNodeSelection(0); await nextTick()
+      await w.get('[aria-label="图片对齐"]').setValue(align)
+      const handle = w.get('[data-image-resize="e"]')
+      await handle.trigger('keydown', { key: 'ArrowLeft', shiftKey: true })
+      expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 230, height: 115 })
+      await handle.trigger('keydown', { key: 'ArrowRight', shiftKey: true })
+      expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 240, height: 120 })
+      handle.element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 }))
+      window.dispatchEvent(new MouseEvent('pointerup'))
+      expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 600, height: 300, align })
+    } finally { styleSpy.mockRestore(); w.unmount() }
+  })
   it('选中工具条设置边框和对齐，保存重开及恢复原尺寸保留边框且不上传', async () => {
     const w = await mountEditor({ modelValue: '![示例](/api/images/border/raw "wao-image-size:240x120;title=说明")', imageControls: true, imageContextControls: true })
     const e = (w.vm as unknown as { editor: Editor }).editor
