@@ -220,13 +220,40 @@ class DrawingFileServiceTest {
         return entity;
     }
     @Test
-    void knowledgeManagedDrawingCannotBeDeletedOrRenamedIndependently() {
+    void knowledgeManagedDrawingCannotBeDeletedIndependently() {
         var entity = new DrawingFileEntity(); entity.setId("dr1");
         when(mapper.findOwned("dr1", OWNER)).thenReturn(entity);
         when(mapper.linkedDocumentCount("dr1")).thenReturn(1);
         assertThatThrownBy(() -> service.delete("dr1", OWNER)).isInstanceOf(BadRequestException.class).hasMessageContaining("知识库");
-        assertThatThrownBy(() -> service.rename("dr1", new RenameDrawingFileRequest("新名称"), OWNER)).isInstanceOf(BadRequestException.class);
+
         verify(mapper, never()).deleteOwned("dr1", OWNER);
+    }
+
+    @Test
+    void sharedKnowledgeDrawingRenamesDocumentThroughAuthorizedMetadataFlow() {
+        var access = mock(KnowledgeAccessService.class);
+        var knowledge = mock(KnowledgeService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "knowledgeAccess", access);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "knowledge", knowledge);
+        var entity = file("linked", OWNER, 5); entity.setDocId("doc"); entity.setKbId("kb");
+        when(mapper.findKnowledge("linked")).thenReturn(entity);
+        when(access.visible("kb", OTHER)).thenReturn(true);
+        when(mapper.renameOwned(eq("linked"), eq(OWNER), eq("新名称"), any())).thenReturn(1);
+        when(knowledge.updateDoc(eq("doc"), any())).thenAnswer(invocation -> {
+            assertThat(new KnowledgeAccessService(null, null).actor()).isEqualTo(OTHER);
+            var request = (cn.wayuwa.wao.dto.PatchDocRequest) invocation.getArgument(1);
+            assertThat(request.title()).isEqualTo("新名称");
+            assertThat(request.content()).isNull();
+            assertThat(request.blocks()).isNull();
+            entity.setTitle(request.title());
+            return null;
+        });
+        assertThat(service.rename("linked", new RenameDrawingFileRequest("新名称"), OTHER).title()).isEqualTo("新名称");
+        verify(knowledge).updateDoc(eq("doc"), any());
+        when(access.visible("kb", OTHER)).thenReturn(false);
+        assertThatThrownBy(() -> service.rename("linked", new RenameDrawingFileRequest("禁止"), OTHER)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.save("linked", new SaveDrawingFileRequest(CHANGED_SCENE, 5), OTHER)).isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).saveScene(any(), any(), any(), anyInt(), any());
     }
 
 }
