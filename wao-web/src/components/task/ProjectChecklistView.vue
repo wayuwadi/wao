@@ -231,15 +231,26 @@ const rows = computed(() => taskTreeRows(pins.sort(withProjectAncestors(matches.
 const dateSectionsCollapsed = ref(new Set<string>())
 const groupedRows = computed(() => {
   if (props.groupOverdue) {
-    // Date sections show matching tasks directly, even when a parent is collapsed.
-    const flat = matches.value.map(task => ({ task, depth: 0 }))
     return [
-      { id:'overdue', name:'已过期', header:true, collapsed:dateSectionsCollapsed.value.has('overdue'), rows:flat.filter(row=>overdue(row.task)>0) },
-      { id:'today', name:'今天', header:true, collapsed:dateSectionsCollapsed.value.has('today'), rows:flat.filter(row=>overdue(row.task)===0) },
-    ].filter(section=>section.rows.length)
+      { id:'overdue', name:'已过期', items:matches.value.filter(task=>overdue(task)>0) },
+      { id:'today', name:'今天', items:matches.value.filter(task=>overdue(task)===0) },
+    ].filter(section=>section.items.length).map(({ items, ...section }) => {
+      const ids = new Set(items.map(task => task.id))
+      const tree = pins.sort(withProjectAncestors(items, props.contextItems))
+      // Context-only ancestors in another date section cannot hide this section's matches.
+      const expandable = new Set(tree.flatMap(task => task.parentTaskId && ids.has(task.parentTaskId) ? [task.parentTaskId] : []))
+      return { ...section, header:true, collapsed:dateSectionsCollapsed.value.has(section.id), count:items.length, expandable,
+        rows:taskTreeRows(tree, props.query ? [] : props.collapsed.filter(id=>expandable.has(id))) }
+    })
   }
-  return (props.sections ?? [{ id:'__all', name:'', header:false, collapsed:false, itemIds:props.contextItems.map(t=>t.id) }]).map(section=>({...section,rows:rows.value.filter(row=>section.itemIds.includes(row.task.id))}))
+  return (props.sections ?? [{ id:'__all', name:'', header:false, collapsed:false, itemIds:props.contextItems.map(t=>t.id) }]).map(section=>{
+    const sectionRows = rows.value.filter(row=>section.itemIds.includes(row.task.id))
+    return {...section, rows:sectionRows, count:sectionRows.length, expandable:expandableIds.value}
+  })
 })
+const displayedRows = computed(() => props.groupOverdue
+  ? groupedRows.value.flatMap(section => section.rows)
+  : rows.value)
 function toggleSection(id:string) {
   if(!props.groupOverdue){emit('toggleGroup',id);return}
   if(dateSectionsCollapsed.value.has(id))dateSectionsCollapsed.value.delete(id);else dateSectionsCollapsed.value.add(id)
@@ -259,13 +270,14 @@ function drop(target: string | null, event: DragEvent) {
   if (dragging.value && !props.busy) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
   dragging.value = null; over.value = null
 }
-watch(rows, value => {
+watch(displayedRows, value => {
   if (!value.length && data.taskLoadState !== 'loaded') return
   if (detailOnlySelection.value && props.contextItems.some(t => t.id === selectedId.value)) return
   const visibleMatches = value.filter(row => matches.value.some(t => t.id === row.task.id))
-  if (!visibleMatches.some(row => row.task.id === selectedId.value)) selectedId.value = visibleMatches[0]?.task.id ?? value[0]?.task.id ?? ''
+  const selectableRows = props.groupOverdue ? value : visibleMatches
+  if (!selectableRows.some(row => row.task.id === selectedId.value)) selectedId.value = visibleMatches[0]?.task.id ?? value[0]?.task.id ?? ''
 }, { immediate: true })
-const rememberScroll = useTaskScrollMemory(layout, () => `${props.stateKey ?? 'checklist'}:scroll`, () => `${rows.value.length}:${selectedId.value}`)
+const rememberScroll = useTaskScrollMemory(layout, () => `${props.stateKey ?? 'checklist'}:scroll`, () => `${displayedRows.value.length}:${selectedId.value}`)
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
 const source = computed(() => actions.source(selectedId.value))
 const propertyMenu = ref<'group' | 'status' | 'priority' | null>(null)
@@ -363,7 +375,6 @@ function finishTitle() {
   void data.flushTask(source.value.taskId)
 }
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
-const hasChildren = (id: string) => expandableIds.value.has(id)
 const contextMenu = ref<InstanceType<typeof TaskContextMenu> | null>(null)
 const deleteTarget = ref<{ id: string; taskId: string; subId?: string; title: string } | null>(null)
 const deleting = ref(false)
@@ -462,7 +473,7 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (!task) return
   event.preventDefault()
   event.stopPropagation()
-  detailOnlySelection.value = !rows.value.some(row => row.task.id === id)
+  detailOnlySelection.value = !displayedRows.value.some(row => row.task.id === id)
   selectedId.value = id
   void contextMenu.value?.openAt(event, task, [
     { id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:props.busy || actions.busy(id), run:()=>startChild(id) },
@@ -483,18 +494,18 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     <div class="checklist-list-pane"><slot name="list-header" />
     <WaoCard class="checklist-tasks" data-task-scroll="list">
 
-      <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
+      <p v-if="!displayedRows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
       <div v-if="dragging" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
       <section v-for="section in groupedRows" :key="section.id">
       <div v-if="section.header" class="group-header">
-        <button class="group-heading" :aria-expanded="!section.collapsed" @click="toggleSection(section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.rows.length }}</small></button>
+        <button class="group-heading" :aria-expanded="!section.collapsed" @click="toggleSection(section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.count }}</small></button>
         <slot v-if="groupOverdue" name="section-action" :section="section" /><button v-else class="group-add-button" :aria-label="`在 ${section.name} 新建任务`" title="快速新建任务" @click="emit('add', section.id)"><i class="ri-add-line" aria-hidden="true"></i></button>
       </div>
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
       <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
-        <button v-if="!groupOverdue && hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
-        <span v-else-if="!groupOverdue" class="tree-spacer"></span>
+        <button v-if="section.expandable.has(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+        <span v-else class="tree-spacer"></span>
         <input v-if="selectionMode" type="checkbox" :checked="selectedIds?.includes(task.id)" :disabled="!matches.some(item=>item.id===task.id)" :aria-label="`选择任务 ${task.title}`" @change="emit('select', task.id)" />
         <i v-else-if="task.workItemType==='note'" class="ri-sticky-note-line" aria-label="笔记" /><i v-else-if="task.status==='已放弃'" class="ri-close-circle-line" aria-label="已放弃" />
         <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
