@@ -5,7 +5,7 @@ import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { TODO_GROUPS, TODO_SORTS, TODO_VIEWS, type TodoViewSettings, type TodoDisplaySettings } from '@/utils/todoViewSettings'
 
-const props = defineProps<{ selection: string; view: TodoViewSettings; display: TodoDisplaySettings; syncError: string }>()
+const props = withDefaults(defineProps<{ selection: string; view: TodoViewSettings; display: TodoDisplaySettings; syncError: string; ready?: boolean }>(),{ready:true})
 const emit = defineEmits<{ view: [Partial<TodoViewSettings>]; display: [Partial<TodoDisplaySettings>]; retry: [] }>()
 const more = ref<HTMLElement | null>(null), order = ref<HTMLElement | null>(null)
 const menu = ref<'view' | 'order' | null>(null)
@@ -19,6 +19,7 @@ const directions = computed(() => props.view.sort === 'priority'
 const groupLabel = computed(() => props.view.group === 'auto' ? props.view.layout === 'board' ? '状态' : props.selection === 'today' ? '时间' : '默认' : TODO_GROUPS[props.view.group])
 const canToggleCompleted = computed(() => !['completed', 'abandoned'].includes(props.selection))
 function toggle(kind: 'view' | 'order') {
+  if (!props.ready) return
   menu.value = menu.value === kind ? null : kind
   orderPage.value = null
 }
@@ -47,9 +48,10 @@ watch(() => props.selection, () => { menu.value = null; settingsOpen.value = fal
 </script>
 
 <template>
-  <div class="view-controls">
-    <button v-if="view.layout!=='quadrant'" ref="order" class="control" type="button" title="分组与排序" aria-label="分组与排序" aria-haspopup="menu" :aria-expanded="menu==='order'" @click="toggle('order')"><i class="ri-sort-desc" aria-hidden="true" /></button>
-    <button ref="more" class="control" type="button" title="更多视图选项" aria-label="更多视图选项" aria-haspopup="menu" :aria-expanded="menu==='view'" @click="toggle('view')"><i class="ri-more-line" aria-hidden="true" /></button>
+  <div class="view-controls" :aria-busy="!ready">
+    <span v-if="!ready && !syncError" role="status">正在读取视图设置…</span>
+    <button v-if="view.layout!=='quadrant'" :disabled="!ready" ref="order" class="control" type="button" title="分组与排序" aria-label="分组与排序" aria-haspopup="menu" :aria-expanded="menu==='order'" @click="toggle('order')"><i class="ri-sort-desc" aria-hidden="true" /></button>
+    <button :disabled="!ready" ref="more" class="control" type="button" title="更多视图选项" aria-label="更多视图选项" aria-haspopup="menu" :aria-expanded="menu==='view'" @click="toggle('view')"><i class="ri-more-line" aria-hidden="true" /></button>
   </div>
   <CellMenu v-if="menu==='view'" :anchor="more" :min-width="224" align-end aria-label="视图选项" @close="menu=null">
     <span class="menu-caption" role="presentation">视图</span>
@@ -117,6 +119,7 @@ watch(() => props.selection, () => { menu.value = null; settingsOpen.value = fal
 .view-controls { display:flex; margin-inline-start:auto; gap:var(--wao-space-1); }
 .control { width:36px; min-height:36px; padding:0; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-2); font:inherit; cursor:pointer; }
 .control:hover,.control[aria-expanded=true] { background:var(--wao-bg-hover); color:var(--wao-primary-text); }
+.control:disabled { opacity:.5; cursor:wait; }
 .control i { font-size:var(--wao-font-card-title); }
 .menu-caption { display:block; padding:4px 8px; color:var(--wao-text-3); font-size:var(--wao-font-help); }
 .view-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; padding:4px; }

@@ -463,7 +463,7 @@ it('当前共享清单的已完成入口保留范围，搜索与四象限均覆�
  await w.get('.completed-toggle').trigger('click')
  await w.get('[aria-label="搜索任务"]').setValue('共享完成记录')
  expect(w.find('[data-task-id="shared-done"]').exists()).toBe(true)
- await w.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+ await switchView(w,'四象限')
  expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).toContain('共享完成记录')
  await w.get('[aria-label="清空搜索"]').trigger('click')
  expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).not.toContain('共享完成记录')

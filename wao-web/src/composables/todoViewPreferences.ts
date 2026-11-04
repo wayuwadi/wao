@@ -20,12 +20,16 @@ export function useTodoViewPreferences(scope: MaybeRefOrGetter<string>) {
   }
   watch(key, () => { local.value = decodeTodoView(null); readLocal() }, { immediate:true, flush:'sync' })
   const view = computed(() => account.value.value.sync ? shared.value.value : local.value)
+  // 初次读取失败或未完成时，默认值不能成为整份账号偏好的写入基线。
+  const ready = computed(() => account.loaded.value && (!account.value.value.sync || shared.loaded.value))
   function changeView(patch: Partial<TodoViewSettings>) {
+    if (!ready.value) return
     const next = { ...view.value, ...patch }
     writeLocal(next)
     if (account.value.value.sync) void shared.set(next)
   }
   function changeDisplay(patch: Partial<TodoDisplaySettings>) {
+    if (!ready.value) return
     if (patch.sync === false && account.value.value.sync) writeLocal(view.value)
     if (patch.sync === true && !account.value.value.sync) void shared.set(view.value)
     void account.set({ ...account.value.value, ...patch })
@@ -44,5 +48,5 @@ export function useTodoViewPreferences(scope: MaybeRefOrGetter<string>) {
   }
   onMounted(() => window.addEventListener('focus', refresh))
   onBeforeUnmount(() => window.removeEventListener('focus', refresh))
-  return { view, display: account.value, changeView, changeDisplay, error, retry }
+  return { view, display: account.value, ready, changeView, changeDisplay, error, retry }
 }
