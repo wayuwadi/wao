@@ -4,9 +4,6 @@ import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { usePreferenceStore } from '@/stores/preferences'
-import { useTaskPreferencesStore } from '@/stores/taskPreferences'
-import { selectTaskProject } from '@/utils/taskProjectSelection'
 import { useDayWorkspaceStore } from '@/stores/dayWorkspace'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { legacyProjection } from '@/utils/richDoc'
@@ -28,8 +25,6 @@ import type { Priority } from '@/types'
 const props = defineProps<{ date: string }>()
 const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), days = useDayWorkspaceStore(), router = useRouter()
-const preferences = usePreferenceStore()
-const taskPreferences = useTaskPreferencesStore()
 const taskOrder = useTaskOrderStore()
 const availableProjects = computed(() => data.projects.filter(project => project.status !== '已完成'))
 const day = computed(() => days.days[props.date])
@@ -61,27 +56,15 @@ function switchView(view: 'list' | 'quadrant') {
   catch { viewError.value = '无法记住本机视图选择，当前视图仍保留。' }
 }
 const newKey = () => `wao-day-task-draft-v1:${identity()}:${props.date}`
-const selectionProtected = ref(false)
-function automaticProject() {
-  return selectTaskProject(availableProjects.value.map(project => project.id), { preferred: preferences.defaultProject, recent: taskPreferences.recentProject })
-}
+const unavailableProject = computed(() => !!createProject.value && !availableProjects.value.some(item => item.id === createProject.value))
 let createId = ''
 let restoringDraft = false
 watch(() => [props.date, identity()], () => {
   restoringDraft = true
-  selectionProtected.value = false
-  taskMenu.value?.close(); expanded.value = {}; noteFor.value = null; title.value = ''; createError.value = ''; draftError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
-  try { const draft = JSON.parse(localStorage.getItem(newKey()) || 'null') as { id: string; title: string; project?: string } | null; if (draft) { selectionProtected.value = true; title.value = draft.title; createId = draft.id; createProject.value = draft.project || '' } } catch { selectionProtected.value = true /* Preserve corrupted draft without overwriting it. */ }
+  taskMenu.value?.close(); expanded.value = {}; noteFor.value = null; title.value = ''; createError.value = ''; draftError.value = ''; createId = ''; createProject.value = ''
+  try { const draft = JSON.parse(localStorage.getItem(newKey()) || 'null') as { id: string; title: string; project?: string } | null; if (draft) { title.value = draft.title; createId = draft.id; createProject.value = draft.project || '' } } catch { draftError.value = '无法读取本机任务草稿' }
   restoringDraft = false
   void days.load(props.date)
-}, { immediate: true })
-watch(() => [data.loadStates.projects, availableProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject, data.apiLive] as const, () => {
-  if (data.loadStates.projects !== 'loaded') return
-  // Hydration marks the request loaded before publishing the aggregate snapshot.
-  if (!data.apiLive && !data.projects.length) return
-  if (selectionProtected.value || title.value.trim()) {
-    if (createProject.value && !availableProjects.value.some(project => project.id === createProject.value)) createProject.value = ''
-  } else createProject.value = automaticProject()
 }, { immediate: true })
 function protectDraft() {
   if (restoringDraft) return
@@ -217,7 +200,7 @@ async function createTask() {
   creating.value = true; createError.value = ''
   try {
     if (!data.apiLive) throw new Error('服务尚未连接，标题草稿已保留')
-    if (!project || !availableProjects.value.some(item => item.id === project)) throw new Error('请选择任务所属项目，标题草稿已保留')
+    if (unavailableProject.value) throw new Error('所选清单暂不可用，请重新选择或存入收集箱')
     const existing = data.taskById(createId)
     if (existing) {
       if (existing.title !== submitted || existing.project !== project) data.patchTask(createId, { title: submitted, project })
@@ -234,8 +217,7 @@ async function createTask() {
       if (!result.persisted) throw new Error(data.taskSaveError(createId) || '任务尚未保存，原地重试不会重复创建')
     }
     if (identity() === account && props.date === date && title.value.trim() === submitted) {
-      void taskPreferences.rememberProject(project)
-      localStorage.removeItem(key); title.value = ''; createId = ''; selectionProtected.value = false; createProject.value = automaticProject()
+      localStorage.removeItem(key); title.value = ''; createId = ''; createProject.value = ''
     }
     await refresh(date)
   } catch (cause) { if (identity() === account && props.date === date) createError.value = cause instanceof Error ? cause.message : '任务保存失败，标题已保留' }
@@ -367,12 +349,11 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
               <div class="day-add-task">
                 <form v-if="!past" class="day-create" @submit.prevent="createTask">
                   <input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" />
-                  <select v-model="createProject" aria-label="任务所属项目" :disabled="creating" @change="selectionProtected = true"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select>
+                  <select v-model="createProject" aria-label="任务所属清单" :disabled="creating"><option value="">收集箱</option><option v-if="unavailableProject" :value="createProject" disabled>清单暂不可用</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select>
                   <WaoButton type="submit" variant="primary" :loading="creating" :disabled="!title.trim()">{{ creating ? '保存中…' : '添加' }}</WaoButton>
                 </form>
                 <p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
                 <p v-if="draftError" class="task-error" role="alert">{{ draftError }} <button type="button" @click="protectDraft">重试保护草稿</button></p>
-                <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
               </div>
         </template>
         <template #routine>

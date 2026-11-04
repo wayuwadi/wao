@@ -3,21 +3,29 @@ import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import {projectWorkItems} from '@/utils/projectWorkItems'
 import {useTaskLabelsStore} from '@/stores/taskLabels'
 import { beforeEach,describe,expect,it,vi } from 'vitest'
-import { mount,flushPromises } from '@vue/test-utils'
+import { mount,flushPromises,type VueWrapper } from '@vue/test-utils'
 import { createPinia,setActivePinia } from 'pinia'
 import TodoView from '@/views/TodoView.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
 import { shiftTaskDate } from '@/utils/taskWorkspaceFilter'
 import { saveTaskLabels } from '@/api/taskLabels'
+import { savePreference } from '@/api/favorites'
 const testRoute = vi.hoisted(() => ({ query: {} as Record<string,string> }))
 vi.mock('vue-router',()=>({useRoute:()=>testRoute,useRouter:()=>({push:vi.fn(),replace:vi.fn()})}))
 vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[{taskId:'parent',subId:'child',revision:1,tags:['联调']}]),saveTaskLabels:vi.fn(async(v)=>({...v,revision:v.revision+1}))}))
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
 const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
+const buttonText = (w:VueWrapper, selector:string, text:string) => w.findAll(selector).find(button => button.text().trim()===text)!
+async function switchView(w:VueWrapper, name:string) {
+ await w.get('[aria-label="更多视图选项"]').trigger('click')
+ await buttonText(w,'[role="menuitemradio"]',name).trigger('click')
+ await flushPromises()
+}
 beforeEach(()=>{
  vi.restoreAllMocks();vi.clearAllMocks()
  testRoute.query = {}
@@ -28,6 +36,74 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('三种视图共用任务与保存：看板按状态移动、时间线显示执行区间和截止标记',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[
+   {...base,id:'range',title:'跨日执行',start:data.today,startAt:data.today+'T15:00',endAt:shiftTaskDate(data.today,2)+'T00:00',due:shiftTaskDate(data.today,3),subs:[]},
+   {...base,id:'undated',title:'无日期待办',start:'',startAt:null,endAt:null,due:'',subs:[]},
+   {...base,id:'outside',title:'范围外待办',start:'',startAt:null,endAt:null,due:shiftTaskDate(data.today,16),subs:[]},
+  ]
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await switchView(wrapper,'看板视图')
+  const progress=wrapper.findAll('.board-column').find(col=>col.get('h2').text().startsWith('进行中'))!
+  await wrapper.get('[data-task-id="range"]').trigger('dragstart',{dataTransfer:{setData:vi.fn(),effectAllowed:''}})
+  await progress.trigger('dragover');await progress.trigger('drop');await flushPromises()
+  expect(progress.get('[data-task-id="range"]').text()).toContain('跨日执行')
+  expect(data.taskById('range')?.status).toBe('进行中')
+  await switchView(wrapper,'时间线视图')
+  expect(wrapper.get('.timeline-execution').attributes('style')).toContain('2 / 4')
+  expect(wrapper.get('.timeline-deadline').attributes('title')).toContain(shiftTaskDate(data.today,3))
+  expect(wrapper.get('[data-task-id="undated"]').text()).toContain('无日期待办')
+  expect(wrapper.find('[data-task-id="outside"]').exists()).toBe(false)
+  await wrapper.get('[aria-label="下一段时间线"]').trigger('click')
+  expect(wrapper.find('[data-task-id="outside"]').exists()).toBe(true)
+  await switchView(wrapper,'列表视图')
+  expect(wrapper.findAll('.checklist-row')).toHaveLength(3)
+  wrapper.unmount()
+ })
+ it('优先级排序、分组和显示偏好可实际使用，关闭同步后只保存本机视图',async()=>{
+  const data=useDataStore(), base=data.tasks[0]!
+  data.tasks=[
+   {...base,id:'low',title:'低优先级',pr:'P3',due:shiftTaskDate(data.today,3),subs:[],desc:'详细描述'},
+   {...base,id:'high',title:'高优先级',pr:'P0',subs:[]},
+   {...base,id:'done',title:'完成事项',status:'已完成',pr:'P1',subs:[]},
+  ]
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  const ids=()=>wrapper.findAll('.checklist-row').map(row=>row.attributes('data-task-id'))
+  await wrapper.get('[aria-label="分组与排序"]').trigger('click')
+  await wrapper.get('[data-section="sort"]').trigger('click')
+  await buttonText(wrapper,'[role="menuitemradio"]','优先级').trigger('click')
+  expect(ids()).toEqual(['high','low'])
+  await wrapper.get('[data-section="direction"]').trigger('click')
+  await buttonText(wrapper,'[role="menuitemradio"]','从低到高').trigger('click')
+  expect(ids()).toEqual(['low','high'])
+  await wrapper.get('[data-section="group"]').trigger('click')
+  await buttonText(wrapper,'[role="menuitemradio"]','优先级').trigger('click')
+  expect(wrapper.findAll('.group-heading').map(group=>group.text())).toEqual(['最高优先级 1','低优先级 1'])
+  await wrapper.get('[aria-label="更多视图选项"]').trigger('click')
+  await buttonText(wrapper,'[role="menuitemcheckbox"]','显示已完成').trigger('click')
+  await buttonText(wrapper,'[role="menuitemcheckbox"]','显示详细').trigger('click')
+  expect(ids()).toContain('done')
+  expect(wrapper.get('[data-task-id="low"]').text()).toContain('详细描述')
+  await buttonText(wrapper,'[role="menuitem"]','显示设置').trigger('click');await flushPromises()
+  await wrapper.get('[aria-label="日期显示为"]').setValue('countdown')
+  await wrapper.findAll('input[name="todo-detail-style"]')[1]!.setValue(true)
+  await wrapper.get('[role="switch"]').trigger('click');await flushPromises()
+  await buttonText(wrapper,'button','完成').trigger('click')
+  expect(wrapper.get('[data-task-id="low"]').text()).toContain('还有 3 天')
+  expect(wrapper.find('.checklist-detail').exists()).toBe(false)
+  await wrapper.get('[data-task-id="low"] .task-select').trigger('click')
+  expect(useUiStore().openTaskId).toBe('low')
+  const writes=vi.mocked(savePreference).mock.calls.filter(([key])=>key==='todo-view-v1:all').length
+  await switchView(wrapper,'看板视图')
+  expect(vi.mocked(savePreference).mock.calls.filter(([key])=>key==='todo-view-v1:all')).toHaveLength(writes)
+  wrapper.unmount()
+  const reopened=mount(TodoView,options);await flushPromises()
+  expect(reopened.find('.board-columns').exists()).toBe(true)
+  reopened.unmount()
+ })
  it('今天清单和四象限均包含本人逾期主任务与子项，排除已完成、他人及未来任务',async()=>{
   const data=useDataStore(), base=data.tasks[0]!, yesterday=shiftTaskDate(data.today,-1)
   data.tasks=[
@@ -45,7 +121,7 @@ describe('task workspace',()=>{
   expect(rows).not.toContain('已完成逾期');expect(rows).not.toContain('他人逾期');expect(rows).not.toContain('未来任务')
   expect(wrapper.get('[data-task-id="overdue"] .overdue').attributes('title')).toBe('已延期 1 天')
   expect(wrapper.get('.count').text()).toBe('2')
-  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  await switchView(wrapper,'四象限')
   const quadrants=wrapper.findAll('.quadrant-task').map(row=>row.text()).join(' ')
   expect(quadrants).toContain('逾期主任务');expect(quadrants).toContain('逾期子任务')
   expect(quadrants).not.toContain('已完成逾期');expect(quadrants).not.toContain('他人逾期');expect(quadrants).not.toContain('未来任务')
@@ -96,7 +172,8 @@ describe('task workspace',()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
   expect(wrapper.get('h1').text()).toBe(project.name)
   expect(wrapper.find('.checklist-layout').exists()).toBe(true)
-  expect(wrapper.findAll('.layout-switch button').map(b=>b.text())).toEqual(['清单','四象限'])
+  await wrapper.get('[aria-label="更多视图选项"]').trigger('click')
+  expect(wrapper.findAll('[role="menuitemradio"]').map(b=>b.text().trim())).toEqual(['列表视图','看板视图','时间线视图','四象限'])
   expect(wrapper.find('[aria-label="添加任务"]').exists()).toBe(true)
   expect(wrapper.get('.checklist-row').attributes('draggable')).toBe('true')
   wrapper.unmount()
@@ -156,7 +233,7 @@ describe('task workspace',()=>{
   data.tasks[0]!.pr='P3'
   const project=mount(defineComponent({setup(){const p=computed(()=>projectWorkItems(data.tasks));return()=>h(TaskQuadrantView,{tasks:p.value.items,contextTasks:p.value.items,itemRefs:p.value.refs,selectedIds:[],showDone:false,projectId:'sync-project'})}}),options)
   const todo=mount(TodoView,options);await flushPromises()
-  await todo.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  await switchView(todo,'四象限')
   const section=(w:any,n:number)=>w.findAll('.quadrant')[n].text()
   expect(section(project,3)).toContain('独立子任务');expect(section(todo,3)).toContain('独立子任务')
   data.updateSub('parent','child',{pr:'P0'});await flushPromises()
@@ -166,6 +243,7 @@ describe('task workspace',()=>{
   expect(section(project,1)).toContain('独立子任务');expect(section(todo,1)).toContain('独立子任务')
   expect(data.subById('parent','child')?.pr).toBe('P0')
   await todo.findAll('.task-navigation button').find(b=>b.text()==='联调')!.trigger('click');await flushPromises()
+  await switchView(todo,'四象限')
   expect(todo.findAll('.quadrant-task').some((r:any)=>r.text().includes('独立子任务'))).toBe(true)
   await labels.save({taskId:'parent',subId:'child',revision:1,tags:['已交接']});await flushPromises()
   expect(todo.findAll('.quadrant-task')).toHaveLength(0)
@@ -236,9 +314,9 @@ describe('task workspace',()=>{
   expect(wrapper.findAll('.task-navigation button').some(b=>b.text()==='联调')).toBe(false)
   await nav(project.name).trigger('click');await flushPromises()
   expect(rows()).toContain('共享主任务');expect(rows()).toContain('共享子任务')
-  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+  await switchView(wrapper,'四象限')
   expect(wrapper.findAll('.quadrant-task').some(row=>row.text().includes('共享主任务'))).toBe(true)
-  await wrapper.findAll('.layout-switch button').find(b=>b.text()==='清单')!.trigger('click')
+  await switchView(wrapper,'列表视图')
   await nav('所有').trigger('click');await flushPromises()
   expect(rows()).toContain('本人负责');expect(rows()).not.toContain('共享主任务');expect(rows()).not.toContain('共享子任务')
   await nav('已完成').trigger('click');await flushPromises()
@@ -296,10 +374,10 @@ it('无搜索且忽略旧查询；笔记保留在清单，放弃可找回，四�
  expect(w.find('[data-task-id="note"]').exists()).toBe(true)
  expect(w.find('[data-task-id="note"] input[type="checkbox"]').exists()).toBe(false)
  expect(w.find('[data-task-id="abandoned"]').exists()).toBe(false)
- await w.findAll('.layout-switch button').find(b=>b.text()==='四象限')!.trigger('click');await flushPromises()
+ await switchView(w,'四象限')
  expect(w.find('[aria-label="添加任务"]').exists()).toBe(false)
  expect(w.findAll('.quadrant-task').map(r=>r.text()).join(' ')).not.toContain('保留笔记')
- await w.findAll('.layout-switch button').find(b=>b.text()==='清单')!.trigger('click')
+ await switchView(w,'列表视图')
  await w.findAll('.task-navigation button').find(b=>b.text()==='已放弃')!.trigger('click');await flushPromises()
  expect(w.find('[data-task-id="abandoned"]').exists()).toBe(true)
  w.unmount()

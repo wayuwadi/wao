@@ -27,6 +27,9 @@ public interface TaskMapper extends BaseMapper<TaskEntity> {
     @Select("SELECT * FROM task WHERE id = #{id} FOR UPDATE")
     TaskEntity lockById(String id);
 
+    @Select("SELECT updated_at FROM task WHERE id = #{id}")
+    java.time.LocalDateTime findUpdatedAt(String id);
+
     /** 只更新内嵌详情，保留并发更新的其它任务属性。 */
     @Update("UPDATE task SET detail_json = #{detail} WHERE id = #{id}")
     int updateDetail(@Param("id") String id, @Param("detail") String detail);

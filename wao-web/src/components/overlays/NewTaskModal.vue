@@ -5,20 +5,15 @@ import { useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { usePreferenceStore } from '@/stores/preferences'
 import { todayIso } from '@/utils/time'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-import { useTaskPreferencesStore } from '@/stores/taskPreferences'
-import { selectTaskProject } from '@/utils/taskProjectSelection'
 import type { Priority, WorkItemType } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
-const preferences = usePreferenceStore()
-const taskPreferences = useTaskPreferencesStore()
 const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
 /**
@@ -64,21 +59,8 @@ const openProjects = computed(() => data.projects.filter((p) => p.status !== '�
 const title = ref(draft.title ?? source?.title ?? '')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
 const composerIdentity = identity()
-const hasDraftProject = typeof draft.project === 'string'
-function automaticProject() {
-  return selectTaskProject(openProjects.value.map(project => project.id), {
-    draft: hasDraftProject ? draft.project : undefined, context: contextProject,
-    preferred: preferences.defaultProject, recent: taskPreferences.recentProject, requireConfirmation: !!source,
-  })
-}
-const project = ref(data.loadStates.projects === 'loaded' ? automaticProject() : draft.project || '')
-const projectChosenByUser = ref(false)
-watch(() => [data.loadStates.projects, openProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject] as const, () => {
-  if (data.loadStates.projects !== 'loaded') return
-  if (projectChosenByUser.value || hasDraftProject || title.value.trim()) {
-    if (project.value && !openProjects.value.some(item => item.id === project.value)) project.value = ''
-  } else project.value = automaticProject()
-}, { immediate: true })
+const project = ref(draft.project ?? contextProject)
+const unavailableProject = computed(() => !!project.value && !openProjects.value.some(item => item.id === project.value))
 const owner = ref(draft.pendingTaskId ? draft.owner || session.currentUser.id : session.currentUser.id)
 const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
 const pr = ref<Priority>(draft.pendingTaskId ? draft.pr || ui.modalPriority || 'P2' : ui.modalPriority || 'P2')
@@ -123,7 +105,7 @@ function restoreLegacyDraft() {
     const old = JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY) || '{}') as Partial<Draft>
     title.value = typeof old.title === 'string' ? old.title : ''
     desc.value = typeof old.desc === 'string' ? old.desc : ''
-    if (typeof old.project === 'string' && openProjects.value.some(p => p.id === old.project)) project.value = old.project
+    if (typeof old.project === 'string') project.value = old.project
     if (old.due && QUICK_DUES.includes(old.due)) due.value = old.due
     if (old.scheduleMode === 'range') scheduleMode.value = 'range'
     if (typeof old.startAt === 'string') startAt.value = old.startAt
@@ -170,8 +152,8 @@ async function create() {
   }
   const name = title.value.trim()
   if (!name) return
-  if (!project.value || !openProjects.value.some(item => item.id === project.value)) {
-    toast('请先选择所属项目', 'ri-error-warning-line')
+  if (unavailableProject.value) {
+    toast('所选清单暂不可用，请重新选择或存入收集箱', 'ri-error-warning-line')
     return
   }
   if (scheduleMode.value === 'range' && (!startAt.value || !endAt.value || endAt.value <= startAt.value)) {
@@ -183,7 +165,7 @@ async function create() {
     return
   }
   const payload = {
-    title: name, project: project.value, workItemType: workItemType.value, pr: pr.value, owner: owner.value,
+    title: name, project: project.value, workItemType: workItemType.value, pr: pr.value, owner: project.value ? owner.value : session.userId,
     due: dueDate(due.value),
     start: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : scheduleMode.value === 'date' ? start.value : '',
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
@@ -219,25 +201,12 @@ async function create() {
     return
   }
   if (identity() !== composerIdentity) return
-  void taskPreferences.rememberProject(payload.project)
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.taskComposerLocked = false
   ui.closeModal()
   if (createdId && ui.modalOpenTaskAfterCreate) ui.openTask(createdId)
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
-}
-
-const defaultProjectSaving = ref(false)
-async function makeDefaultProject() {
-  if (defaultProjectSaving.value || !project.value || project.value === preferences.defaultProject) return
-  defaultProjectSaving.value = true
-  try {
-    await preferences.setDefaultProject(project.value)
-    toast('以后新建任务会默认选择这个项目', 'ri-pushpin-line')
-  } catch {
-    toast('默认项目保存失败，请重试', 'ri-error-warning-line')
-  } finally { defaultProjectSaving.value = false }
 }
 
 /** 收起只保存草稿；只有明确提交才创建任务，存储失败时保留当前表单。 */
@@ -273,26 +242,13 @@ useOverlayDismiss(() => true, requestClose)
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="meta-row">
-      <p v-if="taskPreferences.recentError" class="recent-sync-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步</button></p>
-      <label class="meta-field"><span>项目</span><select v-model="project" @change="projectChosenByUser = true" aria-label="所属项目" class="compact-select">
-        <option value="" disabled>请选择项目</option>
+      <label class="meta-field"><span>清单</span><select v-model="project" aria-label="所属清单" class="compact-select">
+        <option value="">收集箱</option>
+        <option v-if="unavailableProject" :value="project" disabled>清单暂不可用</option>
         <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select></label>
       <label class="meta-field type-field"><span>类型</span><select v-model="workItemType" aria-label="工作项类型" class="compact-select"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></label>
-      <button
-        v-if="project"
-        class="default-project"
-        :class="{ on: preferences.defaultProject === project }"
-        type="button"
-        :aria-label="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
-        :title="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
-        :disabled="defaultProjectSaving || preferences.defaultProject === project"
-        @click="makeDefaultProject"
-      >
-        <i class="ri-pushpin-line"></i>
-      </button>
     </div>
-    <p v-if="source && !project" class="label-hint">请选择要存入的项目</p>
     <details class="schedule-details" :open="!!ui.modalScheduleDate || !!ui.modalDue || !!ui.modalStartAt || undefined">
       <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '执行时段' : scheduleMode === 'date' ? '执行日期' : '未安排' }} · {{ due || '无截止日期' }}</span></summary>
       <div class="label">截止日期</div>
@@ -339,14 +295,9 @@ useOverlayDismiss(() => true, requestClose)
 </template>
 
 <style scoped>
-.recent-sync-error { width: 100%; color: var(--wao-text-3); font-size: var(--wao-font-help); margin: 0; }
-.recent-sync-error button { color: var(--wao-primary-text); border: 0; background: none; cursor: pointer; font: inherit; }
 .meta-row { display: flex; gap: 8px; align-items: end; margin-top: 12px; }
 .meta-field { display: grid; gap: 5px; min-width: 0; flex: 1; color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .type-field { flex: 0 0 110px; }
-.default-project { flex: none; height: 34px; width: 34px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
-.default-project.on { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
-.default-project:disabled { cursor: default; }
 .schedule-details { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; }
 .schedule-details summary { display: flex; align-items: center; gap: 7px; color: var(--wao-text-2); font-size: var(--wao-font-help); cursor: pointer; list-style: none; }
 .schedule-details summary::-webkit-details-marker { display: none; }

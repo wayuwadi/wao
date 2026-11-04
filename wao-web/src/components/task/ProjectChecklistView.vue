@@ -30,6 +30,8 @@ import TaskDueDate from '@/components/task/TaskDueDate.vue'
 import { deadlineInfo, shiftDay } from '@/utils/taskDeadline'
 import { todayIso } from '@/utils/time'
 import { useTaskDeadlineDefaults } from '@/composables/taskDeadlineDefaults'
+import { taskExecutionLabel } from '@/utils/taskSchedule'
+import { sortTodoTasks, todoDateLabel, todoTaskDate, todoTaskGroups, todoTimelinePlacement, TODO_TIMELINE_DAYS, type TodoViewSettings, type TodoDisplaySettings } from '@/utils/todoViewSettings'
 
 const descriptionHost = ref<HTMLElement | null>(null)
 const outline = ref<{ text: string; level: number }[]>([])
@@ -58,7 +60,7 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
 const pins=useTaskPinsStore()
@@ -117,19 +119,24 @@ function toggleCompletion(id: string) {
 const isComplete = (task: Task) => task.status === '已完成' || pendingCompletion.value.has(task.id)
 const rowStatusMenu = ref<{ id: string; anchor: HTMLElement } | null>(null)
 const rowStatusTask = computed(() => props.contextItems.find(task => task.id === rowStatusMenu.value?.id))
-const rowStatusOptions = computed<TaskStatus[]>(() => rowStatusTask.value && actions.isSub(rowStatusTask.value.id)
-  ? ['待办', '进行中', '待验证', '已完成'] : selectableTaskStatuses(rowStatusTask.value?.status))
+function rowStatuses(task?: Task): TaskStatus[] {
+  return task && actions.isSub(task.id) ? ['待办', '进行中', '待验证', '已完成'] : selectableTaskStatuses(task?.status)
+}
+const rowStatusOptions = computed(() => rowStatuses(rowStatusTask.value))
 function openRowStatus(event: MouseEvent, id: string) {
   propertyMenu.value = null
   rowStatusMenu.value = rowStatusMenu.value?.id === id ? null : { id, anchor: event.currentTarget as HTMLElement }
 }
-async function changeRowStatus(status: TaskStatus) {
-  const id = rowStatusMenu.value?.id
-  rowStatusMenu.value = null
+async function setTaskStatus(id: string | undefined, status: TaskStatus) {
   if (!id || actions.busy(id) || props.contextItems.find(task => task.id === id)?.status === status) return
   cancelCompletion(id)
   if (status === '已完成') { toggleCompletion(id); return }
   await actions.status(id, status)
+}
+function changeRowStatus(status: TaskStatus) {
+  const id = rowStatusMenu.value?.id
+  rowStatusMenu.value = null
+  void setTaskStatus(id, status)
 }
 watch(() => useSessionStore().userId, () => { rowStatusMenu.value = null })
 watch(rowStatusTask, task => { if (!task) rowStatusMenu.value = null })
@@ -161,7 +168,8 @@ function boundSplit(value: number) {
   return Math.min(max, Math.max(min, value))
 }
 const splitRatio = computed(() => boundSplit(previewSplit.value ?? split.value.value))
-const splitStyle = computed(() => compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
+const popupDetail = computed(() => props.todoDisplay?.detail === 'popup')
+const splitStyle = computed(() => popupDetail.value ? { gridTemplateColumns: 'minmax(0, 1fr)' } : compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
 function startSplit(event: PointerEvent) {
   if (event.button !== 0 || compact.value) return
   event.preventDefault()
@@ -213,10 +221,41 @@ watch(() => useSessionStore().userId, () => pendingDateChanges.value.clear(), { 
 const matches = computed(() => {
   const candidates = [...props.items, ...props.contextItems.filter(t => pendingDateChanges.value.has(t.id) && !props.items.some(item => item.id === t.id))]
   const items = candidates.filter(t => (props.showAbandoned || t.status!=='已放弃') && ( props.query.trim() || props.showDone || !isTaskFinished(t) || pendingCompletion.value.has(t.id) || (retainedCompletion.value.has(t.id) && ['saving','error'].includes(data.taskSaveState(actions.sourceId(t.id))))))
-  const found = pins.sort(props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items)
+  const found = ordered(props.query ? searchProjectTasks(items, props.query).map(hit => hit.task) : items)
   const located = detailOnlySelection.value ? props.contextItems.find(t => t.id === selectedId.value) : null
   return located && !found.some(t => t.id === located.id) ? [...found, located] : found
 })
+const listName = (task:Task) => task.project ? data.projectById(task.project)?.name || '未知清单' : '收集箱'
+const todoMeta = computed(() => ({
+  tags: props.todoTags ?? (() => []), list: listName, today: today.value,
+  priorityUnset: (id: string) => !!props.itemRefs[id]?.priorityUnset,
+}))
+function ordered(tasks: Task[]) {
+  const view = props.todoView
+  return pins.sort(view ? sortTodoTasks(tasks, view.sort, view.direction, todoMeta.value) : tasks)
+}
+const board = computed(() => props.todoView?.layout === 'board')
+const timeline = computed(() => props.todoView?.layout === 'timeline')
+const grouping = computed(() => {
+  const group = props.todoView?.group ?? 'auto'
+  if (group !== 'auto') return group
+  return board.value ? 'status' : props.groupOverdue ? 'time' : 'none'
+})
+const hierarchyDrag = computed(() => !props.disableHierarchyDrag && (!props.todoView ||
+  (!board.value && !timeline.value && props.todoView.sort === 'manual' && (grouping.value === 'none' || (grouping.value === 'time' && props.groupOverdue)))))
+const boardStatusDrag = computed(() => board.value && grouping.value === 'status' && !props.showAbandoned)
+const timelineStart = ref('')
+const timelineFrom = computed(() => timelineStart.value || shiftDay(today.value, -1))
+const timelineDays = computed(() => timeline.value ? Array.from({ length:TODO_TIMELINE_DAYS }, (_, i) => shiftDay(timelineFrom.value,i)) : [])
+const timelineTo = computed(() => shiftDay(timelineFrom.value, TODO_TIMELINE_DAYS - 1))
+const placements = computed(() => new Map(timeline.value ? matches.value.map(task => [task.id, todoTimelinePlacement(task, timelineFrom.value, timelineTo.value)]) : []))
+const timelineRows = computed(() => matches.value.filter(task => {
+  const placement = placements.value.get(task.id)
+  return placement && (placement.execution || placement.deadline || placement.undated)
+}))
+const timelineHidden = computed(() => matches.value.length - timelineRows.value.length)
+function stepTimeline(offset: number) { timelineStart.value = shiftDay(timelineFrom.value, offset * TODO_TIMELINE_DAYS) }
+const shortDay = (date: string) => date.slice(5).replace('-', '/')
 const expandableIds = computed(() => {
   const result = new Set<string>(), byId = new Map(props.contextItems.map(task => [task.id, task]))
   for (const task of props.contextItems) {
@@ -227,9 +266,27 @@ const expandableIds = computed(() => {
   }
   return result
 })
-const rows = computed(() => taskTreeRows(pins.sort(withProjectAncestors(matches.value, props.contextItems)), props.query ? [] : props.collapsed.filter(id => expandableIds.value.has(id))))
+const rows = computed(() => {
+  if (timeline.value) return timelineRows.value.map(task => ({ task, depth: 0 }))
+  if (props.todoView && (grouping.value !== 'none' || board.value)) return matches.value.map(task => ({ task, depth: 0 }))
+  return taskTreeRows(ordered(withProjectAncestors(matches.value, props.contextItems)), props.query ? [] : props.collapsed.filter(id => expandableIds.value.has(id)))
+})
+const isTree = computed(() => props.todoView ? !board.value && !timeline.value && grouping.value === 'none' : !props.groupOverdue)
 const dateSectionsCollapsed = ref(new Set<string>())
 const groupedRows = computed(() => {
+  if (props.todoView) {
+    const group = grouping.value
+    if (group === 'none' && !board.value) return [{ id:'all', name:'任务', header:false, collapsed:false, rows:rows.value }]
+    const groups = todoTaskGroups(rows.value.map(row => row.task), group, todoMeta.value, props.groupOverdue)
+    if (boardStatusDrag.value) {
+      for (const status of ['待办', '进行中', '待验证', ...(props.showDone ? ['已完成'] : [])] as TaskStatus[]) {
+        if (!groups.some(g => g.id === status)) groups.push({ id:status, name:projectStatusLabel(status), tasks:[] })
+      }
+      const statuses: TaskStatus[] = ['待办', '收集中', '进行中', 'AI 进行中', '待验证', '已完成', '已放弃']
+      groups.sort((a,b) => statuses.indexOf(a.id as TaskStatus) - statuses.indexOf(b.id as TaskStatus))
+    }
+    return groups.map(g => ({ id:g.id, name:g.name, header:true, collapsed:!board.value && dateSectionsCollapsed.value.has(g.id), rows:g.tasks.map(task=>({task,depth:0})) }))
+  }
   if (props.groupOverdue) {
     // Date sections show matching tasks directly, even when a parent is collapsed.
     const flat = matches.value.map(task => ({ task, depth: 0 }))
@@ -241,23 +298,45 @@ const groupedRows = computed(() => {
   return (props.sections ?? [{ id:'__all', name:'', header:false, collapsed:false, itemIds:props.contextItems.map(t=>t.id) }]).map(section=>({...section,rows:rows.value.filter(row=>section.itemIds.includes(row.task.id))}))
 })
 function toggleSection(id:string) {
-  if(!props.groupOverdue){emit('toggleGroup',id);return}
+  if(!props.todoView && !props.groupOverdue){emit('toggleGroup',id);return}
   if(dateSectionsCollapsed.value.has(id))dateSectionsCollapsed.value.delete(id);else dateSectionsCollapsed.value.add(id)
 }
-const relativeDate = (task:Task) => task.due===today.value?'今天':task.due===shiftDay(today.value,-1)?'昨天':task.due===shiftDay(today.value,1)?'明天':deadlineInfo(task.due,today.value).label
-const listName = (task:Task) => data.projects.find(p=>p.id===task.project)?.name || '收集箱'
+const displayDate = (task:Task) => props.todoView ? todoTaskDate(task) : task.due
+const relativeDate = (task:Task) => todoDateLabel(displayDate(task), today.value, props.todoDisplay?.date ?? 'time')
+const canDragStatus = (task: Task) => boardStatusDrag.value && task.workItemType !== 'note' && !actions.busy(task.id) && !pendingCompletion.value.has(task.id)
 
 const dragging = ref<string | null>(null)
 const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
 function startDrag(id: string, event: DragEvent) {
-  if (props.busy || props.disableHierarchyDrag) { event.preventDefault(); return }
+  if (props.busy || !hierarchyDrag.value && !boardStatusDrag.value) { event.preventDefault(); return }
   dragging.value = id
   event.dataTransfer?.setData('text/plain', id)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 function drop(target: string | null, event: DragEvent) {
-  if (dragging.value && !props.busy) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
+  if (dragging.value && !props.busy && hierarchyDrag.value) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
   dragging.value = null; over.value = null
+}
+const boardDrop = ref<string>()
+function boardDropAllowed(section: string) {
+  const item = props.items.find(task => task.id === dragging.value)
+  return !!item && canDragStatus(item) && rowStatuses(item).includes(section as TaskStatus) && item.status !== section
+    && ['待办','进行中','待验证','已完成'].includes(section)
+}
+function overBoard(event: DragEvent, section: string) {
+  if (!boardDropAllowed(section)) return
+  event.preventDefault(); boardDrop.value = section
+}
+function dropBoard(event: DragEvent, section: string) {
+  if (!boardDropAllowed(section)) return
+  event.preventDefault()
+  const id = dragging.value
+  dragging.value = null; boardDrop.value = undefined
+  void setTaskStatus(id ?? undefined, section as TaskStatus)
+}
+function openRow(id: string) {
+  detailOnlySelection.value = false; selectedId.value = id
+  if (popupDetail.value) actions.open(id)
 }
 watch(rows, value => {
   if (!value.length && data.taskLoadState !== 'loaded') return
@@ -465,7 +544,7 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   detailOnlySelection.value = !rows.value.some(row => row.task.id === id)
   selectedId.value = id
   void contextMenu.value?.openAt(event, task, [
-    { id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:props.busy || actions.busy(id), run:()=>startChild(id) },
+    ...(!popupDetail.value ? [{ id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:props.busy || actions.busy(id), run:()=>startChild(id) }] : []),
     { id:'delete', label:actions.isSub(id)?'删除子任务':'删除任务', icon:'ri-delete-bin-line', danger:true, separatorBefore:true,
       disabled:deleting.value || props.busy || actions.busy(id), run:()=>requestDelete(id,task.title||'未命名任务') },
   ])
@@ -478,29 +557,46 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 </script>
 
 <template>
-  <div v-if="split.error.value" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
-  <div ref="layout" @scroll.capture="rememberScroll" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact, 'todo-checklist': hideGroups }" :style="splitStyle">
+  <div v-if="split.error.value && !popupDetail" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
+  <div ref="layout" @scroll.capture="rememberScroll" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact && !popupDetail, 'todo-checklist': hideGroups, 'popup-detail':popupDetail }" :style="splitStyle">
     <div class="checklist-list-pane"><slot name="list-header" />
-    <WaoCard class="checklist-tasks" data-task-scroll="list">
-
-      <p v-if="!rows.length" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : '当前没有待办任务' }}</p>
-      <div v-if="dragging" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
-      <section v-for="section in groupedRows" :key="section.id">
+    <div v-if="timeline" class="timeline-controls" aria-label="时间线日期范围">
+      <button type="button" title="上一段" aria-label="上一段时间线" @click="stepTimeline(-1)"><i class="ri-arrow-left-s-line" aria-hidden="true" /></button>
+      <button type="button" title="下一段" aria-label="下一段时间线" @click="stepTimeline(1)"><i class="ri-arrow-right-s-line" aria-hidden="true" /></button>
+      <button type="button" @click="timelineStart=''">回到今天</button>
+      <input type="date" aria-label="时间线起始日期" :value="timelineFrom" @change="timelineStart=($event.target as HTMLInputElement).value" />
+      <span v-if="timelineHidden" role="status">{{ timelineHidden }} 项在当前日期范围外</span>
+    </div>
+    <WaoCard class="checklist-tasks" :class="{ 'timeline-tasks':timeline }" :data-task-scroll="todoView?.layout ?? 'list'">
+      <div v-if="timeline" class="timeline-line timeline-header">
+        <span class="timeline-task-cell">任务</span><div class="timeline-track">
+          <time v-for="day in timelineDays" :key="day" :datetime="day" :class="{ 'timeline-today':day===today }">{{ shortDay(day) }}</time>
+        </div>
+      </div>
+      <p v-if="!rows.length && (!board || !groupedRows.length)" class="empty">{{ query ? '没有匹配的任务，试试其他关键词' : timelineHidden ? '当前日期范围内没有任务' : '当前没有待办任务' }}</p>
+      <div v-if="dragging && hierarchyDrag" class="root-drop" @dragover.prevent @drop.prevent="drop(null, $event)">拖到这里移为顶层任务</div>
+      <div :class="{ 'board-columns':board }">
+      <section v-for="section in groupedRows" :key="section.id" :class="{ 'board-column':board, 'board-drop':boardDrop===section.id }" @dragover="overBoard($event,section.id)" @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node | null) && (boardDrop=undefined)" @drop="dropBoard($event,section.id)">
       <div v-if="section.header" class="group-header">
-        <button class="group-heading" :aria-expanded="!section.collapsed" @click="toggleSection(section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.rows.length }}</small></button>
-        <slot v-if="groupOverdue" name="section-action" :section="section" /><button v-else class="group-add-button" :aria-label="`在 ${section.name} 新建任务`" title="快速新建任务" @click="emit('add', section.id)"><i class="ri-add-line" aria-hidden="true"></i></button>
+        <h2 v-if="board" class="board-heading">{{ section.name }} <small>{{ section.rows.length }}</small></h2>
+        <button v-else class="group-heading" :aria-expanded="!section.collapsed" @click="toggleSection(section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>{{ section.name }} <small>{{ section.rows.length }}</small></button>
+        <slot v-if="groupOverdue || todoView" name="section-action" :section="section" /><button v-else class="group-add-button" :aria-label="`在 ${section.name} 新建任务`" title="快速新建任务" @click="emit('add', section.id)"><i class="ri-add-line" aria-hidden="true"></i></button>
       </div>
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
-      <div v-for="{ task, depth } in section.rows" :key="task.id" class="checklist-row" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && !disableHierarchyDrag" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null" @dragover.prevent="over = { id: task.id, side: taskHierarchyDrop($event) }" @drop.prevent.stop="drop(task.id, $event)" :class="{ selected: selectedId === task.id, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
-        <button v-if="!groupOverdue && hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
-        <span v-else-if="!groupOverdue" class="tree-spacer"></span>
+      <div v-for="{ task, depth } in section.rows" :key="task.id" :class="{ 'timeline-line':timeline }">
+      <div class="checklist-row" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="openChecklistMenu($event, task.id)" :draggable="!busy && (hierarchyDrag || canDragStatus(task))" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null; boardDrop = undefined" @dragover="hierarchyDrag && dragging && ($event.preventDefault(), over = { id: task.id, side: taskHierarchyDrop($event) })" @drop="hierarchyDrag && ($event.preventDefault(), $event.stopPropagation(), drop(task.id, $event))" :class="{ selected: selectedId === task.id && !popupDetail, 'timeline-task-cell':timeline, 'row-detailed':todoView?.showDetails || board, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+        <button v-if="isTree && hasChildren(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+        <span v-else-if="isTree" class="tree-spacer"></span>
         <input v-if="selectionMode" type="checkbox" :checked="selectedIds?.includes(task.id)" :disabled="!matches.some(item=>item.id===task.id)" :aria-label="`选择任务 ${task.title}`" @change="emit('select', task.id)" />
         <i v-else-if="task.workItemType==='note'" class="ri-sticky-note-line" aria-label="笔记" /><i v-else-if="task.status==='已放弃'" class="ri-close-circle-line" aria-label="已放弃" />
         <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
-        <button class="task-select" :aria-pressed="selectedId === task.id" @click="detailOnlySelection = false; selectedId = task.id">
+        <button class="task-select" :aria-pressed="popupDetail ? undefined : selectedId === task.id" :aria-haspopup="popupDetail ? 'dialog' : undefined" @click="openRow(task.id)">
           <i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
-          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="task.due" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : task.due">{{ relativeDate(task) }}</span>
+          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc && !todoView?.showDetails" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="displayDate(task)" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : displayDate(task)">{{ relativeDate(task) }}</span>
+          <span v-if="todoView?.showDetails && (task.start || task.startAt)" class="row-execution task-meta">{{ taskExecutionLabel(task,today) }}<template v-if="task.startAt && task.endAt"> → {{ task.endAt.replace('T',' ').slice(0,16) }}</template></span>
+          <span v-if="todoView?.showDetails && todoTags?.(task.id).length" class="row-preview">{{ todoTags(task.id).map(tag=>'#'+tag).join(' · ') }}</span>
+          <span v-if="todoView?.showDetails && task.desc" class="row-preview">{{ task.desc.trim().slice(0, 200) }}</span>
         </button>
         <button v-if="task.workItemType!=='note' && task.status!=='已放弃'" class="row-status" :data-status="task.status" :aria-label="`修改 ${task.title} 的状态：${projectStatusLabel(task.status)}`" aria-haspopup="menu" :aria-expanded="rowStatusMenu?.id === task.id" :disabled="actions.busy(task.id) || pendingCompletion.has(task.id)" @click.stop="openRowStatus($event, task.id)" @pointerdown.stop @dragstart.prevent.stop>
           <span class="row-status-dot" aria-hidden="true"></span>{{ projectStatusLabel(task.status) }}<i class="ri-arrow-down-s-line" aria-hidden="true"></i>
@@ -508,10 +604,17 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <button v-if="data.taskSaveState(actions.sourceId(task.id)) === 'error'" class="row-status-retry" :title="data.taskSaveError(actions.sourceId(task.id))" :aria-label="`重试保存 ${task.title}`" @click.stop="data.flushTask(actions.sourceId(task.id))">未保存 · 重试</button>
         <button class="row-more" :aria-label="`任务操作 ${task.title}`" @click="openChecklistMenu($event,task.id)"><i class="ri-more-line" /></button>
       </div>
-      </div></section>
+      <div v-if="timeline" class="timeline-track timeline-bars" :style="{ '--timeline-today-column': timelineDays.indexOf(today)+1 }">
+        <button v-if="placements.get(task.id)?.execution" type="button" class="timeline-execution" :style="{gridColumn:`${placements.get(task.id)?.execution?.from} / ${placements.get(task.id)?.execution?.to}`, '--bar-color':priorityColor(task)}" :title="taskExecutionLabel(task,today)" :aria-label="`执行安排：${task.title}`" @click="openRow(task.id)"></button>
+        <button v-if="placements.get(task.id)?.deadline" type="button" class="timeline-deadline" :style="{gridColumn:placements.get(task.id)?.deadline || undefined}" :title="`截止 ${task.due}`" :aria-label="`${task.title} 截止 ${task.due}`" @click="openRow(task.id)"><i class="ri-flag-fill" aria-hidden="true" /></button>
+        <span v-if="placements.get(task.id)?.undated" class="timeline-undated">无日期</span>
+      </div>
+      </div>
+      <p v-if="board && !section.rows.length" class="board-empty">暂无任务</p>
+      </div></section></div>
     </WaoCard></div>
-    <div class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
-    <WaoCard :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
+    <div v-if="!popupDetail" class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
+    <WaoCard v-if="!popupDetail" :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
         <div class="detail-caption"><span v-if="selected.workItemType==='note'"><i class="ri-sticky-note-line" /> 笔记</span><span v-else-if="selected.status==='已放弃'">已放弃</span><label v-else class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="!hideGroups && taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
@@ -567,7 +670,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <p v-else class="empty">选择左侧任务，在这里查看详情</p>
     </WaoCard>
   </div>
-  <TaskContextMenu ref="contextMenu" inline-selection @changed="detailOnlySelection=false" @created="selectedId=$event;detailOnlySelection=true" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
+  <TaskContextMenu ref="contextMenu" :inline-selection="!popupDetail" @changed="detailOnlySelection=false" @created="selectedId=$event;detailOnlySelection=!popupDetail" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
   <CellMenu v-if="rowStatusMenu && rowStatusTask" :anchor="rowStatusMenu.anchor" :min-width="140" @close="rowStatusMenu = null">
     <button v-for="status in rowStatusOptions" :key="status" role="menuitemradio" :aria-checked="status === rowStatusTask.status" @click="changeRowStatus(status)">{{ projectStatusLabel(status) }}<i v-if="status === rowStatusTask.status" class="ri-check-line" aria-hidden="true"></i></button>
   </CellMenu>
@@ -690,6 +793,42 @@ input[type=checkbox]:checked::after { content:'✓'; color:var(--wao-on-primary)
 .finished { text-decoration:line-through; color:var(--wao-text-weak); }
 .task-meta.overdue { color:var(--wao-danger-strong); }
 .task-meta { flex-shrink:0; color:var(--wao-text-weak); font-size:var(--wao-font-caption); }
+.row-detailed .task-select { flex-wrap:wrap; gap:2px var(--wao-space-1); padding-block:var(--wao-space-1); }
+.row-detailed .task-title { flex:1 0 100%; white-space:normal; overflow-wrap:anywhere; }
+.row-preview,.row-execution { flex:1 0 100%; min-width:0; overflow-wrap:anywhere; color:var(--wao-text-3); font-size:var(--wao-font-help); }
+.row-preview { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.board-columns { display:flex; align-items:stretch; gap:var(--wao-space-2); min-height:100%; width:max-content; max-width:none; padding:var(--wao-space-1) var(--wao-space-1) var(--wao-space-2) 0; }
+.board-column { flex:0 0 clamp(232px, 40cqw, 296px); width:clamp(232px, 40cqw, 296px); min-height:180px; padding:0 var(--wao-space-1) var(--wao-space-1); border:1px solid var(--wao-line); border-radius:var(--wao-radius-card); background:var(--wao-bg-sub); }
+.board-column.board-drop { border-color:var(--wao-primary); background:var(--wao-primary-soft); }
+.board-column .group-header { margin:0; }
+.board-column .board-heading { margin:0; padding:var(--wao-space-1); font-size:var(--wao-font-card-title); }
+.board-heading small,.board-empty { color:var(--wao-text-3); font-size:var(--wao-font-help); font-weight:400; }
+.board-empty { margin:var(--wao-space-1); }
+.board-column .checklist-row { margin-bottom:var(--wao-space-1); padding:0 4px; border:1px solid var(--wao-line); background:var(--wao-bg-card); }
+.board-column .checklist-row:hover,.board-column .checklist-row.selected { border-color:var(--wao-primary); }
+.board-column .row-status { max-width:70px; overflow:hidden; }
+.board-column .row-more { width:23px; }
+.timeline-controls { display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:var(--wao-space-1); color:var(--wao-text-3); font-size:var(--wao-font-help); }
+.timeline-controls button,.timeline-controls input { min-height:36px; padding:4px 6px; border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
+.timeline-controls button { cursor:pointer; }
+.timeline-controls button:hover { background:var(--wao-bg-hover); }
+.timeline-controls span { padding-inline:4px; }
+.timeline-tasks { --timeline-day-width:44px; --timeline-task-width:clamp(138px,42cqw,244px); }
+.timeline-line { display:grid; grid-template-columns:var(--timeline-task-width) minmax(0,1fr); width:calc(var(--timeline-task-width) + 14 * var(--timeline-day-width)); min-height:44px; border-bottom:1px solid var(--wao-line); }
+.timeline-header { position:sticky; top:0; z-index:4; align-items:center; background:var(--wao-bg-card); color:var(--wao-text-3); font-size:var(--wao-font-caption); }
+.timeline-task-cell { position:sticky; left:0; z-index:2; border-right:1px solid var(--wao-line); border-radius:0; background:var(--wao-bg-card); }
+.timeline-header .timeline-task-cell { padding:var(--wao-space-1); }
+.timeline-task-cell .task-list-name,.timeline-task-cell .row-status,.timeline-task-cell .task-meta:not(.row-execution) { display:none; }
+.timeline-track { display:grid; grid-template-columns:repeat(14,var(--timeline-day-width)); align-items:center; }
+.timeline-header time { text-align:center; }
+.timeline-today { color:var(--wao-primary-text); font-weight:var(--wao-weight-heading); }
+.timeline-bars { position:relative; background:repeating-linear-gradient(to right,transparent 0 calc(var(--timeline-day-width) - 1px),var(--wao-line) calc(var(--timeline-day-width) - 1px) var(--timeline-day-width)); }
+.timeline-bars > * { grid-row:1; }
+.timeline-execution { height:20px; margin:0 2px; border:1px solid var(--bar-color); border-radius:var(--wao-radius-control); background:color-mix(in srgb,var(--bar-color) 22%,var(--wao-bg-card)); cursor:pointer; }
+.timeline-deadline { justify-self:center; z-index:1; width:32px; height:36px; padding:0; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-primary-text); cursor:pointer; }
+.timeline-deadline:hover { background:var(--wao-primary-soft); }
+.timeline-undated { grid-column:1 / -1; padding-left:var(--wao-space-1); color:var(--wao-text-3); font-size:var(--wao-font-caption); }
+@media (pointer:coarse) { .timeline-controls button,.timeline-controls input,.timeline-deadline { min-height:44px; } }
 h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:anywhere; margin:var(--wao-space-2) 0 var(--wao-space-1); }
 .detail-title-input { width:100%; min-width:0; box-sizing:border-box; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text); font:inherit; padding:var(--wao-space-1) 0; }
 .detail-title-input:hover,.detail-title-input:focus { background:var(--wao-bg-sub); }

@@ -1,5 +1,13 @@
 # 接口入口
 
+## 待办视图偏好与修改时间（2026-11-04）
+
+浏览器使用已有的成员级 `GET/PUT /api/preferences/{key}` 保存待办显示偏好。键 `todo-display-v1` 记录日期、详情样式和视图同步开关；`todo-view-v1:{scope}` 按清单／筛选记录视图、分组、排序和显示开关。关闭视图同步时，视图调整仅写入浏览器。
+
+任务响应新增只读、可空的 `updatedAt`（ISO 日期时间）。V203 记录迁移后的实际修改；尚未修改的任务按已有 `createdAt` 排序，两个时间都未知时排在最后。内嵌子事项使用所属任务的修改时间。更新请求中的 `updatedAt` 不参与保存与版本校验，工作区 MCP 与 CLI 不新增权限。
+
+`POST /api/tasks` 的 `project` 可省略或为空，服务端统一写入空清单，并将负责人固定为当前成员。指定清单时继续检查该清单权限。浏览器新建默认展示收集箱，显式清单草稿继续恢复。
+
 ## 任务菜单操作（2026-11-03）
 
 浏览器会话调用 `PUT /api/tasks/{taskId}/menu-operations/{operation}`，operation 为 UUID v4，正文为 `{accountId, change: {action, subId?, versions}}`。action 为 `duplicate | abandon | restore | note | task`；versions 包含受影响主任务及独立后代的编辑版本。服务端锁定项目任务、复核权限和版本，在同一事务写入整个分支与回执。响应 `{selectedId,tasks}`；相同账号和操作编号重试返回相同结果，变更请求内容返回 409。复制产生新任务/子任务编号，保留正文、附件引用和标签，重置完成状态及评论/活动历史。响应丢失时浏览器保存原请求重试，不能把旧操作改成相反动作。

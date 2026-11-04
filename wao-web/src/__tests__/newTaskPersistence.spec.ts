@@ -235,7 +235,7 @@ describe('新建任务的落库反馈', () => {
     ui.modalTaskSeed = { draftKey: 'document-selection-test', title: '文档里的待办', desc: '完整选区\n\n来源文档：/kb/k3?doc=d7', sourceTitle: '来源文档', sourceUrl: '/kb/k3?doc=d7', sourceDocId: 'd7' }
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
     expect(wrapper.get('.title-input').element).toHaveProperty('value', '文档里的待办')
-    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', target.id)
+    expect(wrapper.get('[aria-label="所属清单"]').element).toHaveProperty('value', target.id)
     await wrapper.get('.title-input').setValue('文档待办修改后标题')
     putTask.mockRejectedValueOnce(new Error('网络中断'))
     await wrapper.get('.foot .btn-primary').trigger('click')
@@ -255,14 +255,16 @@ describe('新建任务的落库反馈', () => {
     wrapper.unmount()
   })
 
-  it('无关联项目的文档要求明确选择，不能默认投到其他项目', async () => {
+  it('无关联清单的文档待办默认进入收集箱', async () => {
     const ui = useUiStore()
     ui.openModal('task')
     ui.modalTaskSeed = { draftKey: 'unbound-document-selection', title: '无项目待办', desc: '选区正文', sourceTitle: '个人文档', sourceUrl: '/kb/k3?doc=d7' }
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
-    expect(wrapper.text()).toContain('请选择要存入的项目')
+    expect(wrapper.get('[aria-label="所属清单"]').element).toHaveProperty('value','')
+    putTask.mockImplementationOnce(savedTask)
     await wrapper.get('.foot .btn-primary').trigger('click')
-    expect(putTask).not.toHaveBeenCalled()
+    await flushPromises()
+    expect(putTask.mock.calls[0]![1]).toMatchObject({ title:'无项目待办', project:'', desc:'选区正文' })
     wrapper.unmount()
   })
 

@@ -31,6 +31,35 @@ import org.mockito.ArgumentCaptor;
 
 class TaskServiceTest {
     @Test
+    void absentProjectCreatesAValidatedPersonalInboxTask() {
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            for (String project : new String[] { null, "", "   " }) {
+                var request = new CreateTaskRequest("随手收集", project, "P2", "wd", "", "", List.of());
+                assertThat(factory.getValidator().validate(request)).isEmpty();
+                TaskDto task = service.create(request, "wg");
+                assertThat(task.project()).isEmpty();
+                assertThat(task.owner()).isEqualTo("wg");
+                assertThat(task.createdBy()).isEqualTo("wg");
+            }
+        }
+        org.mockito.Mockito.verifyNoInteractions(projects, taskNotifier);
+    }
+
+    @Test
+    void editTimeSurvivesDtoCopiesAndComesFromTheDatabaseAfterSaving() {
+        TaskEntity entity = todo();
+        entity.setUpdatedAt(LocalDateTime.of(2026, 11, 4, 8, 30));
+        when(mapper.selectById("t1")).thenReturn(entity);
+        assertThat(service.get("t1", "wg").updatedAt()).isEqualTo("2026-11-04T08:30");
+        when(mapper.findUpdatedAt("t1")).thenReturn(LocalDateTime.of(2026, 11, 4, 9, 45));
+        TaskDto changed = service.patch("t1", new PatchTaskRequest("新标题", null, null, null, null, null, null), "wg");
+        assertThat(changed.updatedAt()).isEqualTo("2026-11-04T09:45");
+        assertThat(changed.withSchedule("", null, null, null).withWorkItemType("task").withParentTaskId(null)
+                .withEditVersion("next").withSubtaskVersion("next").withNumbers(10L, List.of()).updatedAt())
+                .isEqualTo(changed.updatedAt());
+    }
+
+    @Test
     void inboxWritesRecheckOwnershipAfterAcquiringTheRowLock() {
         TaskEntity initial = todo(); initial.setProjectId(""); initial.setOwnerId("wg");
         TaskEntity reassigned = todo(); reassigned.setProjectId(""); reassigned.setOwnerId("wd");
