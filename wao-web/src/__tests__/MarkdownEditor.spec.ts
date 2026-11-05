@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { http } from '@/api/http'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import { polishDocumentText } from '@/api/assistant'
 import type { RichDocNode } from '@/types'
@@ -1582,7 +1583,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     expect(ids).toEqual(expect.arrayContaining([
       'callout-info', 'callout-success', 'callout-warning', 'callout-danger',
       'math-inline', 'math-block', 'diagram-flowchart', 'diagram-sequence', 'diagram-mindmap',
-      'columns-2', 'columns-3',
+      'columns-2',
     ]))
 
     await w.get('button[title^="快捷键帮助"]').trigger('click')
@@ -2560,6 +2561,45 @@ describe('拖入文档附件', () => {
     restored.unmount()
   })
 
+  it('批量上传排队执行，失败后继续其余文件', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'posAtCoords').mockReturnValue({ pos: 1, inside: 0 })
+    const files = Array.from({ length: 5 }, (_, i) => new File(['x'], `${i}.pdf`, { type: 'application/pdf' }))
+    const event = { dataTransfer: { files }, clientX: 0, clientY: 0 } as unknown as DragEvent
+    e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, false))
+    for (let i = 0; i < 5; i++) {
+      expect(w.emitted('upload-file')).toHaveLength(i + 1)
+      const [file, done] = w.emitted('upload-file')![i] as [File, (item: unknown) => void]
+      expect(file).toBe(files[i])
+      done(i === 1 ? null : { id: `f${i}`, name: file.name, size: 1, contentType: file.type })
+      await nextTick()
+    }
+    expect(e.getJSON().content?.filter(node => node.type === 'fileCard')).toHaveLength(4)
+    expect(w.get('.upload-queue').text()).toContain('上传失败')
+    await w.get('.upload-queue button').trigger('click')
+    const retry = w.emitted('upload-file')![5] as [File, (item: unknown) => void]
+    retry[1]({ id: 'f1', name: files[1]!.name, size: 1, contentType: 'application/pdf' })
+    await nextTick()
+    expect(e.getJSON().content?.filter(node => node.type === 'fileCard')).toHaveLength(5)
+    w.unmount()
+  })
+
+  it('附件提供权限接口预览和直接下载，错误可重试', async () => {
+    const richDocument: RichDocNode = { type: 'doc', content: [{ type: 'fileCard', attrs: { id: 'f1', name: '说明.txt', mime: 'text/plain', url: '/api/files/f1/download' } }] }
+    const get = vi.spyOn(http, 'get').mockRejectedValueOnce(new Error('denied')).mockResolvedValueOnce({ data: { text: async () => '预览内容' } })
+    const w = await mountEditor({ modelValue: '', document: richDocument, advanced: true })
+    expect(w.get('.fileCard a[download]').attributes('href')).toBe('/api/files/f1/download')
+    await w.get('.fileCard button').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('预览加载失败')
+    ;(document.querySelector('.file-preview-state button') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('预览内容')
+    expect(get).toHaveBeenCalledWith('/api/files/f1/download', expect.objectContaining({ responseType: 'blob' }))
+    w.unmount(); get.mockRestore()
+  })
+
   it('内部拖动不重复上传，只读编辑器不接收文件', async () => {
     for (const readonly of [false, true]) {
       const w = await mountEditor({ modelValue: '正文', readonly, advanced: true })
@@ -2702,20 +2742,35 @@ describe('统一编辑器分栏与链接', () => {
     const document: RichDocNode = { type:'doc', content:[{type:'columns',content:['左边','右边'].map(text=>({type:'column',content:[{type:'paragraph',content:[{type:'text',text}]}]}))}] }
     const w = await mountEditor({modelValue:'',document,advanced:true,markdownLayout:true})
     const e = (w.vm as unknown as {editor:Editor}).editor
-    await w.get('[aria-label="添加第三栏"]').trigger('click')
+    await w.get('[aria-label="添加一栏"]').trigger('click')
     expect(e.getJSON().content![0]!.content).toHaveLength(3)
     expect(e.state.doc.textContent).toBe('左边右边')
-    expect(w.find('[aria-label="添加第三栏"]').exists()).toBe(false)
+    await w.get('[aria-label="添加一栏"]').trigger('click')
+    await w.get('[aria-label="添加一栏"]').trigger('click')
+    expect(e.getJSON().content![0]!.content).toHaveLength(5)
+    expect(w.find('[aria-label="添加一栏"]').exists()).toBe(false)
+    await w.get('[aria-label="减少一栏"]').trigger('click')
+    expect(e.getJSON().content![0]!.content).toHaveLength(4)
     const serialized = e.getMarkdown()
-    expect(serialized).toContain('data-columns="3"')
-    e.commands.undo(); expect(e.getJSON().content![0]!.content).toHaveLength(2)
+    expect(serialized).toContain('data-columns="4"')
+    e.commands.undo(); expect(e.getJSON().content![0]!.content).toHaveLength(5)
     w.unmount()
     const reopened = await mountEditor({modelValue:serialized,advanced:true,markdownLayout:true})
     const restored = (reopened.vm as unknown as {editor:Editor}).editor
     expect(restored.getJSON().content![0]!.type).toBe('columns')
-    expect(restored.getJSON().content![0]!.content).toHaveLength(3)
+    expect(restored.getJSON().content![0]!.content).toHaveLength(4)
     expect(restored.state.doc.textContent).toBe('左边右边')
     reopened.unmount()
+  })
+  it('减少分栏时将最后一栏内容移到前一栏', async () => {
+    const document: RichDocNode = { type: 'doc', content: [{ type: 'columns', content: ['左栏', '中栏', '右栏内容'].map(text => ({ type: 'column', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })) }] }
+    const w = await mountEditor({ modelValue: '', document, advanced: true, markdownLayout: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.get('[aria-label="减少一栏"]').trigger('click')
+    expect(e.getJSON().content![0]!.content).toHaveLength(2)
+    expect(e.state.doc.textContent).toBe('左栏中栏右栏内容')
+    expect(e.getMarkdown()).toContain('右栏内容')
+    w.unmount()
   })
   it('没有选中文字也能用快捷键插入链接，裸域名自动补全并可修改文字', async () => {
     const w = await mountEditor({modelValue:'',advanced:true,markdownLayout:true,linkControls:true})

@@ -5,6 +5,7 @@ import { fetchDrawing, renameDrawing } from '@/api/drawings'
 import SettingsDialogShell from './SettingsDialogShell.vue'
 import WaoButton from './WaoButton.vue'
 import { apiUploadImage } from '@/api/board'
+import { http } from '@/api/http'
 
 const DrawingsView = defineAsyncComponent(() => import('@/views/DrawingsView.vue').then(module => module.default))
 const editing = ref(false), closing = ref(false), closeError = ref('')
@@ -36,6 +37,35 @@ const href = computed(() => {
   }
   return attrs.value.url || (attrs.value.id ? `/files/${encodeURIComponent(attrs.value.id)}` : '#')
 })
+const previewOpen = ref(false), previewLoading = ref(false), previewError = ref(''), previewText = ref(''), previewUrl = ref('')
+const previewKind = computed(() => {
+  const name = String(attrs.value.name || attrs.value.title || '').toLowerCase()
+  const mime = String(attrs.value.mime || '').toLowerCase()
+  if (name.endsWith('.docx') || mime.includes('wordprocessingml')) return 'docx'
+  if (name.endsWith('.pdf') || mime === 'application/pdf') return 'pdf'
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('text/') || /\.(txt|md|csv|json|log)$/i.test(name)) return 'text'
+  return 'unsupported'
+})
+function closePreview() {
+  previewOpen.value = false
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''; previewText.value = ''
+}
+async function openPreview() {
+  previewOpen.value = true; previewError.value = ''; previewText.value = ''; previewLoading.value = true
+  try {
+    if (previewKind.value === 'unsupported') return
+    const response = await http.get<Blob>(`/api/files/${encodeURIComponent(attrs.value.id)}/download`, { responseType: 'blob', timeout: 120_000 })
+    if (!previewOpen.value) return
+    if (previewKind.value === 'docx') {
+      const mammoth = await import('mammoth')
+      previewText.value = (await mammoth.extractRawText({ arrayBuffer: await response.data.arrayBuffer() })).value
+    } else if (previewKind.value === 'text') previewText.value = await response.data.text()
+    else previewUrl.value = URL.createObjectURL(new Blob([response.data], { type: previewKind.value === 'pdf' ? 'application/pdf' : attrs.value.mime }))
+  } catch { previewError.value = '预览加载失败，请检查权限或重试。' }
+  finally { previewLoading.value = false }
+}
 const refreshing = ref(false)
 const refreshError = ref('')
 let refreshPromise: Promise<void> | null = null
@@ -84,7 +114,7 @@ watch(() => [kind.value, attrs.value.id], () => {
   liveTitle.value = ''; liveSnapshot.value = ''; linkedDocument.value = false
   if (kind.value === 'drawingCard' && props.editor.isEditable) void refreshDrawingSnapshot()
 }, { immediate: true })
-onBeforeUnmount(() => { disposed = true; if (objectUrl) URL.revokeObjectURL(objectUrl) })
+onBeforeUnmount(() => { disposed = true; if (objectUrl) URL.revokeObjectURL(objectUrl); closePreview() })
 const naming = ref(false), renaming = ref(false), titleDraft = ref(''), titleError = ref('')
 const titleInput = ref<HTMLInputElement>()
 async function editTitle() {
@@ -124,10 +154,23 @@ function openDrawing() { if (props.editor.isEditable) editing.value = true }
     <div v-else class="rich-card-main">
       <i :class="icon"></i>
       <div><b>{{ label }}</b><small>{{ attrs.size || attrs.mime || href }}</small></div>
-      <a :href="href" target="_blank" rel="noopener noreferrer">{{ props.editor.isEditable ? '打开' : '确认下载' }}</a>
+      <template v-if="kind === 'fileCard' && attrs.id && props.editor.isEditable">
+        <button type="button" @click="openPreview">预览</button>
+        <a :href="`/api/files/${encodeURIComponent(attrs.id)}/download`" download>下载</a>
+      </template>
+      <a v-else :href="href" target="_blank" rel="noopener noreferrer">{{ props.editor.isEditable ? '打开' : '确认下载' }}</a>
     </div>
     <audio v-if="props.editor.isEditable && kind === 'mediaCard' && attrs.mime?.startsWith('audio/')" :src="href" controls preload="metadata"></audio>
     <video v-else-if="props.editor.isEditable && kind === 'mediaCard' && attrs.mime?.startsWith('video/')" :src="href" controls preload="metadata"></video>
+    <SettingsDialogShell v-if="previewOpen" :title="String(label)" description="附件预览" width="1000px" height="min(760px, calc(100dvh - 32px))" @close="closePreview">
+      <div v-if="previewLoading" class="file-preview-state">正在加载预览…</div>
+      <div v-else-if="previewError" class="file-preview-state" role="alert">{{ previewError }} <button type="button" @click="openPreview">重试</button></div>
+      <div v-else-if="previewKind === 'unsupported'" class="file-preview-state">此格式暂不支持在线预览，请下载后打开。</div>
+      <pre v-else-if="previewKind === 'text' || previewKind === 'docx'" class="file-preview-text">{{ previewText || '文件没有可显示的文字' }}</pre>
+      <img v-else-if="previewKind === 'image' && previewUrl" class="file-preview-image" :src="previewUrl" :alt="String(label)" />
+      <iframe v-else-if="previewUrl" class="file-preview-frame" :src="previewUrl" :title="String(label)" sandbox="allow-scripts allow-same-origin"></iframe>
+      <template #footer><span v-if="previewKind === 'docx'">Word 文件显示文字内容，完整排版请下载查看。</span><a :href="`/api/files/${encodeURIComponent(attrs.id)}/download`" download>下载原文件</a></template>
+    </SettingsDialogShell>
     <SettingsDialogShell v-if="editing" :title="String(label)" description="在正文中编辑画板，完成后保存并更新预览" width="1400px" height="calc(100dvh - 32px)" :close-disabled="closing" @close="finishDrawing">
       <DrawingsView ref="canvasView" :drawing-id="String(attrs.id)" embedded />
       <template #footer><span v-if="closeError" role="alert">{{ closeError }}</span><WaoButton :loading="closing" @click="finishDrawing">完成并返回正文</WaoButton></template>
@@ -137,6 +180,12 @@ function openDrawing() { if (props.editor.isEditable) editing.value = true }
 </template>
 
 <style scoped>
+.file-preview-state { padding:var(--wao-space-3); color:var(--wao-text-3); }
+.file-preview-text { white-space:pre-wrap; overflow-wrap:anywhere; padding:var(--wao-space-3); font:inherit; }
+.file-preview-frame { display:block; width:100%; height:100%; min-height:50vh; border:0; }
+.file-preview-image { display:block; max-width:100%; max-height:60vh; margin:auto; object-fit:contain; }
+.rich-card.fileCard { display:inline-block; vertical-align:top; width:min(100%, 360px); margin:4px 8px 4px 0; }
+.fileCard .rich-card-main { padding:var(--wao-space-1); gap:var(--wao-space-1); }
 .drawing-preview { cursor: default; }
 .drawing-preview[role=button] { cursor: pointer; }
 .drawing-preview:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }

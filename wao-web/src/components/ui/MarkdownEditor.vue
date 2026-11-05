@@ -1787,7 +1787,7 @@ const visibleDrawings = computed(() => {
     ? drawings.value.filter(item => item.title.toLocaleLowerCase().includes(query))
     : drawings.value.slice(0, 5)
 })
-interface PendingUpload { id: string; file: File; state: 'uploading' | 'failed' }
+interface PendingUpload { id: string; file: File; state: 'queued' | 'uploading' | 'failed' }
 const pendingUploads = ref<PendingUpload[]>([])
 const COLOR_OPTIONS = ['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0']
 const HIGHLIGHT_OPTIONS = ['#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe']
@@ -1809,7 +1809,7 @@ function insertCallout(kind = 'info') {
   insertBlock({ type: 'callout', attrs: { kind }, content: [{ type: 'paragraph' }] })
 }
 
-function insertColumns(count: 2 | 3) {
+function insertColumns(count: 2) {
   insertBlock({
     type: 'columns',
     content: Array.from({ length: count }, () => ({
@@ -1944,10 +1944,22 @@ function onFilePicked(event: Event) {
 function queueFiles(files: File[]) {
   if (props.readonly) return
   for (const file of files) {
-    const upload: PendingUpload = { id: crypto.randomUUID(), file, state: 'uploading' }
+    const upload: PendingUpload = { id: crypto.randomUUID(), file, state: 'queued' }
     pendingUploads.value.push(upload)
-    runFileUpload(upload.id)
   }
+  runNextFileUpload()
+}
+
+function runNextFileUpload() {
+  if (pendingUploads.value.some(item => item.state === 'uploading')) return
+  const next = pendingUploads.value.find(item => item.state === 'queued')
+  if (next) runFileUpload(next.id)
+}
+
+function retryFileUpload(uploadId: string) {
+  const upload = pendingUploads.value.find(item => item.id === uploadId)
+  if (upload) upload.state = 'queued'
+  runNextFileUpload()
 }
 
 function runFileUpload(uploadId: string) {
@@ -1959,12 +1971,13 @@ function runFileUpload(uploadId: string) {
     if (!target || target.isDestroyed || target !== editor.value) return
     if (!item) {
       upload.state = 'failed'
+      runNextFileUpload()
       return
     }
     const mime = item.contentType || upload.file.type || 'application/octet-stream'
     const media = mime.startsWith('audio/') || mime.startsWith('video/')
     const id = item.id ?? ''
-    insertBlock({
+    target.commands.insertContentAt(target.state.selection.to, {
       type: media ? 'mediaCard' : 'fileCard',
       attrs: {
         id,
@@ -1974,8 +1987,9 @@ function runFileUpload(uploadId: string) {
         mime,
         url: media && id ? `/api/files/${encodeURIComponent(id)}/stream` : item.link,
       },
-    })
+    }, { updateSelection: false })
     pendingUploads.value = pendingUploads.value.filter((entry) => entry.id !== uploadId)
+    runNextFileUpload()
   })
 }
 
@@ -2035,8 +2049,7 @@ const slashActions = computed<SlashAction[]>(() => [
   { id: 'diagram-flowchart', label: '流程图', hint: 'Mermaid 流程可视化', icon: 'ri-flow-chart', run: () => insertMermaid('flowchart'), full: true },
   { id: 'diagram-sequence', label: '时序图', hint: 'Mermaid 交互时序', icon: 'ri-git-branch-line', run: () => insertMermaid('sequence'), full: true },
   { id: 'diagram-mindmap', label: '思维导图', hint: 'Mermaid 层级脑图', icon: 'ri-node-tree', run: () => insertMermaid('mindmap'), full: true },
-  { id: 'columns-2', label: '双栏', hint: '窄屏自动纵向排列', icon: 'ri-layout-column-line', run: () => insertColumns(2), full: true },
-  { id: 'columns-3', label: '三栏', hint: '三列内容，窄屏自动纵排', icon: 'ri-layout-grid-line', run: () => insertColumns(3), full: true },
+  { id: 'columns-2', label: '分栏', hint: '默认两栏，最多五栏', icon: 'ri-layout-column-line', run: () => insertColumns(2), full: true },
   { id: 'details', label: '折叠块', hint: '收起补充内容', icon: 'ri-arrow-right-s-line', run: insertDetails, full: true },
   { id: 'image', label: '图片', hint: '上传、粘贴或拖入', icon: 'ri-image-add-line', run: chooseImage },
   { id: 'file', label: '附件 / 音视频', hint: '上传到 WAO 文件库', icon: 'ri-attachment-2', run: () => filePicker.value?.click(), full: true },
@@ -2759,8 +2772,8 @@ onBeforeUnmount(() => {
       <div v-if="pendingUploads.length" class="upload-queue" aria-live="polite">
         <div v-for="upload in pendingUploads" :key="upload.id" :class="upload.state">
           <i :class="upload.state === 'uploading' ? 'ri-loader-4-line spin' : 'ri-error-warning-line'"></i>
-          <span><b>{{ upload.file.name }}</b><small>{{ upload.state === 'uploading' ? '正在上传，正文可继续编辑' : '上传失败，本地文件尚未插入' }}</small></span>
-          <button v-if="upload.state === 'failed'" type="button" @click="runFileUpload(upload.id)">重试</button>
+          <span><b>{{ upload.file.name }}</b><small>{{ upload.state === 'uploading' ? '正在上传，正文可继续编辑' : upload.state === 'queued' ? '等待上传' : '上传失败，本地文件尚未插入' }}</small></span>
+          <button v-if="upload.state === 'failed'" type="button" @click="retryFileUpload(upload.id)">重试</button>
           <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
         </div>
       </div>
@@ -3960,6 +3973,8 @@ onBeforeUnmount(() => {
 .md-body :deep(aside[data-callout='success']) { border-color:var(--wao-success); background:var(--wao-success-bg); }.md-body :deep(aside[data-callout='warning']) { border-color:var(--wao-warning); background:var(--wao-warning-bg); }.md-body :deep(aside[data-callout='danger']) { border-color:var(--wao-danger); background:var(--wao-danger-bg); }
 .md-body :deep(div[data-columns]:not(.editor-columns)) { display:grid; grid-template-columns:repeat(var(--columns, 2),minmax(0,1fr)); gap:14px; margin:12px 0; }
 .md-body :deep(div[data-columns='2']:not(.editor-columns)) { grid-template-columns:repeat(2,minmax(0,1fr)); }.md-body :deep(div[data-columns='3']:not(.editor-columns)) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.md-body :deep(div[data-columns='4']:not(.editor-columns)) { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.md-body :deep(div[data-columns='5']:not(.editor-columns)) { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .md-body :deep(section[data-column]) { min-width:0; padding:10px; border:1px dashed var(--wao-line-control); border-radius:8px; }
 .md-body :deep(.tableWrapper) { overflow-x:auto; margin:12px 0; }.md-body :deep(table) { border-collapse:collapse; width:100%; min-width:440px; }.md-body :deep(th),.md-body :deep(td) { min-width:90px; padding:7px 9px; border:1px solid var(--wao-line-control); vertical-align:top; }.md-body :deep(th) { background:var(--wao-bg-sub); }
 .md-body :deep(details) { margin:12px 0; padding:8px 11px; border:1px solid var(--wao-line-control); border-radius:9px; }.md-body :deep(summary) { cursor:pointer; font-weight:650; }

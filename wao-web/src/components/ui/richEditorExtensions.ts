@@ -66,7 +66,7 @@ export const Column = Node.create({
 export function createColumns(preserveLayout: boolean) { return Node.create({
   name: 'columns',
   group: 'block',
-  content: 'column{2,3}',
+  content: 'column{2,5}',
   defining: true,
   draggable: true,
   addAttributes() { return { uid: { default: null } } },
