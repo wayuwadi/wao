@@ -14,6 +14,7 @@ import {
 } from 'vue-router'
 import { tabFromRoute } from '@/config/nav'
 import { useTabsStore } from '@/stores/tabs'
+import { useSessionStore } from '@/stores/session'
 import { useFloatingTabsStore } from '@/stores/floatingTabs'
 import TabPage from './TabPage.vue'
 import TabWindow from './TabWindow.vue'
@@ -21,6 +22,7 @@ import TabWindow from './TabWindow.vue'
 const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
+const session = useSessionStore()
 const windows = useFloatingTabsStore()
 onBeforeUnmount(() => {
   windows.keys = []
@@ -102,7 +104,7 @@ function rememberLocation(key: string, location: RouteLocationNormalizedLoaded) 
 <template>
   <TabWindow
     v-for="key in entries"
-    :key="key"
+    :key="key === 'drawings' ? `${key}:${session.userId}` : key"
     :page-key="key"
     :label="tabs.tabs.find((tab) => tab.key === key)?.label || '页面'"
     :floating="windows.keys.includes(key)"
