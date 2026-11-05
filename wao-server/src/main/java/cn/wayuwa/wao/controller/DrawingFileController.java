@@ -31,6 +31,7 @@ public class DrawingFileController {
     private static final String FALLBACK_MEMBER = "wg";
     private final DrawingFileService drawings;
     private final CurrentMember currentMember;
+    @org.springframework.beans.factory.annotation.Autowired private cn.wayuwa.wao.mapper.DrawingGroupMapper groups;
 
     public DrawingFileController(DrawingFileService drawings, CurrentMember currentMember) {
         this.drawings = drawings;
@@ -81,6 +82,55 @@ public class DrawingFileController {
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest http) {
         drawings.delete(id, member(http));
         return ApiResponse.ok(null);
+    }
+
+    public record GroupRequest(String name) {}
+    public record MoveRequest(String groupId) {}
+    public record GroupIndex(List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Group> groups,
+                             List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Assignment> assignments) {}
+
+    @GetMapping("/groups")
+    public ApiResponse<GroupIndex> groups(HttpServletRequest http) {
+        String member = member(http);
+        return ApiResponse.ok(new GroupIndex(groups.groups(member), groups.assignments(member)));
+    }
+
+    @PostMapping("/groups")
+    public ApiResponse<cn.wayuwa.wao.mapper.DrawingGroupMapper.Group> createGroup(@RequestBody GroupRequest request, HttpServletRequest http) {
+        String name = groupName(request.name());
+        String id = "dg" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 28);
+        groups.create(id, member(http), name);
+        return ApiResponse.ok(new cn.wayuwa.wao.mapper.DrawingGroupMapper.Group(id, name));
+    }
+
+    @PatchMapping("/groups/{id}")
+    public ApiResponse<Void> renameGroup(@PathVariable String id, @RequestBody GroupRequest request, HttpServletRequest http) {
+        if (groups.owned(id, member(http)) == 0) throw new cn.wayuwa.wao.common.NotFoundException("分组不存在");
+        groups.rename(id, member(http), groupName(request.name()));
+        return ApiResponse.ok(null);
+    }
+
+    @PutMapping("/{id}/group")
+    public ApiResponse<Void> move(@PathVariable String id, @RequestBody MoveRequest request, HttpServletRequest http) {
+        String member = member(http);
+        drawings.get(id, member);
+        if (request.groupId() == null || request.groupId().isBlank()) groups.unassign(member, id);
+        else {
+            if (groups.owned(request.groupId(), member) == 0) throw new cn.wayuwa.wao.common.NotFoundException("分组不存在");
+            groups.assign(member, id, request.groupId());
+        }
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/{id}/copy")
+    public ApiResponse<DrawingFileDto> copy(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(drawings.copy(id, member(http)));
+    }
+
+    private String groupName(String value) {
+        String name = value == null ? "" : value.trim();
+        if (name.isEmpty() || name.length() > 128) throw new cn.wayuwa.wao.common.BadRequestException("分组名称须为 1～128 个字符");
+        return name;
     }
 
     private String member(HttpServletRequest http) {

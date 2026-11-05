@@ -14,8 +14,12 @@ import {
 import { onBeforeRouteLeave, routerKey } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import {
   createDrawing,
+  createDrawingGroup, copyDrawing, fetchDrawingGroups, moveDrawing, renameDrawingGroup,
+  type DrawingGroup,
   deleteDrawing,
   fetchDrawing,
   fetchDrawingVersions,
@@ -77,6 +81,111 @@ const visibleFiles = computed(() =>
   ),
 )
 const recentFiles = computed(() => files.value.slice(0, 3))
+const groups = ref<DrawingGroup[]>([])
+const assignments = ref<Record<string, string>>({})
+const groupError = ref(''), groupLoading = ref(false), actionBusy = ref(false)
+const groupCollapsed = ref<Record<string, boolean>>({})
+const contextMenu = ref<InstanceType<typeof ContextActionMenu>>()
+const dialogMode = ref<'new-group' | 'rename-group' | 'rename-file' | null>(null)
+const dialogName = ref(''), dialogError = ref(''), dialogTarget = ref('')
+const fileGroups = computed(() => [
+  ...groups.value.map(group => ({ ...group, files: visibleFiles.value.filter(file => assignments.value[file.id] === group.id) })),
+  { id: '', name: '未分组', files: visibleFiles.value.filter(file => !groups.value.some(group => group.id === assignments.value[file.id])) },
+].filter(group => !search.value.trim() || group.files.length))
+async function loadGroups() {
+  if (props.embedded) return
+  groupLoading.value = true; groupError.value = ''
+  try {
+    const result = await fetchDrawingGroups()
+    if (!sameOwner()) return
+    groups.value = result.groups
+    assignments.value = Object.fromEntries(result.assignments.map(item => [item.fileId, item.groupId]))
+  } catch { groupError.value = '分组读取失败，请重试' }
+  finally { groupLoading.value = false }
+}
+function showDialog(mode: 'new-group' | 'rename-group' | 'rename-file', id = '', name = '') {
+  dialogMode.value = mode; dialogTarget.value = id; dialogName.value = name; dialogError.value = ''
+}
+async function saveDialog() {
+  const name = dialogName.value.trim()
+  if (!name || actionBusy.value || !dialogMode.value) return
+  actionBusy.value = true; dialogError.value = ''
+  try {
+    if (dialogMode.value === 'new-group') {
+      const created = await createDrawingGroup(name)
+      if (!sameOwner()) return
+      groups.value.push(created)
+    }
+    else if (dialogMode.value === 'rename-group') {
+      await renameDrawingGroup(dialogTarget.value, name)
+      if (!sameOwner()) return
+      const group = groups.value.find(item => item.id === dialogTarget.value)
+      if (group) group.name = name
+    } else {
+      if (dialogTarget.value === activeId.value && !(await settleEdits())) throw new Error(error.value || '请先保存当前修改')
+      const renamed = await renameDrawing(dialogTarget.value, name)
+      if (!sameOwner()) return
+      updateSummary(renamed)
+      if (current.value?.id === renamed.id) { current.value = { ...current.value, title: renamed.title, updatedAt: renamed.updatedAt }; titleDraft.value = renamed.title }
+    }
+    if (sameOwner()) dialogMode.value = null
+  } catch (cause) { dialogError.value = message(cause, '操作结果未确认，请刷新列表确认后重试，输入已保留') }
+  finally { actionBusy.value = false }
+}
+async function changeGroup(file: DrawingFileSummary, groupId: string | null) {
+  if (actionBusy.value) return
+  actionBusy.value = true
+  try { await moveDrawing(file.id, groupId); if (sameOwner()) { if (groupId) assignments.value[file.id] = groupId; else delete assignments.value[file.id] } }
+  catch (cause) { groupError.value = message(cause, '移动失败，请重试') }
+  finally { actionBusy.value = false }
+}
+async function duplicateFile(file: DrawingFileSummary) {
+  if (actionBusy.value) return
+  actionBusy.value = true; error.value = ''
+  try {
+    if (!(await settleEdits())) return
+    transitioning.value = true
+    const copy = await copyDrawing(file.id)
+    if (!sameOwner()) return
+    updateSummary(copy)
+    if (assignments.value[file.id]) assignments.value[copy.id] = assignments.value[file.id]!
+    transitioning.value = false
+    await openFile(copy.id)
+    void loadGroups()
+  } catch (cause) { error.value = message(cause, '复制结果未确认，请先刷新列表检查是否已创建副本') }
+  finally { transitioning.value = false; actionBusy.value = false }
+}
+async function exportFile(file: DrawingFileSummary) {
+  if (actionBusy.value) return
+  actionBusy.value = true; error.value = ''
+  try {
+    const selected = current.value?.id === file.id
+    const scene = selected ? sceneJson.value : (await fetchDrawing(file.id)).sceneJson
+    if (!sameOwner()) return
+    downloadScene(file.title, scene)
+  } catch (cause) { error.value = message(cause, '导出失败，请重试') }
+  finally { actionBusy.value = false }
+}
+function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummary, anchor?: HTMLElement) {
+  const disabled = actionBusy.value || transitioning.value || !!deletingId.value || restoringVersion.value !== null
+  void contextMenu.value?.openAt(event, file.title, [
+    { id: 'new-group', label: '新建分组', icon: 'ri-folder-add-line', disabled: groupLoading.value || !!groupError.value, run: () => showDialog('new-group') },
+    { id: 'rename', label: '重命名', icon: 'ri-edit-line', disabled, run: () => showDialog('rename-file', file.id, file.title) },
+    { id: 'export', label: '导出源文件', icon: 'ri-download-line', disabled, run: () => exportFile(file) },
+    { id: 'copy', label: '复制当前文件', icon: 'ri-file-copy-line', disabled, run: () => duplicateFile(file) },
+    ...(!groupLoading.value && !groupError.value ? [
+      { id: 'ungroup', label: '移至未分组', icon: 'ri-folder-transfer-line', disabled: !assignments.value[file.id], separatorBefore: true, run: () => changeGroup(file, null) },
+      ...groups.value.map(group => ({ id: `move:${group.id}`, label: `移至 ${group.name}`, icon: 'ri-folder-transfer-line', disabled: assignments.value[file.id] === group.id, run: () => changeGroup(file, group.id) })),
+    ] : []),
+  ], anchor)
+}
+function openGroupMenu(event: MouseEvent | KeyboardEvent, group: DrawingGroup, anchor?: HTMLElement) {
+  void contextMenu.value?.openAt(event, group.name, [
+    { id: 'new', label: '新建分组', icon: 'ri-folder-add-line', disabled: actionBusy.value, run: () => showDialog('new-group') },
+    { id: 'rename', label: '重命名分组', icon: 'ri-edit-line', disabled: actionBusy.value, run: () => showDialog('rename-group', group.id, group.name) },
+  ], anchor)
+}
+function menuFromButton(event: MouseEvent, file: DrawingFileSummary) { openFileMenu(event, file, event.currentTarget as HTMLElement) }
 const activeId = ref('')
 const current = ref<DrawingFile | null>(null)
 const sceneJson = ref('')
@@ -559,11 +668,15 @@ async function removeFile(file: DrawingFileSummary) {
 
 function downloadDraft() {
   if (!current.value || !sceneJson.value) return
-  const blob = new Blob([sceneJson.value], { type: 'application/json' })
+  downloadScene(current.value.title, sceneJson.value)
+}
+
+function downloadScene(title: string, scene: string) {
+  const blob = new Blob([scene], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${current.value.title || '未命名草图'}.excalidraw`
+  anchor.download = `${title || '未命名草图'}.excalidraw`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -616,6 +729,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
   document.addEventListener('fullscreenchange', fullscreenChanged)
   void loadList()
+  void loadGroups()
 })
 
 onBeforeUnmount(() => {
@@ -638,6 +752,10 @@ watch(
     ++loadToken
     current.value = null
     files.value = []
+    groups.value = []
+    assignments.value = {}
+    dialogMode.value = null
+    contextMenu.value?.close()
     dirty.value = false
   },
 )
@@ -660,6 +778,10 @@ defineExpose({ flush: flushEmbedded })
     class="drawings-page"
     :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }"
   >
+    <ContextActionMenu ref="contextMenu" />
+    <SettingsDialogShell v-if="dialogMode" :title="dialogMode === 'new-group' ? '新建分组' : dialogMode === 'rename-group' ? '重命名分组' : '重命名草图'" width="480px" height="auto" :close-disabled="actionBusy" @close="dialogMode = null">
+      <form class="name-dialog" @submit.prevent="saveDialog"><label>名称<input v-model="dialogName" maxlength="128" autofocus :disabled="actionBusy" /></label><p v-if="dialogError" role="alert">{{ dialogError }}</p><WaoButton type="submit" :loading="actionBusy" :disabled="!dialogName.trim()">保存</WaoButton></form>
+    </SettingsDialogShell>
     <button
       v-if="sidebarOpen && !embedded"
       class="sidebar-backdrop"
@@ -720,12 +842,23 @@ defineExpose({ flush: flushEmbedded })
         <span>没有匹配的草图</span
         ><WaoButton variant="ghost" @click="search = ''">清除搜索</WaoButton>
       </div>
-      <div v-else class="file-list">
+      <div v-if="groupError" class="group-error" role="alert">{{ groupError }} <button type="button" @click="loadGroups">重试</button></div>
+      <div v-else-if="groupLoading" class="group-error" role="status">正在读取分组…</div>
+      <button type="button" class="group-create" :disabled="groupLoading || !!groupError || actionBusy" @click="showDialog('new-group')"><i class="ri-folder-add-line"></i>新建分组</button>
+      <div v-if="!loadingList && !listError" class="file-list" @contextmenu.self.prevent="showDialog('new-group')">
+       <section v-for="group in fileGroups" :key="group.id || 'ungrouped'" class="drawing-group">
+        <div class="group-header" @contextmenu.prevent.stop="group.id && openGroupMenu($event, group)">
+          <button type="button" class="group-toggle" :aria-expanded="groupCollapsed[group.id] !== true || !!search.trim()" @click="groupCollapsed[group.id] = !groupCollapsed[group.id]"><i :class="groupCollapsed[group.id] && !search.trim() ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i><i class="ri-folder-line"></i>{{ group.name }} <span>{{ group.files.length }}</span></button>
+          <button v-if="group.id" type="button" class="group-menu" :aria-label="`${group.name}的操作`" @click="openGroupMenu($event, group, $event.currentTarget as HTMLElement)"><i class="ri-more-line"></i></button>
+        </div>
+        <template v-if="!groupCollapsed[group.id] || !!search.trim()">
         <div
-          v-for="file in visibleFiles"
+          v-for="file in group.files"
           :key="file.id"
           class="file-row"
           :class="{ active: activeId === file.id }"
+          @contextmenu.prevent.stop="openFileMenu($event, file)"
+          @keydown.shift.f10.prevent="openFileMenu($event, file, $event.currentTarget as HTMLElement)"
         >
           <button
             class="file-open"
@@ -736,8 +869,10 @@ defineExpose({ flush: flushEmbedded })
           >
             <span class="file-main"><strong>{{ file.title }}</strong></span>
           </button>
-
+          <button type="button" class="file-menu" :aria-label="`${file.title}的操作`" @click="menuFromButton($event, file)"><i class="ri-more-line"></i></button>
         </div>
+        </template>
+       </section>
       </div>
     </aside>
 
@@ -1040,6 +1175,18 @@ defineExpose({ flush: flushEmbedded })
   font-size: var(--wao-font-body);
   outline: none;
 }
+.name-dialog { display:grid; gap:var(--wao-space-2); padding:var(--wao-space-3); }
+.name-dialog label { display:grid; gap:var(--wao-space-1); }
+.name-dialog input { width:100%; min-height:40px; border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); padding:var(--wao-space-1); background:var(--wao-bg-card); color:var(--wao-text); }
+.name-dialog [role=alert], .group-error { color:var(--wao-danger-strong); }
+.group-create,.group-toggle,.group-menu,.file-menu { border:0; background:transparent; color:var(--wao-text-3); cursor:pointer; font:inherit; min-height:36px; }
+.group-create { text-align:left; padding:var(--wao-space-1); }
+.group-header { display:flex; align-items:center; }
+.group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:4px; text-align:left; }
+.group-toggle span { margin-left:auto; }
+.group-menu,.file-menu { min-width:36px; }
+.group-menu:hover,.file-menu:hover,.group-create:hover { color:var(--wao-primary-text); background:var(--wao-bg-hover); }
+.group-error { font-size:var(--wao-font-help); }
 .file-list {
   min-height: 0;
   flex: 1;

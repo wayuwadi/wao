@@ -29,6 +29,9 @@ public class DrawingFileService {
     private KnowledgeAccessService knowledgeAccess;
 
     @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.mapper.DrawingGroupMapper groups;
+
+    @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private KnowledgeService knowledge;
 
@@ -139,6 +142,27 @@ public class DrawingFileService {
         required(id, memberId);
         if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中移入回收站");
         if (mapper.deleteOwned(id, memberId) == 0) throw notFound();
+    }
+
+    /** 原子复制已授权的云端场景，副本属于当前成员，不关联原知识库文档。 */
+    @Transactional
+    public DrawingFileDto copy(String id, String memberId) {
+        DrawingFileEntity source = required(id, memberId);
+        DrawingFileEntity copy = new DrawingFileEntity();
+        LocalDateTime now = LocalDateTime.now();
+        copy.setId("dr" + UUID.randomUUID().toString().replace("-", "").substring(0, 28));
+        copy.setOwnerMemberId(memberId);
+        String title = source.getTitle();
+        copy.setTitle(title.substring(0, Math.min(title.length(), 125)) + " 副本");
+        copy.setSceneJson(source.getSceneJson());
+        copy.setRevision(1);
+        copy.setCreatedAt(now); copy.setUpdatedAt(now);
+        mapper.insert(copy);
+        if (groups != null) {
+            String group = groups.groupOf(memberId, id);
+            if (group != null) groups.assign(memberId, copy.getId(), group);
+        }
+        return dto(copy);
     }
 
     private DrawingFileEntity required(String id, String memberId) {
