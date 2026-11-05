@@ -256,4 +256,23 @@ class DrawingFileServiceTest {
         verify(mapper, never()).saveScene(any(), any(), any(), anyInt(), any());
     }
 
+    @Test
+    void copyRequiresReadAccessAndCreatesIndependentPersonalScene() {
+        DrawingFileEntity source = file("dr1", OWNER, 4);
+        when(mapper.findOwned("dr1", OWNER)).thenReturn(source);
+        var groups = mock(cn.wayuwa.wao.mapper.DrawingGroupMapper.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "groups", groups);
+        when(groups.groupOf(OWNER, "dr1")).thenReturn("g1");
+        var copied = service.copy("dr1", OWNER);
+        verify(groups).assign(OWNER, copied.id(), "g1");
+        ArgumentCaptor<DrawingFileEntity> captor = ArgumentCaptor.forClass(DrawingFileEntity.class);
+        verify(mapper).insert(captor.capture());
+        assertThat(captor.getValue().getOwnerMemberId()).isEqualTo(OWNER);
+        assertThat(captor.getValue().getSceneJson()).isEqualTo(source.getSceneJson());
+        assertThat(copied.title()).endsWith("副本");
+        assertThat(copied.id()).isNotEqualTo(source.getId());
+        assertThat(copied.docId()).isNull();
+        assertThatThrownBy(() -> service.copy("dr1", OTHER)).isInstanceOf(NotFoundException.class);
+    }
+
 }

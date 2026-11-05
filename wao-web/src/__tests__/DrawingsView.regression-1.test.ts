@@ -4,6 +4,7 @@ import DrawingsView from '@/views/DrawingsView.vue'
 import {
   deleteDrawing,
   fetchDrawing,
+  fetchDrawingGroups,
   fetchDrawings,
   fetchDrawingVersions,
   saveDrawing,
@@ -15,6 +16,8 @@ import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 vi.mock('@/api/drawings', () => ({
   createDrawing: vi.fn(),
+  fetchDrawingGroups: vi.fn().mockResolvedValue({ groups: [], assignments: [] }),
+  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(),
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
@@ -70,6 +73,7 @@ function change(w: ReturnType<typeof mount>, value: string) {
 describe('草图保存与文件管理回归', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [], assignments: [] })
     window.history.replaceState({}, '', '/drawings?drawing=a')
     vi.mocked(fetchDrawings).mockResolvedValue([file(), file('b')])
     vi.mocked(fetchDrawing).mockImplementation(async (id) => file(id))

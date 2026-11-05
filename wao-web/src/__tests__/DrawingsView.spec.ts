@@ -5,6 +5,7 @@ import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
+  fetchDrawingGroups, createDrawingGroup, moveDrawing, copyDrawing,
   fetchDrawings,
   fetchDrawingVersions,
   renameDrawing,
@@ -15,6 +16,8 @@ import {
 
 vi.mock('@/api/drawings', () => ({
   createDrawing: vi.fn(),
+  fetchDrawingGroups: vi.fn().mockResolvedValue({ groups: [], assignments: [] }),
+  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(),
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
@@ -78,6 +81,7 @@ describe('个人草图优化', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [], assignments: [] })
     localStorage.clear()
     window.history.replaceState({}, '', '/drawings?drawing=dr1')
     vi.mocked(fetchDrawings).mockResolvedValue([drawing()])
@@ -141,6 +145,93 @@ describe('个人草图优化', () => {
     await flushPromises()
     expect(localStorage.getItem('wao:last-drawing:member-a')).toBe('dr1')
     embedded.unmount()
+  })
+
+  it('分组读取失败可重试，不阻止打开已有草图', async () => {
+    vi.mocked(fetchDrawingGroups).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ groups: [{ id: 'g1', name: '项目' }], assignments: [] })
+    const wrapper = mount(DrawingsView)
+    await flushPromises()
+    expect(wrapper.get('.group-error').text()).toContain('读取失败')
+    expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(true)
+    await wrapper.get('.group-error button').trigger('click'); await flushPromises()
+    expect(wrapper.find('.group-error').exists()).toBe(false)
+    expect(wrapper.get('.drawing-group').text()).toContain('项目')
+    wrapper.unmount()
+  })
+
+  it('右键菜单支持创建分组并把文件移入分组', async () => {
+    vi.mocked(createDrawingGroup).mockResolvedValue({ id: 'g1', name: '项目' })
+    vi.mocked(moveDrawing).mockResolvedValue(undefined)
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.file-row').trigger('contextmenu')
+    await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="新建分组"]') as HTMLButtonElement).click()
+    await flushPromises()
+    const input = document.querySelector('.name-dialog input') as HTMLInputElement
+    input.value = '项目'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    ;(document.querySelector('.name-dialog') as HTMLFormElement).dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(createDrawingGroup).toHaveBeenCalledWith('项目')
+    await wrapper.get('.file-row').trigger('contextmenu'); await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="移至 项目"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(moveDrawing).toHaveBeenCalledWith('dr1', 'g1')
+    expect(wrapper.findAll('.drawing-group')[0]!.text()).toContain('测试草图')
+    wrapper.unmount()
+  })
+
+  it('复制已保存草图并保留分组', async () => {
+    vi.mocked(fetchDrawingGroups).mockResolvedValueOnce({ groups: [{ id: 'g1', name: '项目' }], assignments: [{ fileId: 'dr1', groupId: 'g1' }] }).mockResolvedValueOnce({ groups: [{ id: 'g1', name: '项目' }], assignments: [{ fileId: 'dr1', groupId: 'g1' }, { fileId: 'copy1', groupId: 'g1' }] })
+    vi.mocked(copyDrawing).mockResolvedValue(drawing({ id: 'copy1', title: '测试草图 副本' }))
+    vi.mocked(fetchDrawing).mockImplementation(async id => drawing({ id, title: id === 'copy1' ? '测试草图 副本' : '测试草图' }))
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.file-row').trigger('contextmenu'); await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="复制当前文件"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(copyDrawing).toHaveBeenCalledWith('dr1')
+    expect(wrapper.get('.title-trigger').text()).toContain('副本')
+    expect(wrapper.findAll('.drawing-group')[0]!.text()).toContain('测试草图 副本')
+    wrapper.unmount()
+  })
+
+  it('导出当前画布的源文件包含尚未保存的内容', async () => {
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    const scene = '{"type":"excalidraw","elements":[{"id":"local"}],"appState":{}}'
+    wrapper.findComponent(DrawingCanvas).vm.$emit('change', scene)
+    await wrapper.get('.file-row').trigger('contextmenu'); await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="导出源文件"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(create).toHaveBeenCalledOnce()
+    const exported = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(create.mock.calls[0]![0] as Blob)
+    })
+    expect(exported).toBe(scene)
+    expect(click).toHaveBeenCalledOnce()
+    expect(saveDrawing).not.toHaveBeenCalled()
+    wrapper.unmount(); create.mockRestore(); revoke.mockRestore(); click.mockRestore()
+  })
+
+  it('保存失败时不复制草图并保留当前内容', async () => {
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    const canvas = wrapper.findComponent(DrawingCanvas)
+    canvas.vm.$emit('change', '{"type":"excalidraw","elements":[{"id":"x"}],"appState":{}}')
+    vi.mocked(saveDrawing).mockRejectedValueOnce(new Error('保存失败'))
+    await wrapper.get('.file-row').trigger('contextmenu'); await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="复制当前文件"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(copyDrawing).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('保存失败')
+    wrapper.unmount()
   })
 
   it('打开未修改草图不触发保存并展示最近三个版本', async () => {
