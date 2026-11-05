@@ -31,7 +31,7 @@ describe('知识库工作区', () => {
   it('创建失败保留输入，关闭不产生知识库', async () => {
     const { wrapper, data } = await setup()
     const add = vi.spyOn(data, 'addKb').mockRejectedValue(new Error('offline'))
-    await wrapper.findAll('button').find(b=>b.text().includes('新增知识库'))!.trigger('click')
+    await wrapper.get('[aria-label="新增知识库"]').trigger('click')
     await wrapper.get('input[required]').setValue('测试知识库')
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('输入已保留')

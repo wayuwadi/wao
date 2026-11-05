@@ -26,6 +26,22 @@ export function directoryParents(kb: KnowledgeBase): Record<string, string> {
   return parents
 }
 
+/** 默认展开通向分组的路径，分组内的文档由用户按需展开。 */
+export function groupLevelExpansion(kb: KnowledgeBase): Record<string, boolean> {
+  const parents = directoryParents(kb)
+  const state: Record<string, boolean> = Object.fromEntries(Object.keys(parents).map(key => [key, false]))
+  for (const key of Object.keys(parents).filter(key => key.startsWith('f:'))) {
+    let parent = parents[key]
+    const visited = new Set<string>()
+    while (parent && !visited.has(parent)) {
+      visited.add(parent)
+      state[parent] = true
+      parent = parents[parent]
+    }
+  }
+  return state
+}
+
 /** 扁平化只用于渲染，完整父子关系始终保留；搜索显示命中节点及祖先路径。 */
 export function directoryRows(kb: KnowledgeBase, titleOf: (id: string) => string, open: Record<string, boolean>, query: string, compareDocs?: (leftId: string, rightId: string) => number): DirectoryNode[] {
   const parents = directoryParents(kb)

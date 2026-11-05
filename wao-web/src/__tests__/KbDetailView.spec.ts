@@ -294,21 +294,20 @@ describe('知识库详情目录体验', () => {
     expect(titles('.home-document-name')).toEqual([data.docs.d7!.title, data.docs.d8!.title])
   })
 
-  it('首次进入全部展开，一键收起展开不改变文档，重新进入恢复展开', async () => {
-    const wrapper = await mountView('/kb/k3?doc=d7')
+  it('首次进入展示分组、首页展示全部文档，并可按需展开', async () => {
+    const wrapper = await mountView('/kb/k3')
     expect(wrapper.findAll('.folder-row')).toHaveLength(2)
-    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
-    await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
     expect(wrapper.findAll('.tree .doc-node')).toHaveLength(0)
-    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBe('d7')
+    expect(wrapper.findAll('.home-document-name')).toHaveLength(2)
     await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
     expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
     await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(0)
     useTabsStore(pinia).activeKey = 'notes'
     await wrapper.vm.$nextTick()
     useTabsStore(pinia).activeKey = 'kb:k3'
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(0)
     wrapper.unmount()
   })
 
@@ -372,7 +371,7 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3?doc=d8')
     const folders = wrapper.findAll('.folder-row')
 
-    expect(folders[0]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
+    expect(folders[0]!.get('.chev').classes()).toContain('ri-arrow-right-s-line')
     expect(folders[1]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
     expect(wrapper.get('.doc-node.on').text()).toContain('阅读笔记：卡片盒笔记法')
     wrapper.unmount()
@@ -433,6 +432,7 @@ describe('知识库详情目录体验', () => {
 
   it('切换文档后同步地址，刷新仍打开所选文档', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
+    await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
     const target = wrapper.findAll('.doc-node').find((node) => node.text().includes('阅读笔记：卡片盒笔记法'))!
     await target.trigger('click')
     await flushPromises()

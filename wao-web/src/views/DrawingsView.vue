@@ -55,6 +55,9 @@ type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
 const session = useSessionStore()
 const owner = session.userId
+const lastDrawingKey = `wao:last-drawing:${owner}`
+function readLastDrawing() { try { return localStorage.getItem(lastDrawingKey) || '' } catch { return '' } }
+function rememberDrawing(id: string) { try { if (id) localStorage.setItem(lastDrawingKey, id); else localStorage.removeItem(lastDrawingKey) } catch { /* 本机偏好不可用时仍可使用草图。 */ } }
 const search = ref('')
 const listError = ref('')
 const versionsError = ref('')
@@ -146,8 +149,10 @@ async function loadList() {
     if (!sameOwner()) return
     files.value = loaded.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
+    const remembered = readLastDrawing()
     if (requested) await openFile(requested)
-    else syncState.value = 'saved'
+    else if (remembered && files.value.some(file => file.id === remembered)) await openFile(remembered)
+    else { if (remembered) rememberDrawing(''); syncState.value = 'saved' }
   } catch (cause) {
     error.value = message(cause, '草图文件列表读取失败')
     listError.value = error.value
@@ -197,6 +202,7 @@ async function openFile(id: string) {
     if (token !== loadToken || !sameOwner()) return
 
     current.value = remote
+    if (!props.embedded) rememberDrawing(id)
     titleDraft.value = remote.title
     sceneJson.value = draft?.sceneJson ?? remote.sceneJson
     dirty.value = !!draft && draft.sceneJson !== remote.sceneJson
@@ -533,6 +539,7 @@ async function removeFile(file: DrawingFileSummary) {
     if (!sameOwner()) return
     await clearDraft(file.id)
     files.value = files.value.filter((item) => item.id !== file.id)
+    if (!props.embedded && readLastDrawing() === file.id) rememberDrawing('')
     if (activeId.value === file.id) {
       activeId.value = ''
       current.value = null

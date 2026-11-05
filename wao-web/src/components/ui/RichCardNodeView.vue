@@ -156,7 +156,7 @@ function openDrawing() { if (props.editor.isEditable) editing.value = true }
       <div><b>{{ label }}</b><small>{{ attrs.size || attrs.mime || href }}</small></div>
       <template v-if="kind === 'fileCard' && attrs.id && props.editor.isEditable">
         <button type="button" @click="openPreview">预览</button>
-        <a :href="`/api/files/${encodeURIComponent(attrs.id)}/download`" download>下载</a>
+        <a :href="`/api/files/${encodeURIComponent(attrs.id)}/download`" download @click.stop>下载</a>
       </template>
       <a v-else :href="href" target="_blank" rel="noopener noreferrer">{{ props.editor.isEditable ? '打开' : '确认下载' }}</a>
     </div>

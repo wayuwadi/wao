@@ -9,7 +9,7 @@ import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { apiMoveKnowledgeNode, fetchDoc as fetchMovedDoc } from '@/api/board'
-import { directoryParents, directoryRows } from '@/utils/knowledgeDirectory'
+import { directoryParents, directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 /**
  * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
@@ -238,9 +238,11 @@ const backlinks = computed(() =>
 const toc = computed(() => doc.value ? richHeadings(doc.value.content).filter((item) => item.level <= 3) : [])
 const activeToc = ref(0)
 
+const folderStates = computed(() => ({ ...(kb.value && !kb.value.notes ? groupLevelExpansion(kb.value) : {}), ...folderOpen }))
 function isOpen(fid: string) {
-  return folderOpen[fid] !== false
+  return folderStates.value[fid] !== false
 }
+function toggleFolder(fid: string) { folderOpen[fid] = !isOpen(fid) }
 const allFoldersOpen = computed(() => !!kb.value?.folders.length && Object.keys(directoryParents(kb.value)).every(key => isOpen(key)))
 function resetFolderExpansion() {
   for (const id of Object.keys(folderOpen)) delete folderOpen[id]
@@ -249,13 +251,21 @@ function toggleAllFolders() {
   const expand = !allFoldersOpen.value
   for (const key of Object.keys(kb.value ? directoryParents(kb.value) : {})) folderOpen[key] = expand
 }
-// 工作区会保留页签实例，重新进入该知识库时仍恢复全部展开。
-watch([() => tabs.activeKey, kbId], ([active, current], [previousActive, previousKb]) => {
-  if (current !== previousKb || (active === `kb:${current}` && active !== previousActive)) resetFolderExpansion()
-})
+// 切换知识库时使用该库的分组级默认值；同一页面保留用户的展开选择。
+watch(kbId, resetFolderExpansion, { flush: 'sync' })
 watch(
-  [docId, () => kb.value?.folders.find(folder => folder.docs.includes(docId.value ?? ''))?.id],
-  ([, folderId]) => { if (folderId) folderOpen[`f:${folderId}`] = true },
+  [docId, kb],
+  ([id, library]) => {
+    if (!id || !library) return
+    const parents = directoryParents(library)
+    let ancestor = parents[`d:${id}`]
+    const visited = new Set<string>()
+    while (ancestor && !visited.has(ancestor)) {
+      visited.add(ancestor)
+      folderOpen[ancestor] = true
+      ancestor = parents[ancestor]
+    }
+  },
   { immediate: true },
 )
 
@@ -673,7 +683,7 @@ const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderOpen, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderStates.value, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
 const draggingNode = ref<string | null>(null)
 const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
 const directoryError = ref('')
@@ -1154,11 +1164,11 @@ async function saveKbSettings() {
         <div v-for="node in mixedRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
           :style="{ '--node-depth': node.depth }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
           @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
-          <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="folderOpen[node.key] !== false" @click="folderOpen[node.key] = folderOpen[node.key] === false"><i class="chev" :class="folderOpen[node.key] === false ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+          <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
-          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
+          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? isOpen(node.key) : undefined" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>

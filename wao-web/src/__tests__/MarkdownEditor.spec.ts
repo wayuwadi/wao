@@ -2590,6 +2590,13 @@ describe('拖入文档附件', () => {
     const get = vi.spyOn(http, 'get').mockRejectedValueOnce(new Error('denied')).mockResolvedValueOnce({ data: { text: async () => '预览内容' } })
     const w = await mountEditor({ modelValue: '', document: richDocument, advanced: true })
     expect(w.get('.fileCard a[download]').attributes('href')).toBe('/api/files/f1/download')
+    const link = w.get('.fileCard a[download]').element
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.addEventListener('click', event => event.preventDefault(), { once: true })
+    const outer = vi.fn()
+    w.get('.md-body').element.addEventListener('click', outer, { once: true })
+    link.dispatchEvent(click)
+    expect(outer).not.toHaveBeenCalled()
     await w.get('.fileCard button').trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('预览加载失败')
