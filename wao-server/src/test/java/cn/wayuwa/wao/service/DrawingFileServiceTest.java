@@ -65,6 +65,25 @@ class DrawingFileServiceTest {
     }
 
     @Test
+    void createRequestAcceptsLegacyAndGroupJson() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        assertThat(json.readValue("{\"title\":\"旧格式\"}", CreateDrawingFileRequest.class).groupId()).isNull();
+        assertThat(json.readValue("{\"title\":\"新格式\",\"groupId\":\"g1\"}", CreateDrawingFileRequest.class).groupId()).isEqualTo("g1");
+    }
+
+    @Test
+    void createInGroupChecksOwnerBeforeCreatingAndAssignsAtomically() {
+        var groups = mock(cn.wayuwa.wao.mapper.DrawingGroupMapper.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "groups", groups);
+        when(groups.owned("private", OWNER)).thenReturn(0);
+        assertThatThrownBy(() -> service.create(new CreateDrawingFileRequest("草图", "private"), OWNER)).isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).insert(any(DrawingFileEntity.class));
+        when(groups.owned("g1", OWNER)).thenReturn(1);
+        var created = service.create(new CreateDrawingFileRequest("草图", "g1"), OWNER);
+        verify(groups).assign(OWNER, created.id(), "g1");
+    }
+
+    @Test
     void listAndGetAlwaysCarryOwnerScope() {
         DrawingFileEntity file = file("dr1", OWNER, 3);
         when(mapper.listOwned(OWNER)).thenReturn(List.of(file));

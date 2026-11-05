@@ -12,8 +12,10 @@ class DrawingGroupMapperIntegrationTest {
     @Autowired DrawingGroupMapper groups;
     @Autowired JdbcTemplate jdbc;
     @BeforeEach void tables() {
+        jdbc.execute("DROP TABLE IF EXISTS drawing_directory_order");
         jdbc.execute("DROP TABLE IF EXISTS drawing_group_assignment");
         jdbc.execute("DROP TABLE IF EXISTS drawing_group");
+        jdbc.execute("CREATE TABLE drawing_directory_order(member_id VARCHAR(32) PRIMARY KEY, revision BIGINT NOT NULL, order_json TEXT NOT NULL)");
         jdbc.execute("CREATE TABLE drawing_group(id VARCHAR(32) PRIMARY KEY, member_id VARCHAR(32), name VARCHAR(128), created_at TIMESTAMP)");
         jdbc.execute("CREATE TABLE drawing_group_assignment(member_id VARCHAR(32), file_id VARCHAR(32), group_id VARCHAR(32), PRIMARY KEY(member_id,file_id))");
     }
@@ -28,4 +30,13 @@ class DrawingGroupMapperIntegrationTest {
         groups.unassign("m1", "dr1");
         assertThat(groups.assignments("m1")).isEmpty();
     }
+    @Test void orderUsesMemberScopedCompareAndSwap() {
+        groups.ensureDirectoryOrder("m1");
+        assertThat(groups.directoryOrder("m1").revision()).isZero();
+        assertThat(groups.saveDirectoryOrder("m1", "[\"f:d1\"]", 0)).isEqualTo(1);
+        assertThat(groups.saveDirectoryOrder("m1", "[]", 0)).isZero();
+        assertThat(groups.directoryOrder("m1").revision()).isEqualTo(1);
+        assertThat(groups.directoryOrder("m2")).isNull();
+    }
+
 }

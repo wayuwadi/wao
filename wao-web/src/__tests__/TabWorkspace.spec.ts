@@ -50,6 +50,7 @@ async function setup() {
         children: [
           { path: '', component: Page, meta: { module: 'home', tabKind: 'module' } },
           { path: 'kb/:id', name: 'kb', component: Page, meta: { tabKind: 'kb' } },
+          { path: 'drawings', component: Page, meta: { module: 'drawings', tabKind: 'module' } },
           { path: 'projects/:id', name: 'project', component: Page, meta: { tabKind: 'project' } },
         ],
       },
@@ -83,6 +84,17 @@ describe('悬浮页面工作区', () => {
     await router.push('/')
     tabs.close('kb:one')
     await flushPromises()
+    expect(document.body.contains(original)).toBe(false)
+  })
+  it('草图切换其他页签时保留实例，关闭草图页签才释放', async () => {
+    const { router, tabs } = await setup()
+    await router.push('/drawings'); await flushPromises()
+    const original = wrapper.get('article input').element
+    await router.push('/'); await flushPromises()
+    expect(document.body.contains(original)).toBe(true)
+    await router.push('/drawings'); await flushPromises()
+    expect(wrapper.findAll('article input').some(item => item.element === original)).toBe(true)
+    await router.push('/'); tabs.close('drawings'); await flushPromises()
     expect(document.body.contains(original)).toBe(false)
   })
   it('悬浮页保留本页离开确认，同时不阻止底层页面导航', async () => {

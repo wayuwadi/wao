@@ -29,8 +29,8 @@ export const fetchDrawings = () =>
 export const fetchDrawing = (id: string) =>
   data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`))
 
-export const createDrawing = (title?: string) =>
-  data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title }))
+export const createDrawing = (title?: string, groupId?: string) =>
+  data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId }))
 
 export const saveDrawing = (id: string, sceneJson: string, revision: number) =>
   data(http.put<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { sceneJson, revision }))
@@ -52,9 +52,11 @@ export const deleteDrawing = (id: string) =>
   data(http.delete<ApiResponse<null>>(`/api/drawings/${id}`))
 
 export interface DrawingGroup { id: string; name: string }
-export interface DrawingGroupIndex { groups: DrawingGroup[]; assignments: { fileId: string; groupId: string }[] }
+export interface DrawingGroupIndex { groups: DrawingGroup[]; assignments: { fileId: string; groupId: string }[]; order?: string[]; revision?: number }
 export const fetchDrawingGroups = () => data(http.get<ApiResponse<DrawingGroupIndex>>('/api/drawings/groups'))
 export const createDrawingGroup = (name: string) => data(http.post<ApiResponse<DrawingGroup>>('/api/drawings/groups', { name }))
 export const renameDrawingGroup = (id: string, name: string) => data(http.patch<ApiResponse<void>>(`/api/drawings/groups/${encodeURIComponent(id)}`, { name }))
 export const moveDrawing = (id: string, groupId: string | null) => data(http.put<ApiResponse<void>>(`/api/drawings/${encodeURIComponent(id)}/group`, { groupId }))
 export const copyDrawing = (id: string) => data(http.post<ApiResponse<DrawingFile>>(`/api/drawings/${encodeURIComponent(id)}/copy`))
+
+export const saveDrawingOrder = (order: string[], revision: number) => data(http.put<ApiResponse<number>>('/api/drawings/order', { order, revision }))

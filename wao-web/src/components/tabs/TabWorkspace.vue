@@ -38,7 +38,7 @@ watch(
   () => {
     if (!windows.keys.includes(active.value) || !pages.has(active.value))
       pages.set(active.value, snapshot(route))
-    if (active.value.startsWith('kb:')) retained.add(active.value)
+    if (active.value.startsWith('kb:') || active.value === 'drawings') retained.add(active.value)
     for (const key of pages.keys()) {
       if (key !== active.value && !retained.has(key) && !windows.keys.includes(key))
         pages.delete(key)

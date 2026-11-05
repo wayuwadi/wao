@@ -31,4 +31,21 @@ class DrawingGroupControllerTest {
         assertThatThrownBy(() -> controller.move("hidden", new DrawingFileController.MoveRequest("g1"), request)).isInstanceOf(NotFoundException.class);
         verify(groups, never()).assign("m1", "hidden", "g1");
     }
+    @Test void orderRequiresVisibleItemsAndRejectsStaleRevision() {
+        var files = mock(DrawingFileService.class);
+        var current = mock(CurrentMember.class);
+        var groups = mock(DrawingGroupMapper.class);
+        var request = mock(HttpServletRequest.class);
+        when(current.idOr(request, "wg")).thenReturn("m1");
+        when(groups.groups("m1")).thenReturn(java.util.List.of(new DrawingGroupMapper.Group("g1", "工作")));
+        when(files.list("m1")).thenReturn(java.util.List.of(new cn.wayuwa.wao.dto.DrawingFileSummaryDto("d1", "草图", 1, java.time.LocalDateTime.now(), java.time.LocalDateTime.now())));
+        var controller = new DrawingFileController(files, current);
+        ReflectionTestUtils.setField(controller, "groups", groups);
+        assertThatThrownBy(() -> controller.saveOrder(new DrawingFileController.OrderRequest(java.util.List.of("f:other"), 0), request)).isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class);
+        when(groups.saveDirectoryOrder(eq("m1"), anyString(), eq(0L))).thenReturn(1);
+        assertThat(controller.saveOrder(new DrawingFileController.OrderRequest(java.util.List.of("g:g1", "f:d1"), 0), request).data()).isEqualTo(1L);
+        when(groups.saveDirectoryOrder(eq("m1"), anyString(), eq(0L))).thenReturn(0);
+        assertThatThrownBy(() -> controller.saveOrder(new DrawingFileController.OrderRequest(java.util.List.of("f:d1"), 0), request)).isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+    }
+
 }

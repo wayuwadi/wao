@@ -38,7 +38,7 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 画板复用 `/api/drawings` 的场景、版本和乐观锁。草图接口额外返回 `kbId/docId`，知识库和草图打开同一个 drawingId。个人草图按创建者隔离，关联画板沿用知识库所有者或成员可编辑权限。草图页可编辑关联画板并通过 PATCH /api/drawings/{id} 改名，同一事务更新知识库文档标题与修订和草图元数据，不改动文档正文或画布内容。归档和回收站仍由知识库管理；草图顶部提供返回知识库入口。归档从草图列表隐藏但可经知识库打开，回收站中不可读；恢复后重新出现，文档最终清理通过外键同步清理画板与版本。
 
-草图分组按当前成员隔离：`GET /api/drawings/groups` 返回分组和文件归属，`POST /api/drawings/groups` 新建，`PATCH /api/drawings/groups/{id}` 重命名，`PUT /api/drawings/{id}/group` 移动或传空值移回未分组。文件和目标分组分别校验当前成员权限。`POST /api/drawings/{id}/copy` 原子复制可访问的已保存画布到当前成员的个人草图，保留当前成员的分组，副本不关联原知识库文档。
+草图分组按当前成员隔离：`GET /api/drawings/groups` 返回分组和文件归属，`POST /api/drawings/groups` 新建，`PATCH /api/drawings/groups/{id}` 重命名，`PUT /api/drawings/{id}/group` 移动或传空值移回未分组。文件和目标分组分别校验当前成员权限。`POST /api/drawings/{id}/copy` 原子复制可访问的已保存画布到当前成员的个人草图，保留当前成员的分组，副本不关联原知识库文档。 `POST /api/drawings` 可选传 `groupId`，在同一事务校验成员分组并创建归属。分组列表返回 `order` 和 `revision`；`PUT /api/drawings/order` 使用 `order`（`g:` 分组、`f:` 草图键）及 `revision` 比较版本后保存手动排序，过期返回冲突，文件与分组均校验可访问范围。
 
 页面入口复用 ResourceMenu 和 ContextActionMenu，位于目录加号、目录行右键及目录空白处右键。小记不显示表格和画板创建选项。
 

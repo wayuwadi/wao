@@ -7,6 +7,13 @@ import org.apache.ibatis.annotations.*;
 public interface DrawingGroupMapper {
     record Group(String id, String name) {}
     record Assignment(String fileId, String groupId) {}
+    record DirectoryOrder(String orderJson, long revision) {}
+    @Select("SELECT order_json, revision FROM drawing_directory_order WHERE member_id=#{member}")
+    DirectoryOrder directoryOrder(@Param("member") String member);
+    @Insert("INSERT INTO drawing_directory_order(member_id,revision,order_json) VALUES(#{member},0,'[]') ON DUPLICATE KEY UPDATE member_id=member_id")
+    int ensureDirectoryOrder(@Param("member") String member);
+    @Update("UPDATE drawing_directory_order SET order_json=#{orderJson}, revision=revision+1 WHERE member_id=#{member} AND revision=#{revision}")
+    int saveDirectoryOrder(@Param("member") String member, @Param("orderJson") String orderJson, @Param("revision") long revision);
     @Select("SELECT id, name FROM drawing_group WHERE member_id=#{member} ORDER BY created_at, id")
     List<Group> groups(@Param("member") String member);
     @Select("SELECT file_id, group_id FROM drawing_group_assignment WHERE member_id=#{member}")

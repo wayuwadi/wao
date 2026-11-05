@@ -17,7 +17,7 @@ vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a
 vi.mock('@/api/drawings', () => ({
   createDrawing: vi.fn(),
   fetchDrawingGroups: vi.fn().mockResolvedValue({ groups: [], assignments: [] }),
-  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(),
+  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(), saveDrawingOrder: vi.fn(),
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
