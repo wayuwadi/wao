@@ -71,6 +71,8 @@ import { notePreviewSource } from '@/utils/notePreviewImages'
 import ArticleImageAction from './ArticleImageAction.vue'
 import SelectionImageAction from './SelectionImageAction.vue'
 import ImageCopyMenu from './ImageCopyMenu.vue'
+import SettingsDialogShell from './SettingsDialogShell.vue'
+import WaoButton from './WaoButton.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { copyText } from '@/utils/clipboard'
@@ -1773,8 +1775,18 @@ const replaceText = ref('')
 const findStatus = ref('')
 const drawingsOpen = ref(false)
 const drawingsLoading = ref(false)
+const drawingsBusy = ref(false)
+const drawingCreating = ref(false)
 const drawingsError = ref('')
+const drawingActionError = ref('')
+const drawingSearch = ref('')
 const drawings = ref<DrawingFileSummary[]>([])
+const visibleDrawings = computed(() => {
+  const query = drawingSearch.value.trim().toLocaleLowerCase()
+  return query
+    ? drawings.value.filter(item => item.title.toLocaleLowerCase().includes(query))
+    : drawings.value.slice(0, 5)
+})
 interface PendingUpload { id: string; file: File; state: 'uploading' | 'failed' }
 const pendingUploads = ref<PendingUpload[]>([])
 const COLOR_OPTIONS = ['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0']
@@ -1849,6 +1861,12 @@ function insertLinkCard() {
 
 function openDrawings() {
   drawingsOpen.value = true
+  drawingSearch.value = ''
+  drawingActionError.value = ''
+  loadDrawings()
+}
+
+function loadDrawings() {
   drawingsError.value = ''
   drawingsLoading.value = true
   void fetchDrawings()
@@ -1878,27 +1896,41 @@ async function createDrawingSnapshot(item: DrawingFileSummary): Promise<string> 
   }
 }
 
-async function insertDrawing(item: DrawingFileSummary) {
-  drawingsLoading.value = true
+async function insertDrawingContent(item: DrawingFileSummary) {
   const snapshot = await createDrawingSnapshot(item)
   insertBlock({
     type: 'drawingCard',
     attrs: { id: item.id, title: item.title, snapshot, url: `/drawings?drawing=${encodeURIComponent(item.id)}` },
   })
-  drawingsLoading.value = false
   drawingsOpen.value = false
 }
 
+async function insertDrawing(item: DrawingFileSummary) {
+  if (drawingsBusy.value) return
+  drawingsBusy.value = true
+  drawingActionError.value = ''
+  try {
+    await insertDrawingContent(item)
+  } catch {
+    drawingActionError.value = '插入画板失败，请重试'
+  } finally {
+    drawingsBusy.value = false
+  }
+}
+
 async function createAndInsertDrawing() {
-  drawingsLoading.value = true
-  drawingsError.value = ''
+  if (drawingsBusy.value) return
+  drawingsBusy.value = true
+  drawingCreating.value = true
+  drawingActionError.value = ''
   try {
     const item = await createDrawing('文档画板')
-    await insertDrawing(item)
+    await insertDrawingContent(item)
   } catch {
-    drawingsError.value = '新建画板失败，请重试'
+    drawingActionError.value = '新建画板失败，请重试'
   } finally {
-    drawingsLoading.value = false
+    drawingCreating.value = false
+    drawingsBusy.value = false
   }
 }
 
@@ -2763,15 +2795,31 @@ onBeforeUnmount(() => {
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>
     </Teleport>
-    <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
-      <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
-        <header><div><small>个人画板</small><h2>引用 Excalidraw 草图</h2></div><button type="button" aria-label="关闭" @click="drawingsOpen = false"><i class="ri-close-line"></i></button></header>
-        <div v-if="drawingsLoading" class="drawing-state">正在加载…</div>
-        <div v-else-if="drawingsError" class="drawing-state error">{{ drawingsError }} <button type="button" @click="openDrawings">重试</button></div>
-        <div v-else class="drawing-list"><button v-for="item in drawings" :key="item.id" type="button" @click="insertDrawing(item)"><i class="ri-shape-line"></i><span><b>{{ item.title }}</b><small>修订 {{ item.revision }}</small></span></button><p v-if="!drawings.length">还没有画板，可以直接新建一个。</p></div>
-        <footer><button type="button" class="link-save" @click="createAndInsertDrawing"><i class="ri-add-line"></i>新建并插入</button></footer>
-      </section>
-    </div>
+    <SettingsDialogShell v-if="drawingsOpen" title="插入画板" width="500px" height="auto" icon="ri-shape-line" :close-disabled="drawingsBusy" @close="drawingsOpen = false">
+      <div class="drawing-picker">
+        <div class="drawing-search">
+          <i class="ri-search-line" aria-hidden="true"></i>
+          <input v-model="drawingSearch" type="search" aria-label="搜索画板" placeholder="搜索画板" :disabled="drawingsLoading || drawingsBusy" />
+        </div>
+        <div v-if="drawingsLoading" class="drawing-state" role="status">正在加载…</div>
+        <div v-else-if="drawingsError" class="drawing-state error" role="alert">{{ drawingsError }} <button type="button" @click="loadDrawings">重试</button></div>
+        <template v-else>
+          <div class="drawing-list-heading">{{ drawingSearch.trim() ? '搜索结果' : '最近编辑' }}</div>
+          <div v-if="visibleDrawings.length" class="drawing-list">
+            <button v-for="item in visibleDrawings" :key="item.id" type="button" :title="item.title" :disabled="drawingsBusy" @click="insertDrawing(item)">
+              <i class="ri-shape-line" aria-hidden="true"></i><span>{{ item.title }}</span>
+            </button>
+          </div>
+          <p v-else class="drawing-state">{{ drawingSearch.trim() ? '没有匹配的画板' : '还没有画板，可以直接新建一个。' }}</p>
+        </template>
+      </div>
+      <template #footer>
+        <div class="drawing-actions">
+          <span v-if="drawingActionError" class="drawing-action-error" role="alert">{{ drawingActionError }}</span>
+          <WaoButton variant="primary" :loading="drawingCreating" :disabled="drawingsLoading || drawingsBusy" @click="createAndInsertDrawing"><i v-if="!drawingCreating" class="ri-add-line" aria-hidden="true"></i>新建并插入</WaoButton>
+        </div>
+      </template>
+    </SettingsDialogShell>
     <div v-if="helpOpen" class="link-dialog-mask" @click.self="helpOpen = false">
       <section class="link-dialog shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-dialog-title">
         <header><div><small>文档快捷键</small><h2 id="shortcut-dialog-title">更快地编辑内容</h2></div><button type="button" aria-label="关闭快捷键帮助" @click="helpOpen = false"><i class="ri-close-line"></i></button></header>
@@ -3143,11 +3191,22 @@ onBeforeUnmount(() => {
 .slash-menu b { font-size: 12px; }.slash-menu small,.slash-empty { color: var(--wao-text-weak); font-size: 10.5px; }.slash-empty { padding: 16px; text-align: center; }
 .upload-queue { margin:8px 0; display:grid; gap:6px; }.upload-queue > div { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--wao-line); border-radius:8px; background:var(--wao-bg-sub); }.upload-queue > div.failed { border-color:color-mix(in srgb,var(--wao-danger-strong) 35%,var(--wao-line)); }.upload-queue span { min-width:0; flex:1; display:flex; flex-direction:column; }.upload-queue b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }.upload-queue small { color:var(--wao-text-weak); font-size:10px; }.upload-queue button { border:0; background:transparent; color:var(--wao-primary-text); font-size:11px; cursor:pointer; }
 .block-drag-handle { z-index: 9; display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-weak); box-shadow: 0 4px 12px rgba(20,23,35,.1); cursor: grab; }
-.drawing-dialog { max-height: min(600px, calc(100vh - 40px)); overflow: auto; }
-.drawing-state { padding: 28px; text-align: center; color: var(--wao-text-weak); }.drawing-state.error { color: var(--wao-danger-strong); }
-.drawing-list { margin-top: 12px; display: grid; gap: 6px; }
-.drawing-list > button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
-.drawing-list > button:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }.drawing-list > button > i { font-size: 20px; }.drawing-list span { display:flex; flex-direction:column; }.drawing-list small { color:var(--wao-text-weak); }
+.drawing-picker { padding: var(--wao-space-2); }
+.drawing-search { display: flex; align-items: center; gap: var(--wao-space-1); padding: 0 var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); color: var(--wao-text-3); }
+.drawing-search:focus-within { border-color: var(--wao-primary); }
+.drawing-search input { flex: 1; min-width: 0; min-height: 38px; border: 0; outline: 0; background: transparent; color: var(--wao-text); font: inherit; }
+.drawing-list-heading { margin: var(--wao-space-2) 0 var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.drawing-state { margin: 0; padding: var(--wao-space-3) var(--wao-space-1); text-align: center; color: var(--wao-text-3); }
+.drawing-state.error, .drawing-action-error { color: var(--wao-danger-strong); }
+.drawing-list { display: grid; gap: 2px; }
+.drawing-list > button { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 34px; padding: 4px var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text); font: inherit; text-align: left; cursor: pointer; }
+.drawing-list > button:hover, .drawing-list > button:focus-visible { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.drawing-list > button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.drawing-list > button:disabled { opacity: .6; cursor: wait; }
+.drawing-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wao-space-1); }
+.drawing-action-error { flex: 1; font-size: var(--wao-font-help); }
+@media (pointer: coarse) { .drawing-list > button, .drawing-search input { min-height: 44px; } }
 .shortcut-dialog { max-width: 620px; }
 .shortcut-grid { margin-top: 16px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .shortcut-grid span { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 11px; border:1px solid var(--wao-line); border-radius:9px; background:var(--wao-bg-sub); }
