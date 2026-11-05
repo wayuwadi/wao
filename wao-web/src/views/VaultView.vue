@@ -260,24 +260,9 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 <template>
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <div class="vault wao-page-frame">
-    <div class="vtop">
-      <div class="vtitle">密码库</div>
-      <button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups">
-        <i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}
-      </button>
-      <div class="spacer"></div>
-      <input v-model="query" class="vault-search f-input" type="search" aria-label="搜索密码条目" placeholder="搜索名称、账号或网址" />
-      <button class="btn-primary" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
-    </div>
-
-    <div v-if="data.vaultError" class="banner error">
-      <i class="ri-error-warning-line"></i>
-      <span>{{ data.vault.length ? '密码库读取失败，以下为上次读取结果。请重试获取最新内容。' : '密码库读取失败，请检查连接后重试。' }}</span>
-      <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
-    </div>
-
-    <div class="cols">
-      <div class="group-col" :class="{ managing: managingGroups }">
+    <div class="vault-workspace">
+    <div class="group-col" :class="{ managing: managingGroups }">
+        <div class="vault-heading"><div class="vtitle">密码库</div><button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups"><i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}</button></div>
         <div class="col-label">分组</div>
         <template v-for="g in groups" :key="g.id">
           <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
@@ -307,6 +292,21 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
         </template>
         <button class="group-add" @click="newGroupOpen = true"><i class="ri-add-line"></i>新建分组</button>
       </div>
+
+    <div class="vault-main">
+    <div class="vtop">
+      <div class="spacer"></div>
+      <input v-model="query" class="vault-search f-input" type="search" aria-label="搜索密码条目" placeholder="搜索名称、账号或网址" />
+      <button class="btn-primary" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
+    </div>
+
+    <div v-if="data.vaultError" class="banner error">
+      <i class="ri-error-warning-line"></i>
+      <span>{{ data.vault.length ? '密码库读取失败，以下为上次读取结果。请重试获取最新内容。' : '密码库读取失败，请检查连接后重试。' }}</span>
+      <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
+    </div>
+
+    <div class="cols">
 
       <div class="item-col">
         <button v-for="it in visibleItems" :key="it.id" class="item-btn" :class="{ on: sel?.id === it.id }" @click="selId = it.id">
@@ -368,6 +368,8 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
       </div>
     </div>
 
+    </div>
+    </div>
     <!-- 新建 / 编辑条目弹层 -->
     <template v-if="itemOpen">
       <div class="modal-mask" @click="closeItem()"></div>
@@ -420,6 +422,9 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 </template>
 
 <style scoped>
+.vault-workspace { display:flex; flex:1; min-height:0; min-width:0; }
+.vault-main { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
+.vault-heading { display:flex; align-items:center; justify-content:space-between; min-height:52px; gap:var(--wao-space-1); padding:0 var(--wao-space-1); }
 .vault { height: 100%; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; }
 .vtop, .banner { flex-shrink: 0; }
 .vault .cols { flex: 1; min-height: 0; }
@@ -440,6 +445,8 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   flex: 1;
 }
 .vtop {
+  min-height: 52px;
+  padding: 0 var(--wao-space-2);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -522,16 +529,16 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 
 .cols {
-  margin-top: 12px;
+  margin-top: 0;
   display: flex;
   background: var(--wao-bg-card);
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
+  border-top: 1px solid var(--wao-line);
+  border-radius: 0;
   overflow: hidden;
   min-height: 420px;
 }
 .group-col {
-  width: 158px;
+  width: 208px;
   flex-shrink: 0;
   border-right: 1px solid var(--wao-divider);
   background: var(--wao-bg-sub);
@@ -967,6 +974,9 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
 
   /* 三栏并排在手机上放不下：分组变成横向胶囊，条目占满整宽，详情走盖屏页 */
+  .vault-workspace { flex-direction:column; }
+  .vault-heading { min-height:44px; }
+  .vtop { padding:var(--wao-space-1); }
   .cols { flex-direction: column; min-height: 0; }
   .group-col {
     width: auto;

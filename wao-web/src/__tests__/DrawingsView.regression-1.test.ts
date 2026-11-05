@@ -121,7 +121,7 @@ describe('草图保存与文件管理回归', () => {
     const w = await open()
     change(w, scene('keep'))
     await w.vm.$nextTick()
-    await w.findAll('.file-row')[0]!.get('button[title="删除"]').trigger('click')
+    await w.get('.drawing-meta [title="删除"]').trigger('click')
     await flushPromises()
     expect(w.find('.save-button').exists()).toBe(true)
     const event = new Event('beforeunload', { cancelable: true })

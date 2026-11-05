@@ -10,7 +10,7 @@ import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
-import { directoryRows } from '@/utils/knowledgeDirectory'
+import { directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
 const data = useDataStore(), route = useRoute(), router = useRouter()
 const memory = useTaskViewMemory('knowledge-workspace', () => ({ collapsed: false }))
 const selected = computed(() => String(route.params.id || route.query.kb || ''))
@@ -38,11 +38,10 @@ async function create() {
 <template>
   <div class="knowledge-workspace">
     <aside class="libraries" :class="{ collapsed: memory.collapsed }" aria-label="知识库清单">
-      <header><strong v-if="!memory.collapsed">知识库</strong><button class="pane-toggle" :aria-label="memory.collapsed ? '展开知识库清单' : '收起知识库清单'" :aria-expanded="!memory.collapsed" @click="memory.collapsed = !memory.collapsed"><i class="ri-side-bar-line" /></button></header>
+      <header><strong v-if="!memory.collapsed">知识库</strong><button v-if="!memory.collapsed" class="library-add" type="button" aria-label="新增知识库" title="新增知识库" @click="startCreate"><i class="ri-add-line" /></button><button class="pane-toggle" :aria-label="memory.collapsed ? '展开知识库清单' : '收起知识库清单'" :aria-expanded="!memory.collapsed" @click="memory.collapsed = !memory.collapsed"><i class="ri-side-bar-line" /></button></header>
       <div v-show="!memory.collapsed" class="library-list">
         <button :class="{ active: !selected }" @click="open()"><i class="ri-home-4-line" />全部内容</button>
         <button v-for="kb in libraries" :key="kb.id" :title="kb.name" :class="{ active: selected === kb.id }" @click="open(kb.id)"><i :class="kb.icon" /><span>{{ kb.name }}</span></button>
-        <WaoButton variant="ghost" @click="startCreate"><i class="ri-add-line" />新增知识库</WaoButton>
       </div>
     </aside>
     <aside v-if="!selected" class="home-directory" :class="{ collapsed: directoryMemory.collapsed }" :style="{ width: directoryMemory.collapsed ? '44px' : `${directoryWidth}px` }">
@@ -52,7 +51,7 @@ async function create() {
         <strong>全部目录</strong>
         <section v-for="kb in libraries" :key="kb.id">
           <button class="library-title" @click="open(kb.id)">{{ kb.name }}</button>
-          <button v-for="node in directoryRows(kb, id => data.docById(id)?.title || '未命名文档', folderOpen, '')" :key="node.key" class="tree-node" :style="{ paddingInlineStart: `${node.depth * 16}px` }" @click="node.kind === 'doc' ? open(kb.id, node.id) : folderOpen[node.key] = folderOpen[node.key] === false"><i :class="node.kind === 'doc' ? 'ri-file-text-line' : 'ri-folder-line'" /><span>{{ node.title }}</span></button>
+          <button v-for="node in directoryRows(kb, id => data.docById(id)?.title || '未命名文档', { ...groupLevelExpansion(kb), ...folderOpen }, '')" :key="node.key" class="tree-node" :style="{ paddingInlineStart: `${node.depth * 16}px` }" @click="node.kind === 'doc' ? open(kb.id, node.id) : folderOpen[node.key] = !(folderOpen[node.key] ?? groupLevelExpansion(kb)[node.key] ?? true)"><i :class="node.kind === 'doc' ? 'ri-file-text-line' : 'ri-folder-line'" /><span>{{ node.title }}</span></button>
         </section>
       </div>
     </aside>
@@ -86,7 +85,10 @@ async function create() {
 .knowledge-workspace { position:relative; display:flex; height:calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h)); min-width:0; overflow:hidden; color:var(--wao-text); background:var(--wao-bg-card); }
 .libraries { flex:0 0 208px; width:208px; border-right:1px solid var(--wao-line); background:var(--wao-bg-sub); overflow:auto; }
 .libraries.collapsed { flex-basis:44px; width:44px; }
-.libraries header { display:flex; align-items:center; justify-content:space-between; padding:var(--wao-space-1); min-height:52px; }
+.libraries header { display:flex; align-items:center; padding:var(--wao-space-1); min-height:52px; }
+.libraries header strong { flex:1; }
+.library-add { min-width:44px; min-height:44px; border:0; background:transparent; color:var(--wao-text-3); }
+.library-add:hover,.library-add:focus-visible { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
 .libraries.collapsed header { padding:0; }
 button { color:inherit; font:inherit; cursor:pointer; }
 .pane-toggle { border:0; background:transparent; min-width:44px; min-height:44px; }
