@@ -69,8 +69,12 @@
 }
 
 /* Split workspaces define their own directory and toolbar frame. */
-.shell[data-page-layout] .page-body .wao-page-frame:is(.kb-detail, .drawings-page),
-.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame:is(.kb-detail, .drawings-page) {
+.shell[data-page-layout] .page-body .wao-page-frame:is(.kb-detail, .drawings-page, .settings),
+.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame:is(.kb-detail, .drawings-page, .settings) {
   max-width: none;
   padding: 0;
 }
+
+/* Password workspace keeps its content padding while aligning its left edge with navigation. */
+.shell[data-page-layout] .page-body .wao-page-frame.vault,
+.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame.vault { max-width: none; padding-inline-start: 0; }
