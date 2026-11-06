@@ -26,6 +26,7 @@ import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import TaskContextMenu from './TaskContextMenu.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import TaskDocuments from '@/components/task/TaskDocuments.vue'
+import TaskComments from '@/components/task/TaskComments.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
 import { deadlineInfo, shiftDay } from '@/utils/taskDeadline'
 import { todayIso } from '@/utils/time'
@@ -60,7 +61,7 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; keepScopeOnChildAdd?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
 const data = useDataStore()
 const pins=useTaskPinsStore()
@@ -414,7 +415,10 @@ async function changeGroup(groupId: string) {
   if (!selected.value || inheritedGroup.value) return
   propertyMenu.value = null
   if (!taskGroups.value.some(group => group.id === groupId)) return
-  await actions.save(selected.value.id, () => data.moveTaskToGroup(source.value.taskId, groupId))
+  // Keep the selected detail visible even if moving it changes the current filter.
+  detailOnlySelection.value = true
+  try { await actions.save(selected.value.id, () => data.moveTaskToGroup(source.value.taskId, groupId)) }
+  catch { toast('分组未保存，请重试', 'ri-error-warning-line') }
 }
 const description = computed({
   get: () => source.value.subId ? data.subById(source.value.taskId, source.value.subId)?.desc ?? '' : data.taskById(source.value.taskId)?.desc ?? '',
@@ -501,16 +505,25 @@ const childDraft = ref('')
 const childDraftError = ref('')
 const childInput = ref<HTMLInputElement | null>(null)
 const childDraftKey = computed(() => `wao-inline-sub:${useSessionStore().userId}:${source.value.taskId}${source.value.subId ? `:${source.value.subId}` : ''}`)
-watch([selectedId, () => useSessionStore().userId], () => {
-  addingChild.value = false
+const canAddChild = computed(() => !!selected.value && selected.value.workItemType !== 'note' && selected.value.status !== '已放弃')
+const childBlocked = computed(() => !!props.busy || data.movingTask || data.movingSubtasks)
+watch([selectedId, () => useSessionStore().userId, canAddChild], () => {
+  addingChild.value = canAddChild.value
   childDraft.value = ''
   childDraftError.value = ''
   contextMenu.value?.close()
-}, { flush: 'sync' })
+  if (addingChild.value) {
+    try { childDraft.value = localStorage.getItem(childDraftKey.value) || '' }
+    catch { childDraftError.value = '本机草稿无法读取，请保持页面打开' }
+  }
+}, { flush: 'sync', immediate: true })
+watch(saveState, state => {
+  if (state === 'saved' && childDraftError.value.startsWith('子任务已保留')) childDraftError.value = ''
+})
 async function startChild(id: string) {
-  if (props.busy || actions.busy(id) || !props.contextItems.some(t => t.id === id)) return
+  if (childBlocked.value || !props.contextItems.some(t => t.id === id)) return
   const member = useSessionStore().userId
-  await selectChild(id)
+  if (selectedId.value !== id) await selectChild(id)
   if (member !== useSessionStore().userId || selectedId.value !== id) return
   addingChild.value = true
   childDraftError.value = ''
@@ -531,7 +544,7 @@ function storeChildDraft(event: Event) {
 async function addChild() {
   const parentId = selectedId.value
   const member = useSessionStore().userId
-  if (!addingChild.value || !childDraft.value.trim() || props.busy || actions.busy(parentId)) return
+  if (!addingChild.value || !canAddChild.value || !childDraft.value.trim() || childBlocked.value) return
   const { taskId, subId } = source.value
   const id = data.addSub(taskId, childDraft.value, subId)
   if (!id) { childDraftError.value = '未能添加子任务，请稍后重试'; return }
@@ -539,11 +552,22 @@ async function addChild() {
   try { localStorage.removeItem(childDraftKey.value) }
   catch { childDraftError.value = '子任务已添加，本机输入草稿未能清除' }
   if (props.collapsed.includes(parentId)) emit('toggle', parentId)
-  emit('reveal', subItemKey(taskId, id))
-  try { await data.flushTask(taskId) }
+  if (!props.keepScopeOnChildAdd) emit('reveal', subItemKey(taskId, id))
+  try {
+    await data.flushTask(taskId)
+    if (member === useSessionStore().userId && selectedId.value === parentId && data.taskSaveState(taskId) === 'error') {
+      childDraftError.value = '子任务已保留在任务草稿中，保存失败，请重试保存。'
+    }
+  }
   catch { toast('子任务尚未保存，已保留草稿，请查看保存问题', 'ri-error-warning-line') }
   await nextTick()
   if (member === useSessionStore().userId && selectedId.value === parentId && addingChild.value) childInput.value?.focus()
+}
+function childKey(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (!event.isComposing) void addChild()
+  }
 }
 function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (event instanceof KeyboardEvent) {
@@ -557,7 +581,7 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   detailOnlySelection.value = !displayedRows.value.some(row => row.task.id === id)
   selectedId.value = id
   void contextMenu.value?.openAt(event, task, [
-    ...(!popupDetail.value ? [{ id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:props.busy || actions.busy(id), run:()=>startChild(id) }] : []),
+    ...(!popupDetail.value ? [{ id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:childBlocked.value, run:()=>startChild(id) }] : []),
     { id:'delete', label:actions.isSub(id)?'删除子任务':'删除任务', icon:'ri-delete-bin-line', danger:true, separatorBefore:true,
       disabled:deleting.value || props.busy || actions.busy(id), run:()=>requestDelete(id,task.title||'未命名任务') },
   ])
@@ -629,7 +653,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     <div v-if="!popupDetail" class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
     <WaoCard v-if="!popupDetail" :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" padding="roomy" aria-label="任务详情卡片">
       <template v-if="selected">
-        <div class="detail-caption"><span v-if="selected.workItemType==='note'"><i class="ri-sticky-note-line" /> 笔记</span><span v-else-if="selected.status==='已放弃'">已放弃</span><label v-else class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="!hideGroups && taskGroups.length" ref="groupAnchor" class="property-anchor">
+        <div class="detail-caption"><span v-if="selected.workItemType==='note'"><i class="ri-sticky-note-line" /> 笔记</span><span v-else-if="selected.status==='已放弃'">已放弃</span><label v-else class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
             <CellMenu v-if="propertyMenu === 'group'" :anchor="groupAnchor" @close="propertyMenu = null"><button v-for="group in taskGroups" :key="group.id" role="menuitemradio" :aria-checked="group.id === selectedGroup" @click="changeGroup(group.id)">{{ group.name }}<i v-if="group.id === selectedGroup" class="ri-check-line"></i></button></CellMenu>
           </span>
@@ -653,13 +677,14 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>
           </div>
         </section>
-        <form v-if="addingChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
-          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="输入子任务，回车添加" :disabled="busy || actions.busy(selected.id)" @input="storeChildDraft" />
-          <WaoButton type="submit" variant="primary" :disabled="!childDraft.trim() || busy || actions.busy(selected.id)">添加</WaoButton>
+        <form v-if="addingChild && canAddChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
+          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="添加子任务，回车创建" :disabled="childBlocked" @input="storeChildDraft" @keydown="childKey" />
+          <WaoButton type="submit" variant="primary" :disabled="!childDraft.trim() || childBlocked">添加</WaoButton>
           <WaoButton type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
           <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
+          <WaoButton v-if="saveState === 'error'" type="button" variant="ghost" @click="data.flushTask(source.taskId)">重试保存任务</WaoButton>
         </form>
-        <WaoButton v-else-if="selected.workItemType!=='note' && selected.status!=='已放弃'" class="add-child-button" variant="ghost" :disabled="busy || actions.busy(selected.id)" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
+        <WaoButton v-else-if="canAddChild" class="add-child-button" variant="ghost" :disabled="childBlocked" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
         <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
         <div class="detail-secondary-actions">
         <div v-if="outline.length" class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
@@ -673,6 +698,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
         </div>
         <TaskDocuments :key="`${useSessionStore().userId}:${selected.id}`" :task-id="source.taskId" :sub-id="source.subId" :title="taskTitle" :description="description" />
+        <TaskComments :key="`${useSessionStore().account?.accountId ?? ''}:${useSessionStore().userId}:${source.taskId}:${source.subId ?? ''}`" :task-id="source.taskId" :sub-id="source.subId" />
         <div class="save-status" aria-live="polite">
           <span v-if="deadlineDefaults.result.value" role="status">{{ deadlineDefaults.result.value }}</span>
           <WaoButton v-for="failure in deadlineDefaults.failures.value" :key="failure.id" variant="ghost" @click="actions.open(failure.id)">{{ failure.title }}：{{ failure.error }} · 查看保存问题</WaoButton>

@@ -293,13 +293,10 @@ describe('项目清单详情', () => {
     const { data, wrapper } = setup()
     const add = vi.spyOn(data, 'addSub')
     vi.spyOn(data, 'flushTask').mockRejectedValue(new Error('离线'))
-    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
     await wrapper.get('[aria-label="子任务名称"]').setValue('未完成输入')
     await wrapper.findAll('.task-select')[1]!.trigger('click')
-    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
     expect((wrapper.get('[aria-label="子任务名称"]').element as HTMLInputElement).value).toBe('')
     await wrapper.findAll('.task-select')[0]!.trigger('click')
-    await wrapper.get('.add-child-button').trigger('click'); await flushPromises()
     expect((wrapper.get('[aria-label="子任务名称"]').element as HTMLInputElement).value).toBe('未完成输入')
     await wrapper.get('[aria-label="子任务名称"]').setValue('  ')
     await wrapper.get('.child-composer').trigger('submit')
@@ -309,6 +306,38 @@ describe('项目清单详情', () => {
     await wrapper.get('.child-composer').trigger('submit'); await flushPromises()
     expect(add).toHaveBeenCalledTimes(1)
     expect(data.tasks[0]!.subs.some(sub => sub.text === '保留的子任务')).toBe(true)
+  })
+
+  it('详情直接输入并连续回车创建子任务，输入法确认不会提交', async () => {
+    const { data, wrapper } = setup()
+    const releases: Array<() => void> = []
+    vi.spyOn(data, 'flushTask').mockImplementation(() => new Promise<void>(resolve => { releases.push(resolve) }))
+    const add = vi.spyOn(data, 'addSub')
+    const input = wrapper.get('[aria-label="子任务名称"]')
+    await input.setValue('第一项')
+    await input.trigger('keydown', { key:'Enter', isComposing:true })
+    expect(add).not.toHaveBeenCalled()
+    await input.trigger('keydown', { key:'Enter' })
+    await input.setValue('第二项')
+    await input.trigger('keydown', { key:'Enter' })
+    expect(add).toHaveBeenCalledTimes(2)
+    expect(data.tasks[0]!.subs.map(sub => sub.text)).toEqual(expect.arrayContaining(['第一项', '第二项']))
+    releases.forEach(release => release())
+  })
+  it('恢复已选任务时，即使任务稍后加载也直接显示子任务输入', async () => {
+    const data = useDataStore()
+    data.tasks = [{ ...data.tasks[0]!, id:'late-parent', title:'稍后加载', subs:[] }]
+    data.taskLoadState = 'loading'
+    sessionStorage.setItem('wao-task-view-v1:::late-test', JSON.stringify({selectedId:'late-parent'}))
+    const wrapper = mount(ProjectChecklistView, {
+      props:{ stateKey:'late-test', items:[], contextItems:[], itemRefs:{}, showDone:false, collapsed:[], query:'' },
+      global:{ stubs:{ RouterLink:true, TaskDocuments:true, MarkdownEditor:true } },
+    })
+    const projection = projectWorkItems(data.tasks)
+    data.taskLoadState = 'loaded'
+    await wrapper.setProps({ items:projection.items, contextItems:projection.items, itemRefs:projection.refs })
+    expect(wrapper.get('[aria-label="任务标题"]').element).toHaveProperty('value','稍后加载')
+    expect(wrapper.find('[aria-label="子任务名称"]').exists()).toBe(true)
   })
 
   it('真实清单编辑器支持斜线、标题层级及随编辑更新的目录跳转', async () => {
@@ -477,6 +506,18 @@ describe('项目清单详情', () => {
     await wrapper.get('[aria-label="任务状态"]').trigger('click')
     expect(wrapper.findAll('[role=menuitemradio]')).toHaveLength(3)
   })
+  it('待办侧栏也能切换任务所属分组，子任务显示继承关系', async () => {
+    const { data, wrapper } = setup()
+    data.projectById(data.tasks[0]!.project)!.taskGroups = [{ id:'g1', name:'工作' }, { id:'g2', name:'生活' }]
+    const move = vi.spyOn(data, 'moveTaskToGroup')
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    await wrapper.setProps({ hideGroups:true })
+    await wrapper.get('[aria-label="任务分组"]').trigger('click')
+    await wrapper.findAll('[role=menuitemradio]').find(button => button.text() === '生活')!.trigger('click')
+    expect(move).toHaveBeenCalledWith('parent', 'g2')
+    await wrapper.findAll('.task-select')[1]!.trigger('click')
+    expect(wrapper.get('[aria-label="任务分组"]').attributes('disabled')).toBeDefined()
+  })
   it('点击子任务只切换右侧卡片，Markdown 写入真实子事项而非父正文', async () => {
     const { data, wrapper } = setup()
     const update = vi.spyOn(data, 'updateSub').mockImplementation(() => undefined)
@@ -490,7 +531,7 @@ describe('项目清单详情', () => {
     expect(update).toHaveBeenCalledWith('parent', 'child', { desc: '## 子任务记录' })
     expect(patch).not.toHaveBeenCalled()
     await wrapper.findAll('.task-select')[0]!.trigger('click')
-    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="评论内容"]').exists()).toBe(true)
   })
   it('查找子任务保留父级，折叠和筛选移除当前选择后不会展示旧详情', async () => {
     const { wrapper } = setup()

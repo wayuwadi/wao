@@ -645,6 +645,39 @@ class TaskServiceTest {
         verify(notifier).notifyComment(any(TaskDto.class), eq(comment), eq("娃哥"), eq("p1"), eq(List.of()));
     }
 
+    @Test
+    void commentUsesLatestLockedTaskAndDoesNotRewriteOtherColumns() throws Exception {
+        TaskEntity stale = todo();
+        TaskEntity current = withComment();
+        current.setTitle("另一窗口的新标题");
+        when(mapper.selectById("t1")).thenReturn(stale);
+        org.mockito.Mockito.doReturn(current).when(mapper).lockById("t1");
+        when(members.list()).thenReturn(List.of());
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在"));
+
+        service.addComment("t1", "wg", "新评论");
+
+        var comments = new ObjectMapper().readTree(current.getDetailJson()).path("comments");
+        assertThat(comments.size()).isEqualTo(2);
+        assertThat(comments.get(0).path("text").asText()).isEqualTo("原始内容");
+        assertThat(comments.get(1).path("text").asText()).isEqualTo("新评论");
+        assertThat(current.getTitle()).isEqualTo("另一窗口的新标题");
+        verify(mapper).updateDetail(eq("t1"), anyString());
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+    }
+
+    @Test
+    void commentWritesRecheckOwnershipOnLockedTask() {
+        TaskEntity stale = todo(); stale.setProjectId(""); stale.setOwnerId("wg");
+        TaskEntity reassigned = withComment(); reassigned.setProjectId(""); reassigned.setOwnerId("wd");
+        when(mapper.selectById("t1")).thenReturn(stale);
+        org.mockito.Mockito.doReturn(reassigned).when(mapper).lockById("t1");
+        assertThatThrownBy(() -> service.addComment("t1", "wg", "新评论")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.updateComment("t1", "c1", "wg", "修改")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.deleteComment("t1", "c1", "wg")).isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).updateDetail(anyString(), anyString());
+    }
+
     /**
      * 活动时间线记的是真实时刻和真实操作人。
      *

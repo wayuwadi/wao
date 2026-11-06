@@ -558,19 +558,24 @@ public class TaskService {
     }
 
     /** 原子追加一条评论并同步飞书群，避免全文自动保存请求相互覆盖评论。 */
+    @org.springframework.transaction.annotation.Transactional
     public CommentDto addComment(String id, String memberId, String text) {
-        TaskEntity entity = requireVisible(id, memberId);
+        TaskEntity entity = lockVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
-        CommentDto comment = new CommentDto("c" + System.currentTimeMillis(), memberId,
+        CommentDto comment = new CommentDto("c" + java.util.UUID.randomUUID().toString().replace("-", ""), memberId,
                 OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         comments.add(comment);
         saveComments(entity, detail, comments, "添加了评论", memberId);
-        TaskDto task = toDto(entity);
-        String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
-        String projectName;
-        try { projectName = projects.get(task.project()).name(); } catch (NotFoundException ex) { projectName = task.project(); }
-        commentNotifier.notifyComment(task, comment, memberName, projectName, mentionOpenIds(comment.text(), memberId));
+        try {
+            TaskDto task = toDto(entity);
+            String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
+            String projectName;
+            try { projectName = projects.get(task.project()).name(); } catch (NotFoundException ex) { projectName = task.project(); }
+            commentNotifier.notifyComment(task, comment, memberName, projectName, mentionOpenIds(comment.text(), memberId));
+        } catch (RuntimeException ex) {
+            LOG.warn("评论通知生成失败：{}", ex.getClass().getSimpleName());
+        }
         return comment;
     }
 
@@ -598,11 +603,12 @@ public class TaskService {
      * @throws NotFoundException   任务或评论不存在时
      * @throws BadRequestException 改的不是自己的评论、或正文为空时
      */
+    @org.springframework.transaction.annotation.Transactional
     public CommentDto updateComment(String id, String commentId, String memberId, String text) {
         if (!StringUtils.hasText(text)) {
             throw new BadRequestException("评论内容不能为空");
         }
-        TaskEntity entity = requireVisible(id, memberId);
+        TaskEntity entity = lockVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         int index = indexOfComment(comments, commentId);
@@ -623,8 +629,9 @@ public class TaskService {
      * @throws NotFoundException   任务或评论不存在时
      * @throws BadRequestException 删的不是自己的评论时
      */
+    @org.springframework.transaction.annotation.Transactional
     public void deleteComment(String id, String commentId, String memberId) {
-        TaskEntity entity = requireVisible(id, memberId);
+        TaskEntity entity = lockVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         int index = indexOfComment(comments, commentId);
@@ -696,7 +703,7 @@ public class TaskService {
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
                 detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
                 detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages(), detail.workItemType(), detail.schedulePeriod())));
-        taskMapper.updateById(entity);
+        taskMapper.updateDetail(entity.getId(), entity.getDetailJson());
     }
 
     private static String blankOr(String value, String fallback) {
@@ -748,6 +755,13 @@ public class TaskService {
         if (!visibleTo(entity, memberId)) {
             throw new NotFoundException("任务不存在：" + id);
         }
+        return entity;
+    }
+
+    /** 评论写入与全文保存共享行锁，授权按锁定后的任务归属复核。 */
+    private TaskEntity lockVisible(String id, String memberId) {
+        TaskEntity entity = taskMapper.lockById(id);
+        if (entity == null || !visibleTo(entity, memberId)) throw new NotFoundException("任务不存在：" + id);
         return entity;
     }
 

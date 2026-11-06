@@ -4,6 +4,7 @@ export interface TaskExportContext {
   origin: string
   projectName: (id: string) => string
   memberName: (id: string) => string
+  sourcePath?: (task: Task) => string
 }
 
 /** 仅生成文本，不渲染描述、不访问关联资源，也不改变任务或分享权限。 */
@@ -20,6 +21,7 @@ export function exportTasksMarkdown(tasks: readonly Task[], context: TaskExportC
     step.id ? `  子任务 ID：${step.id}` : '',
     step.desc ? step.desc.split('\n').map((line) => `  ${line}`).join('\n') : '',
     images(step.images).split('\n').filter(Boolean).map((line) => `  ${line}`).join('\n'),
+    (step.comments ?? []).map(comment => `  评论 · ${context.memberName(comment.who)} · ${comment.time}：${comment.text.replace(/\r?\n/g, '\n  ')}`).join('\n'),
   ].filter(Boolean).join('\n')).join('\n\n')
   const section = (name: string, body: string) => body ? `### ${name}\n\n${body}` : ''
   const bodies = unique.map((task, index) => {
@@ -36,7 +38,7 @@ export function exportTasksMarkdown(tasks: readonly Task[], context: TaskExportC
     return [
       `## ${index + 1}. ${task.title}`,
       metadata.filter(([, value]) => value).map(([key, value]) => `- ${key}：${value}`).join('\n'),
-      `- 来源：${link('任务原文', `/api/share/tasks/${encodeURIComponent(task.id)}.md`)}`,
+      `- 来源：${link('任务原文', context.sourcePath?.(task) ?? `/api/share/tasks/${encodeURIComponent(task.id)}.md`)}`,
       section('描述', task.desc), section('图片', images(task.images)),
       section('步骤', steps(task.steps)), section('子任务', steps(task.subs)),
       section('自定义属性', task.custom.map((item) => `- ${item.name}：${item.value}`).join('\n')),
