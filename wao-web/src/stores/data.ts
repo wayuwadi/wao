@@ -2322,10 +2322,14 @@ export const useDataStore = defineStore('data', () => {
     source?: string,
     options?: { requirePersisted?: boolean; projectId?: string },
   ): Promise<ImageRef | null> {
+    const uploadSession = useSessionStore()
+    const member = uploadSession.userId, account = uploadSession.account?.accountId
+    const sameSession = () => member === uploadSession.userId && account === uploadSession.account?.accountId
     if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) return null
     if (apiLive.value) {
       try {
         const item = await apiUploadImage(file, source, options?.projectId)
+        if (!sameSession()) return null
         imgs.value.unshift(item)
         return { name: item.name, url: item.url }
       } catch {
@@ -2333,14 +2337,14 @@ export const useDataStore = defineStore('data', () => {
         /* 普通离线演示态仍可回落成本地 data URL。 */
       }
     }
-    if (options?.requirePersisted) return null
+    if (options?.requirePersisted || !sameSession()) return null
     const url = await new Promise<string | null>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result))
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(file)
     })
-    if (!url) return null
+    if (!url || !sameSession()) return null
     const name = file.name || '粘贴的图片'
     // 回落的图也要进图床列表——「所有上传的图都能在文件与图床里看到」不该因为
     // 后端临时不可用就出现缺口，只是这一张不会持久化。
@@ -2355,20 +2359,21 @@ export const useDataStore = defineStore('data', () => {
   const MAX_FILE_BYTES = 200 * 1024 * 1024
   async function refreshFiles(): Promise<boolean> {
     const member = useSessionStore().userId
+    const account = useSessionStore().account?.accountId
     fileLoadState.value = 'loading'
     fileLoadError.value = ''
     loadStates.files = 'loading'
     delete loadErrors.files
     try {
       const loaded = await fetchFiles()
-      if (member !== useSessionStore().userId) return false
+      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return false
       files.value = loaded
       fileLoadState.value = 'loaded'
       loadStates.files = 'loaded'
       apiLive.value = true
       return true
     } catch (cause: unknown) {
-      if (member !== useSessionStore().userId) return false
+      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return false
       fileLoadState.value = 'error'
       fileLoadError.value = cause instanceof Error && cause.message
         ? cause.message
@@ -2445,17 +2450,24 @@ export const useDataStore = defineStore('data', () => {
 
   /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
   let imagesRequest: Promise<boolean> | null = null
+  let imagesRequestIdentity = ''
   async function refreshImages() {
-    if (imagesRequest) return imagesRequest
+    const session = useSessionStore()
+    const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+    const requestedBy = identity()
+    if (imagesRequest && imagesRequestIdentity === requestedBy) return imagesRequest
+    imagesRequestIdentity = requestedBy
     loadStates.images = 'loading'
     delete loadErrors.images
-    imagesRequest = fetchImages()
+    const operation = fetchImages()
       .then((list) => {
+        if (requestedBy !== identity()) return false
         imgs.value = list
         loadStates.images = 'loaded'
         return true
       })
       .catch((cause: unknown) => {
+        if (requestedBy !== identity()) return false
         loadStates.images = 'error'
         loadErrors.images = cause instanceof Error && cause.message
           ? cause.message
@@ -2463,9 +2475,10 @@ export const useDataStore = defineStore('data', () => {
         return false
       })
       .finally(() => {
-        imagesRequest = null
+        if (imagesRequest === operation) imagesRequest = null
       })
-    return imagesRequest
+    imagesRequest = operation
+    return operation
   }
 
   /**

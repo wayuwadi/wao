@@ -2,7 +2,12 @@
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useConfirmAction } from '@/composables/confirmAction'
 const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRefs, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
+import { useUploadStore, type UploadAttempt } from '@/stores/uploads'
+import { useBrowsingState, oneOf, validPage, validSearch } from '@/composables/browsingState'
+import { useBrowsingScroll } from '@/composables/browsingScroll'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
@@ -22,7 +27,24 @@ import { useClientPagination } from '@/composables/clientPagination'
 
 const data = useDataStore()
 const session = useSessionStore()
-const tab = ref<'files' | 'img' | 'pages'>('files')
+const route = useRoute()
+const validScroll = (value: unknown) => typeof value === 'number' && value >= 0 && Number.isFinite(value)
+const browse = useBrowsingState('files', {
+  tab: 'files' as 'files' | 'img' | 'pages', hostedPage: 1, imagePage: 1,
+  hostedPageSource: 'ALL' as HostedPageSourceFilter, scrollFiles: 0, scrollImages: 0, scrollPages: 0, lastTarget: '',
+}, { tab: oneOf('files', 'img', 'pages'), hostedPage: validPage, imagePage: validPage,
+  hostedPageSource: oneOf('ALL', 'MANUAL_UPLOAD', 'AI_RUN_REPORT'),
+  scrollFiles: validScroll, scrollImages: validScroll, scrollPages: validScroll, lastTarget: validSearch,
+})
+const { tab, hostedPage, hostedPageSource } = toRefs(browse)
+const filesRoot = ref<HTMLElement>()
+const scrollKey = computed(() => tab.value === 'files' ? 'scrollFiles' : tab.value === 'img' ? 'scrollImages' : 'scrollPages')
+const { stopRestoring } = useBrowsingScroll(filesRoot, computed({ get: () => browse[scrollKey.value], set: value => { browse[scrollKey.value] = value } }),
+  () => tab.value === 'files' ? data.fileLoadState === 'loaded' : tab.value === 'img' ? data.loadStates.images === 'loaded' : data.hostedPageLoadState === 'loaded',
+  () => `${session.account?.accountId}:${session.userId}:${tab.value}`)
+const uploads = useUploadStore()
+const { uploadAttempts, uploading, failedUploads, successfulUploads, checkingUploads, uploadCheckMessage } = storeToRefs(uploads)
+const { retryUpload, checkUploadList } = uploads
 const pageDialog = ref(false)
 const editingPage = ref<HostedPage | null>(null)
 const pageTitle = ref('')
@@ -46,9 +68,7 @@ const fileSettingsLoaded = ref(false)
 const fileSettingsError = ref(false)
 
 const HOSTED_PAGE_SIZE = 10
-const hostedPage = ref(1)
 type HostedPageSourceFilter = 'ALL' | 'MANUAL_UPLOAD' | 'AI_RUN_REPORT'
-const hostedPageSource = ref<HostedPageSourceFilter>('ALL')
 const hostedPageSourceFilters: Array<{ id: HostedPageSourceFilter; label: string }> = [
   { id: 'ALL', label: '全部类型' },
   { id: 'MANUAL_UPLOAD', label: '人工上传' },
@@ -75,121 +95,13 @@ const visibleHostedPages = computed(() =>
 /** 图床每页三排，避免一次展开数千张卡片阻塞页面。 */
 const IMG_PAGE = 15
 const { page: imagePage, pageCount: imagePageCount, visible: visibleImages } = useClientPagination(
-  computed(() => data.imgs), [() => session.userId], IMG_PAGE,
+  computed(() => data.imgs), [], IMG_PAGE, { page: toRefs(browse).imagePage, ready: () => data.loadStates.images === 'loaded' },
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
-const uploading = ref(0)
-type UploadAttempt = {
-  id: number
-  file: File
-  kind: 'img' | 'files'
-  state: 'waiting' | 'uploading' | 'success' | 'failed'
-  reason: string
-  retryable: boolean
-}
-const uploadAttempts = ref<UploadAttempt[]>([])
-let nextUploadId = 0
-let uploadGeneration = 0
-const failedUploads = computed(() => uploadAttempts.value.filter((item) => item.state === 'failed'))
-const checkingUploads = ref(false)
-const uploadCheckMessage = ref('')
-const successfulUploads = computed(
-  () => uploadAttempts.value.filter((item) => item.state === 'success').length,
-)
-watch(
-  () => session.userId,
-  () => {
-    uploadGeneration++
-    uploadAttempts.value = []
-    uploading.value = 0
-    checkingUploads.value = false
-    uploadCheckMessage.value = ''
-  },
-  { flush: 'sync' },
-)
-onBeforeUnmount(() => {
-  uploadGeneration++
-})
-
-async function runUpload(item: UploadAttempt, generation: number) {
-  if (generation !== uploadGeneration) return
-  item.state = 'uploading'
-  item.reason = ''
-  const limit = item.kind === 'img' ? fileSettings.value.imageMaxMb : fileSettings.value.fileMaxMb
-  if (fileSettingsLoaded.value && item.file.size > limit * 1024 * 1024) {
-    item.state = 'failed'
-    item.reason = `超过 ${limit}MB 上限，请压缩后重新选择文件。`
-    item.retryable = false
-    return
-  }
-  try {
-    const result =
-      item.kind === 'img'
-        ? await data.uploadImage(item.file, '图床', { requirePersisted: true })
-        : await data.uploadFile(item.file)
-    if (generation !== uploadGeneration) return
-    if (!result) throw new Error('未收到上传成功确认。请先核对列表；若未出现该文件，再重试。')
-    item.state = 'success'
-  } catch (cause) {
-    if (generation !== uploadGeneration) return
-    item.state = 'failed'
-    item.reason = cause instanceof Error ? cause.message : '未能确认上传结果，请核对列表后重试。'
-  }
-}
-
-async function uploadBatch(files: File[], kind: UploadAttempt['kind']) {
-  const generation = uploadGeneration
-  const batch = files.map((file) => ({
-    id: ++nextUploadId,
-    file,
-    kind,
-    state: 'waiting' as const,
-    reason: '',
-    retryable: true,
-  }))
-  uploadAttempts.value.push(...batch)
-  // 使用响应式条目，异步进度才能即时显示。
-  const entries = uploadAttempts.value.filter((item) => batch.some((entry) => entry.id === item.id))
-  uploading.value += entries.length
-  try {
-    for (const item of entries) {
-      if (generation !== uploadGeneration) break
-      await runUpload(item, generation)
-    }
-  } finally {
-    if (generation === uploadGeneration) uploading.value -= entries.length
-  }
-}
-
-async function retryUpload(item: UploadAttempt) {
-  if (uploading.value || !item.retryable || item.state !== 'failed') return
-  const generation = uploadGeneration
-  uploading.value++
-  try {
-    await runUpload(item, generation)
-  } finally {
-    if (generation === uploadGeneration) uploading.value--
-  }
-}
-
-async function checkUploadList() {
-  if (checkingUploads.value) return
-  const generation = uploadGeneration
-  checkingUploads.value = true
-  uploadCheckMessage.value = ''
-  try {
-    const results = await Promise.all([data.refreshFiles(), data.refreshImages()])
-    if (generation !== uploadGeneration) return
-    uploadCheckMessage.value = results.every(Boolean)
-      ? '列表已刷新，请在文件或图床中核对后再重试。'
-      : '部分列表读取失败，暂不能确认上传结果，请稍后重新核对。'
-  } catch {
-    if (generation === uploadGeneration) uploadCheckMessage.value = '列表读取失败，请重新核对。'
-  } finally {
-    if (generation === uploadGeneration) checkingUploads.value = false
-  }
+function uploadBatch(files: File[], kind: UploadAttempt['kind']) {
+  return uploads.enqueue(files, kind, fileSettingsLoaded.value ? (kind === 'img' ? fileSettings.value.imageMaxMb : fileSettings.value.fileMaxMb) : undefined)
 }
 
 const replacement = ref<ReplacementTarget | null>(null)
@@ -212,9 +124,9 @@ onMounted(() => {
 })
 
 watch(
-  () => [filteredHostedPages.value.length, hostedPageSource.value],
+  () => [filteredHostedPages.value.length, hostedPageSource.value, data.hostedPageLoadState],
   () => {
-    if (hostedPage.value > hostedPageCount.value) hostedPage.value = hostedPageCount.value
+    if (data.hostedPageLoadState === 'loaded' && hostedPage.value > hostedPageCount.value) hostedPage.value = hostedPageCount.value
   },
 )
 
@@ -440,11 +352,25 @@ function onFileSettingsSaved(settings: FileSettings) {
   fileSettingsLoaded.value = true
   fileSettingsError.value = false
 }
+watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, data.fileLoadState], async () => {
+  const id = typeof route?.query.file === 'string' ? route.query.file : ''
+  const target = `${id}:${route?.query.findRequest ?? ''}:${route?.query.uploads ?? ''}`
+  if (target === browse.lastTarget || (!id && !route?.query.uploads)) return
+  if (id && data.fileLoadState !== 'loaded') return
+  browse.lastTarget = target
+  if (id) tab.value = 'files'
+  await nextTick()
+  stopRestoring()
+  const element = id ? [...(filesRoot.value?.querySelectorAll<HTMLElement>('[data-file-id]') ?? [])].find(node => node.dataset.fileId === id)
+    : filesRoot.value?.querySelector<HTMLElement>('#upload-results')
+  element?.scrollIntoView?.({ block: 'center' })
+  element?.focus({ preventScroll: true })
+}, { immediate: true, flush: 'post' })
 </script>
 
 <template>
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
-  <div class="files wao-page-frame">
+  <div ref="filesRoot" class="files wao-page-frame">
     <div class="ftop">
       <div class="ftitle">资源库</div>
       <div class="seg">
@@ -514,7 +440,7 @@ function onFileSettingsSaved(settings: FileSettings) {
       <input ref="unifiedInput" type="file" multiple hidden @change="onUnifiedPick" />
     </div>
 
-    <section v-if="uploadAttempts.length" class="upload-results" aria-label="本次上传结果">
+    <section v-if="uploadAttempts.length" id="upload-results" class="upload-results" aria-label="本次上传结果">
       <div class="upload-result-header">
         <p role="status">
           已上传 {{ successfulUploads }} 项<span v-if="uploading"
@@ -524,13 +450,13 @@ function onFileSettingsSaved(settings: FileSettings) {
         <button type="button" :disabled="uploading > 0 || checkingUploads" @click="checkUploadList">
           {{ checkingUploads ? '正在核对…' : '刷新列表核对' }}
         </button>
-        <button type="button" :disabled="uploading > 0" @click="uploadAttempts = []">
+        <button type="button" :disabled="uploading > 0" @click="uploads.clear()">
           清除上传记录
         </button>
       </div>
       <p v-if="uploadCheckMessage" role="status">{{ uploadCheckMessage }}</p>
       <p v-if="failedUploads.length">
-        待重试文件仅保留在当前页面，刷新或离开后需重新选择。清除记录不会删除已上传文件。
+        切换页面后仍可继续上传和重试；刷新或关闭浏览器后需重新选择未完成文件。清除记录不会删除已上传文件。
       </p>
       <ul>
         <li v-for="item in uploadAttempts" :key="item.id">
@@ -584,8 +510,9 @@ function onFileSettingsSaved(settings: FileSettings) {
         <WaoEmptyState v-else-if="!data.files.length" title="还没有文件" description="把文件拖到这里，或直接选择要上传的文件。" icon="ri-folder-line">
           <template #actions><WaoButton variant="primary" :disabled="uploading > 0" @click="unifiedInput?.click()">选择文件</WaoButton></template>
         </WaoEmptyState>
+        <p v-if="route?.query.file && data.fileLoadState === 'loaded' && !data.files.some(file => file.id === route?.query.file)" role="status">该文件已不在当前可访问列表中，请重新搜索。</p>
         <div v-if="data.files.length" class="file-list">
-          <div v-for="(f, i) in data.files" :key="i" class="file-row">
+          <div v-for="(f, i) in data.files" :key="f.id || i" class="file-row" :data-file-id="f.id" :class="{ 'search-target': route?.query.file === f.id }" tabindex="-1">
             <div class="file-icon"><i :class="f.icon"></i></div>
             <div class="file-main">
               <FileDisplayNameEditor :file="f" />
@@ -901,6 +828,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 </template>
 
 <style scoped>
+.file-row.search-target { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .upload-results {
   margin: 16px 0;
   padding: 16px;

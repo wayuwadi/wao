@@ -374,7 +374,7 @@ describe('FilesView', () => {
     expect(results.text()).toContain('已上传 1 项')
     expect(results.text()).toContain('1 项需处理')
     expect(results.text()).toContain('未收到上传成功确认')
-    expect(results.text()).toContain('刷新或离开后需重新选择')
+    expect(results.text()).toContain('刷新或关闭浏览器后需重新选择')
     await results.get('[aria-label="重试上传 重试.txt"]').trigger('click')
     await flushPromises()
     expect(upload).toHaveBeenCalledTimes(3)
