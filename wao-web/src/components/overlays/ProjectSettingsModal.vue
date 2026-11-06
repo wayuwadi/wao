@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
+import ProjectSettingsPreview from '@/components/ui/ProjectSettingsPreview.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import { readProjectSettingsDraft, writeProjectSettingsDraft, type ProjectSettingsValues } from '@/utils/projectSettingsDraft'
@@ -8,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { fetchMembers, apiGetProject } from '@/api/board'
 import { useDataStore } from '@/stores/data'
+import { useSmartListVisibility } from '@/stores/smartListVisibility'
 import { toast } from '@/composables/toast'
 import {
   createAiPairCode,
@@ -27,6 +29,7 @@ const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
 
 const data = useDataStore()
+const visibility = useSmartListVisibility()
 const session = useSessionStore()
 const draftMember = session.userId
 const projectId = props.project.id
@@ -219,7 +222,7 @@ const aiSnapshot = () =>
 const aiOriginal = ref(''),
   aiLoaded = ref(!AI_RUN_ENABLED)
 async function requestClose() {
-  if (saving.value) return
+  if (saving.value || visibility.saving === projectId) return
   if (iconPicker.value?.open) { iconPicker.value.open = false; return }
   if (confirming.value) {
     confirming.value = false
@@ -350,8 +353,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 </script>
 
 <template>
-  <SettingsDialogShell title="清单设置" :description="project.name" width="760px" height="min(640px, calc(100dvh - 48px))" @close="requestClose">
+  <SettingsDialogShell title="清单设置" appearance="compact" width="760px" height="min(620px, calc(100dvh - 48px))" :close-disabled="saving || visibility.saving === projectId" @close="requestClose">
     <div class="project-settings-body" :inert="saving || undefined">
+      <div class="project-settings-main">
       <div v-if="saveError || draftWarning || draftRestored || draftConflict" class="settings-feedback">
         <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
         <p v-if="draftWarning" class="save-error" role="alert">{{ draftWarning }}</p>
@@ -383,6 +387,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
                 <input :id="field.id" v-model="name" class="title-input" :aria-invalid="field.invalid" :aria-describedby="field.describedBy" required @keydown.enter.prevent="requestClose" @input="nameError = ''" />
               </div>
             </WaoField>
+            <WaoField v-slot="field" label="在智能清单中显示" hint="仅影响我的所有、今天、明天和最近 7 天；此清单仍可单独打开。更改后自动保存。">
+              <select :id="field.id" aria-label="在智能清单中显示" :aria-describedby="field.describedBy"
+                :value="visibility.isVisible(projectId) ? 'show' : 'hide'"
+                :disabled="!visibility.loaded || visibility.loading || !!visibility.saving || visibility.conflict(projectId)"
+                @change="visibility.setVisible(projectId, ($event.target as HTMLSelectElement).value === 'show')">
+                <option value="show">显示所有任务</option><option value="hide">不显示</option>
+              </select>
+            </WaoField>
+            <div v-if="visibility.loading || visibility.saving === projectId || visibility.error || visibility.pending[projectId]" class="visibility-feedback" role="status">
+              <span v-if="visibility.loading">正在读取显示设置…</span>
+              <span v-else-if="visibility.saving === projectId">正在保存显示设置…</span>
+              <template v-else-if="visibility.conflict(projectId)">
+                <span>账号当前设置：{{ visibility.values[projectId] === '0' ? '不显示' : '显示所有任务' }}；本机选择：{{ visibility.isVisible(projectId) ? '显示所有任务' : '不显示' }}。其他设备或窗口可能有不同选择，请确认。</span>
+                <div><WaoButton @click="visibility.resolve(projectId, true)">保留我的选择</WaoButton><WaoButton variant="ghost" @click="visibility.resolve(projectId, false)">使用账号设置</WaoButton></div>
+              </template>
+              <template v-else><span>{{ visibility.error || '显示选择尚未同步。' }}</span><WaoButton variant="ghost" @click="visibility.retry(projectId)">重试</WaoButton></template>
+            </div>
             <div class="basic-fields">
               <WaoField v-slot="field" label="所属领域">
                 <select :id="field.id" v-model="area"><option v-if="!data.areaById(area)" :value="area">当前领域（已不可用）</option><option v-for="a in data.areas" :key="a.id" :value="a.id">{{ a.name }}</option></select>
@@ -587,18 +608,24 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
           </div>
         </template>
       </ProjectSettingsLayout>
+      </div>
+      <ProjectSettingsPreview :name="name" :icon="icon" :visible="visibility.isVisible(projectId)" />
     </div>
     <template #footer>
       <div class="foot">
-        <span class="save-status" role="status">{{ saving ? '正在保存…' : saveError ? '保存失败，修改已保留' : dirty ? '有待保存的修改 · 关闭时保存' : '没有待保存的修改' }}</span>
-        <WaoButton variant="primary" class="btn-primary" :loading="saving" :disabled="memberConflict || draftConflict" @click="requestClose">{{ saving ? '保存中…' : saveError ? '重试保存' : dirty ? '保存并关闭' : '完成' }}</WaoButton>
+        <span class="save-status" role="status">{{ saving ? '正在保存…' : visibility.saving === projectId ? '正在保存显示设置…' : saveError ? '保存失败，修改已保留' : visibility.pending[projectId] ? '显示设置尚未同步，请在基本信息中处理' : dirty ? '有待保存的修改 · 关闭时保存' : '没有待保存的修改' }}</span>
+        <WaoButton variant="primary" class="btn-primary" :loading="saving" :disabled="memberConflict || draftConflict || visibility.saving === projectId" @click="requestClose">{{ saving ? '保存中…' : saveError ? '重试保存' : dirty ? '保存并关闭' : '完成' }}</WaoButton>
       </div>
     </template>
   </SettingsDialogShell>
 </template>
 <style scoped>
-.basic-form { display: grid; gap: 22px; }
-.basic-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+.project-settings-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.project-settings-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.basic-form { display: grid; gap: var(--wao-space-2); }
+.basic-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--wao-space-2); }
+.visibility-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.visibility-feedback div { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); }
 .name-editor { display: flex; gap: 10px; min-width: 0; }
 .icon-picker { position: relative; flex: 0 0 44px; }
 .icon-picker summary { list-style: none; display: flex; align-items: center; justify-content: center; height: 44px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
@@ -611,7 +638,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissIcon))
 .due-editor { display: flex; align-items: center; gap: 4px; }
 .due-editor input { flex: 1; }
 .due-editor :deep(button) { padding: 8px; white-space: nowrap; }
-.goal { min-height: 112px; }
+.goal { min-height: 88px; }
 .settings-feedback { padding: 16px 26px 0; }
 .settings-feedback p { margin: 0 0 10px; overflow-wrap: anywhere; }
 .save-error { color: var(--wao-danger-strong); font-size: var(--wao-font-help); }

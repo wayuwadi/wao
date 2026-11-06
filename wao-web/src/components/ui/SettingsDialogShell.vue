@@ -11,8 +11,9 @@ const props = withDefaults(
     theme?: 'light' | 'dark'
     icon?: string
     closeDisabled?: boolean
+    appearance?: 'default' | 'compact'
   }>(),
-  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false, icon: 'ri-sparkling-2-line', closeDisabled: false },
+  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false, icon: 'ri-sparkling-2-line', closeDisabled: false, appearance: 'default' },
 )
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLElement>()
@@ -81,6 +82,7 @@ onBeforeUnmount(() => {
       <section
         ref="dialog"
         class="settings-dialog-shell"
+        :class="{ compact: appearance === 'compact' }"
         :style="{ '--settings-dialog-width': width, '--settings-dialog-height': height }"
         :role="embedded ? 'region' : 'dialog'"
         :aria-modal="embedded ? undefined : true"
@@ -89,7 +91,7 @@ onBeforeUnmount(() => {
         @keydown="trap"
       >
         <header class="dialog-heading">
-          <div class="title-icon"><i :class="icon" aria-hidden="true"></i></div>
+          <div v-if="appearance !== 'compact'" class="title-icon"><i :class="icon" aria-hidden="true"></i></div>
           <div>
             <h2>{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
@@ -186,6 +188,10 @@ p {
   font-size: 20px;
 }
 .dialog-close:disabled { opacity: 0.5; cursor: wait; }
+.compact .dialog-heading { padding: var(--wao-space-2) var(--wao-space-3); border-bottom: 0; }
+.compact .dialog-heading h2 { font-size: var(--wao-font-section); }
+.compact .dialog-close { background: transparent; }
+.compact .dialog-footer { padding: var(--wao-space-2) var(--wao-space-3); }
 @media (pointer: coarse) {
   .dialog-close { min-width: 44px; min-height: 44px; }
 }
@@ -229,6 +235,7 @@ button:focus-visible {
   .dialog-footer {
     padding: 12px 15px;
   }
+  .compact .dialog-heading, .compact .dialog-footer { padding: var(--wao-space-2); }
 }
 </style>
 

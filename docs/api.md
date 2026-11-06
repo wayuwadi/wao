@@ -1,5 +1,9 @@
 # 接口入口
 
+## 智能清单显示偏好（2026-11-06）
+
+`GET /api/preferences/smart-list/items` 返回当前成员的清单显示选择（缺省为显示）。`PUT /api/preferences/smart-list/items/{projectId}` 接收 `{visible, expected}`，`expected` 为上次读取的空字符串、`0` 或 `1`。每个清单独立保存，存在并发修改时返回 409；重复提交已经保存的值是幂等的。偏好只影响待办工作台的所有、今天、明天和最近 7 天，不改变任务或清单的共享权限。
+
 ## 待办视图偏好与修改时间（2026-11-04）
 
 浏览器使用已有的成员级 `GET/PUT /api/preferences/{key}` 保存待办显示偏好。键 `todo-display-v1` 记录日期、详情样式和视图同步开关；`todo-view-v1:{scope}` 按清单／筛选记录视图、分组、排序和显示开关。关闭视图同步时，视图调整仅写入浏览器。

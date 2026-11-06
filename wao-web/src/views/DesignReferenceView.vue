@@ -61,6 +61,7 @@ function showTaskMenuExample(event:MouseEvent) {
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
+import ProjectSettingsPreview from '@/components/ui/ProjectSettingsPreview.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import AiPromptEditor from '@/components/ui/AiPromptEditor.vue'
@@ -112,6 +113,7 @@ onMounted(readTokens)
 const sampleTitle = ref('给一个念头留个位置')
 const projectDemoTab = ref<ProjectSettingsTab>('basic')
 const projectDemoName = ref('阅读计划（演示）')
+const projectDemoVisible = ref('show')
 const sampleError = ref('')
 const feedback = ref('')
 
@@ -481,15 +483,24 @@ const detailLabels = ref('')
           </section>
           <section class="reference-section">
             <h2>项目设置分项</h2>
-            <p>基本信息直接编辑，成员与危险操作分开。切换时标题、页签、底栏保持原位，长内容仅在面板内滚动。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
-            <SettingsDialogShell title="项目设置示例" description="合成演示：切换分项时标题、页签与底栏保持原位，内容独立滚动" width="760px" height="min(640px, calc(100dvh - 48px))" embedded :theme="theme">
-              <p>项目四象限：子任务缩进跟随主任务，整组以主任务优先级归类。</p>
-              <ProjectSubtaskControls v-model:show="demoShowSubs" v-model:show-done="demoShowDone" tree :collapsed="demoCollapsed" @expand="demoCollapsed = false; feedback = '示例：全部展开'" @collapse="demoCollapsed = true; feedback = '示例：全部收起'" />
+            <p>清单设置使用紧凑标题与轻量预览，成员和危险操作分项展示。以下为合成演示，不读取成员或写入账号。</p>
+            <SettingsDialogShell title="项目设置示例" appearance="compact" width="760px" height="min(620px, calc(100dvh - 48px))" embedded :theme="theme">
+              <div class="demo-project-settings">
               <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
-                <template #basic><WaoField v-slot="field" label="项目名称"><input :id="field.id" v-model="projectDemoName" /></WaoField></template>
+                <template #basic>
+                  <div class="demo-project-fields">
+                    <WaoField v-slot="field" label="清单名称"><input :id="field.id" v-model="projectDemoName" /></WaoField>
+                    <WaoField v-slot="field" label="在智能清单中显示" hint="仅影响我的所有、今天、明天和最近 7 天；此清单仍可单独打开。更改后自动保存。">
+                      <select :id="field.id" v-model="projectDemoVisible"><option value="show">显示所有任务</option><option value="hide">不显示</option></select>
+                    </WaoField>
+                    <WaoField v-slot="field" label="清单描述 / 目标"><textarea :id="field.id" rows="3" placeholder="这个清单做成了，会是什么样？" /></WaoField>
+                  </div>
+                </template>
                 <template #members><p>示例负责人 · 负责人</p><p>示例成员 · 项目成员</p></template>
                 <template #more><p>删除项目需要二次确认，失败时保留项目和输入。</p><WaoButton variant="danger" @click="feedback = '删除仅为演示，没有修改账号。'">删除示例</WaoButton></template>
               </ProjectSettingsLayout>
+              <ProjectSettingsPreview :name="projectDemoName" icon="ri-stack-line" :visible="projectDemoVisible === 'show'" />
+              </div>
               <template #footer><div class="demo-save-footer"><span>演示输入留在本页</span><WaoButton variant="primary" @click="feedback = '项目设置演示，没有保存到账号。'">演示保存并关闭</WaoButton></div></template>
             </SettingsDialogShell>
           </section>
@@ -759,6 +770,8 @@ const detailLabels = ref('')
 </template>
 
 <style scoped>
+.demo-project-settings { display: flex; flex: 1; min-height: 0; }
+.demo-project-fields { display: grid; gap: var(--wao-space-2); }
 .recap-example { width:100%; height:640px; border:1px solid var(--wao-line); border-radius:var(--wao-radius-card); }
 .detail-demo-row input[type=checkbox] { appearance:none; width:14px; height:14px; border:1px solid var(--wao-primary); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:inline-grid; place-content:center; }
 .detail-demo-row input[type=checkbox]:checked { background:var(--wao-primary); }

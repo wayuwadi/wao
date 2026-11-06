@@ -31,11 +31,11 @@ function navigate(event: KeyboardEvent, index: number) {
 </template>
 <style scoped>
 .project-settings-layout { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-.settings-tabs { flex-shrink: 0; display: flex; gap: 24px; padding: 0 26px; border-bottom: 1px solid var(--wao-line); }
+.settings-tabs { flex-shrink: 0; display: flex; gap: var(--wao-space-3); padding: 0 var(--wao-space-3); border-bottom: 1px solid var(--wao-line); }
 .settings-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 48px; padding: 0 0 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--wao-text-3); font: inherit; cursor: pointer; white-space: nowrap; }
 .settings-tabs button[aria-selected='true'] { color: var(--wao-primary-text); border-bottom-color: var(--wao-primary); }
 .member-count { font-size: var(--wao-font-caption); }
-.settings-panel { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 24px 26px; min-width: 0; }
+.settings-panel { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: var(--wao-space-2) var(--wao-space-3); min-width: 0; }
 .settings-panel[hidden] { display: none; }
-@media (max-width: 650px) { .settings-tabs { padding: 0 15px; gap: 22px; } .settings-panel { padding: 20px 15px; } }
+@media (max-width: 650px) { .settings-tabs { padding: 0 var(--wao-space-2); gap: var(--wao-space-2); } .settings-panel { padding: var(--wao-space-2); } }
 </style>

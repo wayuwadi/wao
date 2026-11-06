@@ -42,6 +42,9 @@ public class MemberPreferenceController {
     public ApiResponse<Void> put(@PathVariable String key, @RequestBody Map<String, String> body,
             HttpServletRequest http) {
         String value = body.get("value");
+        if (key.startsWith(SmartListVisibilityController.PREFIX)) {
+            throw new BadRequestException("请使用智能清单显示设置接口，以保护跨设备修改");
+        }
         if (cn.wayuwa.wao.service.HomeDateReminderService.SETTINGS_KEY.equals(key)
                 || key.startsWith(cn.wayuwa.wao.service.HomeDateReminderService.DELIVERY_PREFIX)) {
             throw new BadRequestException("请使用首页日期提醒接口，以保护版本和展示回执");
