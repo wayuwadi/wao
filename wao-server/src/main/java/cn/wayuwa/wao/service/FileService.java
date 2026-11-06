@@ -50,20 +50,18 @@ public class FileService {
         this.objects = objects;
     }
 
-    private List<FileBlobEntity> visibleMetadata() {
+    private List<FileBlobEntity> visibleMetadata(List<FileBlobEntity> metadata) {
+        if (metadata.isEmpty()) return List.of();
         var hidden = knowledgeAssets == null ? java.util.Set.<String>of() : knowledgeAssets.hiddenAssets("files");
-        return mapper.listMeta().stream().filter(item -> !hidden.contains(item.getId())).toList();
+        return metadata.stream().filter(item -> !hidden.contains(item.getId())).toList();
     }
 
     /** 列出文件元数据，不把二进制正文加载进内存。 */
-    public List<FileItemDto> list() { return visibleMetadata().stream().map(this::toDto).toList(); }
+    public List<FileItemDto> list() { return visibleMetadata(mapper.listMeta()).stream().map(this::toDto).toList(); }
 
     /** 列出当前成员可见的全局/项目文件；指定项目时只返回该项目。 */
     public List<FileItemDto> list(Set<String> visibleProjectIds, String projectId) {
-        return visibleMetadata().stream()
-                .filter(entity -> projectId != null
-                        ? projectId.equals(entity.getProjectId())
-                        : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
+        return visibleMetadata(mapper.listVisibleMeta(visibleProjectIds, projectId)).stream()
                 .map(this::toDto).toList();
     }
 
@@ -215,13 +213,31 @@ public class FileService {
 
     /** 修改文件在 WAO 内的展示名称；原始文件名和正文均不变。 */
     public FileItemDto renameDisplayName(String id, String displayName) {
+        return renameDisplayName(id, displayName, false, null);
+    }
+
+    /** 原子比较编辑开始时的展示名称；显式 null 与省略条件有不同语义。 */
+    public FileItemDto renameDisplayName(String id, String displayName, String expectedDisplayName) {
+        return renameDisplayName(id, displayName, true, expectedDisplayName);
+    }
+
+    private FileItemDto renameDisplayName(String id, String displayName, boolean checkExpected, String expectedDisplayName) {
         requireKnowledgeAsset(id);
         String normalized = displayName == null ? "" : displayName.trim();
         if (normalized.isEmpty() || normalized.length() > 255) {
             throw new BadRequestException("文件展示名称须为 1～255 个字符");
         }
-        if (mapper.updateDisplayName(id, normalized) == 0) {
-            throw new NotFoundException("文件不存在：" + id);
+        if (expectedDisplayName != null && expectedDisplayName.length() > 255) {
+            throw new BadRequestException("原文件展示名称不能超过 255 个字符");
+        }
+        int updated = checkExpected ? mapper.compareAndSetDisplayName(id, normalized, expectedDisplayName)
+                : mapper.updateDisplayName(id, normalized);
+        if (updated == 0) {
+            if (!checkExpected) throw new NotFoundException("文件不存在：" + id);
+            FileBlobEntity latest = metadata(id);
+            // A lost success response can be retried without overwriting a newer different name.
+            if (normalized.equals(latest.getDisplayName())) return toDto(latest);
+            throw new cn.wayuwa.wao.common.ConflictException("文件名称已被修改，请读取最新名称后重试");
         }
         return toDto(metadata(id));
     }
@@ -264,7 +280,7 @@ public class FileService {
                 humanSize(entity.getByteSize()), icon(entity.getName()),
                 entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT), entity.getCreatedBy(),
                 "/api/files/" + entity.getId() + "/download",
-                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString(), entity.getProjectId());
+                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString(), entity.getProjectId(), entity.getByteSize());
     }
     private static String safeName(String original) {
         if (original == null || original.isBlank()) return "未命名文件";

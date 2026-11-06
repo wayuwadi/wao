@@ -2,7 +2,15 @@ package cn.wayuwa.wao.dto;
 
 /** HTML 托管页列表项。 */
 public record HostedPageDto(String id, String slug, String title, String fileName, String sourceType, boolean hasIcon,
-        String updatedAt, String url, String projectId) {
+        String updatedAt, String url, String projectId, String updatedAtIso, long revision) {
+    public HostedPageDto(String id, String slug, String title, String fileName, String sourceType, boolean hasIcon,
+            String updatedAt, String url, String projectId, String updatedAtIso) {
+        this(id, slug, title, fileName, sourceType, hasIcon, updatedAt, url, projectId, updatedAtIso, 0);
+    }
+    public HostedPageDto(String id, String slug, String title, String fileName, String sourceType, boolean hasIcon,
+            String updatedAt, String url, String projectId) {
+        this(id, slug, title, fileName, sourceType, hasIcon, updatedAt, url, projectId, null);
+    }
     /** 滚动发布兼容：旧调用创建的普通页面默认视为人工上传。 */
     public HostedPageDto(String id, String slug, String title, String fileName, boolean hasIcon,
             String updatedAt, String url) {

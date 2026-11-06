@@ -2,8 +2,13 @@
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useConfirmAction } from '@/composables/confirmAction'
 const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
+import { useUploadStore } from '@/stores/uploads'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import WaoField from '@/components/ui/WaoField.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { toast } from '@/composables/toast'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
@@ -15,10 +20,14 @@ import type { HostedPage } from '@/types'
 
 const props = defineProps<{ projectId: string; projectName: string }>()
 const data = useDataStore()
+const session = useSessionStore()
+const uploads = useUploadStore()
 const tab = ref<'files' | 'images' | 'pages'>('files')
 const input = ref<HTMLInputElement | null>(null)
-const uploading = ref(false)
-const uploadError = ref('')
+const projectUploads = computed(() => uploads.uploadAttempts.filter(item => item.projectId === props.projectId))
+const uploading = computed(() => projectUploads.value.some(item => item.state === 'waiting' || item.state === 'uploading'))
+const failedUploads = computed(() => projectUploads.value.filter(item => item.state === 'failed'))
+const uploadError = computed(() => failedUploads.value.length ? `${failedUploads.value.length} 项上传未完成：${failedUploads.value[0]?.reason}` : '')
 const dragging = ref(false)
 const replacement = ref<ReplacementTarget | null>(null)
 const preview = ref<AssetPreview | null>(null)
@@ -29,6 +38,28 @@ const htmlTitle = ref('')
 const htmlSlug = ref('')
 const htmlSaving = ref(false)
 const htmlFormError = ref('')
+const htmlExpectedRevision = ref<number>()
+const htmlConflict = ref(false)
+const htmlReadingConflict = ref(false)
+const htmlLatest = ref<HostedPage | null>(null)
+const htmlDirty = computed(() => !!htmlFile.value || htmlTitle.value !== (editingPage.value?.title ?? '') || htmlSlug.value !== (editingPage.value?.slug ?? ''))
+let generation = 0
+let disposed = false
+watch(() => [props.projectId, session.account?.accountId, session.userId], () => {
+  generation++
+  preview.value = null
+  replacement.value = null
+  htmlDialog.value = false
+  htmlFile.value = null
+  editingPage.value = null
+  htmlTitle.value = ''
+  htmlSlug.value = ''
+  htmlSaving.value = false
+  htmlFormError.value = ''
+  resetHtmlConflict()
+  dismissConfirmation()
+}, { flush: 'sync' })
+onBeforeUnmount(() => { disposed = true; generation++; htmlFile.value = null; window.removeEventListener('beforeunload', beforeUnload) })
 
 const files = computed(() => data.files.filter((item) => item.projectId === props.projectId))
 const images = computed(() => data.imgs.filter((item) => item.projectId === props.projectId))
@@ -37,7 +68,20 @@ const total = computed(() => files.value.length + images.value.length + pages.va
 
 onMounted(() => {
   void Promise.all([data.refreshFiles(), data.refreshImages(), data.refreshHostedPages()])
+  window.addEventListener('beforeunload', beforeUnload)
 })
+
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!htmlDialog.value || (!htmlDirty.value && !htmlSaving.value)) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+function resetHtmlConflict(revision?: number) {
+  htmlExpectedRevision.value = revision
+  htmlConflict.value = false
+  htmlReadingConflict.value = false
+  htmlLatest.value = null
+}
 
 function isHtml(file: File) {
   return file.type === 'text/html' || /\.html?$/i.test(file.name)
@@ -67,7 +111,9 @@ function suggestedSlug(name: string) {
   return `${candidate}-${Math.random().toString(36).slice(2, 7)}`
 }
 function openHtmlDialog(file: File) {
+  generation++
   editingPage.value = null
+  resetHtmlConflict()
   htmlFile.value = file
   htmlTitle.value = baseName(file.name) || '未命名页面'
   htmlSlug.value = suggestedSlug(file.name)
@@ -77,7 +123,9 @@ function openHtmlDialog(file: File) {
 }
 
 function editPage(page: HostedPage) {
-  editingPage.value = page
+  generation++
+  editingPage.value = { ...page }
+  resetHtmlConflict(page.revision)
   htmlFile.value = null
   htmlTitle.value = page.title
   htmlSlug.value = page.slug
@@ -87,52 +135,38 @@ function editPage(page: HostedPage) {
 
 function closeHtmlDialog() {
   if (htmlSaving.value) return
-  htmlDialog.value = false
-  htmlFormError.value = ''
+  const current = generation
+  const dismiss = () => {
+    if (current !== generation || disposed) return
+    generation++
+    htmlDialog.value = false
+    htmlFile.value = null
+    editingPage.value = null
+    htmlTitle.value = ''
+    htmlSlug.value = ''
+    htmlFormError.value = ''
+    resetHtmlConflict()
+  }
+  if (!htmlDirty.value) dismiss()
+  else confirmAction({
+    title: '放弃未保存的网页修改？',
+    description: '尚未发布的内容和所选 HTML 文件将被清除，已保存的网页保持不变。',
+    confirmLabel: '放弃修改',
+    run: dismiss,
+  })
 }
 
-async function uploadFiles(selected: File[]) {
-  uploadError.value = ''
-  uploading.value = true
-  let failed = 0
-  try {
-    for (const file of selected) {
-      if (!(await data.uploadFile(file, props.projectId))) failed++
-    }
-  } finally {
-    uploading.value = false
-  }
-  if (selected.length - failed)
-    toast(`已上传 ${selected.length - failed} 个项目文件`, 'ri-upload-cloud-2-line')
-  if (failed) uploadError.value = `${failed} 个文件上传失败，请检查大小或服务状态后重试`
-}
-
-async function uploadImages(selected: File[]) {
-  uploadError.value = ''
-  uploading.value = true
-  let failed = 0
-  try {
-    for (const file of selected) {
-      const result = await data.uploadImage(file, `项目 · ${props.projectName}`, {
-        requirePersisted: true,
-        projectId: props.projectId,
-      })
-      if (!result) failed++
-    }
-  } finally {
-    uploading.value = false
-  }
-  if (selected.length - failed)
-    toast(`已上传 ${selected.length - failed} 张项目图片`, 'ri-image-add-line')
-  if (failed) uploadError.value = `${failed} 张图片上传失败，请检查格式、大小或服务状态后重试`
+function retryProjectUploads() {
+  for (const item of failedUploads.value) void uploads.retryUpload(item)
 }
 
 function classify(selected: File[]) {
   const pictures = selected.filter((file) => file.type.startsWith('image/'))
   const html = selected.filter((file) => !file.type.startsWith('image/') && isHtml(file))
   const attachments = selected.filter((file) => !file.type.startsWith('image/') && !isHtml(file))
-  if (pictures.length) void uploadImages(pictures)
-  if (attachments.length) void uploadFiles(attachments)
+  const context = { projectId: props.projectId, source: `项目 · ${props.projectName}` }
+  if (pictures.length) void uploads.enqueue(pictures, 'img', undefined, context)
+  if (attachments.length) void uploads.enqueue(attachments, 'files', undefined, context)
   if (html[0]) openHtmlDialog(html[0])
   if (html.length > 1) toast('一次先配置 1 个 HTML，其余请再次上传', 'ri-information-line')
   if (pictures.length && !attachments.length && !html.length) tab.value = 'images'
@@ -150,6 +184,7 @@ function drop(event: DragEvent) {
 }
 
 async function saveHtml() {
+  if (htmlSaving.value || htmlConflict.value || confirmation.value) return
   if (
     (!editingPage.value && !htmlFile.value) ||
     !htmlTitle.value.trim() ||
@@ -162,29 +197,74 @@ async function saveHtml() {
   }
   htmlSaving.value = true
   htmlFormError.value = ''
+  const current = generation
+  const editing = editingPage.value
   try {
     const page = await data.saveHostedPage({
-      id: editingPage.value?.id,
+      id: editing?.id,
       html: htmlFile.value ?? undefined,
       title: htmlTitle.value,
       slug: htmlSlug.value,
-      projectId: editingPage.value ? undefined : props.projectId,
+      projectId: editing ? undefined : props.projectId,
+      ...(editing && htmlExpectedRevision.value !== undefined ? { expectedRevision: htmlExpectedRevision.value } : {}),
     })
+    if (disposed || current !== generation) return
     htmlDialog.value = false
-    if (editingPage.value) {
+    htmlFile.value = null
+    if (editing) {
       toast('WAO 显示名称已保存', 'ri-check-line')
     } else {
       preview.value = { kind: 'html', name: page.title, url: page.url, sourceType: page.sourceType }
       toast('HTML 已归入项目并可站内预览', 'ri-html5-line')
     }
   } catch (cause) {
+    if (disposed || current !== generation) return
+    if (editing && (cause as { status?: number })?.status === 409) {
+      htmlConflict.value = true
+      await refreshHtmlConflict()
+      return
+    }
     htmlFormError.value =
       cause instanceof Error
         ? cause.message
         : `${editingPage.value ? '名称保存' : 'HTML 发布'}失败，请重试`
   } finally {
-    htmlSaving.value = false
+    if (!disposed && current === generation) htmlSaving.value = false
   }
+}
+async function refreshHtmlConflict() {
+  if (htmlReadingConflict.value || !editingPage.value) return
+  const current = generation
+  const id = editingPage.value.id
+  htmlLatest.value = null
+  htmlReadingConflict.value = true
+  htmlFormError.value = ''
+  const success = await data.refreshHostedPages().catch(() => false)
+  if (disposed || current !== generation) return
+  htmlReadingConflict.value = false
+  const latest = success ? data.hostedPages.find(page => page.id === id) : undefined
+  if (latest && Number.isSafeInteger(latest.revision) && latest.revision! >= 0) htmlLatest.value = { ...latest }
+  else htmlFormError.value = '最新网页版本读取失败或已不可访问，修改已保留，请重新读取。'
+}
+function useLatestHtml() {
+  if (htmlSaving.value || htmlReadingConflict.value || !htmlLatest.value) return
+  const latest = htmlLatest.value
+  editingPage.value = { ...latest }
+  htmlTitle.value = latest.title
+  htmlSlug.value = latest.slug
+  htmlFile.value = null
+  htmlFormError.value = ''
+  resetHtmlConflict(latest.revision)
+}
+function overwriteHtml() {
+  if (htmlSaving.value || htmlReadingConflict.value || !htmlLatest.value) return
+  const latest = htmlLatest.value
+  // The project dialog edits only the title; preserve any newly changed public slug.
+  editingPage.value = { ...latest }
+  htmlSlug.value = latest.slug
+  htmlExpectedRevision.value = latest.revision
+  htmlConflict.value = false
+  void saveHtml()
 }
 
 async function removeFile(id: string | undefined, name: string) {
@@ -215,7 +295,7 @@ async function removePage(page: HostedPage) {
           HTML <em>{{ pages.length }}</em>
         </button>
       </div>
-      <span class="asset-summary">共 {{ total }} 项，复用全局“文件与图床”存储</span>
+      <span class="asset-summary">共 {{ total }} 项</span>
       <button class="upload-button" :disabled="uploading" @click="input?.click()">
         <i :class="uploading ? 'ri-loader-4-line spin' : 'ri-upload-2-line'"></i
         >{{ uploading ? '上传中…' : '上传资料' }}
@@ -236,9 +316,13 @@ async function removePage(page: HostedPage) {
     </div>
     <div v-if="uploadError" class="asset-error" role="alert">
       <i class="ri-error-warning-line"></i>{{ uploadError }}
+      <WaoButton v-if="failedUploads.some(item => item.retryable)" :disabled="uploading" @click="retryProjectUploads">重试失败项</WaoButton>
+      <RouterLink :to="{ path: '/files', query: { uploads: '1' } }">查看上传队列</RouterLink>
     </div>
 
     <div v-if="tab === 'files'" class="asset-list">
+      <div v-if="data.fileLoadState === 'loading' && !files.length" class="asset-empty" role="status">正在加载项目文件…</div>
+      <div v-if="data.fileLoadState === 'error'" class="asset-error" role="alert">{{ data.fileLoadError }}<WaoButton @click="data.refreshFiles()">重新加载</WaoButton></div>
       <div v-for="file in files" :key="file.id" class="asset-row">
         <i :class="file.icon"></i>
         <div>
@@ -260,18 +344,20 @@ async function removePage(page: HostedPage) {
           <i class="ri-delete-bin-line"></i>
         </button>
       </div>
-      <div v-if="!files.length" class="asset-empty">
+      <div v-if="data.fileLoadState === 'loaded' && !files.length" class="asset-empty">
         <i class="ri-file-add-line"></i>还没有项目文件，可上传 Markdown 或其它资料。
       </div>
     </div>
 
     <div v-else-if="tab === 'images'" class="image-grid">
+      <div v-if="data.loadStates.images === 'loading' && !images.length" class="asset-empty" role="status">正在加载项目图片…</div>
+      <div v-if="data.loadStates.images === 'error'" class="asset-error" role="alert">{{ data.loadErrors.images }}<WaoButton @click="data.refreshImages()">重新加载</WaoButton></div>
       <article v-for="image in images" :key="image.id" class="image-card">
         <button
           class="image-open"
           @click="preview = { kind: 'image', name: image.name, url: image.url }"
         >
-          <img :src="image.url" :alt="image.name" />
+          <img :src="image.previewUrl || image.url" :alt="image.name" loading="lazy" decoding="async" />
         </button>
         <div>
           <b>{{ image.name }}</b
@@ -284,7 +370,7 @@ async function removePage(page: HostedPage) {
           <i class="ri-delete-bin-line"></i>
         </button>
       </article>
-      <div v-if="!images.length" class="asset-empty">
+      <div v-if="data.loadStates.images === 'loaded' && !images.length" class="asset-empty">
         <i class="ri-image-add-line"></i>还没有项目图片。
       </div>
     </div>
@@ -307,7 +393,7 @@ async function removePage(page: HostedPage) {
         <button @click="copyText(absoluteUrl(page.url), '已复制公网分享链接')">
           <i class="ri-links-line"></i>分享
         </button>
-        <button title="重新上传 HTML" @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url }"><i class="ri-upload-2-line"></i>重新上传</button>
+        <button title="重新上传 HTML" @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url, revision: page.revision }"><i class="ri-upload-2-line" aria-hidden="true"></i>重新上传</button>
         <button title="修改 WAO 显示名称" @click="editPage(page)">
           <i class="ri-edit-line"></i>改名
         </button>
@@ -318,27 +404,48 @@ async function removePage(page: HostedPage) {
       </div>
     </div>
 
-    <div v-if="htmlDialog" class="html-mask" @click.self="closeHtmlDialog">
+    <SettingsDialogShell
+      v-if="htmlDialog"
+      :title="editingPage ? '修改 WAO 显示名称' : '托管项目 HTML'"
+      width="480px"
+      height="auto"
+      appearance="compact"
+      icon="ri-html5-line"
+      :close-disabled="htmlSaving"
+      @close="closeHtmlDialog"
+    >
       <form class="html-dialog" @submit.prevent="saveHtml">
-        <h3>{{ editingPage ? '修改 WAO 显示名称' : '托管项目 HTML' }}</h3>
         <p v-if="editingPage">
           修改后会同步到项目列表、站内预览和浏览器标题；HTML 内容和公网分享地址保持不变。
         </p>
         <p v-else>页面会归入当前项目，在隔离窗口中运行；演示数据保存在当前浏览器，刷新后仍可恢复。</p>
-        <label>WAO 显示名称<input v-model="htmlTitle" maxlength="200" autofocus /></label>
-        <label v-if="!editingPage">分享链接后缀<input v-model="htmlSlug" maxlength="80" /></label>
+        <WaoField v-slot="field" label="WAO 显示名称" required>
+          <input :id="field.id" v-model="htmlTitle" :aria-describedby="field.describedBy" :required="field.required" :disabled="htmlSaving" maxlength="200" autofocus />
+        </WaoField>
+        <WaoField v-if="!editingPage" v-slot="field" label="分享链接后缀" required>
+          <input :id="field.id" v-model="htmlSlug" :aria-describedby="field.describedBy" :required="field.required" :disabled="htmlSaving" maxlength="80" />
+        </WaoField>
         <div v-if="htmlFile" class="selected-file">
-          <i class="ri-file-check-line"></i>{{ htmlFile.name }}
+          <i class="ri-file-check-line" aria-hidden="true"></i>{{ htmlFile.name }}
         </div>
         <div v-if="htmlFormError" class="html-form-error" role="alert">{{ htmlFormError }}</div>
+        <div v-if="htmlConflict" class="html-conflict" role="alert">
+          <p>网页已在另一处更新，输入已保留。{{ htmlReadingConflict ? '正在读取最新版本…' : '请决定采用最新名称，还是仍保存当前名称。' }}</p>
+          <p v-if="htmlLatest">最新名称：{{ htmlLatest.title }}</p>
+          <WaoButton v-if="!htmlLatest" :disabled="htmlSaving || htmlReadingConflict" @click="refreshHtmlConflict">重新读取最新版本</WaoButton>
+          <template v-else>
+            <WaoButton :disabled="htmlSaving || htmlReadingConflict" @click="useLatestHtml">使用最新版本</WaoButton>
+            <WaoButton :disabled="htmlSaving || htmlReadingConflict" @click="overwriteHtml">仍保存当前名称</WaoButton>
+          </template>
+        </div>
         <footer>
-          <button type="button" :disabled="htmlSaving" @click="closeHtmlDialog">取消</button
-          ><button class="primary" :disabled="htmlSaving">
+          <WaoButton :disabled="htmlSaving" @click="closeHtmlDialog">取消</WaoButton>
+          <WaoButton type="submit" class="primary" variant="primary" :loading="htmlSaving" :disabled="htmlConflict">
             {{ htmlSaving ? '保存中…' : editingPage ? '保存名称' : '发布并预览' }}
-          </button>
+          </WaoButton>
         </footer>
       </form>
-    </div>
+    </SettingsDialogShell>
     <AssetReplaceModal v-if="replacement" :target="replacement" @close="replacement = null" @saved="preview = null" />
     <AssetPreviewModal v-if="preview" :asset="preview" @close="preview = null" />
   </section>
@@ -383,8 +490,7 @@ async function removePage(page: HostedPage) {
   color: var(--wao-text-weak);
   font-size: 12px;
 }
-.upload-button,
-.html-dialog .primary {
+.upload-button {
   border: 0;
   border-radius: 8px;
   padding: 8px 13px;
@@ -523,68 +629,43 @@ async function removePage(page: HostedPage) {
   flex-direction: column;
   gap: 3px;
 }
-.html-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
-  padding: 20px;
-  background: rgba(20, 23, 34, 0.5);
-  display: grid;
-  place-items: center;
-}
 .html-dialog {
-  width: min(460px, 100%);
-  padding: 22px;
-  border-radius: 13px;
-  background: var(--wao-bg-card);
-  box-shadow: 0 18px 60px rgba(18, 22, 36, 0.25);
-}
-.html-dialog h3 {
-  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: var(--wao-space-2);
+  padding: var(--wao-space-2) var(--wao-space-3) var(--wao-space-3);
 }
 .html-dialog p {
-  color: var(--wao-text-weak);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.html-dialog label {
-  display: grid;
-  gap: 6px;
-  margin-top: 13px;
-  font-size: 13px;
-}
-.html-dialog input {
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--wao-line-strong);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
+  margin: 0;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
+  line-height: var(--wao-line-body);
 }
 .selected-file {
-  margin-top: 13px;
-  padding: 9px;
-  border-radius: 8px;
+  padding: var(--wao-space-2);
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-page);
   overflow-wrap: anywhere;
 }
 .html-form-error {
-  margin-top: 12px;
-  color: var(--wao-danger);
-  font-size: 12px;
+  color: var(--wao-danger-strong);
+  font-size: var(--wao-font-help);
+  overflow-wrap: anywhere;
+}
+.html-conflict {
+  display: grid;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-2);
+  border: 1px solid var(--wao-warning-line);
+  border-radius: var(--wao-radius-control);
+  background: var(--wao-warning-bg);
+  overflow-wrap: anywhere;
 }
 .html-dialog footer {
-  margin-top: 18px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-}
-.html-dialog footer button {
-  padding: 8px 13px;
-  border: 1px solid var(--wao-line);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  cursor: pointer;
+  flex-wrap: wrap;
+  gap: var(--wao-space-1);
 }
 .spin {
   animation: spin 0.8s linear infinite;

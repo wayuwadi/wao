@@ -46,6 +46,7 @@ class FileServiceTest {
         assertThat(item.link()).endsWith("/download");
         assertThat(item.icon()).isEqualTo("ri-file-pdf-2-line");
         assertThat(item.createdAt()).isNotBlank();
+        assertThat(item.byteSize()).isEqualTo(2L);
         verify(mapper).insert(any(FileBlobEntity.class));
     }
 
