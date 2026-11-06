@@ -1,11 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive, ref } from 'vue'
+import { routeLocationKey } from 'vue-router'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 import DrawingsView from '@/views/DrawingsView.vue'
 import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
-  fetchDrawingGroups, createDrawingGroup, moveDrawing, copyDrawing,
+  fetchDrawingGroups, createDrawingGroup, moveDrawing, copyDrawing, createDrawing, saveDrawingOrder,
   fetchDrawings,
   fetchDrawingVersions,
   renameDrawing,
@@ -17,7 +20,7 @@ import {
 vi.mock('@/api/drawings', () => ({
   createDrawing: vi.fn(),
   fetchDrawingGroups: vi.fn().mockResolvedValue({ groups: [], assignments: [] }),
-  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(),
+  createDrawingGroup: vi.fn(), renameDrawingGroup: vi.fn(), moveDrawing: vi.fn(), copyDrawing: vi.fn(), saveDrawingOrder: vi.fn(),
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
@@ -145,6 +148,136 @@ describe('个人草图优化', () => {
     await flushPromises()
     expect(localStorage.getItem('wao:last-drawing:member-a')).toBe('dr1')
     embedded.unmount()
+  })
+
+  it('拖入分组并在分组中新建，保存归属后才展示', async () => {
+    vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [{ id: 'g1', name: '项目' }], assignments: [], order: [], revision: 0 })
+    vi.mocked(moveDrawing).mockResolvedValue(undefined)
+    vi.mocked(createDrawing).mockResolvedValue(drawing({ id: 'new1' }))
+    vi.mocked(fetchDrawing).mockImplementation(async id => drawing({ id }))
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    await wrapper.get('.file-row').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.group-header')[0]!.trigger('dragover', { dataTransfer: transfer })
+    await wrapper.findAll('.group-header')[0]!.trigger('drop', { dataTransfer: transfer })
+    await flushPromises()
+    expect(moveDrawing).toHaveBeenCalledWith('dr1', 'g1')
+    expect(wrapper.findAll('.drawing-group')[0]!.text()).toContain('测试草图')
+    await wrapper.get('[aria-label="在项目新建草图"]').trigger('click'); await flushPromises()
+    expect(createDrawing).toHaveBeenCalledWith(undefined, 'g1')
+    expect(wrapper.findAll('.drawing-group')[0]!.findAll('.file-row')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('手动排序提交版本并在更新文件后保持顺序', async () => {
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing({ id: 'a', title: 'A' }), drawing({ id: 'b', title: 'B' })])
+    vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [], assignments: [], order: [], revision: 2 })
+    vi.mocked(fetchDrawing).mockImplementation(async id => drawing({ id }))
+    vi.mocked(saveDrawingOrder).mockResolvedValue(3)
+    window.history.replaceState({}, '', '/drawings')
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    await flushPromises()
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    await wrapper.findAll('.file-row')[1]!.trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.file-row')[0]!.trigger('drop', { dataTransfer: transfer, clientY: 0 })
+    await flushPromises()
+    expect(saveDrawingOrder).toHaveBeenCalledWith(['f:b', 'f:a'], 2)
+    expect(wrapper.findAll('.file-main strong').map(x => x.text())).toEqual(['B', 'A'])
+    wrapper.unmount()
+  })
+
+  it('分组可拖动排序，也可从菜单用键盘上下移动', async () => {
+    vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [{ id: 'g1', name: '甲' }, { id: 'g2', name: '乙' }], assignments: [], order: [], revision: 0 })
+    vi.mocked(saveDrawingOrder).mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3)
+    const wrapper = mount(DrawingsView, { attachTo: document.body }); await flushPromises()
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    await wrapper.findAll('.group-header')[1]!.trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.group-header')[0]!.trigger('drop', { dataTransfer: transfer }); await flushPromises()
+    expect(saveDrawingOrder).toHaveBeenCalledWith(['g:g2', 'g:g1', 'f:dr1'], 0)
+    expect(wrapper.findAll('.group-toggle').slice(0, 2).map(x => x.text())).toEqual(['乙 0', '甲 0'])
+    await wrapper.get('[aria-label="甲的操作"]').trigger('click'); await flushPromises()
+    ;(document.querySelector('[role=menuitem][aria-label="上移分组"]') as HTMLButtonElement).click(); await flushPromises()
+    expect(saveDrawingOrder).toHaveBeenLastCalledWith(['g:g1', 'g:g2', 'f:dr1'], 1)
+    await wrapper.findAll('.group-header')[0]!.trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.group-header')[1]!.trigger('drop', { dataTransfer: transfer, clientY: 1 }); await flushPromises()
+    expect(saveDrawingOrder).toHaveBeenLastCalledWith(['g:g2', 'g:g1', 'f:dr1'], 2)
+    wrapper.unmount()
+  })
+
+  it('其他设备修改排序时不覆盖，重新读取后可重试', async () => {
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing({ id: 'a', title: 'A' }), drawing({ id: 'b', title: 'B' })])
+    vi.mocked(fetchDrawingGroups).mockResolvedValueOnce({ groups: [], assignments: [], order: [], revision: 1 }).mockResolvedValueOnce({ groups: [], assignments: [], order: ['f:b', 'f:a'], revision: 2 })
+    vi.mocked(saveDrawingOrder).mockRejectedValueOnce(new Error('排序已在其他页面修改'))
+    window.history.replaceState({}, '', '/drawings')
+    const wrapper = mount(DrawingsView, { attachTo: document.body }); await flushPromises()
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    await wrapper.findAll('.file-row')[1]!.trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.file-row')[0]!.trigger('drop', { dataTransfer: transfer, clientY: 0 }); await flushPromises()
+    expect(wrapper.findAll('.file-main strong').map(x => x.text())).toEqual(['A', 'B'])
+    expect(wrapper.get('.group-error').text()).toContain('其他页面')
+    await wrapper.get('.group-error button').trigger('click'); await flushPromises()
+    expect(wrapper.findAll('.file-main strong').map(x => x.text())).toEqual(['B', 'A'])
+    wrapper.unmount()
+  })
+
+  it('目录宽度支持键盘调整并按成员保存', async () => {
+    const wrapper = mount(DrawingsView)
+    await flushPromises()
+    const separator = wrapper.get('[aria-label="草图目录宽度"]')
+    await separator.trigger('keydown', { key: 'ArrowRight' })
+    expect(separator.attributes('aria-valuenow')).toBe('296')
+    expect(localStorage.getItem('wao:drawing-sidebar-width:member-a')).toBe('296')
+    wrapper.unmount()
+  })
+
+  it('返回页签无感核对版本，云端变更不会覆盖并发输入', async () => {
+    const visible = ref(true)
+    const wrapper = mount(DrawingsView, { global: { provide: { [pageVisibleKey as symbol]: visible } } })
+    await flushPromises()
+    const original = wrapper.findComponent(DrawingCanvas).element
+    visible.value = false; await wrapper.vm.$nextTick()
+    vi.mocked(fetchDrawing).mockResolvedValueOnce(drawing())
+    visible.value = true; await flushPromises()
+    expect(wrapper.findComponent(DrawingCanvas).element).toBe(original)
+    visible.value = false; await wrapper.vm.$nextTick()
+    const canvas = wrapper.findComponent(DrawingCanvas)
+    canvas.vm.$emit('change', '{"elements":[{"id":"local"}],"appState":{}}')
+    vi.mocked(fetchDrawing).mockResolvedValueOnce(drawing({ revision: 6, sceneJson: '{"elements":[{"id":"remote"}],"appState":{}}' }))
+    visible.value = true; await flushPromises()
+    expect(wrapper.text()).toContain('本机修改已保留')
+    expect(wrapper.findComponent(DrawingCanvas).element).toBe(original)
+    wrapper.unmount()
+  })
+
+  it('保留实例时显式草图链接仍可切换到目标文件', async () => {
+    const route = reactive({ query: { drawing: 'dr1' } })
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), drawing({ id: 'dr2' })])
+    vi.mocked(fetchDrawing).mockImplementation(async id => drawing({ id, title: id }))
+    const wrapper = mount(DrawingsView, { global: { provide: { [routeLocationKey as symbol]: route } } })
+    await flushPromises()
+    expect(wrapper.get('.title-trigger').text()).toContain('dr1')
+    route.query.drawing = 'dr2'; await flushPromises()
+    expect(wrapper.get('.title-trigger').text()).toContain('dr2')
+    wrapper.unmount()
+  })
+
+  it('后台版本变化时刷新画布，权限失效时不继续展示缓存', async () => {
+    const visible = ref(true)
+    const wrapper = mount(DrawingsView, { global: { provide: { [pageVisibleKey as symbol]: visible } } })
+    await flushPromises()
+    const firstCanvas = wrapper.findComponent(DrawingCanvas).element
+    visible.value = false; await wrapper.vm.$nextTick()
+    vi.mocked(fetchDrawing).mockResolvedValueOnce(drawing({ revision: 6, sceneJson: '{"elements":[{"id":"remote"}],"appState":{}}' }))
+    visible.value = true; await flushPromises()
+    expect(wrapper.findComponent(DrawingCanvas).element).not.toBe(firstCanvas)
+    expect(wrapper.text()).toContain('版本 6')
+    visible.value = false; await wrapper.vm.$nextTick()
+    vi.mocked(fetchDrawing).mockRejectedValueOnce(Object.assign(new Error('无权访问'), { status: 404 }))
+    visible.value = true; await flushPromises()
+    expect(wrapper.findComponent(DrawingCanvas).exists()).toBe(false)
+    expect(wrapper.text()).toContain('当前账号无权访问')
+    wrapper.unmount()
   })
 
   it('分组读取失败可重试，不阻止打开已有草图', async () => {

@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter, RouterView, useRoute, useRouter } fr
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import { useTabsStore } from '@/stores/tabs'
+import { useSessionStore } from '@/stores/session'
 import { useFloatingTabsStore } from '@/stores/floatingTabs'
 import { tabFromRoute } from '@/config/nav'
 
@@ -25,6 +26,7 @@ const Page = defineComponent({
 async function setup() {
   const pinia = createPinia()
   const tabs = useTabsStore(pinia)
+  const session = useSessionStore(pinia)
   const windows = useFloatingTabsStore(pinia)
   const Shell = defineComponent({
     components: { TabWorkspace, TabBar },
@@ -50,6 +52,7 @@ async function setup() {
         children: [
           { path: '', component: Page, meta: { module: 'home', tabKind: 'module' } },
           { path: 'kb/:id', name: 'kb', component: Page, meta: { tabKind: 'kb' } },
+          { path: 'drawings', component: Page, meta: { module: 'drawings', tabKind: 'module' } },
           { path: 'projects/:id', name: 'project', component: Page, meta: { tabKind: 'project' } },
         ],
       },
@@ -58,7 +61,7 @@ async function setup() {
   await router.push('/projects/one?filter=initial')
   wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [pinia, router] } })
   await flushPromises()
-  return { router, tabs, windows }
+  return { router, tabs, windows, session }
 }
 describe('悬浮页面工作区', () => {
   beforeEach(() => localStorage.clear())
@@ -84,6 +87,27 @@ describe('悬浮页面工作区', () => {
     tabs.close('kb:one')
     await flushPromises()
     expect(document.body.contains(original)).toBe(false)
+  })
+  it('草图切换其他页签时保留实例，关闭草图页签才释放', async () => {
+    const { router, tabs } = await setup()
+    await router.push('/drawings'); await flushPromises()
+    const original = wrapper.get('article input').element
+    await router.push('/'); await flushPromises()
+    expect(document.body.contains(original)).toBe(true)
+    await router.push('/drawings'); await flushPromises()
+    expect(wrapper.findAll('article input').some(item => item.element === original)).toBe(true)
+    await router.push('/'); tabs.close('drawings'); await flushPromises()
+    expect(document.body.contains(original)).toBe(false)
+  })
+  it('切换成员时释放缓存的草图实例', async () => {
+    const { router, session } = await setup()
+    const signIn = (id: string) => session.accept({ accountId: `account-${id}`, member: { id, name: id, initial: id, color: '#64748b', role: '' }, identities: [], createdAt: '2026-01-01' })
+    signIn('a'); await router.push('/drawings'); await flushPromises()
+    const original = wrapper.get('article input').element
+    await wrapper.get('article input').setValue('a 的草稿')
+    signIn('b'); await flushPromises()
+    expect(document.body.contains(original)).toBe(false)
+    expect((wrapper.get('article input').element as HTMLInputElement).value).toBe('')
   })
   it('悬浮页保留本页离开确认，同时不阻止底层页面导航', async () => {
     const { router, windows } = await setup()

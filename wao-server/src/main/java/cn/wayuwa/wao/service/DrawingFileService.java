@@ -56,6 +56,8 @@ public class DrawingFileService {
     /** 新建当前成员的空草图。 */
     @Transactional
     public DrawingFileDto create(CreateDrawingFileRequest request, String memberId) {
+        String groupId = request == null ? null : request.groupId();
+        if (groupId != null && !groupId.isBlank() && groups.owned(groupId, memberId) == 0) throw new NotFoundException("分组不存在");
         LocalDateTime now = LocalDateTime.now();
         DrawingFileEntity entity = new DrawingFileEntity();
         entity.setId("dr" + UUID.randomUUID().toString().replace("-", "").substring(0, 28));
@@ -66,6 +68,7 @@ public class DrawingFileService {
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         mapper.insert(entity);
+        if (groupId != null && !groupId.isBlank()) groups.assign(memberId, entity.getId(), groupId);
         return dto(entity);
     }
 

@@ -87,12 +87,19 @@ public class DrawingFileController {
     public record GroupRequest(String name) {}
     public record MoveRequest(String groupId) {}
     public record GroupIndex(List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Group> groups,
-                             List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Assignment> assignments) {}
+                             List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Assignment> assignments,
+                             List<String> order, long revision) {}
+    public record OrderRequest(List<String> order, long revision) {}
+    private final com.fasterxml.jackson.databind.ObjectMapper directoryJson = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @GetMapping("/groups")
     public ApiResponse<GroupIndex> groups(HttpServletRequest http) {
         String member = member(http);
-        return ApiResponse.ok(new GroupIndex(groups.groups(member), groups.assignments(member)));
+        var saved = groups.directoryOrder(member);
+        try {
+            List<String> order = saved == null ? List.of() : directoryJson.readValue(saved.orderJson(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+            return ApiResponse.ok(new GroupIndex(groups.groups(member), groups.assignments(member), order, saved == null ? 0 : saved.revision()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("草图排序数据无法读取", e); }
     }
 
     @PostMapping("/groups")
@@ -120,6 +127,24 @@ public class DrawingFileController {
             groups.assign(member, id, request.groupId());
         }
         return ApiResponse.ok(null);
+    }
+
+    @PutMapping("/order")
+    @org.springframework.transaction.annotation.Transactional
+    public ApiResponse<Long> saveOrder(@RequestBody OrderRequest request, HttpServletRequest http) {
+        String member = member(http);
+        if (request.order() == null || request.order().size() > 10000 || request.revision() < 0 || new java.util.HashSet<>(request.order()).size() != request.order().size())
+            throw new cn.wayuwa.wao.common.BadRequestException("草图排序数据无效");
+        var allowed = new java.util.HashSet<String>();
+        groups.groups(member).forEach(group -> allowed.add("g:" + group.id()));
+        drawings.list(member).forEach(file -> allowed.add("f:" + file.id()));
+        if (!allowed.containsAll(request.order())) throw new cn.wayuwa.wao.common.BadRequestException("草图排序包含不可访问的项目，请刷新后重试");
+        try {
+            groups.ensureDirectoryOrder(member);
+            if (groups.saveDirectoryOrder(member, directoryJson.writeValueAsString(request.order()), request.revision()) != 1)
+                throw new cn.wayuwa.wao.common.ConflictException("排序已在其他页面修改，请刷新后重试");
+            return ApiResponse.ok(request.revision() + 1);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("草图排序无法保存", e); }
     }
 
     @PostMapping("/{id}/copy")

@@ -11,14 +11,16 @@ import {
   ref,
   watch,
 } from 'vue'
-import { onBeforeRouteLeave, routerKey } from 'vue-router'
+import { onBeforeRouteLeave, routerKey, routeLocationKey } from 'vue-router'
+import { usePageVisibility } from '@/composables/pageVisibility'
+import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import {
   createDrawing,
-  createDrawingGroup, copyDrawing, fetchDrawingGroups, moveDrawing, renameDrawingGroup,
+  createDrawingGroup, copyDrawing, fetchDrawingGroups, moveDrawing, renameDrawingGroup, saveDrawingOrder,
   type DrawingGroup,
   deleteDrawing,
   fetchDrawing,
@@ -80,17 +82,85 @@ const visibleFiles = computed(() =>
     file.title.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()),
   ),
 )
-const recentFiles = computed(() => files.value.slice(0, 3))
+const recentFiles = computed(() => files.value.slice().sort((a, b) => byOrder('f', a, b)).slice(0, 3))
 const groups = ref<DrawingGroup[]>([])
 const assignments = ref<Record<string, string>>({})
-const groupError = ref(''), groupLoading = ref(false), actionBusy = ref(false)
+const groupError = ref(''), groupLoading = ref(false), actionBusy = ref(false), backgroundNotice = ref('')
 const groupCollapsed = ref<Record<string, boolean>>({})
+const sidebarWidth = ref(280)
+const order = ref<string[]>([]), orderRevision = ref(0)
+const dragging = ref<{ kind: 'file' | 'group'; id: string } | null>(null)
+const dropKey = ref('')
+const pageVisible = usePageVisibility()
+const localRoute = inject(routeLocationKey, null)
+let handledRouteDrawing = ''
+function byOrder(prefix: string, a: { id: string }, b: { id: string }) {
+  const ai = order.value.indexOf(`${prefix}:${a.id}`), bi = order.value.indexOf(`${prefix}:${b.id}`)
+  if (ai < 0 && bi < 0) return 0
+  if (ai < 0) return 1
+  if (bi < 0) return -1
+  return ai - bi
+}
+function allOrderKeys() {
+  return [...groups.value.slice().sort((a, b) => byOrder('g', a, b)).map(group => `g:${group.id}`),
+    ...files.value.slice().sort((a, b) => byOrder('f', a, b)).map(file => `f:${file.id}`)]
+}
+async function reorder(key: string, target: string, after = false) {
+  if (actionBusy.value || groupLoading.value || groupError.value || search.value.trim() || key === target) return
+  const keys = allOrderKeys().filter(item => item !== key)
+  const index = keys.indexOf(target)
+  if (index < 0) return
+  keys.splice(index + (after ? 1 : 0), 0, key)
+  actionBusy.value = true
+  try {
+    const next = await saveDrawingOrder(keys, orderRevision.value)
+    if (!sameOwner()) return
+    order.value = keys; orderRevision.value = next
+  } catch (cause) { groupError.value = message(cause, '排序保存失败，请重新读取后重试') }
+  finally { actionBusy.value = false }
+}
+function shiftItem(kind: 'file' | 'group', id: string, offset: number) {
+  const items = kind === 'group' ? groups.value.slice().sort((a,b) => byOrder('g', a, b)) : (fileGroups.value.find(group => group.files.some(file => file.id === id))?.files ?? [])
+  const index = items.findIndex(item => item.id === id), target = items[index + offset]
+  if (target) void reorder(`${kind === 'group' ? 'g' : 'f'}:${id}`, `${kind === 'group' ? 'g' : 'f'}:${target.id}`, offset > 0)
+}
+function startDrag(event: DragEvent, kind: 'file' | 'group', id: string) {
+  if (actionBusy.value || groupLoading.value || groupError.value || search.value.trim()) { event.preventDefault(); return }
+  dragging.value = { kind, id }
+  if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `${kind}:${id}`) }
+}
+function endDrag() { dragging.value = null; dropKey.value = '' }
+function dragOver(event: DragEvent, key: string) { if (!dragging.value || (dragging.value.kind === 'group' && (key.startsWith('f:') || key === 'g:'))) return; event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'; dropKey.value = key }
+async function dropOnGroup(event: DragEvent, groupId: string) {
+  event.preventDefault(); event.stopPropagation()
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const after = event.clientY > bounds.top + bounds.height / 2
+  const source = dragging.value; endDrag()
+  if (!source) return
+  if (source.kind === 'group') { if (groupId) await reorder(`g:${source.id}`, `g:${groupId}`, after); return }
+  const file = files.value.find(item => item.id === source.id)
+  if (file && (assignments.value[file.id] || '') !== groupId) await changeGroup(file, groupId || null)
+}
+async function dropOnFile(event: DragEvent, target: DrawingFileSummary, groupId: string) {
+  event.preventDefault(); event.stopPropagation()
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const after = event.clientY > bounds.top + bounds.height / 2
+  const source = dragging.value; endDrag()
+  if (!source || source.kind !== 'file' || source.id === target.id) return
+  const file = files.value.find(item => item.id === source.id)
+  if (!file) return
+  const moved = (assignments.value[file.id] || '') !== groupId
+  if (moved && !(await changeGroup(file, groupId || null))) return
+  await reorder(`f:${source.id}`, `f:${target.id}`, after)
+  if (moved && groupError.value) groupError.value = `草图已移入分组，但${groupError.value}`
+}
+
 const contextMenu = ref<InstanceType<typeof ContextActionMenu>>()
 const dialogMode = ref<'new-group' | 'rename-group' | 'rename-file' | null>(null)
 const dialogName = ref(''), dialogError = ref(''), dialogTarget = ref('')
 const fileGroups = computed(() => [
-  ...groups.value.map(group => ({ ...group, files: visibleFiles.value.filter(file => assignments.value[file.id] === group.id) })),
-  { id: '', name: '未分组', files: visibleFiles.value.filter(file => !groups.value.some(group => group.id === assignments.value[file.id])) },
+  ...groups.value.slice().sort((a,b) => byOrder('g', a, b)).map(group => ({ ...group, files: visibleFiles.value.filter(file => assignments.value[file.id] === group.id).sort((a,b) => byOrder('f', a, b)) })),
+  { id: '', name: '未分组', files: visibleFiles.value.filter(file => !groups.value.some(group => group.id === assignments.value[file.id])).sort((a,b) => byOrder('f', a, b)) },
 ].filter(group => !search.value.trim() || group.files.length))
 async function loadGroups() {
   if (props.embedded) return
@@ -100,6 +170,7 @@ async function loadGroups() {
     if (!sameOwner()) return
     groups.value = result.groups
     assignments.value = Object.fromEntries(result.assignments.map(item => [item.fileId, item.groupId]))
+    order.value = result.order ?? []; orderRevision.value = result.revision ?? 0
   } catch { groupError.value = '分组读取失败，请重试' }
   finally { groupLoading.value = false }
 }
@@ -133,10 +204,10 @@ async function saveDialog() {
   finally { actionBusy.value = false }
 }
 async function changeGroup(file: DrawingFileSummary, groupId: string | null) {
-  if (actionBusy.value) return
+  if (actionBusy.value || groupLoading.value || groupError.value) return false
   actionBusy.value = true
-  try { await moveDrawing(file.id, groupId); if (sameOwner()) { if (groupId) assignments.value[file.id] = groupId; else delete assignments.value[file.id] } }
-  catch (cause) { groupError.value = message(cause, '移动失败，请重试') }
+  try { await moveDrawing(file.id, groupId); if (!sameOwner()) return false; if (groupId) { assignments.value[file.id] = groupId; groupCollapsed.value[groupId] = false } else delete assignments.value[file.id]; return true }
+  catch (cause) { groupError.value = message(cause, '移动结果未确认，请重新读取后重试'); return false }
   finally { actionBusy.value = false }
 }
 async function duplicateFile(file: DrawingFileSummary) {
@@ -173,9 +244,11 @@ function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummar
     { id: 'rename', label: '重命名', icon: 'ri-edit-line', disabled, run: () => showDialog('rename-file', file.id, file.title) },
     { id: 'export', label: '导出源文件', icon: 'ri-download-line', disabled, run: () => exportFile(file) },
     { id: 'copy', label: '复制当前文件', icon: 'ri-file-copy-line', disabled, run: () => duplicateFile(file) },
+    { id: 'up', label: '上移', icon: 'ri-arrow-up-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, -1) },
+    { id: 'down', label: '下移', icon: 'ri-arrow-down-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, 1) },
     ...(!groupLoading.value && !groupError.value ? [
-      { id: 'ungroup', label: '移至未分组', icon: 'ri-folder-transfer-line', disabled: !assignments.value[file.id], separatorBefore: true, run: () => changeGroup(file, null) },
-      ...groups.value.map(group => ({ id: `move:${group.id}`, label: `移至 ${group.name}`, icon: 'ri-folder-transfer-line', disabled: assignments.value[file.id] === group.id, run: () => changeGroup(file, group.id) })),
+      { id: 'ungroup', label: '移至未分组', icon: 'ri-folder-transfer-line', disabled: !assignments.value[file.id], separatorBefore: true, run: () => { void changeGroup(file, null) } },
+      ...groups.value.map(group => ({ id: `move:${group.id}`, label: `移至 ${group.name}`, icon: 'ri-folder-transfer-line', disabled: assignments.value[file.id] === group.id, run: () => { void changeGroup(file, group.id) } })),
     ] : []),
   ], anchor)
 }
@@ -183,6 +256,9 @@ function openGroupMenu(event: MouseEvent | KeyboardEvent, group: DrawingGroup, a
   void contextMenu.value?.openAt(event, group.name, [
     { id: 'new', label: '新建分组', icon: 'ri-folder-add-line', disabled: actionBusy.value, run: () => showDialog('new-group') },
     { id: 'rename', label: '重命名分组', icon: 'ri-edit-line', disabled: actionBusy.value, run: () => showDialog('rename-group', group.id, group.name) },
+    { id: 'new-file', label: '在此分组新建草图', icon: 'ri-file-add-line', disabled: actionBusy.value, run: () => newFile(group.id) },
+    { id: 'up', label: '上移分组', icon: 'ri-arrow-up-line', disabled: actionBusy.value || !!search.value.trim(), run: () => shiftItem('group', group.id, -1) },
+    { id: 'down', label: '下移分组', icon: 'ri-arrow-down-line', disabled: actionBusy.value || !!search.value.trim(), run: () => shiftItem('group', group.id, 1) },
   ], anchor)
 }
 function menuFromButton(event: MouseEvent, file: DrawingFileSummary) { openFileMenu(event, file, event.currentTarget as HTMLElement) }
@@ -238,7 +314,7 @@ function updateSummary(file: DrawingFile | DrawingFileSummary) {
   const index = files.value.findIndex((item) => item.id === file.id)
   if (index >= 0) files.value.splice(index, 1, { ...file })
   else files.value.push({ ...file })
-  files.value.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  files.value.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
 }
 
 function message(cause: unknown, fallback: string) {
@@ -256,8 +332,9 @@ async function loadList() {
     }
     const loaded = await fetchDrawings()
     if (!sameOwner()) return
-    files.value = loaded.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
+    files.value = loaded.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    const queryDrawing = localRoute?.query.drawing
+    const requested = typeof queryDrawing === 'string' ? queryDrawing : new URLSearchParams(window.location.search).get('drawing') ?? ''
     const remembered = readLastDrawing()
     if (requested) await openFile(requested)
     else if (remembered && files.value.some(file => file.id === remembered)) await openFile(remembered)
@@ -504,7 +581,7 @@ async function settleEdits() {
   return false
 }
 
-async function newFile() {
+async function newFile(groupId?: string) {
   if (
     creating.value ||
     transitioning.value ||
@@ -517,13 +594,14 @@ async function newFile() {
   error.value = ''
   try {
     if (!(await settleEdits())) return
-    const created = await createDrawing()
+    const created = groupId ? await createDrawing(undefined, groupId) : await createDrawing()
     if (!sameOwner()) return
     updateSummary(created)
+    if (groupId) { assignments.value[created.id] = groupId; groupCollapsed.value[groupId] = false }
     await openFile(created.id)
     sidebarOpen.value = window.innerWidth > 760
   } catch (cause) {
-    error.value = message(cause, '新建草图失败')
+    error.value = message(cause, '新建结果未确认，请先刷新列表检查是否已创建草图')
   } finally {
     creating.value = false
   }
@@ -759,6 +837,70 @@ watch(
     dirty.value = false
   },
 )
+// 隐藏时保留画布实例；返回后只在云端版本变化时更新，不能覆盖新输入。
+let backgroundRequest = 0
+async function refreshOnReturn() {
+  if (props.embedded || !current.value || loadingFile.value || transitioning.value || !sameOwner()) return
+  const id = current.value.id, seenRevision = revision.value, request = ++backgroundRequest
+  try {
+    const remote = await fetchDrawing(id)
+    if (!sameOwner() || request !== backgroundRequest || !pageVisible.value || current.value?.id !== id || revision.value !== seenRevision || transitioning.value || renaming.value || editingTitle.value || savePromise) return
+    if (remote.revision !== seenRevision) {
+      if (dirty.value) {
+        conflict.value = true; syncState.value = 'conflict'
+        error.value = '云端草图已更新，本机修改已保留，请处理版本冲突。'
+        await persistDraft()
+        return
+      }
+      current.value = remote; revision.value = remote.revision; sceneJson.value = remote.sceneJson
+      titleDraft.value = remote.title; updateSummary(remote)
+      canvasKey.value = `${id}:${++canvasGeneration}`
+      void loadVersions(id)
+    } else if (remote.title !== current.value.title) {
+      current.value = { ...current.value, title: remote.title, updatedAt: remote.updatedAt }
+      titleDraft.value = remote.title; updateSummary(remote)
+    }
+  } catch (cause) {
+    if (sameOwner() && request === backgroundRequest && pageVisible.value && current.value?.id === id) {
+      const status = (cause as { status?: number }).status
+      if ((status === 403 || status === 404) && !dirty.value && !savePromise) {
+        current.value = null; sceneJson.value = ''; syncState.value = 'error'
+        error.value = '草图不存在或当前账号无权访问，请重新读取。'
+      } else error.value = message(cause, '后台刷新失败，当前画布已保留')
+    }
+  }
+}
+async function refreshDirectoryOnReturn() {
+  if (props.embedded || !sameOwner() || !pageVisible.value || actionBusy.value || groupLoading.value || groupError.value) return
+  const token = backgroundRequest
+  const fileSnapshot = JSON.stringify(files.value.map(file => [file.id, file.title, file.revision, file.updatedAt]))
+  const groupSnapshot = JSON.stringify([groups.value, assignments.value, order.value, orderRevision.value])
+  try {
+    const [freshFiles, freshGroups] = await Promise.all([fetchDrawings(), fetchDrawingGroups()])
+    if (!sameOwner() || token !== backgroundRequest || !pageVisible.value || actionBusy.value || dragging.value || groupLoading.value || groupError.value
+      || fileSnapshot !== JSON.stringify(files.value.map(file => [file.id, file.title, file.revision, file.updatedAt]))
+      || groupSnapshot !== JSON.stringify([groups.value, assignments.value, order.value, orderRevision.value])) return
+    files.value = freshFiles.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    groups.value = freshGroups.groups
+    assignments.value = Object.fromEntries(freshGroups.assignments.map(item => [item.fileId, item.groupId]))
+    order.value = freshGroups.order ?? []; orderRevision.value = freshGroups.revision ?? 0
+    backgroundNotice.value = ''
+  } catch {
+    if (sameOwner() && token === backgroundRequest && pageVisible.value) backgroundNotice.value = '目录刷新失败，正在显示上次结果'
+  }
+}
+watch(pageVisible, (visible, previous) => {
+  if (!visible) { ++backgroundRequest; return }
+  if (!previous) { void refreshOnReturn(); void refreshDirectoryOnReturn() }
+})
+watch(() => [localRoute?.query.drawing, loadingList.value, transitioning.value, pageVisible.value] as const, ([requested, loading, moving, visible]) => {
+  if (props.embedded || typeof requested !== 'string' || !requested || !visible || loading || moving) return
+  if (activeId.value === requested) { handledRouteDrawing = requested; return }
+  if (handledRouteDrawing === requested) return
+  handledRouteDrawing = requested
+  void openFile(requested)
+})
+watch(() => localRoute?.query.drawing, requested => { if (!requested) handledRouteDrawing = '' })
 useSaveBeforeRefresh(async () => {
   if (!(await settleEdits())) throw new Error('草图尚未保存，请先处理保存失败或版本冲突')
 })
@@ -791,9 +933,11 @@ defineExpose({ flush: flushEmbedded })
     <aside
       v-if="!embedded && sidebarOpen"
       class="file-sidebar"
+      :style="{ width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` }"
       aria-label="草图文件列表"
       @keydown.esc="sidebarOpen = false"
     >
+      <PaneResizeHandle :storage-key="`wao:drawing-sidebar-width:${owner}`" label="草图目录宽度" :default-width="280" :min="220" :max="560" @resize="sidebarWidth = $event" />
       <div class="sidebar-head">
         <div>
           <strong>我的草图</strong>
@@ -802,7 +946,7 @@ defineExpose({ flush: flushEmbedded })
               ? '正在读取…'
               : listError
                 ? '暂时无法读取'
-                : `${files.length} 个文件 · 最近编辑优先`
+                : `${files.length} 个文件 · 拖动排序`
           }}</span>
         </div>
         <button title="收起文件列表" aria-label="收起文件列表" @click="sidebarOpen = false">
@@ -815,7 +959,7 @@ defineExpose({ flush: flushEmbedded })
         variant="primary"
         :loading="creating"
         :disabled="transitioning || !!deletingId"
-        @click="newFile"
+        @click="newFile()"
       >
         <i v-if="!creating" class="ri-add-line"></i>
         {{ creating ? '正在新建' : '新建草图' }}
@@ -842,13 +986,15 @@ defineExpose({ flush: flushEmbedded })
         <span>没有匹配的草图</span
         ><WaoButton variant="ghost" @click="search = ''">清除搜索</WaoButton>
       </div>
+      <div v-if="backgroundNotice" class="group-error" role="status">{{ backgroundNotice }} <button type="button" @click="refreshDirectoryOnReturn">重试</button></div>
       <div v-if="groupError" class="group-error" role="alert">{{ groupError }} <button type="button" @click="loadGroups">重试</button></div>
       <div v-else-if="groupLoading" class="group-error" role="status">正在读取分组…</div>
       <button type="button" class="group-create" :disabled="groupLoading || !!groupError || actionBusy" @click="showDialog('new-group')"><i class="ri-folder-add-line"></i>新建分组</button>
       <div v-if="!loadingList && !listError" class="file-list" @contextmenu.self.prevent="showDialog('new-group')">
        <section v-for="group in fileGroups" :key="group.id || 'ungrouped'" class="drawing-group">
-        <div class="group-header" @contextmenu.prevent.stop="group.id && openGroupMenu($event, group)">
+        <div class="group-header" :class="{ 'drop-target': dropKey === `g:${group.id}` }" :draggable="!!group.id && !search.trim()" @dragstart.stop="group.id && startDrag($event, 'group', group.id)" @dragend.stop="endDrag" @dragover.stop="dragOver($event, `g:${group.id}`)" @drop.stop="dropOnGroup($event, group.id)" @contextmenu.prevent.stop="group.id && openGroupMenu($event, group)">
           <button type="button" class="group-toggle" :aria-expanded="groupCollapsed[group.id] !== true || !!search.trim()" @click="groupCollapsed[group.id] = !groupCollapsed[group.id]"><i :class="groupCollapsed[group.id] && !search.trim() ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i><i class="ri-folder-line"></i>{{ group.name }} <span>{{ group.files.length }}</span></button>
+          <button v-if="group.id" type="button" class="group-menu" :aria-label="`在${group.name}新建草图`" title="在此分组新建草图" :disabled="creating || actionBusy || transitioning" @click="newFile(group.id)"><i class="ri-add-line"></i></button>
           <button v-if="group.id" type="button" class="group-menu" :aria-label="`${group.name}的操作`" @click="openGroupMenu($event, group, $event.currentTarget as HTMLElement)"><i class="ri-more-line"></i></button>
         </div>
         <template v-if="!groupCollapsed[group.id] || !!search.trim()">
@@ -856,7 +1002,8 @@ defineExpose({ flush: flushEmbedded })
           v-for="file in group.files"
           :key="file.id"
           class="file-row"
-          :class="{ active: activeId === file.id }"
+          :class="{ active: activeId === file.id, 'drop-target': dropKey === `f:${file.id}` }"
+          :draggable="!search.trim()" @dragstart.stop="startDrag($event, 'file', file.id)" @dragend.stop="endDrag" @dragover.stop="dragOver($event, `f:${file.id}`)" @drop.stop="dropOnFile($event, file, group.id)"
           @contextmenu.prevent.stop="openFileMenu($event, file)"
           @keydown.shift.f10.prevent="openFileMenu($event, file, $event.currentTarget as HTMLElement)"
         >
@@ -1038,7 +1185,7 @@ defineExpose({ flush: flushEmbedded })
           <h1>{{ files.length ? '继续你的想法' : '把想法画出来' }}</h1>
           <p>用自由画布整理思路、绘制流程或记录灵感。修改自动保存到账号。</p>
           <div v-if="recentFiles.length" class="recent-files">
-            <span>最近编辑</span
+            <span>草图文件</span
             ><button
               v-for="file in recentFiles"
               :key="file.id"
@@ -1053,7 +1200,7 @@ defineExpose({ flush: flushEmbedded })
           <WaoButton
             :variant="files.length ? 'secondary' : 'primary'"
             :loading="creating"
-            @click="newFile"
+            @click="newFile()"
             ><i class="ri-add-line"></i>新建草图</WaoButton
           >
         </div>
@@ -1099,6 +1246,8 @@ defineExpose({ flush: flushEmbedded })
   width: 100%;
 }
 .file-sidebar {
+  max-width: min(560px, 55vw);
+  position: relative;
   box-sizing: border-box;
   min-height: 0;
   overflow: hidden;
@@ -1205,6 +1354,7 @@ defineExpose({ flush: flushEmbedded })
   border-radius: var(--wao-radius-control);
   color: var(--wao-text);
 }
+.drop-target { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .file-row:hover,
 .file-row:focus-within {
   background: var(--wao-bg-hover);
@@ -1595,7 +1745,8 @@ summary:focus-visible {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 20;
-    width: min(90%, 310px);
+    width: min(90%, 310px) !important;
+    max-width: none;
     box-shadow: var(--wao-shadow-pop);
   }
   .sidebar-backdrop {
