@@ -5,6 +5,9 @@ import { useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import TaskCaptureFields from '@/components/task/TaskCaptureFields.vue'
+import { capturePayload } from '@/utils/taskCapture'
+import { useTaskLabelsStore } from '@/stores/taskLabels'
 import { todayIso } from '@/utils/time'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
@@ -45,6 +48,7 @@ type Draft = {
   workItemType?: WorkItemType
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'date' | 'range'; start?: string; startAt: string; endAt: string
+  tags?: string; taskSaved?: boolean
   pendingTaskId?: string | null
 }
 function loadDraft(): Partial<Draft> {
@@ -74,10 +78,16 @@ const scheduleMode = ref<'deadline' | 'date' | 'range'>(
 const start = ref(ui.modalScheduleDate || draft.start || '')
 const startAt = ref(ui.modalStartAt || draft.startAt || '')
 const endAt = ref(ui.modalEndAt || draft.endAt || '')
+const taskSaved=ref(!!draft.taskSaved)
+const tags=ref(draft.tags??'')
+const labels=useTaskLabelsStore()
+const capture=computed({get:()=>({project:project.value,pr:pr.value,due:dueDate(due.value),start:scheduleMode.value==='date'?start.value:'',startAt:scheduleMode.value==='range'?startAt.value:'',endAt:scheduleMode.value==='range'?endAt.value:'',tags:tags.value}),set:v=>{project.value=v.project;pr.value=v.pr;due.value=v.due;start.value=v.start;startAt.value=v.startAt;endAt.value=v.endAt;tags.value=v.tags;scheduleMode.value=v.startAt?'range':v.start?'date':'deadline'}})
 const desc = ref(draft.desc ?? source?.desc ?? '')
 const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
 const pendingTaskId = ref<string | null>(draft.pendingTaskId ?? null)
+let createGeneration = 0
+watch(identity, () => { createGeneration++; if (createState.value === 'submitting') createState.value = 'error' }, { flush: 'sync' })
 watch([createState, draftState], () => {
   ui.taskComposerLocked = createState.value === 'submitting' || draftState.value === 'error'
 }, { flush: 'sync' })
@@ -88,7 +98,7 @@ function saveDraft() {
   if (draftTimer) clearTimeout(draftTimer)
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      title: title.value, project: project.value, owner: owner.value,
+      taskSaved:taskSaved.value, tags:tags.value, title: title.value, project: project.value, owner: owner.value,
       workItemType: workItemType.value, pr: pr.value, due: due.value, desc: desc.value,
       scheduleMode: scheduleMode.value, start: start.value, startAt: startAt.value, endAt: endAt.value,
       pendingTaskId: pendingTaskId.value,
@@ -114,9 +124,9 @@ function restoreLegacyDraft() {
     legacyDraftAvailable.value = false
   } catch { toast('旧版草稿无法读取，原记录仍保留', 'ri-error-warning-line') }
 }
-watch([title, project, owner, workItemType, pr, due, desc, scheduleMode, start, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
+watch([tags, title, project, owner, workItemType, pr, due, desc, scheduleMode, start, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
-onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer); ui.taskComposerLocked = false })
+onBeforeUnmount(() => { createGeneration++; if (draftTimer) clearTimeout(draftTimer); ui.taskComposerLocked = false })
 
 /**
  * 打开就把光标放进标题框。
@@ -150,9 +160,10 @@ async function create() {
     toast('登录账号已变化，请切回原账号继续处理草稿', 'ri-error-warning-line')
     return
   }
+  try { capturePayload(capture.value) } catch(e) { toast(e instanceof Error?e.message:'属性无效','ri-error-warning-line'); return }
   const name = title.value.trim()
   if (!name) return
-  if (unavailableProject.value) {
+  if (!taskSaved.value && unavailableProject.value) {
     toast('所选清单暂不可用，请重新选择或存入收集箱', 'ri-error-warning-line')
     return
   }
@@ -174,12 +185,17 @@ async function create() {
     docs: source?.sourceDocId ? [source.sourceDocId] : [],
   }
   createState.value = 'submitting'
-  let persisted = false
+  const retryingLabels = taskSaved.value
+  const attempt = createGeneration
+  const active = () => identity() === composerIdentity && attempt === createGeneration
+  let persisted = taskSaved.value
   let createdId = pendingTaskId.value
-  if (pendingTaskId.value && data.taskById(pendingTaskId.value)) {
+  if (taskSaved.value) { /* Retry labels without overwriting the confirmed task. */
+  } else if (pendingTaskId.value && data.taskById(pendingTaskId.value)) {
     // 首次写入失败后复用同一条本地任务，不重复插入；失败后改过的内容也一起补写。
     data.patchTask(pendingTaskId.value, payload)
     await data.flushTask(pendingTaskId.value)
+    if (!active()) return
     persisted = data.taskSaveState(pendingTaskId.value) === 'saved'
   } else {
     pendingTaskId.value ??= `t${crypto.randomUUID().replace(/-/g, '').slice(0, 31)}`
@@ -190,6 +206,7 @@ async function create() {
       return
     }
     const result = await data.addTask(payload, pendingTaskId.value)
+    if (!active()) return
     createdId = result.task.id
     pendingTaskId.value = result.task.id
     saveDraft()
@@ -200,7 +217,9 @@ async function create() {
     toast(data.taskSaveError(pendingTaskId.value ?? '') || '保存尚未确认，输入已保留，请检查网络后重试', 'ri-error-warning-line')
     return
   }
-  if (identity() !== composerIdentity) return
+  if (!active()) return
+  taskSaved.value=true;saveDraft()
+  if((tags.value.trim() || retryingLabels) && createdId) { try { if(!labels.ready)await labels.load();if(!active())return;if(!labels.ready)throw new Error('标签读取失败');await labels.save({...labels.get(createdId),tags:[...new Set(tags.value.split(/[,，]/).map(t=>t.trim()).filter(Boolean))]});if(!active())return } catch { if(!active())return;createState.value='error';toast('任务已保存，标签未保存，请重试','ri-error-warning-line');return } }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.taskComposerLocked = false
   ui.closeModal()
@@ -234,45 +253,20 @@ useOverlayDismiss(() => true, requestClose)
       class="title-input"
       enterkeyhint="done"
       placeholder="要完成什么？例如：整理证件盒"
-      @keydown.enter.prevent="create"
+      @keydown.enter.prevent="!$event.isComposing && create()" :disabled="taskSaved || createState==='submitting'" aria-label="任务名称"
     />
     <p v-if="legacyDraftAvailable" class="source-note">旧版草稿仍保存在此浏览器，因缺少账号标识未自动加载。
       <button type="button" :disabled="!!title || !!desc || !!pendingTaskId" @click="restoreLegacyDraft">恢复旧版草稿</button>
     </p>
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
-    <div class="meta-row">
-      <label class="meta-field"><span>清单</span><select v-model="project" aria-label="所属清单" class="compact-select">
-        <option value="">收集箱</option>
-        <option v-if="unavailableProject" :value="project" disabled>清单暂不可用</option>
-        <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select></label>
-      <label class="meta-field type-field"><span>类型</span><select v-model="workItemType" aria-label="工作项类型" class="compact-select"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></label>
-    </div>
-    <details class="schedule-details" :open="!!ui.modalScheduleDate || !!ui.modalDue || !!ui.modalStartAt || undefined">
-      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '执行时段' : scheduleMode === 'date' ? '执行日期' : '未安排' }} · {{ due || '无截止日期' }}</span></summary>
-      <div class="label">截止日期</div>
-      <div class="pills">
-        <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d || (!due && d === '不设置') }" @click="due = d">{{ d }}</button>
-        <input aria-label="截止日期" type="date" :value="dueDate(due)" @change="due = ($event.target as HTMLInputElement).value || ''" />
-      </div>
-      <div class="label">执行安排 · 不改变截止</div>
-      <div class="schedule-switch">
-        <button :class="{ on: scheduleMode === 'deadline' }" @click="scheduleMode = 'deadline'">不安排</button>
-        <button :class="{ on: scheduleMode === 'date' }" @click="scheduleMode = 'date'">指定日期</button>
-        <button :class="{ on: scheduleMode === 'range' }" @click="scheduleMode = 'range'">时间段</button>
-      </div>
-      <label v-if="scheduleMode === 'date'">执行日期（不指定时间）<input v-model="start" aria-label="执行日期" type="date" /></label>
-      <div v-if="scheduleMode === 'range'" class="range-fields">
-        <label><span>开始</span><input v-model="startAt" type="datetime-local" /></label>
-        <label><span>结束</span><input v-model="endAt" type="datetime-local" /></label>
-      </div>
-    </details>
-
+    <label class="meta-field type-field"><span>类型</span><select v-model="workItemType" aria-label="工作项类型" class="compact-select" :disabled="taskSaved || createState==='submitting'"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></label>
+    <TaskCaptureFields :projects="openProjects" v-model="capture" :saved="taskSaved" :title="title" :disabled="createState==='submitting'" @title="title=$event" />
     <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
     <div class="desc-wrap">
       <MarkdownEditor
         v-model="desc"
+        :readonly="taskSaved || createState==='submitting'"
         placeholder="补充背景、目标与边界…可直接 Ctrl/Cmd+V 粘贴截图"
         :min-height="110"
         @upload-image="onUploadImage"
@@ -281,14 +275,14 @@ useOverlayDismiss(() => true, requestClose)
     </div>
 
     <div class="foot">
-      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>{{ data.taskSaveError(pendingTaskId ?? '') || '保存尚未确认，输入仍保留在当前窗口' }}</span>
+      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>{{ taskSaved ? '任务已保存，标签尚未同步，请重试' : data.taskSaveError(pendingTaskId ?? '') || '保存尚未确认，输入仍保留在当前窗口' }}</span>
       <span v-else-if="draftState === 'error'" class="draft-state" role="alert">草稿未能写入本机，请保持弹窗打开。<button type="button" @click="saveDraft">重试</button></span>
       <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
       <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">收起</button>
       <button class="btn-primary" :disabled="!title.trim() || createState === 'submitting'" @click="create">
         <i v-if="createState === 'submitting'" class="ri-loader-4-line spin"></i>
-        {{ createState === 'submitting' ? '正在创建' : createState === 'error' ? '重试创建' : '创建任务' }}
+        {{ createState === 'submitting' ? (taskSaved ? '保存标签中…' : '正在创建') : taskSaved ? '重试标签' : createState === 'error' ? '重试创建' : '创建任务' }}
       </button>
     </div>
   </div>

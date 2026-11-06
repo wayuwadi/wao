@@ -5,6 +5,7 @@ import java.util.Map;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +22,8 @@ public class MemberPreferenceController {
 
     private static final String FALLBACK_OWNER = "wg";
     private static final int MAX_VALUE_LENGTH = 4000;
+    private static final java.util.Set<String> TASK_ORGANIZATION_KEYS = java.util.Set.of(
+            "todo-named-filters-v1", "todo-list-folders-v1");
 
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private cn.wayuwa.wao.service.NoteAiSettingsService noteSettings;
@@ -34,7 +37,8 @@ public class MemberPreferenceController {
 
     @GetMapping("/{key}")
     public ApiResponse<Map<String, String>> get(@PathVariable String key, HttpServletRequest http) {
-        String value = mapper.find(currentMember.idOr(http, FALLBACK_OWNER), key);
+        String value = mapper.find(TASK_ORGANIZATION_KEYS.contains(key) ? taskOrganizationOwner(http)
+                : currentMember.idOr(http, FALLBACK_OWNER), key);
         return ApiResponse.ok(Map.of("value", value == null ? "" : value));
     }
 
@@ -59,13 +63,35 @@ public class MemberPreferenceController {
                 || java.util.Set.of("nav-personal-order", "mobile-bottom-nav-v1", "nav-top-shortcuts-v1", "quick-links").contains(key)) {
             throw new BadRequestException("菜单由开发人员统一维护，不再支持个人配置");
         }
-        int limit = key.startsWith("task-order-v1:") || key.startsWith("project-layout-v1:")
+        int limit = TASK_ORGANIZATION_KEYS.contains(key) || key.startsWith("task-order-v1:") || key.startsWith("project-layout-v1:")
                 ? 60_000 : MAX_VALUE_LENGTH;
         if (value == null || value.length() > limit) {
             throw new BadRequestException("偏好值不能为空且不超过 " + limit + " 字符");
         }
+        if (TASK_ORGANIZATION_KEYS.contains(key)) {
+            if (!body.containsKey("expected") || body.get("expected") == null)
+                throw new BadRequestException("请先读取账号配置，再提交 expected 版本以保护跨设备修改");
+            String owner = taskOrganizationOwner(http);
+            String previous = mapper.find(owner, key);
+            // A lost acknowledgement may safely retry the exact same value.
+            if (java.util.Objects.equals(previous, value)) return ApiResponse.ok(null);
+            if (!java.util.Objects.equals(previous == null ? "" : previous, body.get("expected")))
+                throw new ConflictException("账号配置已被其他窗口修改，请保留草稿并重新读取");
+            int changed = previous == null ? mapper.insertIfAbsent(owner, key, value)
+                    : mapper.compareAndSet(owner, key, previous, value);
+            if (changed != 1 && !java.util.Objects.equals(mapper.find(owner, key), value))
+                throw new ConflictException("账号配置已被其他窗口修改，请保留草稿并重新读取");
+            return ApiResponse.ok(null);
+        }
         if (noteSettings != null && cn.wayuwa.wao.service.NoteAiSettingsService.KEYS.contains(key)) noteSettings.saveLegacy(currentMember.id(http), key, value);
         else mapper.upsert(currentMember.idOr(http, FALLBACK_OWNER), key, value);
         return ApiResponse.ok(null);
+    }
+
+    private String taskOrganizationOwner(HttpServletRequest request) {
+        String owner = currentMember.id(request);
+        if (owner == null || owner.isBlank())
+            throw new cn.wayuwa.wao.common.UnauthorizedException("请登录后读取或保存个人清单配置");
+        return owner;
     }
 }

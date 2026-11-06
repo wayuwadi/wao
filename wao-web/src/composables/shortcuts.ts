@@ -36,6 +36,10 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
     ],
   },
   {
+    title: '任务列表（焦点在任务行）',
+    items: [['↑ / ↓', '选择上一项 / 下一项'], ['Home / End', '选择首项 / 末项'], ['Enter', '编辑所选任务'], ['空格', '完成任务或批量选择'], ['⌘/Ctrl Enter', '完成所选任务'], ['Shift F10', '打开任务菜单'], ['Esc', '从详情返回任务行']],
+  },
+  {
     title: '页签',
     items: [['⌘/Ctrl W', '关闭当前页签']],
   },
