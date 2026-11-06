@@ -1791,6 +1791,9 @@ const findCaseSensitive = ref(false)
 const findMatches = ref<EditorSearchRange[]>([])
 const findIndex = ref(-1)
 const findNotice = ref('')
+const replaceAllUploadHintId = `editor-replace-upload-${component?.uid ?? 'hint'}`
+const replaceAllUploadHint = '图片或附件仍在处理中，完成后可全部替换'
+const replaceAllUploadBlocked = computed(() => hasPendingUploads())
 const findStatus = computed(() => findText.value.length > MAX_FIND_QUERY_LENGTH ? '查找内容过长，请缩短至 1000 字以内' : !findText.value ? '输入关键词查找正文' : findMatches.value.length
   ? `${findIndex.value + 1} / ${findMatches.value.length}` : '当前内容未找到')
 let findTimer: ReturnType<typeof setTimeout> | undefined
@@ -2146,7 +2149,7 @@ function replaceCurrent() {
 
 function replaceAll() {
   const e = editor.value
-  if (!e || props.readonly || !findText.value) return
+  if (!e || props.readonly || !findText.value || hasPendingUploads()) return
   const matches = searchMatches()
   if (!matches.length) return
   // One structural replacement keeps thousands of matches from generating thousands of plugin steps.
@@ -2888,8 +2891,9 @@ onBeforeUnmount(() => {
       <div v-if="!readonly" class="find-row find-replace-row">
         <div class="find-field"><i class="ri-find-replace-line" aria-hidden="true"></i><input v-model="replaceText" placeholder="替换为" aria-label="替换内容" autocomplete="off" spellcheck="false" /></div>
         <WaoButton variant="ghost" :disabled="!findMatches.length" @click="replaceCurrent">替换</WaoButton>
-        <WaoButton variant="ghost" :disabled="!findMatches.length" @click="replaceAll">全部替换</WaoButton>
-        <span v-if="findNotice" class="find-notice" role="status">{{ findNotice }}</span>
+        <WaoButton variant="ghost" :disabled="!findMatches.length || replaceAllUploadBlocked" :aria-describedby="replaceAllUploadBlocked ? replaceAllUploadHintId : undefined" :title="replaceAllUploadBlocked ? replaceAllUploadHint : undefined" @click="replaceAll">全部替换</WaoButton>
+        <span v-if="replaceAllUploadBlocked" :id="replaceAllUploadHintId" class="find-notice" role="status">{{ replaceAllUploadHint }}</span>
+        <span v-else-if="findNotice" class="find-notice" role="status">{{ findNotice }}</span>
       </div>
     </form>
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">

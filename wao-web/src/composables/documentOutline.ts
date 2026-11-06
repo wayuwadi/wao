@@ -9,6 +9,7 @@ export function useDocumentOutline(scroll: Ref<HTMLElement | null>, source: () =
   let headings: HTMLElement[] = []
   let offsets: number[] = []
   let visiblePositions: { offset: number; index: number }[] = []
+  let navigationTarget: { heading: HTMLElement; scrollTop: number } | null = null
   let frame = 0
   let needsMeasure = true
   let resize: ResizeObserver | undefined
@@ -41,8 +42,18 @@ export function useDocumentOutline(scroll: Ref<HTMLElement | null>, source: () =
       if (visiblePositions[middle]!.offset <= position) low = middle + 1
       else high = middle
     }
-    activeIndex.value = visiblePositions[Math.max(0, low - 1)]?.index ?? 0
     const distance = root.scrollHeight - root.clientHeight
+    const targetIndex = navigationTarget && Math.abs(root.scrollTop - navigationTarget.scrollTop) <= 1
+      ? headings.indexOf(navigationTarget.heading) : -1
+    if (targetIndex >= 0 && visiblePositions.some(item => item.index === targetIndex)) {
+      // Near the end, the browser cannot align a heading with the viewport top.
+      // Keep the explicitly chosen heading until the reader actually scrolls away.
+      activeIndex.value = targetIndex
+    } else {
+      navigationTarget = null
+      const atBottom = distance > 0 && root.scrollTop >= distance - 1
+      activeIndex.value = visiblePositions[atBottom ? visiblePositions.length - 1 : Math.max(0, low - 1)]?.index ?? 0
+    }
     progress.value = distance > 0 ? Math.min(100, Math.max(0, Math.round(root.scrollTop / distance * 100))) : 100
   }
   function schedule() {
@@ -65,12 +76,14 @@ export function useDocumentOutline(scroll: Ref<HTMLElement | null>, source: () =
     update()
     if (!headings[index]) return
     root.scrollTop = Math.max(0, offsets[index]! - 24)
+    navigationTarget = { heading: headings[index]!, scrollTop: root.scrollTop }
     activeIndex.value = index
     schedule()
   }
-  function toTop() { if (scroll.value) scroll.value.scrollTop = 0; schedule() }
+  function toTop() { navigationTarget = null; if (scroll.value) scroll.value.scrollTop = 0; schedule() }
 
   watch(scroll, (root, previous) => {
+    navigationTarget = null
     resize?.disconnect()
     mutation?.disconnect()
     previous?.removeEventListener('load', refresh, true)
@@ -88,7 +101,7 @@ export function useDocumentOutline(scroll: Ref<HTMLElement | null>, source: () =
     root.addEventListener('load', refresh, true)
     refresh()
   }, { flush: 'post' })
-  watch(source, async () => { await nextTick(); if (!disposed) refresh() }, { flush: 'post' })
+  watch(source, async () => { navigationTarget = null; await nextTick(); if (!disposed) refresh() }, { flush: 'post' })
   onBeforeUnmount(() => {
     disposed = true
     if (frame) cancelAnimationFrame(frame)

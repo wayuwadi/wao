@@ -2672,6 +2672,37 @@ describe('文内查找与安全替换', () => {
     w.unmount()
   })
 
+  it('上传期间全部替换保留插入锚点，完成后恢复替换并可一次撤销', async () => {
+    const w = await mountEditor({ modelValue: '插图位置\n\nalpha alpha', advanced: true })
+    const instance = w.vm as unknown as { editor: Editor; replaceAll: () => void }
+    const e = instance.editor
+    e.commands.setTextSelection(3)
+    pasteInto(w.get('.tiptap').element, [new File(['image'], '保留位置.png', { type: 'image/png' })])
+    const before = e.getJSON()
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue('alpha')
+    await w.get('[aria-label="替换内容"]').setValue('beta')
+    const all = () => w.findAll('button').find(button => button.text() === '全部替换')!
+    expect(all().attributes('disabled')).toBeDefined()
+    expect(document.getElementById(all().attributes('aria-describedby'))?.textContent).toContain('完成后可全部替换')
+    expect(w.findAll('button').find(button => button.text() === '替换')!.attributes('disabled')).toBeUndefined()
+    await w.get('[aria-label="下一个匹配"]').trigger('click')
+    instance.replaceAll()
+    expect(e.getJSON()).toEqual(before)
+    const done = w.emitted('upload-image')![0]![1] as (url: string, name: string) => void
+    done('/api/images/replace-safe/raw', '保留位置.png'); await flushPromises()
+    expect(w.get('.md-body img').attributes('src')).toBe('/api/images/replace-safe/raw')
+    expect(all().attributes('disabled')).toBeUndefined()
+    expect(all().attributes('aria-describedby')).toBeUndefined()
+    const withImage = e.getJSON()
+    await all().trigger('click')
+    expect(e.getText()).toContain('beta beta')
+    expect(w.findAll('.md-body img')).toHaveLength(1)
+    e.commands.undo(); await nextTick()
+    expect(e.getJSON()).toEqual(withImage)
+    w.unmount()
+  })
+
   it('输入法确认不触发跳转，编辑正文后重新统计最新命中', async () => {
     const w = await mountEditor({ modelValue: '桂花 桂花', advanced: true })
     const e = (w.vm as unknown as { editor: Editor }).editor

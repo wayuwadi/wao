@@ -166,7 +166,7 @@ async function create() {
 </script>
 
 <template>
-  <div class="knowledge-workspace" :class="{ 'document-focused': documentFocus }" @keydown.esc="onEscape">
+  <div class="knowledge-workspace bounded-workspace" :class="{ 'document-focused': documentFocus }" @keydown.esc="onEscape">
     <div v-if="!documentFocus" class="mobile-workspace-bar">
       <button ref="mobileLibraryButton" type="button" aria-label="选择知识库" :aria-expanded="mobileLibrary" @click="toggleLibraries"><i class="ri-book-2-line" aria-hidden="true" /><span>{{ selectedName }}</span><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
       <button v-if="!selected" ref="mobileDirectoryButton" type="button" aria-label="查看全部目录" :aria-expanded="mobileDirectory" @click="toggleDirectory"><i class="ri-list-check" aria-hidden="true" />目录</button>
@@ -239,7 +239,8 @@ async function create() {
 </template>
 
 <style scoped>
-.knowledge-workspace { position: relative; display: flex; height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h)); min-width: 0; overflow: hidden; color: var(--wao-text); background: var(--wao-bg-card); }
+/* AppLayout and TabWindow provide the available height, including the real footer. */
+.knowledge-workspace { position: relative; display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; overflow: hidden; color: var(--wao-text); background: var(--wao-bg-card); }
 button { color: inherit; font: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 button:disabled { cursor: not-allowed; opacity: .5; }
