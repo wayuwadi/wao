@@ -13,6 +13,20 @@ enableAutoUnmount(afterEach)
 afterEach(() => { document.body.innerHTML = '' })
 
 describe('确认操作的可恢复反馈', () => {
+  it('标题默认完整换行，按需限行仍保留完整的名称与读屏文本', async () => {
+    const title = '很长的资源名称'.repeat(35)
+    const wrapper = mount(SettingsDialogShell, { props: { title }, attachTo: document.body })
+    const heading = () => document.querySelector<HTMLHeadingElement>('[role="dialog"] h2')!
+    expect(heading().classList.contains('limited-title')).toBe(false)
+    await wrapper.setProps({ titleMaxLines: 2 })
+    expect(heading().classList.contains('limited-title')).toBe(true)
+    expect(heading().style.getPropertyValue('--dialog-title-lines')).toBe('2')
+    expect(heading().textContent).toBe(title)
+    expect(heading().title).toBe(title)
+    expect(heading().getAttribute('aria-label')).toBe(title)
+    await wrapper.setProps({ titleMaxLines: undefined })
+    expect(heading().classList.contains('limited-title')).toBe(false)
+  })
   it('业务表单已主动聚焦输入框时，外壳不会在挂载后抢回焦点', async () => {
     const Host = defineComponent({
       components: { SettingsDialogShell },

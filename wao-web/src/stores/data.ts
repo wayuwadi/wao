@@ -1059,10 +1059,12 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建知识库；apiLive 时经后端创建。 */
   async function addKb(payload: CreateKbPayload): Promise<KnowledgeBase | null> {
+    const session = useSessionStore()
+    const requestMember = session.userId, requestAccount = session.account?.accountId
     if (apiLive.value) {
       try {
         const kb = await apiCreateKb({ ...payload, project: undefined })
-        kbs.value.unshift(kb)
+        if (requestMember === session.userId && requestAccount === session.account?.accountId) kbs.value.unshift(kb)
         return kb
       } catch {
         return null

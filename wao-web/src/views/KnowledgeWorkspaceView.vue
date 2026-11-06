@@ -75,6 +75,8 @@ function trapNavigation(event: KeyboardEvent) {
 watch([() => session.account?.accountId, () => session.userId, pageVisible], () => closeNavigation(false))
 watch(() => route.fullPath, () => closeNavigation())
 const { query } = toRefs(useBrowsingState('knowledge-home', { query: '' }, { query: validSearch }))
+const searchInput = ref<HTMLInputElement>()
+function clearSearch() { query.value = ''; void nextTick(() => searchInput.value?.focus({ preventScroll: true })) }
 const index = computed(() => {
   const search = query.value.trim().toLocaleLowerCase()
   return libraries.value.map(kb => {
@@ -89,16 +91,26 @@ async function open(kb = '', doc = '') {
   if (restoreFocus) await nextTick(restoreNavigationFocus)
 }
 const creating = ref(false), saving = ref(false), name = ref(''), description = ref(''), icon = ref('wao-kb-icon-notebook'), error = ref('')
+const createIdentity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+let createGeneration = 0
+watch(createIdentity, () => {
+  createGeneration++; creating.value = false; saving.value = false
+  name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''
+}, { flush: 'sync' })
+onBeforeUnmount(() => { createGeneration++ })
 async function startCreate() { closeNavigation(); await nextTick(); name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''; creating.value = true }
 async function create() {
   if (!name.value.trim() || saving.value) return
+  const identity = createIdentity(), generation = ++createGeneration
+  const active = () => identity === createIdentity() && generation === createGeneration
   saving.value = true; error.value = ''
   try {
     const kb = await data.addKb({ name: name.value.trim(), desc: description.value.trim(), icon: icon.value })
+    if (!active()) return
     if (!kb) throw new Error('create failed')
     creating.value = false; open(kb.id)
-  } catch { error.value = '创建失败，输入已保留，请重试。' }
-  finally { saving.value = false }
+  } catch { if (active()) error.value = '创建失败，输入已保留，请重试。' }
+  finally { if (active()) saving.value = false }
 }
 </script>
 <template>
@@ -130,13 +142,13 @@ async function create() {
     <main class="workspace-content" :inert="narrow && mobilePane ? true : undefined">
       <KbDetailView v-if="selected" :navigation-hidden="!!mobilePane" />
       <section v-else class="knowledge-home">
-        <header><h1>知识库</h1><p>全部内容</p><WaoField label="查找文件" v-slot="field"><input :id="field.id" v-model="query" type="search" placeholder="搜索知识库、文件夹或文档" /></WaoField></header>
+        <header><h1>知识库</h1><p>全部内容</p><WaoField label="查找文件" v-slot="field"><input ref="searchInput" :id="field.id" v-model="query" type="search" placeholder="搜索知识库、文件夹或文档" /></WaoField></header>
         <WaoEmptyState v-if="data.loadStates.knowledge === 'loading' || data.loadStates.knowledge === 'idle'" title="正在读取知识库…" icon="ri-loader-4-line" role="status" />
         <WaoEmptyState v-else-if="data.loadStates.knowledge === 'error'" title="知识库读取失败" :description="libraries.length ? '以下为上次读取的目录，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert">
           <template #actions><WaoButton @click="data.retryDomain('knowledge')">重新读取知识库</WaoButton></template>
         </WaoEmptyState>
         <WaoEmptyState v-else-if="!index.length" :title="query.trim() ? '没有匹配的内容' : '还没有知识库'" :description="query.trim() ? '换个关键词，或清除搜索查看全部内容。' : '创建一个知识库，开始整理文档。'">
-          <template #actions><WaoButton v-if="query.trim()" @click="query = ''">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template>
+          <template #actions><WaoButton v-if="query.trim()" @click="clearSearch">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template>
         </WaoEmptyState>
         <section v-for="item in index" :key="item.kb.id" class="index-library">
           <button class="library-title" @click="open(item.kb.id)"><i :class="item.kb.icon" />{{ item.kb.name }}<i class="ri-arrow-right-s-line" /></button>

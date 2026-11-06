@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import Workspace from '@/views/KnowledgeWorkspaceView.vue'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useNavStore } from '@/stores/nav'
+import { useSessionStore } from '@/stores/session'
 vi.mock('@/views/KbDetailView.vue', () => ({ default: { template: '<textarea class="editor" />' } }))
 enableAutoUnmount(afterEach)
 describe('知识库工作区', () => {
@@ -61,6 +62,27 @@ describe('知识库工作区', () => {
     expect(add).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
+  it.each([false, true])('切换账号后旧创建回执不导航、不关闭当前新表单（再切回：%s）', async returnToOriginal => {
+    const session = useSessionStore()
+    const login = (accountId: string) => { session.account = { accountId, member: { id: 'same-member' } } as never }
+    login('first')
+    const { wrapper, data, router } = await setup()
+    const created = { ...data.kbs[0]!, id: 'old-created', name: '旧账号新建知识库' }
+    let finish!: (kb: typeof created) => void
+    vi.spyOn(data, 'addKb').mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await wrapper.get('[aria-label="新增知识库"]').trigger('click')
+    await wrapper.get('input[required]').setValue('旧账号新建知识库')
+    await wrapper.get('form').trigger('submit')
+    login('second'); if (returnToOriginal) login('first')
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    await wrapper.get('[aria-label="新增知识库"]').trigger('click')
+    await wrapper.get('input[required]').setValue('当前表单输入')
+    finish(created); await flushPromises()
+    expect(router.currentRoute.value.query.kb).toBeUndefined()
+    expect(wrapper.get<HTMLInputElement>('input[required]').element.value).toBe('当前表单输入')
+    expect(wrapper.get('form button[type="submit"]').attributes('disabled')).toBeUndefined()
+  })
   it('读取中、失败、真实空库与搜索无结果互不混淆', async () => {
     const { wrapper, data } = await setup()
     data.kbs = []; data.loadStates.knowledge = 'loading'; await flushPromises()
@@ -84,6 +106,18 @@ describe('知识库工作区', () => {
     setActivePinia(createPinia())
     localStorage.setItem('wao-nav-v1', JSON.stringify({ collapsed:false, foldedGroups:{} }))
     expect(useNavStore().collapsed).toBe(false)
+  })
+  it('清除无结果的搜索后回到搜索框，继续输入无需重新定位', async () => {
+    const { wrapper, data } = await setup()
+    data.loadStates.knowledge = 'loaded'
+    const input = wrapper.get<HTMLInputElement>('input[type="search"]')
+    await input.setValue('查不到的知识库内容')
+    const clear = wrapper.findAll('button').find(button => button.text() === '清除搜索')!
+    ;(clear.element as HTMLButtonElement).focus()
+    await clear.trigger('click'); await flushPromises()
+    expect(input.element.value).toBe('')
+    expect(wrapper.text()).not.toContain('没有匹配的内容')
+    expect(document.activeElement).toBe(input.element)
   })
   it('库名与文档搜索都忽略大小写，空库仍能按名称找到', async () => {
     const { wrapper, data } = await setup()

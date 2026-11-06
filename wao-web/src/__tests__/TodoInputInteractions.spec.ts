@@ -56,6 +56,16 @@ it('保存期间主动切换到搜索后，不抢回快速输入焦点', async (
   expect(document.activeElement).toBe(search.element)
 })
 
+it('清空任务搜索后焦点回到搜索框，可直接继续输入', async () => {
+  const wrapper = header(), search = wrapper.get<HTMLInputElement>('[aria-label="搜索任务"]')
+  await search.setValue('旧关键词')
+  const clear = wrapper.get<HTMLButtonElement>('[aria-label="清空搜索"]')
+  clear.element.focus(); await clear.trigger('click'); await flushPromises()
+  expect(search.element.value).toBe('')
+  expect(wrapper.find('[aria-label="清空搜索"]').exists()).toBe(false)
+  expect(document.activeElement).toBe(search.element)
+})
+
 it('任务已创建但标签失败时保留标题锁定，焦点落在标签重试入口', async () => {
   const wrapper = header(), input = wrapper.get<HTMLInputElement>('[aria-label="添加任务"]')
   input.element.focus(); await wrapper.setProps({ creating: true }); input.element.blur()

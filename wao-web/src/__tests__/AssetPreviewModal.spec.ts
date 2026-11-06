@@ -15,6 +15,27 @@ beforeEach(() => vi.clearAllMocks())
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); document.body.innerHTML = '' })
 
 describe('资源预览生命周期', () => {
+  it('真实 Teleport 下超长标题限两行，完整名称可展开且切换资源后收起', async () => {
+    const name = '这是用于检验资源预览的完整中文展示名称'.repeat(12)
+    const wrapper = mount(AssetPreviewModal, { props: { asset: { kind: 'image', name, url: '/image.png' } }, attachTo: document.body })
+    wrappers.push(wrapper)
+    await flushPromises()
+    const heading = document.querySelector<HTMLHeadingElement>('[role="dialog"] h2')!
+    expect(heading.classList.contains('limited-title')).toBe(true)
+    expect(heading.style.getPropertyValue('--dialog-title-lines')).toBe('2')
+    expect(heading.title).toBe(`预览 ${name}`)
+    const fullName = document.querySelector<HTMLDetailsElement>('.preview-full-name')!
+    expect(fullName.open).toBe(false)
+    fullName.querySelector('summary')!.click()
+    expect(fullName.open).toBe(true)
+    expect(fullName.querySelector('p')!.textContent).toBe(name)
+    const summary = fullName.querySelector('summary')!
+    summary.focus()
+    summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(document.querySelector('.dialog-close'))
+    await wrapper.setProps({ asset: { kind: 'image', name: `${name}第二张`, url: '/second.png' } })
+    expect(document.querySelector<HTMLDetailsElement>('.preview-full-name')!.open).toBe(false)
+  })
   it('保留人工网页存储与表单能力，AI 报告继续保持隔离', () => {
     const manual = preview({ kind: 'html', name: '演示', url: '/api/pages/demo', sourceType: 'MANUAL_UPLOAD' })
     expect(manual.get('iframe').attributes('sandbox')).toContain('allow-same-origin')

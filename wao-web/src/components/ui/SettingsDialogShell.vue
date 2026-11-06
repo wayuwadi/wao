@@ -5,6 +5,7 @@ import { useMobileVisualViewport } from '@/composables/mobileVisualViewport'
 const props = withDefaults(
   defineProps<{
     title: string
+    titleMaxLines?: number
     description?: string
     width?: string
     height?: string
@@ -98,7 +99,12 @@ onBeforeUnmount(() => {
         <header class="dialog-heading">
           <div v-if="appearance !== 'compact'" class="title-icon"><i :class="icon" aria-hidden="true"></i></div>
           <div class="dialog-title">
-            <h2>{{ title }}</h2>
+            <h2
+              :class="{ 'limited-title': titleMaxLines && titleMaxLines > 0 }"
+              :style="titleMaxLines && titleMaxLines > 0 ? { '--dialog-title-lines': titleMaxLines } : undefined"
+              :title="title"
+              :aria-label="title"
+            >{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
           </div>
           <button
@@ -171,6 +177,12 @@ p {
   color: var(--wao-text-3);
   font-size: var(--wao-font-help);
   line-height: 1.6;
+}
+.limited-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--dialog-title-lines);
+  overflow: hidden;
 }
 .title-icon {
   flex-shrink: 0;
