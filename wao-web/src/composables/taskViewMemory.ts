@@ -20,34 +20,41 @@ export function useTaskViewMemory<T extends object>(scope: MaybeRefOrGetter<stri
   return state
 }
 
-export function useTaskScrollMemory(root: Ref<HTMLElement | null>, scope: MaybeRefOrGetter<string>, content: () => unknown) {
+export function useTaskScrollMemory(root: Ref<HTMLElement | null>, scope: MaybeRefOrGetter<string>, content: () => unknown, initialPosition?: (element: HTMLElement) => number) {
   const memory = useTaskViewMemory(scope, () => ({ positions: {} as Record<string, number> }))
   const restored = new Map<string, HTMLElement>()
   const elementKeys = new WeakMap<HTMLElement, string>()
   let restoring = false
   async function restore() {
+    const state=memory.value
     await nextTick()
+    if(state!==memory.value)return
     restoring = true
     for (const element of root.value?.querySelectorAll<HTMLElement>('[data-task-scroll]') ?? []) {
       const key = element.dataset.taskScroll!
       if (restored.get(key) === element && elementKeys.get(element) === key) continue
-      const value = memory.value.positions[key] ?? 0
+      const saved = memory.value.positions[key]
+      const hasSaved = typeof saved==='number' && Number.isFinite(saved) && saved>=0
+      const value = hasSaved ? saved : Math.max(0, initialPosition?.(element) ?? 0)
       element.scrollTop = value
       elementKeys.set(element,key)
-      if (element.scrollTop >= value) restored.set(key,element)
+      if (element.scrollTop >= value || (!hasSaved && initialPosition)) restored.set(key,element)
+      if (!hasSaved && initialPosition) memory.value.positions[key]=element.scrollTop
     }
     restoring = false
   }
   function remember(event: Event) {
     if (restoring || !(event.target instanceof HTMLElement)) return
-    const key = event.target.dataset.taskScroll
-    if (!key) return
-    restored.set(key,event.target)
-    elementKeys.set(event.target,key)
-    memory.value.positions[key] = event.target.scrollTop
+    rememberElement(event.target)
   }
-  watch(() => toValue(scope), () => { restored.clear(); void restore() }, { flush: 'post' })
+  function rememberElement(element:HTMLElement) {
+    const key=element.dataset.taskScroll
+    if(!key)return
+    restored.set(key,element);elementKeys.set(element,key)
+    memory.value.positions[key]=element.scrollTop
+  }
+  watch(memory, () => { restored.clear(); void restore() }, { flush: 'post' })
   watch(content, () => { void restore() }, { flush: 'post' })
   onMounted(restore)
-  return remember
+  return Object.assign(remember,{rememberElement})
 }

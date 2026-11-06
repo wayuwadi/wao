@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import { nowIso } from '@/utils/time'
+import CalendarTaskPlanner from '@/components/calendar/CalendarTaskPlanner.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import { scheduleAtTime, timeLanes, validateSchedule } from '@/utils/calendarPlanning'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { moveTaskSchedule, sameSchedule, scheduleSnapshot, taskCalendarEntries, type TaskSchedule } from '@/utils/taskSchedule'
+import { useTaskViewMemory, useTaskScrollMemory } from '@/composables/taskViewMemory'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -78,6 +83,7 @@ const calendarReadings = ref<TianrenReading[]>([])
 const readingsLoading = ref(false), readingsError = ref('')
 let readingsSequence = 0
 
+const calendarMemory = useTaskViewMemory('calendar', () => ({ date:data.today, view:'month', plannerOpen:window.innerWidth>640 }))
 const now = new Date(`${data.today}T00:00:00`)
 const calY = ref(now.getFullYear())
 const calM = ref(now.getMonth())
@@ -85,7 +91,10 @@ const calD = ref(now.getDate())
 watch([calY, calM], ([year, month]) => {
   calD.value = Math.min(calD.value, new Date(year, month + 1, 0).getDate())
 })
-const viewMode = ref<'year' | 'month' | 'week' | 'day'>('month')
+type CalendarMode = 'year' | 'month' | 'week' | 'day'
+const viewMode = computed<CalendarMode>({ get:()=>['year','month','week','day'].includes(calendarMemory.value.view) ? calendarMemory.value.view as CalendarMode : 'month', set:value=>{calendarMemory.value.view=value} })
+watch(()=>calendarMemory.value.date, value=>{ const date=new Date(`${value}T00:00:00`);if(!Number.isFinite(date.getTime()) || iso(date)!==value)return;calY.value=date.getFullYear();calM.value=date.getMonth();calD.value=date.getDate() },{immediate:true})
+watch([calY,calM,calD],()=>{calendarMemory.value.date=iso(new Date(calY.value,calM.value,calD.value))})
 const attendanceMode = ref(localStorage.getItem(`wao-attendance-mode:${session.currentUser.id}`) === 'true')
 const attendanceDays = ref<AttendanceDay[]>([])
 const attendanceByDate = computed(() => new Map(attendanceDays.value.map(day => [day.date, day])))
@@ -107,7 +116,7 @@ const selectedAttendanceDate = ref<string | null>(null)
 /** 日历默认只看当前人；切换后才加载另一成员的任务，避免跨成员任务默认混在一起。 */
 const calendarMemberId = ref(session.currentUser.id)
 watch(() => session.currentUser.id, (memberId) => {
-  if (!calendarMemberId.value && memberId) calendarMemberId.value = memberId
+  calendarMemberId.value = memberId
   attendanceMode.value = localStorage.getItem(`wao-attendance-mode:${memberId}`) === 'true'
 }, { immediate: true })
 watch(attendanceMode, (enabled) => {
@@ -376,6 +385,12 @@ const legend = computed(() => {
 
 // ---------- 事件合并、已完成显隐与搜索 ----------
 const showCompletedTasks = ref(true)
+const planner = ref<InstanceType<typeof CalendarTaskPlanner>>()
+const plannerOpen = computed({get:()=>calendarMemory.value.plannerOpen,set:value=>{calendarMemory.value.plannerOpen=value}})
+const plannerIdentity = computed(() => [session.account?.accountId ?? '',session.userId,calendarMemberId.value].join(':'))
+const planningTasks = computed(() => data.tasks.filter(task => task.owner === calendarMemberId.value && task.status !== '已放弃' && task.workItemType !== 'note' && !isTaskFinished(task)))
+async function editCalendarTask(id: string) { plannerOpen.value = true; await nextTick(); await planner.value?.editTask(id) }
+
 const events = computed<CalEvt[]>(() => {
   const evs: CalEvt[] = []
   if (weather.prefs.calendarVisible) weather.days.forEach(day => {
@@ -386,10 +401,11 @@ const events = computed<CalEvt[]>(() => {
     const event: CalEvt = { date: reading.date, title: `卦 · ${reading.primary.name}`, color: '#8A5BD9', kind: '每日卦象', sourceLabel: `我的已保存卦象 · 第 ${reading.primary.number} 卦${reading.relating ? ` · 之卦：${reading.relating.name}` : ''}` }
     event.go = () => { searchPreview.value = event }; evs.push(event)
   })
+  const horizon = visibleRange()
   data.tasks
     .filter((t) => t.status!=='已放弃' && t.workItemType!=='note' && t.owner === calendarMemberId.value && (t.due || t.start || t.startAt)
       && (showCompletedTasks.value || !isTaskFinished(t)))
-    .forEach((t) => taskCalendarEntries(t, `${calY.value - 1}-12-01`, `${calY.value + 1}-01-31`).forEach(entry => evs.push({
+    .forEach((t) => taskCalendarEntries(t, iso(horizon.from), iso(horizon.to)).forEach(entry => evs.push({
       ...entry,
       title: `${entry.label} · ${t.title}` + (t.status === '已完成' && !isTaskFinished(t) ? ' · 仍有 ' + t.subs.filter(sub => !sub.done).length + ' 项子项未收尾' : ''),
       color: entry.deadline ? '#B9821F' : '#6957E6',
@@ -467,7 +483,7 @@ const searchPreview = ref<CalEvt | null>(null)
 const searchResults = computed(() => {
   const keyword = calendarSearch.value.trim().toLocaleLowerCase()
   if (!keyword) return []
-  return events.value.filter(event=>event.kind!=='任务').filter((event) => [event.title, event.kind, event.sourceLabel, event.date]
+  return events.value.filter((event) => [event.title, event.kind, event.sourceLabel, event.date]
     .some((value) => value?.toLocaleLowerCase().includes(keyword))).slice(0, 30)
 })
 
@@ -612,6 +628,7 @@ const dayView = computed(() => {
   }]
 })
 const timelineDays = computed(() => viewMode.value === 'day' ? dayView.value : weekDays.value)
+const timelineLaneMap = computed(() => new Map(timelineDays.value.flatMap(day => [...timeLanes(day.items)])))
 const hours = Array.from({ length: 24 }, (_, hour) => hour)
 function minutes(value?: string) {
   if (!value) return 0
@@ -621,15 +638,20 @@ function minutes(value?: string) {
 function eventStyle(event: CalEvt) {
   const start = minutes(event.time)
   const end = event.endTime ? minutes(event.endTime) : start + 45
+  const lane = timelineLaneMap.value.get(event) ?? { lane: 0, count: 1 }
   return {
+    left: `calc(${lane.lane / lane.count * 100}% + 3px)`,
+    width: `calc(${100 / lane.count}% - 6px)`,
+    right: 'auto',
     top: `${start}px`,
     height: `${Math.max(24, end - start)}px`,
     borderColor: event.color,
-    background: `color-mix(in srgb, ${event.color} 12%, white)`,
+    background: `color-mix(in srgb, ${event.color} 12%, var(--wao-bg-card))`,
   }
 }
 const selecting = ref<{ day: string; from: number; to: number } | null>(null)
 function startTimeSelection(day: string, hour: number) {
+  if (dragTaskId.value) return
   selecting.value = { day, from: hour, to: hour }
 }
 function extendTimeSelection(day: string, hour: number) {
@@ -649,7 +671,8 @@ function finishTimeSelection() {
   const from = Math.min(value.from, value.to)
   const to = Math.max(value.from, value.to) + 1
   const p = (n: number) => String(n).padStart(2, '0')
-  openCreateChoice(value.day, `${value.day}T${p(from)}:00`, `${value.day}T${p(to)}:00`)
+  const end = new Date(Date.parse(`${value.day}T00:00:00Z`) + to * 3600000).toISOString().slice(0,16)
+  openCreateChoice(value.day, `${value.day}T${p(from)}:00`, end)
 }
 const yearMonths = computed(() => Array.from({ length: 12 }, (_, index) => {
   const prefix = `${calY.value}-${String(index + 1).padStart(2, '0')}`
@@ -1129,10 +1152,42 @@ const selectedDate = computed({
   },
 })
 
+const calendarRoot = ref<HTMLElement|null>(null)
+function timelinePosition(element:HTMLElement, minute:number) {
+  const day=element.querySelector<HTMLElement>('.time-day')
+  if(!day)return 0
+  const sticky=(element.querySelector<HTMLElement>('.week-date')?.offsetHeight ?? 0)+(element.querySelector<HTMLElement>('.all-day-strip')?.offsetHeight ?? 0)
+  const start=day.getBoundingClientRect().top-element.getBoundingClientRect().top+element.scrollTop-sticky
+  return Math.max(0,start+minute)
+}
+function initialCalendarPosition(element:HTMLElement) {
+  if(viewMode.value!=='week' && viewMode.value!=='day')return 0
+  const now=nowIso(), minute=timelineDays.value.some(day=>day.iso===now.slice(0,10)) ? Math.max(0,minutes(now.slice(11,16))-120) : 480
+  return timelinePosition(element,minute)
+}
+const rememberCalendarScroll=useTaskScrollMemory(calendarRoot,()=>`calendar:${viewMode.value}:${selectedDate.value}`,()=>[events.value.length,viewMode.value,selectedDate.value],initialCalendarPosition)
+async function locateCalendarTime(kind:'now'|'work'|'schedule') {
+  const identity=plannerIdentity.value
+  let minute=480
+  if(kind==='now'){const now=nowIso();selectedDate.value=now.slice(0,10);minute=Math.max(0,minutes(now.slice(11,16))-60)}
+  if(kind==='schedule'){
+    const task=scheduleChange.value && data.taskById(scheduleChange.value.id)
+    if(!task?.startAt)return
+    selectedDate.value=task.startAt.slice(0,10);minute=Math.max(0,minutes(task.startAt.slice(11,16))-60)
+  }
+  if(viewMode.value!=='week' && viewMode.value!=='day')viewMode.value='day'
+  await nextTick();await nextTick()
+  if(identity!==plannerIdentity.value)return
+  const card=calendarRoot.value?.querySelector<HTMLElement>('[data-task-scroll="calendar-content"]')
+  if(!card)return
+  card.scrollTop=timelinePosition(card,minute)
+  rememberCalendarScroll.rememberElement(card)
+}
+
 const dragTaskId = ref<string | null>(null)
 const dragScheduleDay = ref<string | undefined>()
 const dragOverDay = ref<string | null>(null)
-const scheduleChange = ref<{ id: string; before: TaskSchedule; after: TaskSchedule; version?: string; undone?: boolean } | null>(null)
+const scheduleChange = ref<{ identity: string; id: string; before: TaskSchedule; after: TaskSchedule; version?: string; undone?: boolean } | null>(null)
 const scheduleState = computed(() => scheduleChange.value ? data.taskSaveState(scheduleChange.value.id) : 'idle')
 const scheduleChanged = computed(() => {
   const change = scheduleChange.value, task = change && data.taskById(change.id)
@@ -1141,13 +1196,13 @@ const scheduleChanged = computed(() => {
 })
 const canUndoSchedule = computed(() => {
   const change = scheduleChange.value, task = change && data.taskById(change.id)
-  return !!(change && task && !change.undone && change.version && scheduleState.value === 'saved'
+  return !!(change && change.identity === plannerIdentity.value && task && !change.undone && change.version && scheduleState.value === 'saved'
     && task.editVersion === change.version && sameSchedule(task, change.after))
 })
 
 async function saveSchedule() {
   const change = scheduleChange.value
-  if (!change) return
+  if (!change || change.identity !== plannerIdentity.value) return
   await data.flushTask(change.id)
   if (scheduleChange.value === change && data.taskSaveState(change.id) === 'saved') {
     change.version = data.taskById(change.id)?.editVersion
@@ -1161,8 +1216,26 @@ async function undoSchedule() {
   await saveSchedule()
 }
 
+watch(plannerIdentity, () => { scheduleChange.value = null; dragTaskId.value = null; dragScheduleDay.value = undefined; dragOverDay.value = null })
+async function applyTaskSchedule(id: string, after: TaskSchedule, expectedVersion: string | undefined, before: TaskSchedule): Promise<boolean> {
+  const task = planningTasks.value.find(item => item.id === id)
+  if (!task) throw new Error('任务已完成或不在当前成员范围内，请重新读取。')
+  if (scheduleState.value === 'saving' || scheduleState.value === 'error') throw new Error('请先处理上一条安排的保存状态。')
+  if (data.taskSaveState(id) === 'saving' || data.taskSaveState(id) === 'error' || data.taskConflicts[id]) throw new Error('任务有未保存或冲突的修改，请先打开任务处理。')
+  if (task.editVersion !== expectedVersion || !sameSchedule(task, before)) throw new Error('任务已有后续修改，请重新读取。')
+  const validation = validateSchedule(after)
+  if (validation) throw new Error(validation)
+  if (sameSchedule(task, after)) return true
+  const identity = plannerIdentity.value
+  scheduleChange.value = { identity, id, before: scheduleSnapshot(task), after }
+  data.patchTask(id, after, '通过日历调整执行安排（截止日期不变）')
+  await saveSchedule()
+  return identity === plannerIdentity.value && data.taskSaveState(id) === 'saved'
+}
 function onDragStart(taskId: string, ev: DragEvent, scheduleDay?: string) {
   if (scheduleState.value === 'saving' || scheduleState.value === 'error' || data.taskSaveState(taskId) === 'saving' || data.taskSaveState(taskId) === 'error') { ev.preventDefault(); return }
+  if (!planningTasks.value.some(task => task.id === taskId)) { ev.preventDefault(); return }
+  selecting.value = null
   dragTaskId.value = taskId
   dragScheduleDay.value = scheduleDay
   ev.dataTransfer?.setData('text/plain', taskId)
@@ -1181,9 +1254,20 @@ async function onDropDay(dayIso: string) {
   if (!t || data.taskSaveState(id) === 'saving' || data.taskSaveState(id) === 'error') return
   const after = moveTaskSchedule(t, dayIso, dragScheduleDay.value)
   if (sameSchedule(t, after)) return
-  scheduleChange.value = { id, before: scheduleSnapshot(t), after }
-  data.patchTask(id, after, `通过日历将执行安排移到 ${dayIso}（截止日期不变）`)
-  await saveSchedule()
+  try { await applyTaskSchedule(id, after, t.editVersion, scheduleSnapshot(t)) }
+  catch (error) { toast(error instanceof Error ? error.message : '安排未保存，请重试', 'ri-error-warning-line') }
+}
+async function onDropTime(day: string, hour: number, event: DragEvent) {
+  const id = dragTaskId.value
+  onDragEnd()
+  if (!id) return
+  const task = data.taskById(id)
+  if (!task) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const offset = rect.height ? Math.max(0, Math.min(59, (event.clientY - rect.top) / rect.height * 60)) : 0
+  const minute = Math.min(1439, hour * 60 + Math.floor(offset / 15) * 15)
+  try { await applyTaskSchedule(id, scheduleAtTime(task, day, minute, dragScheduleDay.value), task.editVersion, scheduleSnapshot(task)) }
+  catch (error) { toast(error instanceof Error ? error.message : '安排未保存，请重试', 'ri-error-warning-line') }
 }
 useOverlayDismiss(() => showWorkScheduleConfig.value, closeWorkScheduleConfig)
 useOverlayDismiss(() => showHolidaySettings.value, closeHolidaySettings)
@@ -1194,7 +1278,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 </script>
 
 <template>
-  <div class="cal wao-page-frame" :class="`cal-${viewMode}`">
+  <div ref="calendarRoot" @scroll.capture="rememberCalendarScroll" class="cal wao-page-frame" :class="`cal-${viewMode}`">
     <div v-if="scheduleChange" class="schedule-feedback" role="status">
       <span v-if="scheduleState === 'saving'">正在保存执行安排…</span>
       <span v-else-if="scheduleState === 'error'">保存失败，执行安排已保留在本机。{{ data.taskSaveError(scheduleChange.id) }}</span>
@@ -1202,6 +1286,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
       <span v-else>{{ scheduleChange.undone ? '已撤销执行安排调整' : '执行安排已保存' }} · 截止日期不变</span>
       <button v-if="scheduleState === 'error' && !data.taskConflicts[scheduleChange.id]" @click="saveSchedule">重试保存安排</button>
       <button v-if="canUndoSchedule" @click="undoSchedule">撤销本次安排</button>
+      <button v-if="data.taskById(scheduleChange.id)?.startAt" @click="locateCalendarTime('schedule')">查看时段</button>
       <button @click="ui.openTask(scheduleChange.id)">打开任务</button>
     </div>
     <div class="cal-top">
@@ -1212,6 +1297,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
         <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
         <div class="spacer"></div>
+        <WaoButton class="planner-toggle" :aria-pressed="plannerOpen" @click="plannerOpen=!plannerOpen"><i class="ri-calendar-todo-line" />任务排期</WaoButton>
         <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button><button :class="{ on: viewMode === 'day' }" @click="viewMode = 'day'">日</button></div>
         <div class="date-navigation" aria-label="日期导航">
           <button class="nav-btn" aria-label="上一时间段" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
@@ -1221,7 +1307,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
         </div>
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
-        <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
+        <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
         <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
@@ -1246,11 +1332,13 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 
     <p v-if="readingsLoading" class="holiday-status">正在读取已保存卦名…</p>
     <p v-else-if="readingsError" class="holiday-status error" role="alert">{{ readingsError }} <button @click="loadCalendarReadings">重试读取卦名</button></p>
-    <div class="cal-body">
-      <div class="cal-card" tabindex="0" aria-label="日历内容，可滚动查看">
+    <div class="cal-body" :class="{ 'has-planner':plannerOpen }">
+      <CalendarTaskPlanner v-if="plannerOpen" ref="planner" :tasks="planningTasks" :projects="data.projects" :identity="plannerIdentity" :date="selectedDate" :loading="data.taskLoadState==='loading'" :load-error="data.taskLoadState==='error'" :save="applyTaskSchedule" @drag="onDragStart" @dragend="onDragEnd" @open="ui.openTask($event)" @retry="data.hydrate()" @close="plannerOpen=false" />
+      <div class="cal-card" data-task-scroll="calendar-content" tabindex="0" aria-label="日历内容，可滚动查看">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
           <small v-if="viewMode === 'month'" class="calendar-scroll-hint">左右滑动查看日期，上下滑动查看各周</small>
+          <div v-if="viewMode==='week' || viewMode==='day'" class="timeline-locate"><WaoButton variant="ghost" @click="locateCalendarTime('now')">当前时间</WaoButton><WaoButton variant="ghost" @click="locateCalendarTime('work')">08:00</WaoButton></div>
           <div class="legend">
             <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
           </div>
@@ -1292,7 +1380,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 class="event"
                 :class="{ completed: ev.completed, 'task-execution': ev.taskId && !ev.deadline, 'task-deadline': ev.taskId && ev.deadline }"
                 :title="(ev.time ? `${ev.time} ${ev.title}` : ev.title) + (ev.taskId ? '（拖动只调整执行安排）' : '')"
-                :draggable="!!ev.taskId"
+                :draggable="!!ev.taskId && !ev.completed"
+                @contextmenu="ev.taskId && ($event.preventDefault(), editCalendarTask(ev.taskId))"
                 @click="ev.go?.()"
                 @dragstart="ev.taskId && onDragStart(ev.taskId, $event, ev.deadline ? undefined : ev.date)"
                 @dragend="onDragEnd"
@@ -1313,18 +1402,33 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
               {{ viewMode === 'week' ? DOWS[index] : '' }} {{ day.label }}
               <span v-if="day.workWeek" class="timeline-work-week" :class="day.workWeek.type">{{ day.workWeek.label }} · {{ day.workWeek.restLabel }}</span>
             </div>
+            <div class="all-day-axis">全天<br />截止</div>
+            <div v-for="day in timelineDays" :key="`all-day-${day.iso}`" class="all-day-strip" :class="{ 'all-day-drop':dragTaskId }" @dragover.prevent @drop.stop.prevent="onDropDay(day.iso)">
+              <small v-if="dragTaskId">拖到这里设为当日执行</small>
+              <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" :class="{ completed: event.completed, 'task-execution': event.taskId && !event.deadline, 'task-deadline': event.taskId && event.deadline }"
+                :draggable="!!event.taskId && !event.completed"
+                :title="event.taskId ? '拖动安排执行时间；右键精确安排；点击打开任务' : event.title"
+                @dragstart="event.taskId && onDragStart(event.taskId,$event,event.deadline ? undefined : event.date)" @dragend="onDragEnd"
+                @contextmenu="event.taskId && ($event.preventDefault(),editCalendarTask(event.taskId))" @click="event.go?.()">{{ event.title }}</button>
+            </div>
             <div class="time-axis">
               <span v-for="hour in hours" :key="hour" :style="{ top: `${hour * 60}px` }">{{ String(hour).padStart(2, '0') }}:00</span>
             </div>
             <div
               v-for="day in timelineDays"
               :key="day.iso"
+              :data-time-day="day.iso"
               class="time-day"
             >
               <div
                 v-for="hour in hours"
                 :key="hour"
                 class="time-slot"
+                :data-hour="hour"
+                :class="{ 'slot-drop-over':dragOverDay===day.iso+':'+hour }"
+                @dragover.prevent="dragTaskId && (dragOverDay=day.iso+':'+hour)"
+                @dragleave="dragOverDay=null"
+                @drop.stop.prevent="onDropTime(day.iso,hour,$event)"
                 :style="{ top: `${hour * 60}px` }"
                 :title="`${day.iso} ${String(hour).padStart(2, '0')}:00，拖拽选择时间段`"
                 @mousedown.prevent="startTimeSelection(day.iso, hour)"
@@ -1337,15 +1441,18 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 class="timeline-event"
                 :class="{ completed: event.completed, 'task-execution': event.taskId && !event.deadline, 'task-deadline': event.taskId && event.deadline }"
                 :style="eventStyle(event)"
+                :draggable="!!event.taskId && !event.completed"
+                :title="event.taskId ? '拖动调整执行时间；右键精确安排；点击打开任务' : event.title"
+                @dragstart="event.taskId && onDragStart(event.taskId,$event,event.date)"
+                @dragend="onDragEnd"
+                @contextmenu="event.taskId && ($event.preventDefault(),editCalendarTask(event.taskId))"
                 @mousedown.stop
                 @click="event.go?.()"
               >
                 <b>{{ event.time }}<template v-if="event.endTime">–{{ event.endTime }}</template></b>
                 <span>{{ event.title }}</span>
               </button>
-              <div v-if="day.items.some((item) => !item.time)" class="all-day-strip">
-                <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" :class="{ completed: event.completed, 'task-execution': event.taskId && !event.deadline, 'task-deadline': event.taskId && event.deadline }" @click="event.go?.()">{{ event.title }}</button>
-              </div>
+
             </div>
           </div>
         </template>
@@ -1645,6 +1752,16 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 </template>
 
 <style scoped>
+.cal-body.has-planner { gap:var(--wao-space-2); }
+.cal-body.has-planner .cal-card { flex:1; min-width:0; }
+.planner-toggle { flex-shrink:0; }
+.slot-drop-over { background:var(--wao-primary-soft); outline:2px solid var(--wao-primary); z-index:2; }
+.all-day-drop { min-height:44px; background:var(--wao-primary-soft); outline:1px dashed var(--wao-primary); }
+.all-day-strip { max-height:120px; min-height:36px; overflow:auto; align-self:stretch; background:var(--wao-bg-card); border-left:1px solid var(--wao-divider); border-bottom:1px solid var(--wao-divider); }
+.all-day-axis { position:sticky; top:48px; z-index:4; align-self:stretch; padding-block:4px; background:var(--wao-bg-sub); color:var(--wao-text-3); text-align:center; font-size:var(--wao-font-caption); }
+.all-day-strip small { font-size:var(--wao-font-caption); color:var(--wao-primary-text); }
+@media(max-width:900px) { .cal-body.has-planner { flex-direction:column; overflow:auto; } .cal-body.has-planner .cal-card { flex:1 0 400px; max-height:70dvh; } }
+
 .cal {
   padding: 16px 24px;
   height: 100%;
@@ -1668,8 +1785,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   align-items: start;
 }
 .timeline.single {
-  grid-template-columns: 54px minmax(420px, 1fr);
-  min-width: 520px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-width: 0;
 }
 .time-axis-head, .week-date {
   position: sticky;
@@ -2430,7 +2547,7 @@ button.holiday-status { cursor: pointer; }
 .date-navigation button { border: 0; }
 .day-records-btn { flex-shrink: 0; padding: 5px; background: transparent; color: var(--wao-text-2); white-space: nowrap; font-size: 11px; cursor: pointer; }
 .date-picker { width: 122px; height: 28px; padding: 0 3px; border: 0; color: var(--wao-text-2); background: transparent; font: inherit; font-size: var(--wao-font-caption); }
-.calendar-search { flex-shrink: 0; width: min(240px, 100%); }
+.calendar-search { flex: 0 0 30px; width:30px; }
 .search-toggle { position: relative; z-index: 2; width: 30px; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .calendar-search > input { position: absolute; z-index: 1; right: 0; top: 0; width: 100%; opacity: 0; pointer-events: none; }
 .calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: min(300px, calc(100vw - 64px)); opacity: 1; pointer-events: auto; padding-left: 10px; padding-right: 36px; box-shadow: var(--wao-shadow-modal); }
@@ -2474,6 +2591,18 @@ button.holiday-status { cursor: pointer; }
   .cal-month .week { flex: 0 0 auto; min-height: 96px; }
   .calendar-scroll-hint { display: block; color: var(--wao-text-3); font-size: var(--wao-font-help); font-weight: 400; }
 }
+@container app-main (max-width: 900px) {
+  .cal-body.has-planner { flex-direction: column; overflow: auto; }
+  .cal-body.has-planner .cal-card { flex: 1 0 400px; max-height: 70dvh; }
+}
+@container app-main (max-width: 640px) {
+  .cal-body.has-planner { flex: 0 0 auto; min-height: 0; overflow: visible; }
+  .cal-month .cal-card { overflow: auto; }
+  .calendar-search { position: static; }
+  .calendar-search > input { top: calc(100% + 6px); right: 0; }
+  .calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: 100%; padding-right: 10px; }
+  .calendar-search-results { top: calc(100% + 40px); width: 100%; right: 0; box-sizing: border-box; }
+}
 @container app-main (max-width: 340px) {
   .date-navigation { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; width: 100%; min-width: 0; }
   .date-picker { width: 100%; min-width: 0; }
@@ -2503,5 +2632,23 @@ button.holiday-status { cursor: pointer; }
   .calendar-auxiliary .calendar-visibility { flex-wrap: wrap; }
   .calendar-visibility-toggle { flex-basis: 140px; }
   .completed-toggle { flex-basis: 88px; }
+}
+@container app-main (max-width:1100px) { .cal-head .legend { display:none; } }
+.timeline-locate { display:flex; align-items:center; gap:var(--wao-space-1); margin-left:auto; }
+@container app-main (max-width:640px) {
+  .cal-heading-row { gap:6px; }
+  .cal-heading-row > .spacer { display:none; }
+  .completed-toggle { order:1; flex-basis:80px; }
+  .planner-toggle { order:2; }
+  .view-switch { order:3; margin-left:auto; }
+  .view-switch button { padding:4px 7px; }
+  .date-navigation { order:4; flex:0 0 100%; justify-content:space-between; box-sizing:border-box; }
+  .member-calendar { order:5; flex:1 1 100px; max-width:none; }
+  .calendar-search { order:6; flex:0 0 30px; width:30px; }
+  .calendar-settings-menu { order:7; flex:none; }
+  .calendar-settings-menu summary { padding-inline:6px; }
+  .holiday-status,.attendance-resync,.weather-visibility-retry { order:8; }
+  .cal-head { padding:8px; gap:6px; }
+  .timeline-locate { gap:0; }
 }
 </style>

@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
+vi.mock('@/components/ui/MarkdownEditor.vue', () => ({ default: { name: 'MarkdownEditor', props: ['modelValue', 'readonly'], template: '<div />' } }))
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'

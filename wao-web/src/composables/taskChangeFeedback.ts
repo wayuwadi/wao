@@ -6,6 +6,34 @@ import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import type { Priority } from '@/types'
 import type { TaskLabels } from '@/api/taskLabels'
 
+export interface DeadlineChange { taskId: string; subId?: string; before: string | null | undefined; after: string }
+/** Capture versions after the entire batch, including siblings sharing one source row. */
+export function deadlineFeedback(changes: DeadlineChange[]) {
+  const data=useDataStore(), session=useSessionStore()
+  const identity=`${session.account?.accountId}:${session.userId}`
+  const effective=changes.filter(change=>(change.before||'')!==change.after)
+  if(!effective.length)return
+  const versions=new Map(effective.map(change=>[change.taskId,data.taskById(change.taskId)?.editVersion]))
+  toast(`已更新 ${effective.length} 项截止日期`, 'ri-check-line', {duration:8000,action:{label:'撤销',run:async()=>{
+    if(identity!==`${session.account?.accountId}:${session.userId}`)throw new Error('账号已变化，无法撤销')
+    // Validate the entire snapshot before changing anything. Never overwrite a later edit.
+    for(const change of effective){
+      const task=data.taskById(change.taskId), sub=change.subId?data.subById(change.taskId,change.subId):undefined
+      if(!task || (change.subId&&!sub) || task.editVersion!==versions.get(change.taskId) || (change.subId?sub?.due||'':task.due||'')!==change.after || ['saving','error'].includes(data.taskSaveState(change.taskId)))throw new Error('任务已有后续修改，请在详情中调整日期')
+    }
+    for(const change of effective){
+      if(change.subId)data.updateSub(change.taskId,change.subId,{due:change.before||''})
+      else data.patchTask(change.taskId,{due:change.before||''})
+    }
+    for(const id of versions.keys()){
+      if(identity!==`${session.account?.accountId}:${session.userId}`)throw new Error('账号已变化，停止撤销')
+      await data.flushTask(id)
+      if(identity!==`${session.account?.accountId}:${session.userId}`)throw new Error('账号已变化，停止撤销')
+      if(data.taskSaveState(id)==='error')throw new Error('撤销尚未保存，草稿已保留，请在任务详情中重试')
+    }
+  }}})
+}
+
 export function priorityFeedback(taskId: string, subId: string | undefined, before: Priority | null | undefined, after: Priority | null | undefined) {
   if (before === after) return
   const data = useDataStore(), session = useSessionStore(), identity = session.account?.accountId
