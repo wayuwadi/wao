@@ -1476,9 +1476,9 @@ onBeforeUnmount(() => { workspaceGeneration++ })
         <div v-if="draggingNode?.startsWith('f:')" class="root-drop" @dragover.prevent @drop.prevent.stop="moveNode('', draggingNode, null)">拖到这里移至目录顶层</div>
         <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="node in renderedTreeRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
-          :style="{ '--node-depth': node.depth }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
+          :style="{ '--node-depth': Math.min(node.depth, 8) }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
           @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
-          <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+          <button v-if="node.hasChildren" class="tree-caret" tabindex="-1" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
@@ -2853,12 +2853,13 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   background: var(--wao-bg-hover);
   border-radius: 6px;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 .directory-row.selected .tree-row-actions { background: var(--wao-primary-soft); }
 .directory-row:hover .tree-row-actions,
 .directory-row:focus-within .tree-row-actions,
-.directory-row:has(.resource-trigger[aria-expanded="true"]) .tree-row-actions { opacity: 1; pointer-events: auto; }
+.directory-row:has(.resource-trigger[aria-expanded="true"]) .tree-row-actions { opacity: 1; visibility: visible; pointer-events: auto; }
 .directory-row.drop-before::before, .directory-row.drop-after::after {
   content: '';
   position: absolute;
@@ -2873,7 +2874,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 .directory-row.drop-after::after { bottom: 0; }
 .directory-row.drop-inside { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .root-drop { margin: 2px 0 6px; padding: 9px; border: 1px dashed var(--wao-primary); border-radius: 7px; color: var(--wao-primary-text); font-size: var(--wao-font-caption); text-align: center; }
-@media (hover: none), (pointer: coarse) { .tree-row-actions { opacity: 1; pointer-events: auto; } }
+@media (hover: none), (pointer: coarse) { .tree-row-actions { opacity: 1; visibility: visible; pointer-events: auto; } }
 .directory-search-count { margin: 0; padding: 4px var(--wao-space-2); font-size: var(--wao-font-caption); color: var(--wao-text-3); }
 .tree-search label:focus-within { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .directory-row [data-node]:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
@@ -2926,6 +2927,12 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   .doc-title { font-size: calc(var(--wao-font-reading) * 1.5); }
 }
 @media (pointer: coarse) {
+  .directory-row { height: 48px; padding-left: calc(4px + min(var(--node-depth), 3) * 12px); padding-right: 100px; }
+  .directory-row .folder-btn, .directory-row .doc-node { min-height: 44px; }
+  .tree-caret, .tree-caret-spacer { flex-basis: 44px; width: 44px; height: 44px; }
+  .tree-row-actions { top: 2px; height: 44px; }
+  .tree-row-actions :deep(.resource-trigger) { flex-basis: 44px; width: 44px; height: 44px; }
+  .tree-search input, .folder-input { font-size: var(--wao-font-reading); }
   .document-mode, .icon-act, .toc-item, .document-path button, .outline-progress button, .doc-more-menu > button { min-height: 44px; }
   .icon-act { min-width: 44px; }
 }
