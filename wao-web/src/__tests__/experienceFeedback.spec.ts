@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, nextTick, ref, watch } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import DataLoadStatus from '@/components/ui/DataLoadStatus.vue'
@@ -12,6 +13,42 @@ enableAutoUnmount(afterEach)
 afterEach(() => { document.body.innerHTML = '' })
 
 describe('确认操作的可恢复反馈', () => {
+  it('业务表单已主动聚焦输入框时，外壳不会在挂载后抢回焦点', async () => {
+    const Host = defineComponent({
+      components: { SettingsDialogShell },
+      setup() {
+        const open = ref(false), input = ref<HTMLInputElement>()
+        watch(open, async (visible) => {
+          if (visible) { await nextTick(); input.value?.focus() }
+        })
+        return { open, input }
+      },
+      template: '<button @click="open=true">打开表单</button><SettingsDialogShell v-if="open" title="表单"><input ref="input" aria-label="名称" /></SettingsDialogShell>',
+    })
+    const wrapper = mount(Host, { attachTo: document.body })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(document.activeElement).toBe(document.querySelector('[aria-label="名称"]'))
+  })
+  it('编辑器已经消费的 Tab 保持编辑焦点，不被外层焦点循环覆盖', async () => {
+    mount(SettingsDialogShell, { props: { title: '写作' }, slots: { default: '<div contenteditable="true" tabindex="0">正文</div>' }, attachTo: document.body })
+    await flushPromises()
+    const editor = document.querySelector<HTMLElement>('[contenteditable]')!
+    editor.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    tab.preventDefault()
+    editor.dispatchEvent(tab)
+    expect(document.activeElement).toBe(editor)
+  })
+  it('内层弹窗消费 Tab 后，外层不再次移动焦点', async () => {
+    mount(SettingsDialogShell, { props: { title: '外层' }, slots: { default: () => h(SettingsDialogShell, { title: '内层' }, () => h('button', '内层最后操作')) }, attachTo: document.body, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    const inner = document.querySelector<HTMLElement>('[aria-label="内层"]')!
+    expect(document.activeElement).toBe(inner)
+    const last = inner.querySelector<HTMLButtonElement>('.dialog-content button')!
+    last.focus()
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(inner.querySelector('.dialog-close'))
+  })
   it('初始焦点反向 Tab 留在弹窗内，跳过隐藏控件并包含链接', async () => {
     mount(SettingsDialogShell, { props: { title: '键盘演示' }, slots: { default: '<div style="display:none"><button>隐藏按钮</button></div><a href="#help">帮助</a>', footer: '<button>取消</button>' }, attachTo: document.body })
     await flushPromises()
@@ -89,6 +126,20 @@ it('设置搜索只发出导航意图，导航未完成时保留搜索结果', a
   expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('密码')
   await wrapper.setProps({ currentTab: 'account' })
   expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
+})
+
+it('设置搜索能找到每周起始日，中文取消候选不清词，清除后可继续输入', async () => {
+  const wrapper = mount(SettingsSearch, { attachTo: document.body, props: { currentTab: 'common' } })
+  const input = wrapper.get<HTMLInputElement>('input')
+  await input.setValue('每周')
+  expect(wrapper.text()).toContain('外观与陪伴')
+  await input.trigger('keydown', { key: 'Escape', isComposing: true })
+  await input.trigger('keydown', { key: 'Escape', keyCode: 229 })
+  expect(input.element.value).toBe('每周')
+  await wrapper.get('.clear-search').trigger('click')
+  expect(input.element.value).toBe('')
+  expect(document.activeElement).toBe(input.element)
+  wrapper.unmount()
 })
 
 it('各模块刷新只显示非占位加载指示，成功后清除', async () => {

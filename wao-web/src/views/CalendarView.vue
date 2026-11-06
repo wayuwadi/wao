@@ -30,6 +30,8 @@ import {
 } from '@/api/importantDates'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import AttendancePanel from '@/components/calendar/AttendancePanel.vue'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import { useWeatherStore } from '@/stores/weather'
@@ -1189,8 +1191,6 @@ useOverlayDismiss(() => showWorkScheduleConfig.value, closeWorkScheduleConfig)
 useOverlayDismiss(() => showHolidaySettings.value, closeHolidaySettings)
 useOverlayDismiss(() => !!activeHoliday.value, closeHolidayDetail)
 useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
-useOverlayDismiss(() => !!searchPreview.value, () => { searchPreview.value = null })
-useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value = false })
 </script>
 
 <template>
@@ -1220,9 +1220,11 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button class="today-btn" @click="goToday">今天</button>
           <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
         </div>
+        <WaoButton class="calendar-create" variant="ghost" :aria-label="`在 ${selectedDate} 新建任务或提醒事项`" :title="`在 ${selectedDate} 创建`" @click="quickCreate(selectedDate)"><i class="ri-add-line" aria-hidden="true"></i>新建</WaoButton>
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
         <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
-        <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
+        <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary aria-label="日历设置"><i class="ri-settings-3-line" aria-hidden="true"></i><span>日历设置</span></summary><div class="calendar-menu-popover">
+          <button v-if="calendarMemberId === session.userId" class="mobile-day-records" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })"><i class="ri-calendar-check-line"></i><span><b>查看当天记录</b><small>{{ selectedDate }}</small></span></button>
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
@@ -1372,25 +1374,17 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
       </aside>
     </div>
 
-    <template v-if="showCreateChoice">
-      <div class="cd-mask" @click="showCreateChoice = false"></div>
-      <div class="create-choice-modal" role="dialog" aria-modal="true" aria-labelledby="create-choice-title">
-        <div class="cd-head">
-          <div id="create-choice-title" class="cd-title">在 {{ createPreset.day }} 创建</div>
-          <div class="spacer"></div>
-          <button class="cd-close" aria-label="关闭创建类型选择" @click="showCreateChoice = false"><i class="ri-close-line"></i></button>
-        </div>
+    <SettingsDialogShell v-if="showCreateChoice" :title="`在 ${createPreset.day} 创建`" width="520px" height="auto" appearance="compact" @close="showCreateChoice = false">
+      <div class="create-choice-modal">
         <div class="create-choice-grid">
-          <button type="button" @click="continueCreateTask"><i class="ri-checkbox-circle-line"></i><b>任务</b><span>有负责人、项目和完成状态，继续进入个人事项。</span></button>
-          <button type="button" @click="continueCreateReminder"><i class="ri-notification-3-line"></i><b>提醒事项</b><span>独立保存在日历提醒中，不进入个人任务列表。</span></button>
+          <WaoButton @click="continueCreateTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i><b>任务</b><span>有负责人、项目和完成状态，继续进入个人事项。</span></WaoButton>
+          <WaoButton @click="continueCreateReminder"><i class="ri-notification-3-line" aria-hidden="true"></i><b>提醒事项</b><span>独立保存在日历提醒中，不进入个人任务列表。</span></WaoButton>
         </div>
       </div>
-    </template>
+    </SettingsDialogShell>
 
-    <template v-if="searchPreview">
-      <div class="cd-mask" @click="searchPreview = null"></div>
-      <div class="search-preview-modal" role="dialog" aria-modal="true" aria-labelledby="search-preview-title">
-        <div class="cd-head"><div id="search-preview-title" class="cd-title">{{ searchPreview.title }}</div><div class="spacer"></div><button class="cd-close" aria-label="关闭事项预览" @click="searchPreview = null"><i class="ri-close-line"></i></button></div>
+    <SettingsDialogShell v-if="searchPreview" :title="searchPreview.title" width="520px" height="auto" appearance="compact" @close="searchPreview = null">
+      <div class="search-preview-modal">
         <dl class="holiday-facts">
           <div><dt>日期</dt><dd>{{ searchPreview.date }}</dd></div>
           <div><dt>类型</dt><dd>{{ searchPreview.kind || '日历事项' }}</dd></div>
@@ -1398,7 +1392,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <div v-if="searchPreview.sourceLabel"><dt>来源</dt><dd>{{ searchPreview.sourceLabel }}</dd></div>
         </dl>
       </div>
-    </template>
+    </SettingsDialogShell>
 
     <!-- 大小周配置浮层 -->
     <template v-if="showWorkScheduleConfig">
@@ -1668,8 +1662,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   align-items: start;
 }
 .timeline.single {
-  grid-template-columns: 54px minmax(420px, 1fr);
-  min-width: 520px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-width: 0;
 }
 .time-axis-head, .week-date {
   position: sticky;
@@ -1783,6 +1777,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   background: var(--wao-bg-card);
 }
 .cal-heading-row { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-width: 0; }
+.calendar-create { flex-shrink: 0; white-space: nowrap; }
 .calendar-visibility { display: flex; flex: 0 0 380px; max-width: 100%; min-width: 0; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); scrollbar-width: thin; }
 .calendar-visibility-toggle { display: inline-flex; flex: 1 0 88px; height: 26px; align-items: center; justify-content: space-between; gap: 4px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); font-size: var(--wao-font-caption); white-space: nowrap; cursor: pointer; }
 .calendar-visibility-toggle:hover { background: var(--wao-bg-hover); }
@@ -1884,6 +1879,7 @@ button.holiday-status { cursor: pointer; }
 }
 .today-btn {
   height: 28px;
+  white-space: nowrap;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
   background: var(--wao-bg-card);
@@ -2380,12 +2376,13 @@ button.holiday-status { cursor: pointer; }
 .calendar-search-results b, .calendar-search-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-search-results b { font-size: var(--wao-font-body); }.calendar-search-results small, .search-result-date { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .calendar-search-empty { padding: 16px; color: var(--wao-text-3); font-size: var(--wao-font-help); text-align: center; }
-.create-choice-modal, .search-preview-modal { position: fixed; z-index: 101; top: 50%; left: 50%; width: min(520px, calc(100vw - 32px)); transform: translate(-50%, -50%); border-radius: 14px; background: var(--wao-bg-page); box-shadow: var(--wao-shadow-modal); animation: waoFade .15s ease; }
-.create-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 20px 20px; }
-.create-choice-grid button { display: grid; justify-items: start; gap: 7px; padding: 16px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.create-choice-modal, .search-preview-modal { min-width: 0; }
+.create-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--wao-space-2); padding: var(--wao-space-1) var(--wao-space-3) var(--wao-space-3); }
+.create-choice-grid button { display: grid; justify-items: start; gap: var(--wao-space-1); padding: var(--wao-space-2); border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
 .create-choice-grid button:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
-.create-choice-grid i { font-size: 24px; color: var(--wao-primary-text); }.create-choice-grid b { font-size: var(--wao-font-body); }.create-choice-grid span { color: var(--wao-text-weak); font-size: var(--wao-font-caption); line-height: 1.55; }
-.search-preview-modal .holiday-facts { margin: 4px 20px 20px; }
+.create-choice-grid i { font-size: var(--wao-font-title); color: var(--wao-primary-text); }.create-choice-grid b { font-size: var(--wao-font-body); }.create-choice-grid span { color: var(--wao-text-3); font-size: var(--wao-font-help); line-height: 1.55; }
+.search-preview-modal .holiday-facts { margin: var(--wao-space-1) var(--wao-space-3) var(--wao-space-3); }
+.search-preview-modal dd { min-width: 0; overflow-wrap: anywhere; }
 .calendar-type-switch { display: inline-flex; width: fit-content; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); }
 .calendar-type-switch button { min-width: 90px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); cursor: pointer; }
 .calendar-type-switch button.on { background: var(--wao-primary); color: #fff; }
@@ -2474,14 +2471,6 @@ button.holiday-status { cursor: pointer; }
   .cal-month .week { flex: 0 0 auto; min-height: 96px; }
   .calendar-scroll-hint { display: block; color: var(--wao-text-3); font-size: var(--wao-font-help); font-weight: 400; }
 }
-@container app-main (max-width: 340px) {
-  .date-navigation { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; width: 100%; min-width: 0; }
-  .date-picker { width: 100%; min-width: 0; }
-  .date-navigation .today-btn { grid-row: 2; grid-column: 1; padding: 0; }
-  .date-navigation .day-records-btn { grid-row: 2; grid-column: 2 / -1; }
-  .date-navigation .nav-btn:last-child { grid-row: 1; grid-column: 3; }
-  .member-calendar { max-width: 100%; }
-}
 .schedule-feedback { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--wao-bg-soft); font-size: var(--wao-font-help); }
 .schedule-feedback button { border: 1px solid var(--wao-border); border-radius: 6px; background: var(--wao-bg); padding: 5px 8px; cursor: pointer; }
 
@@ -2503,5 +2492,35 @@ button.holiday-status { cursor: pointer; }
   .calendar-auxiliary .calendar-visibility { flex-wrap: wrap; }
   .calendar-visibility-toggle { flex-basis: 140px; }
   .completed-toggle { flex-basis: 88px; }
+}
+.calendar-menu-popover .mobile-day-records { display: none; }
+@media (max-width: 640px) {
+  /* 三行保留主要操作；次要入口收进原有菜单，给日历内容留出高度。 */
+  .cal-top { gap: var(--wao-space-1); padding: var(--wao-space-1); }
+  .cal-heading-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 44px 44px; gap: calc(var(--wao-space-1) / 2); }
+  .cal-heading-row > .spacer { display: none; }
+  .cal-heading-row > .holiday-status,
+  .cal-heading-row > .weather-visibility-retry,
+  .cal-heading-row > .attendance-resync { grid-column: 1 / -1; min-height: 44px; }
+  .view-switch { grid-row: 1; grid-column: 1 / 3; min-width: 0; padding: 0; }
+  .view-switch button { flex: 1; min-width: 0; min-height: 44px; padding: 0; }
+  .calendar-create { grid-row: 1; grid-column: 3 / -1; min-height: 44px; }
+  .date-navigation { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px; width: 100%; min-width: 0; box-sizing: border-box; }
+  .date-navigation .nav-btn, .date-navigation .today-btn { width: 44px; height: 44px; padding: 0; }
+  .date-picker { min-width: 0; width: 100%; height: 44px; box-sizing: border-box; font-size: var(--wao-font-reading); }
+  .date-navigation .day-records-btn { display: none; }
+  .completed-toggle { grid-row: 3; grid-column: 1; min-height: 44px; }
+  .member-calendar { grid-row: 3; grid-column: 2; min-width: 0; max-width: 100%; height: 44px; padding-inline: calc(var(--wao-space-1) / 2); box-sizing: border-box; }
+  .member-calendar select { max-width: 100%; height: 100%; font-size: var(--wao-font-reading); }
+  .calendar-search { grid-row: 3; grid-column: 3; width: 44px; height: 44px; }
+  .search-toggle { width: 44px; height: 44px; }
+  .calendar-search > input { height: 44px; font-size: var(--wao-font-reading); }
+  .calendar-search-results { top: calc(100% + 54px); }
+  .calendar-settings-menu { grid-row: 3; grid-column: 4; }
+  .calendar-settings-menu > summary { width: 44px; height: 44px; justify-content: center; padding: 0; box-sizing: border-box; }
+  .calendar-settings-menu > summary span { display: none; }
+  .calendar-menu-popover .mobile-day-records { display: grid; }
+  .calendar-auxiliary { margin-top: 0; }
+  .calendar-auxiliary > summary { min-height: 44px; width: 100%; flex-wrap: wrap; }
 }
 </style>

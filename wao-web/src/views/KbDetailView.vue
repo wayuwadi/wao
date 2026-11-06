@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
+import { useIsMobile } from '@/composables/viewport'
+import { useInputComposition } from '@/composables/inputComposition'
+import { usePageVisibility } from '@/composables/pageVisibility'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
@@ -49,6 +52,7 @@ const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const sheetEditor = ref<InstanceType<typeof KnowledgeSheet> | null>(null)
+const props = withDefaults(defineProps<{ navigationHidden?: boolean }>(), { navigationHidden: false })
 async function flushSheet() { await sheetEditor.value?.flush() }
 onBeforeRouteLeave(flushSheet)
 onBeforeRouteUpdate(flushSheet)
@@ -59,12 +63,21 @@ const session = useSessionStore()
 const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
-const tocOpen = ref(true)
+const isMobile = useIsMobile()
+const pageVisible = usePageVisibility()
+const desktopTocOpen = ref(true)
+const mobileTocOpen = ref(false)
+const mobileDirectoryOpen = ref(false)
+const tocOpen = computed({ get: () => isMobile.value ? mobileTocOpen.value : desktopTocOpen.value, set: value => { if (isMobile.value) mobileTocOpen.value = value; else desktopTocOpen.value = value } })
+const navigationComposition = useInputComposition()
+const directoryTrigger = ref<HTMLButtonElement | null>(null)
+const directoryPanel = ref<HTMLElement | null>(null)
+const outlinePanel = ref<HTMLElement | null>(null)
 
 const kbId = computed(() => String(route.params.id || route.query.kb || ''))
 const directoryWidth = ref(262)
 const paneMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
-const directoryCollapsed = computed({ get: () => paneMemory.value.collapsed, set: value => { paneMemory.value.collapsed = value } })
+const directoryCollapsed = computed({ get: () => isMobile.value ? !mobileDirectoryOpen.value : paneMemory.value.collapsed, set: value => { if (isMobile.value) mobileDirectoryOpen.value = !value; else paneMemory.value.collapsed = value } })
 const kb = computed(() => data.kbById(kbId.value))
 
 const firstDocId = () => {
@@ -72,15 +85,54 @@ const firstDocId = () => {
   return null
 }
 const docId = ref<string | null>((route.query.doc as string) || null)
-// 每次打开另一篇文档默认展开；同篇文档内仍尊重手动收起。
-watch(docId, () => { tocOpen.value = true })
+// 桌面按篇展开；手机优先阅读正文，不把临时面板选择写入桌面偏好。
+watch(docId, () => { mobileTocOpen.value = false; if (!isMobile.value) desktopTocOpen.value = true; closeDirectory() })
+watch(isMobile, () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
+watch([() => session.account?.accountId, () => session.userId, pageVisible], () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
+watch(() => props.navigationHidden, hidden => { if (hidden) { mobileTocOpen.value = false; mobileDirectoryOpen.value = false } })
+watch(kbId, () => { mobileTocOpen.value = false; closeDirectory() })
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const toolbarHost = ref<HTMLElement | null>(null)
 const outlineTrigger = ref<HTMLButtonElement | null>(null)
 function closeOutline() {
   tocOpen.value = false
-  outlineTrigger.value?.focus()
+  void nextTick(() => outlineTrigger.value?.focus({ preventScroll: true }))
+}
+function closeDirectory() {
+  if (!mobileDirectoryOpen.value) return
+  mobileDirectoryOpen.value = false
+  void nextTick(() => directoryTrigger.value?.focus({ preventScroll: true }))
+}
+async function toggleDirectory() {
+  if (isMobile.value && mobileDirectoryOpen.value) { closeDirectory(); return }
+  directoryCollapsed.value = !directoryCollapsed.value
+  if (!isMobile.value) return
+  mobileTocOpen.value = false
+  await nextTick()
+  directoryPanel.value?.querySelector<HTMLButtonElement>('.mobile-directory-close')?.focus({ preventScroll: true })
+}
+async function toggleOutline() {
+  if (tocOpen.value) { closeOutline(); return }
+  tocOpen.value = true
+  if (!isMobile.value) return
+  mobileDirectoryOpen.value = false
+  await nextTick()
+  outlinePanel.value?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+}
+function navigationKeydown(event: KeyboardEvent, pane: 'directory' | 'outline') {
+  if (event.defaultPrevented || navigationComposition.active(event)) return
+  if (event.key === 'Escape' && (isMobile.value || pane === 'outline')) {
+    event.preventDefault(); event.stopPropagation()
+    if (pane === 'outline') closeOutline(); else closeDirectory()
+    return
+  }
+  if (!isMobile.value || event.key !== 'Tab') return
+  const root = pane === 'directory' ? directoryPanel.value : outlinePanel.value
+  const controls = [...(root?.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]') ?? [])].filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden], [inert]') && getComputedStyle(element).display !== 'none')
+  const first = controls[0], last = controls[controls.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
 const titleEl = ref<HTMLInputElement | null>(null)
 watch([titleEl, () => route.query.findRequest, () => route.query.find, () => route.query.match, () => route.query.doc], async () => {
@@ -99,6 +151,11 @@ const renamingFolder = ref<string | null>(null)
 const folderNameDraft = ref('')
 const folderRenameSaving = ref(false)
 const folderRenameError = ref('')
+function folderNameKeydown(event: KeyboardEvent, id: string) {
+  if (navigationComposition.active(event)) return
+  if (event.key === 'Enter') { event.preventDefault(); void commitFolderName(id) }
+  else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); renamingFolder.value = null; folderRenameError.value = '' }
+}
 function startFolderRename(id: string) {
   folderNameDraft.value = kb.value?.folders.find(folder => folder.id === id)?.name ?? ''
   folderRenameError.value = ''
@@ -299,7 +356,7 @@ function preloadSheet(id: string) {
   if (data.docById(id)?.pageType === 'spreadsheet') void loadSheetRuntime().catch(() => {})
 }
 async function selectDoc(id: string) {
-  if (id === docId.value) return
+  if (id === docId.value) { closeDirectory(); return }
   await flushSheet()
   flushCurrentDoc()
   docId.value = id
@@ -841,11 +898,15 @@ async function removeFolder(folderId: string) {
 async function removeKb() {
   const target = kb.value
   if (!target) return
+  const requestMember = session.userId
+  const requestAccount = session.account?.accountId
   const docTotal = target.folders.reduce((total, folder) => total + folder.docs.length, 0)
     + archivedDocs.value.length
   if (!window.confirm(`删除知识库「${target.name}」及其中 ${docTotal} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
   const name = target.name
-  await data.deleteKb(target.id)
+  try { await data.deleteKb(target.id) }
+  catch { toast('删除失败，知识库和文档已保留，请重试', 'ri-error-warning-line'); return }
+  if (requestMember !== session.userId || requestAccount !== session.account?.accountId) return
   const next = tabs.close(`kb:${kbId.value}`)
   await router.push(next?.path ?? '/knowledge')
   toast(`已把「${name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
@@ -887,6 +948,7 @@ function tocGo(index: number) {
       0,
       el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24,
     )
+  if (isMobile.value) closeOutline()
 }
 function onDocScroll() {
   const c = scrollEl.value
@@ -1131,10 +1193,12 @@ async function saveKbSettings() {
   <ContextActionMenu ref="directoryContext" />
   <div v-if="!kb" class="missing">知识库不存在。</div>
   <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': directoryCollapsed }">
-    <button type="button" class="directory-toggle" :title="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" :aria-label="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" aria-controls="kb-directory" :aria-expanded="!directoryCollapsed" @click="directoryCollapsed = !directoryCollapsed"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
+    <button ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" :aria-label="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" aria-controls="kb-directory" :aria-expanded="!directoryCollapsed" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
+    <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
     <!-- 左栏 -->
-    <div v-show="!directoryCollapsed" id="kb-directory" class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
-      <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
+    <div v-show="!directoryCollapsed" id="kb-directory" ref="directoryPanel" class="side" :style="{ '--directory-width': `${directoryWidth}px` }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="知识库目录" @keydown="navigationKeydown($event, 'directory')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
+      <button v-if="isMobile" type="button" class="mobile-directory-close" aria-label="关闭知识库目录" @click="closeDirectory"><i class="ri-close-line" aria-hidden="true" />关闭目录</button>
+      <PaneResizeHandle v-if="!isMobile" :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
         <button class="back" @click="router.push('/knowledge?home=1')">
           <i class="ri-arrow-left-line"></i>全部知识库
@@ -1167,7 +1231,7 @@ async function saveKbSettings() {
           <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
-            @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
+            @keydown="folderNameKeydown($event, node.id)" @blur="commitFolderName(node.id)" />
           <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? isOpen(node.key) : undefined" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
@@ -1212,7 +1276,7 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :class="{ 'content-narrow': !directoryCollapsed && contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
+    <div class="document-pane" :inert="isMobile && mobileDirectoryOpen ? true : undefined" :class="{ 'content-narrow': !directoryCollapsed && contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
           <div v-if="directoryCollapsed && !doc" class="directory-home-bar" aria-hidden="true"></div>
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
@@ -1249,7 +1313,7 @@ async function saveKbSettings() {
             >
 
             <label v-if="docId && !currentArchived" class="move-document bar-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
-            <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
+            <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="toggleOutline"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
 
@@ -1290,7 +1354,7 @@ async function saveKbSettings() {
 
       <div ref="toolbarHost" class="document-toolbar"></div>
       <div class="document-content">
-    <div ref="scrollEl" class="doc-scroll" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
+    <div ref="scrollEl" class="doc-scroll" :inert="isMobile && mobileTocOpen ? true : undefined" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
@@ -1403,7 +1467,8 @@ async function saveKbSettings() {
       </div>
     </div>
 
-        <aside v-if="doc && tocOpen && pageType === 'document'" class="toc" aria-label="文档大纲" @keydown.esc.stop="closeOutline">
+        <div v-if="isMobile && doc && mobileTocOpen && pageType === 'document'" class="mobile-outline-mask" aria-hidden="true" @click="closeOutline" />
+        <aside v-if="doc && tocOpen && pageType === 'document'" ref="outlinePanel" class="toc" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="文档大纲" @keydown="navigationKeydown($event, 'outline')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
           <div class="toc-label"><span>文档大纲</span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
@@ -1510,6 +1575,9 @@ async function saveKbSettings() {
 .side-top > .back { min-height: 28px; margin-left: 40px; }
 .directory-collapsed > .document-pane > .doc-bar { padding-left: 52px; }
 .directory-home-bar { flex: 0 0 48px; border-bottom: 1px solid var(--wao-line); }
+.mobile-pane-mask { position:absolute; inset:0; z-index:40; background:var(--wao-mask-bg); }
+.mobile-outline-mask { position:absolute; inset:0; z-index:29; background:var(--wao-mask-bg); }
+.mobile-directory-close { display:flex; align-items:center; justify-content:flex-end; gap:var(--wao-space-1); min-height:44px; padding:var(--wao-space-1) var(--wao-space-2); border:0; background:var(--wao-bg-card); color:var(--wao-text); font:inherit; cursor:pointer; }
 @media (pointer: coarse) {
   .directory-toggle { top: 2px; left: var(--wao-space-1); width: 44px; height: 44px; }
   .side-top > .back { margin-left: 48px; }
@@ -2427,12 +2495,19 @@ async function saveKbSettings() {
     flex-direction: column;
   }
   .side {
-    width: 100%;
-    flex: 0 0 auto;
-    max-height: 200px;
-    border-right: 0;
-    border-bottom: 1px solid var(--wao-line);
+    position:absolute;
+    inset:0 auto 0 0;
+    width:min(320px, calc(100% - 32px));
+    max-height:100%;
+    z-index:41;
+    box-shadow:var(--wao-shadow-pop);
   }
+  .side-top > .back { margin-left:0; min-height:44px; }
+  .directory-toggle { top:2px; left:var(--wao-space-1); width:44px; height:44px; }
+  .document-pane > .doc-bar { padding-left:60px; min-height:48px; }
+  .toc { width:min(320px, calc(100% - 24px)); }
+  .toc-item { min-height:44px; white-space:normal; overflow-wrap:anywhere; }
+  .toc-label .icon-act, .icon-act.outline-toggle { min-width:44px; min-height:44px; }
   .doc-scroll {
     min-height: 0;
   }

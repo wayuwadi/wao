@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { fetchFilePreview } from '@/api/board'
 import { absoluteUrl } from '@/utils/share'
 import { renderMarkdown } from '@/utils/markdown'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 
 export type AssetPreview = {
   kind: 'markdown' | 'image' | 'html'
@@ -41,25 +43,13 @@ watch(() => props.asset, load, { immediate: true })
 </script>
 
 <template>
-  <div class="preview-mask" role="presentation" @click.self="$emit('close')">
-    <section
-      class="preview-dialog"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="`预览 ${asset.name}`"
-    >
-      <header>
-        <div>
-          <i class="ri-eye-line"></i><span>{{ asset.name }}</span>
-        </div>
-        <button aria-label="关闭预览" @click="$emit('close')"><i class="ri-close-line"></i></button>
-      </header>
+  <SettingsDialogShell :title="`预览 ${asset.name}`" width="1080px" height="min(780px, calc(100dvh - 48px))" icon="ri-eye-line" appearance="compact" @close="$emit('close')">
       <div v-if="loading" class="preview-state" role="status">
         <i class="ri-loader-4-line spin"></i>正在读取真实文件…
       </div>
       <div v-else-if="error" class="preview-state error" role="alert">
         <i class="ri-error-warning-line"></i><span>{{ error }}</span>
-        <button @click="load"><i class="ri-refresh-line"></i>重试</button>
+        <WaoButton @click="load"><i class="ri-refresh-line"></i>重试</WaoButton>
       </div>
       <article
         v-else-if="asset.kind === 'markdown'"
@@ -75,84 +65,26 @@ watch(() => props.asset, load, { immediate: true })
         :src="absoluteUrl(asset.url || '')"
         :title="asset.name"
         :sandbox="htmlSandbox"
+        tabindex="0"
       ></iframe>
-    </section>
-  </div>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
-.preview-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1600;
-  padding: 24px;
-  background: rgba(20, 23, 34, 0.52);
-  display: grid;
-  place-items: center;
-}
-.preview-dialog {
-  width: min(1080px, 100%);
-  height: min(780px, calc(100vh - 48px));
-  background: var(--wao-bg-card);
-  border-radius: 14px;
-  box-shadow: 0 22px 70px rgba(18, 22, 36, 0.28);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-header {
-  height: 48px;
-  flex: 0 0 auto;
-  padding: 0 14px 0 18px;
-  border-bottom: 1px solid var(--wao-line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-header div {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 650;
-}
-header span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-header button {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--wao-text-3);
-  cursor: pointer;
-}
-header button:hover {
-  background: var(--wao-bg-hover);
-}
 .preview-state {
   flex: 1;
   display: grid;
   place-content: center;
   justify-items: center;
   gap: 10px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 .preview-state.error {
   color: var(--wao-danger);
 }
-.preview-state button {
-  border: 1px solid var(--wao-line-strong);
-  background: var(--wao-bg-card);
-  border-radius: 8px;
-  padding: 7px 12px;
-  cursor: pointer;
-}
 .markdown-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 28px clamp(20px, 5vw, 72px);
   line-height: 1.75;
@@ -183,6 +115,7 @@ header button:hover {
 }
 .html-preview {
   flex: 1;
+  min-height: 0;
   width: 100%;
   border: 0;
   background: #fff;
@@ -193,16 +126,6 @@ header button:hover {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@media (max-width: 640px) {
-  .preview-mask {
-    padding: 0;
-  }
-  .preview-dialog {
-    width: 100%;
-    height: 100%;
-    border-radius: 0;
   }
 }
 </style>

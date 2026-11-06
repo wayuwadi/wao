@@ -3,15 +3,18 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import type { Priority } from '@/types'
+import { useInputComposition } from '@/composables/inputComposition'
 
 const props = defineProps<{ priority: Priority; projectId: string; label: string }>()
 const emit = defineEmits<{ close: [] }>()
 const session = useSessionStore(), data = useDataStore()
 const input = ref<HTMLInputElement>()
 const title = ref(''), id = ref(''), error = ref(''), saving = ref(false)
+const composition = useInputComposition()
 const key = computed(() => `wao-quadrant-draft:${session.account?.accountId}:${session.userId}:${props.projectId}:${props.priority}`)
 watch(key, () => {
   title.value = ''; id.value = ''; error.value = ''; saving.value = false
+  composition.end()
   try { const draft = JSON.parse(localStorage.getItem(key.value) || '{}'); title.value = draft.title || ''; id.value = draft.id || '' }
   catch { error.value = '无法读取草稿' }
 }, { immediate: true })
@@ -21,9 +24,10 @@ function protect() {
   catch { error.value = '无法保护草稿，请保存后再离开' }
 }
 async function submit() {
-  if (!title.value.trim() || saving.value) return
+  if (!title.value.trim() || saving.value || composition.active()) return
   protect(); saving.value = true; error.value = ''
   const draftKey = key.value, taskId = id.value, taskTitle = title.value.trim()
+  const form = input.value?.form, restoreInput = !!form?.contains(document.activeElement)
   try {
     const existing = data.taskById(taskId)
     if (existing) {
@@ -39,11 +43,19 @@ async function submit() {
   } catch (e) {
     if (key.value === draftKey) error.value = e instanceof Error ? e.message : '任务未保存，请重试'
   } finally {
-    if (key.value === draftKey) { saving.value = false; await nextTick(); input.value?.focus() }
+    if (key.value === draftKey) {
+      saving.value = false; await nextTick()
+      if (restoreInput && (document.activeElement === document.body || form?.contains(document.activeElement))) input.value?.focus({ preventScroll: true })
+    }
   }
 }
 function leave(event: FocusEvent) {
   if (!title.value.trim() && !saving.value && !(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) emit('close')
+}
+function inputKey(event: KeyboardEvent) {
+  if (composition.guard(event)) return
+  if (event.key === 'Enter') { event.preventDefault(); void submit() }
+  if (event.key === 'Escape' && !saving.value) { event.preventDefault(); emit('close') }
 }
 onMounted(() => input.value?.focus())
 </script>
@@ -51,7 +63,7 @@ onMounted(() => input.value?.focus())
 <template>
   <form class="quadrant-quick-add" :aria-label="`在${label}添加任务`" @submit.prevent="submit" @focusout="leave">
     <div class="input-row">
-      <input ref="input" v-model="title" :aria-label="`${label}任务名称`" placeholder="输入任务名称，回车添加" :disabled="saving" @input="protect" @keydown.enter.prevent="!$event.isComposing && submit()" @keydown.esc.prevent="!saving && emit('close')" />
+      <input ref="input" v-model="title" :aria-label="`${label}任务名称`" placeholder="输入任务名称，回车添加" :disabled="saving" @input="protect" @compositionstart="composition.start" @compositionend="composition.end" @keydown="inputKey" />
       <button :disabled="saving || !title.trim()">{{ saving ? '保存中…' : error ? '重试' : '添加' }}</button>
       <button type="button" aria-label="收起添加任务" :disabled="saving" @click="emit('close')"><i class="ri-close-line" aria-hidden="true" /></button>
     </div>

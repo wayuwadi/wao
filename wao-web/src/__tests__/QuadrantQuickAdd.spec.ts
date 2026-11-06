@@ -38,7 +38,42 @@ it('空标题不创建，关闭再打开恢复未提交草稿，中文输入确�
   await w.get('input').setValue('未提交草稿')
   await w.get('input').trigger('keydown', { key: 'Enter', isComposing: true })
   expect(add).not.toHaveBeenCalled()
+  await w.get('input').trigger('keydown', { key: 'Enter', keyCode: 229 })
+  await w.get('input').trigger('compositionstart')
+  await w.get('input').trigger('keydown', { key: 'Escape' })
+  await w.get('form').trigger('submit')
+  expect(add).not.toHaveBeenCalled();expect(w.emitted('close')).toBeUndefined()
+  await w.get('input').trigger('compositionend')
   w.unmount(); w = mountAdd()
   expect(w.get('input').element.value).toBe('未提交草稿')
   w.unmount()
+})
+
+it.each([true, false])('象限保存结束恢复输入焦点（保存成功：%s）', async persisted => {
+  const data = useDataStore()
+  let finish!: (result: Awaited<ReturnType<typeof data.addTask>>) => void
+  vi.spyOn(data, 'addTask').mockReturnValue(new Promise(resolve => { finish = resolve }))
+  const w = mount(QuadrantQuickAdd, { attachTo: document.body, props: { priority: 'P1', projectId: 'current-list', label: '重要不紧急' } })
+  try {
+    const input = w.get('input')
+    await input.setValue('连续输入任务'); input.element.focus()
+    await w.get('form').trigger('submit'); input.element.blur()
+    finish({ task: data.tasks[0]!, persisted }); await flushPromises()
+    expect(document.activeElement).toBe(input.element)
+    expect(input.element.value).toBe(persisted ? '' : '连续输入任务')
+  } finally { w.unmount() }
+})
+
+it('象限保存期间切换到其他输入后，不抢回焦点', async () => {
+  const data = useDataStore()
+  let finish!: (result: Awaited<ReturnType<typeof data.addTask>>) => void
+  vi.spyOn(data, 'addTask').mockReturnValue(new Promise(resolve => { finish = resolve }))
+  const w = mount(QuadrantQuickAdd, { attachTo: document.body, props: { priority: 'P1', projectId: 'current-list', label: '重要不紧急' } })
+  const nextInput = document.createElement('input'); document.body.append(nextInput)
+  try {
+    await w.get('input').setValue('连续输入任务')
+    await w.get('form').trigger('submit'); nextInput.focus()
+    finish({ task: data.tasks[0]!, persisted: true }); await flushPromises()
+    expect(document.activeElement).toBe(nextInput)
+  } finally { w.unmount(); nextInput.remove() }
 })

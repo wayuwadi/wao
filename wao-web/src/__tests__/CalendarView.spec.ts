@@ -8,6 +8,7 @@ import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedul
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import { useWeatherStore } from '@/stores/weather'
 import {
   fetchHolidayEvents,
   fetchHolidaySettings,
@@ -211,11 +212,33 @@ describe('日历成员隔离、清单与时间轴', () => {
     await slots[10]!.trigger('mouseenter')
     await wrapper.find('.timeline').trigger('mouseup')
 
-    expect(wrapper.find('.create-choice-modal').exists()).toBe(true)
-    await wrapper.find('.create-choice-grid button').trigger('click')
+    expect(document.querySelector('.create-choice-modal')).not.toBeNull()
+    document.querySelector<HTMLButtonElement>('.create-choice-grid button')!.click()
+    await flushPromises()
     expect(ui.modal).toBe('task')
     expect(ui.modalStartAt).toBe(`${data.today}T09:00`)
     expect(ui.modalEndAt).toBe(`${data.today}T11:00`)
+  })
+
+  it('手机菜单保留所选日期的当天记录入口，查看其他成员时隐藏', async () => {
+    const session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '成员' }
+    const other = { ...me, id: 'wd', name: '另一成员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me, other]
+    await router.push('/calendar')
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    await wrapper.get('.date-picker').setValue('2026-10-08')
+    expect(wrapper.get('.calendar-settings-menu > summary').attributes('aria-label')).toBe('日历设置')
+    expect(wrapper.get('.mobile-day-records').text()).toContain('2026-10-08')
+    await wrapper.get('.mobile-day-records').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/todo')
+    expect(router.currentRoute.value.query.date).toBe('2026-10-08')
+    await wrapper.get('.member-calendar select').setValue('wd')
+    expect(wrapper.find('.mobile-day-records').exists()).toBe(false)
+    expect(wrapper.find('.day-records-btn').exists()).toBe(false)
   })
 
   it('移动跨日执行安排保留截止，失败保留并重试，撤销不覆盖后续修改', async () => {
@@ -261,6 +284,52 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect((wrapper.get('[aria-label="选择日历日期"]').element as HTMLInputElement).value).toBe('2026-02-28')
     await wrapper.get('.search-toggle').trigger('click')
     expect(wrapper.get('.search-toggle').attributes('aria-expanded')).toBe('true')
+  })
+
+  it('工具栏按所选日期打开创建选择，键盘焦点圈定并在关闭后回到入口', async () => {
+    const wrapper = mount(CalendarView, { attachTo: document.body, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    await wrapper.get('[aria-label="选择日历日期"]').setValue('2030-10-15')
+    const trigger = wrapper.get<HTMLButtonElement>('.calendar-create')
+    expect(trigger.attributes('aria-label')).toContain('2030-10-15')
+    trigger.element.focus()
+    await trigger.trigger('click'); await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(dialog.getAttribute('aria-label')).toBe('在 2030-10-15 创建')
+    expect(useUiStore(pinia).modal).toBeFalsy()
+    expect(createFamilyImportantDate).not.toHaveBeenCalled()
+    const choices = dialog.querySelectorAll<HTMLButtonElement>('.create-choice-grid button')
+    choices[1]!.focus()
+    choices[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(dialog.querySelector('.dialog-close'))
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.querySelector('.create-choice-modal')).toBeNull()
+    expect(document.activeElement).toBe(trigger.element)
+    await trigger.trigger('click'); await flushPromises()
+    document.querySelector<HTMLButtonElement>('.create-choice-grid button')!.click(); await flushPromises()
+    expect(useUiStore(pinia).modal).toBe('task')
+    expect(useUiStore(pinia).modalScheduleDate).toBe('2030-10-15')
+    expect(useUiStore(pinia).modalStartAt).toBe('')
+  })
+
+  it('天气预览复用可关闭的对话框，Esc 返回日历原事项', async () => {
+    const wrapper = mount(CalendarView, { attachTo: document.body, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    const weather = useWeatherStore(pinia), today = useDataStore(pinia).today
+    weather.forecast = { fetchedAt: new Date().toISOString(), days: [{ date: today, code: 0, low: 10, high: 20, rain: 0, wind: 0 }] }
+    weather.stale = false
+    await flushPromises()
+    const event = wrapper.findAll<HTMLButtonElement>('.event').find(button => button.text().includes('晴'))!
+    event.element.focus()
+    await event.trigger('click'); await flushPromises()
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(dialog.textContent).toContain('晴 · 10～20℃')
+    expect(dialog.querySelector('.search-preview-modal')?.textContent).toContain('天气')
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.querySelector('.search-preview-modal')).toBeNull()
+    expect(document.activeElement).toBe(event.element)
   })
 
   it('关闭已完成后月、周、日仍保留未收尾子项，独立下级任务不级联改写父状态', async () => {
@@ -607,9 +676,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     await flushPromises()
 
     await wrapper.find('.day-num').trigger('dblclick')
-    expect(wrapper.find('.create-choice-modal').text()).toContain('任务')
-    expect(wrapper.find('.create-choice-modal').text()).toContain('提醒事项')
-    await wrapper.findAll('.create-choice-grid button')[1]!.trigger('click')
+    const choice = document.querySelector('.create-choice-modal')!
+    expect(choice.textContent).toContain('任务')
+    expect(choice.textContent).toContain('提醒事项')
+    choice.querySelectorAll<HTMLButtonElement>('.create-choice-grid button')[1]!.click()
     await flushPromises()
     expect(wrapper.find('.important-date-form').exists()).toBe(true)
     await wrapper.findAll('.calendar-type-switch button')[1]!.trigger('click')

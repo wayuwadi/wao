@@ -12,6 +12,121 @@ vi.mock('@/api/system', () => ({
 }))
 
 describe('FilesView', () => {
+  it.each(['img', 'pages'] as const)('切换账号恢复%s搜索时保留该账号页码，只有用户搜索才重置', async tab => {
+    sessionStorage.clear()
+    const pinia = createPinia()
+    const session = useSessionStore(pinia)
+    const login = (id: string) => session.$patch({ account: { accountId: id, member: { id, name: id, initial: id, role: '', color: '' }, identities: [], createdAt: '' } })
+    login('first')
+    sessionStorage.setItem('wao-browse-v1:second:second:files', JSON.stringify({ tab, imagePage: 3, hostedPage: 3, searchImages: '报告', searchPages: '报告' }))
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.loadStates.images = data.hostedPageLoadState = 'loaded'
+    data.imgs = Array.from({ length: 31 }, (_, i) => ({ id: `im-${i}`, name: `页面报告 ${i + 1}`, url: `/images/${i}`, size: '', time: '', from: '', c1: '', c2: '' }))
+    data.hostedPages = Array.from({ length: 31 }, (_, i) => ({ id: `page-${i}`, title: `页面报告 ${i + 1}`, fileName: `${i}.html`, slug: `page-${i}`, hasIcon: false, updatedAt: '', url: `/api/pages/page-${i}` }))
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, FileSettingsModal: true } } })
+    await wrapper.findAll('.seg-btn')[tab === 'img' ? 1 : 2]!.trigger('click')
+    await wrapper.get('.resource-search input').setValue('页面')
+    await wrapper.get('[aria-label="第 2 页"]').trigger('click')
+    login('second')
+    await flushPromises()
+    expect((wrapper.get('.resource-search input').element as HTMLInputElement).value).toBe('报告')
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('3')
+    const saved = JSON.parse(sessionStorage.getItem('wao-browse-v1:second:second:files')!)
+    expect(saved[tab === 'img' ? 'imagePage' : 'hostedPage']).toBe(3)
+    await wrapper.get('.resource-search input').setValue('页面报告')
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('1')
+    wrapper.unmount()
+    sessionStorage.clear()
+  })
+
+  it('托管发布失败保留表单和所选文件，忙碌时阻止重复发布，重试后关闭', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    let reject!: (reason: Error) => void
+    const save = vi.spyOn(data, 'saveHostedPage').mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+      .mockResolvedValueOnce({ id: 'p1', title: '网页草稿', slug: 'draft', fileName: 'draft.html', hasIcon: false, updatedAt: '', url: '/api/pages/draft' })
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, FileSettingsModal: true } } })
+    const html = new File(['<h1>草稿</h1>'], 'draft.html', { type: 'text/html' })
+    await wrapper.get('.unified-drop').trigger('drop', { dataTransfer: { files: [html] } })
+    await wrapper.get('.page-dialog input').setValue('网页草稿')
+    await wrapper.get('.page-dialog').trigger('submit')
+    await wrapper.get('.page-dialog').trigger('submit')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[aria-label="关闭托管 HTML"]').attributes('disabled')).toBeDefined()
+    reject(new Error('网络暂不可用'))
+    await flushPromises()
+    expect(wrapper.get('.page-error').text()).toContain('网络暂不可用')
+    expect((wrapper.get('.page-dialog input').element as HTMLInputElement).value).toBe('网页草稿')
+    expect(wrapper.get('.html-picker').text()).toContain('draft.html')
+    await wrapper.get('.page-dialog').trigger('submit')
+    await flushPromises()
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(save.mock.calls[1]![0].html).toBe(html)
+    expect(wrapper.find('.page-dialog').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('分别记住三种资源的搜索，并匹配展示名、原名和来源，清除后恢复全部', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.fileLoadState = data.hostedPageLoadState = data.loadStates.images = 'loaded'
+    data.files = [
+      { id: 'f-a', name: 'Report.PDF', displayName: '年度总结', by: '小林', time: '', size: '', icon: 'ri-file-line', link: '/a' },
+      { id: 'f-b', name: '预算.xlsx', by: '小陈', time: '', size: '', icon: 'ri-file-line', link: '/b' },
+    ]
+    data.imgs = [{ id: 'i-a', name: '封面.png', from: '任务', time: '', size: '', url: '/a.png', c1: '', c2: '' }]
+    data.hostedPages = [{ id: 'p-a', title: '产品说明', fileName: 'index.html', slug: 'product', hasIcon: false, updatedAt: '', url: '/api/pages/product' }]
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, FileSettingsModal: true } } })
+    await flushPromises()
+    const input = () => wrapper.get('.resource-search input')
+    await input().setValue('report 小林')
+    expect(wrapper.findAll('.file-row')).toHaveLength(1)
+    expect(wrapper.get('.file-row').text()).toContain('年度总结')
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    expect((input().element as HTMLInputElement).value).toBe('')
+    await input().setValue('任务')
+    expect(wrapper.findAll('.img-card')).toHaveLength(1)
+    expect(wrapper.get('[aria-label="预览图片 封面.png"]').element.tagName).toBe('BUTTON')
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    await input().setValue('PRODUCT')
+    expect(wrapper.findAll('.file-row')).toHaveLength(1)
+    await wrapper.findAll('.seg-btn')[0]!.trigger('click')
+    expect((input().element as HTMLInputElement).value).toBe('report 小林')
+    await input().setValue('无此文件')
+    expect(wrapper.text()).toContain('没有匹配的文件')
+    expect(wrapper.text()).not.toContain('还没有文件')
+    await wrapper.get('[aria-label="清除资源搜索"]').trigger('click')
+    expect(wrapper.findAll('.file-row')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('在图床末页开始搜索时回到首个匹配结果，不留下空分页', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.loadStates.images = 'loaded'
+    data.imgs = Array.from({ length: 31 }, (_, i) => ({ id: `im-${i}`, name: `图片 ${i + 1}`, url: `/images/${i}`, size: '', time: '', from: '', c1: '', c2: '' }))
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, FileSettingsModal: true } } })
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    await wrapper.get('[aria-label="第 3 页"]').trigger('click')
+    await wrapper.get('.resource-search input').setValue('图片 1')
+    expect(wrapper.findAll('.img-card')).toHaveLength(13)
+    expect(wrapper.text()).toContain('图片 1')
+    expect(wrapper.find('[aria-label="图床分页"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('大型图床按页渲染，跳到末页和删除末页后不会显示全部卡片', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
@@ -20,7 +135,7 @@ describe('FilesView', () => {
     vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     data.loadStates.images = 'loaded'
     data.imgs = Array.from({ length: 301 }, (_, i) => ({ id: `image-${i}`, name: `图片 ${i + 1}`, url: `/api/images/image-${i}/raw`, size: '1 KB', time: '', from: '', c1: '', c2: '' }))
-    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } } })
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } } })
     await wrapper.findAll('.seg-btn')[1]!.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.img-card')).toHaveLength(15)
@@ -40,7 +155,7 @@ describe('FilesView', () => {
     const refresh = vi.spyOn(data, 'refreshFiles').mockResolvedValue(false)
     vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
     vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
-    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } } })
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } } })
     await flushPromises()
     expect(wrapper.text()).toContain('正在读取文件')
     expect(wrapper.text()).not.toContain('还没有文件')
@@ -82,7 +197,7 @@ describe('FilesView', () => {
     const wrapper = mount(FilesView, {
       global: {
         plugins: [pinia],
-        stubs: { DemoBanner: true, FileSettingsModal: true },
+        stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true },
       },
     })
     await flushPromises()
@@ -131,7 +246,7 @@ describe('FilesView', () => {
     const wrapper = mount(FilesView, {
       global: {
         plugins: [pinia],
-        stubs: { DemoBanner: true, FileSettingsModal: true },
+        stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true },
       },
     })
     await flushPromises()
@@ -152,7 +267,7 @@ describe('FilesView', () => {
     expect((inputs[1]!.element as HTMLInputElement).value).toBe('wao-dashboard')
     expect(wrapper.find('.html-picker').text()).toContain('WAO Dashboard.html')
 
-    await wrapper.find('.dialog-actions .btn-primary').trigger('submit')
+    await wrapper.find('.page-dialog').trigger('submit')
     await flushPromises()
     expect(saveHostedPage).toHaveBeenCalledWith(expect.objectContaining({ html }))
   })
@@ -185,7 +300,7 @@ describe('FilesView', () => {
       },
     ]
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
 
@@ -208,7 +323,7 @@ describe('FilesView', () => {
     const wrapper = mount(FilesView, {
       global: {
         plugins: [pinia],
-        stubs: { DemoBanner: true, FileSettingsModal: true },
+        stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true },
       },
     })
     await flushPromises()
@@ -244,7 +359,7 @@ describe('FilesView', () => {
     const wrapper = mount(FilesView, {
       global: {
         plugins: [pinia],
-        stubs: { DemoBanner: true, FileSettingsModal: true },
+        stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true },
       },
     })
     await flushPromises()
@@ -258,7 +373,7 @@ describe('FilesView', () => {
 
     expect(wrapper.find('.html-picker').text()).toContain('dragged-page.html')
     expect(wrapper.find('.icon-picker').text()).toContain('page-icon.png')
-    await wrapper.find('.dialog-actions .btn-primary').trigger('submit')
+    await wrapper.find('.page-dialog').trigger('submit')
     await flushPromises()
 
     expect(saveHostedPage).toHaveBeenCalledWith(
@@ -299,7 +414,7 @@ describe('FilesView', () => {
     const wrapper = mount(FilesView, {
       global: {
         plugins: [pinia],
-        stubs: { DemoBanner: true, FileSettingsModal: true, AssetReplaceModal: true },
+        stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true, AssetReplaceModal: true },
       },
     })
     await flushPromises()
@@ -329,7 +444,7 @@ describe('FilesView', () => {
       return false
     })
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
     await wrapper.findAll('.seg-btn')[2]!.trigger('click')
@@ -363,7 +478,7 @@ describe('FilesView', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(success)
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
     const first = new File(['a'], '成功.txt')
@@ -392,7 +507,7 @@ describe('FilesView', () => {
       .mockRejectedValueOnce(new Error('网络中断'))
       .mockResolvedValue(null)
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
     const oversized = new File(['x'], '过大.txt')
@@ -425,7 +540,7 @@ describe('FilesView', () => {
         }),
     )
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
     const image = new File(['x'], '图片.png', { type: 'image/png' })
@@ -451,7 +566,7 @@ describe('FilesView', () => {
         }),
     )
     const wrapper = mount(FilesView, {
-      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+      global: { plugins: [pinia], stubs: { Teleport: true, DemoBanner: true, FileSettingsModal: true } },
     })
     await flushPromises()
     await wrapper

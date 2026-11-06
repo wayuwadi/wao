@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { searchSettings } from '@/utils/settingsNavigation'
 
 const props = defineProps<{ currentTab: string }>()
 const emit = defineEmits<{ navigate: [id: string] }>()
 const query = ref('')
+const input = ref<HTMLInputElement>()
+function clear() {
+  query.value = ''
+  void nextTick(() => input.value?.focus())
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) return
+  event.stopPropagation()
+  clear()
+}
 const results = computed(() => searchSettings(query.value))
 watch(() => props.currentTab, () => { query.value = '' })
 </script>
 
 <template>
   <div class="settings-search">
-    <label><span class="search-label">查找设置</span><input v-model="query" type="search" aria-label="查找设置" placeholder="主题、提醒、账号…" @keydown.esc.stop="query = ''" /></label>
+    <label><span class="search-label">查找设置</span><input ref="input" v-model="query" type="search" aria-label="查找设置" placeholder="主题、提醒、账号…" @keydown="onKeydown" /></label>
     <div v-if="query.trim()" class="settings-search-results" aria-label="设置搜索结果">
       <p role="status">{{ results.length ? `找到 ${results.length} 项设置` : '没有找到匹配设置，试试其他关键词。' }}</p>
       <button v-for="result in results" :key="result.id" type="button" @click="emit('navigate', result.id)">
@@ -19,7 +29,7 @@ watch(() => props.currentTab, () => { query.value = '' })
         <span><strong>{{ result.label }}</strong><small>{{ result.category }}<template v-if="result.id === 'jenkins'"> · 新窗口打开</template></small></span>
         <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
       </button>
-      <button class="clear-search" type="button" @click="query = ''">清除搜索</button>
+      <button class="clear-search" type="button" @click="clear">清除搜索</button>
     </div>
   </div>
 </template>

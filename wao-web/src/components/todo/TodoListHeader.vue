@@ -1,12 +1,25 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
+import { useInputComposition } from '@/composables/inputComposition'
 import TodayDates from '@/components/routines/TodayDates.vue'
 import TodoViewControls from './TodoViewControls.vue'
 import type { TodoViewSettings, TodoDisplaySettings } from '@/utils/todoViewSettings'
-withDefaults(defineProps<{ heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
+const props=withDefaults(defineProps<{ heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
 const query=defineModel<string>('query',{default:''})
 const completed=defineModel<boolean>('completed',{default:false})
 const quick=defineModel<string>('quick',{required:true})
-defineEmits<{ navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
+const emit=defineEmits<{ navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
+const composition=useInputComposition(),quickInput=ref<HTMLInputElement>(),quickForm=ref<HTMLFormElement>()
+watch(()=>props.selection,composition.end)
+let restoreInput=false
+function submit(){if(!composition.active()&&!props.creating&&quick.value.trim())emit('add')}
+watch(()=>props.creating,async (creating,wasCreating)=>{
+ if(creating){restoreInput=!!quickForm.value?.contains(document.activeElement);return}
+ if(!wasCreating||!restoreInput)return
+ restoreInput=false
+ await nextTick()
+ if(document.activeElement===document.body||quickForm.value?.contains(document.activeElement))quickInput.value?.focus({preventScroll:true})
+})
 </script>
 <template>
  <div class="todo-list-header">
@@ -17,7 +30,7 @@ defineEmits<{ navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<Tod
    <TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" />
 </header>
   <TodayDates v-if="selection==='today'" />
-  <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" class="quick-add" @submit.prevent="$emit('add')"><i class="ri-add-line" aria-hidden="true" /><input v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating" @input="$emit('protect')" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':'添加'}}</button></form>
+  <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" ref="quickForm" class="quick-add" @submit.prevent="submit"><i class="ri-add-line" aria-hidden="true" /><input ref="quickInput" v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating" @input="$emit('protect')" @compositionstart="composition.start" @compositionend="composition.end" @keydown="composition.guard" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':'添加'}}</button></form>
   <p v-if="error" role="alert">{{error}}</p>
  </div>
 </template>

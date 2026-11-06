@@ -2,7 +2,7 @@
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useConfirmAction } from '@/composables/confirmAction'
 const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
-import { computed, nextTick, onMounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRefs, useId, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 import { useUploadStore, type UploadAttempt } from '@/stores/uploads'
@@ -15,6 +15,7 @@ import { toast } from '@/composables/toast'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
@@ -31,12 +32,36 @@ const route = useRoute()
 const validScroll = (value: unknown) => typeof value === 'number' && value >= 0 && Number.isFinite(value)
 const browse = useBrowsingState('files', {
   tab: 'files' as 'files' | 'img' | 'pages', hostedPage: 1, imagePage: 1,
+  searchFiles: '', searchImages: '', searchPages: '',
   hostedPageSource: 'ALL' as HostedPageSourceFilter, scrollFiles: 0, scrollImages: 0, scrollPages: 0, lastTarget: '',
 }, { tab: oneOf('files', 'img', 'pages'), hostedPage: validPage, imagePage: validPage,
   hostedPageSource: oneOf('ALL', 'MANUAL_UPLOAD', 'AI_RUN_REPORT'),
+  searchFiles: validSearch, searchImages: validSearch, searchPages: validSearch,
   scrollFiles: validScroll, scrollImages: validScroll, scrollPages: validScroll, lastTarget: validSearch,
 })
 const { tab, hostedPage, hostedPageSource } = toRefs(browse)
+const searchInput = ref<HTMLInputElement>()
+const searchKey = computed(() => tab.value === 'files' ? 'searchFiles' : tab.value === 'img' ? 'searchImages' : 'searchPages')
+const search = computed({
+  get: () => browse[searchKey.value],
+  set: value => {
+    browse[searchKey.value] = value
+    if (tab.value === 'img') browse.imagePage = 1
+    if (tab.value === 'pages') hostedPage.value = 1
+  },
+})
+const searchLabel = computed(() => tab.value === 'files' ? '搜索文件名称、上传者或项目' : tab.value === 'img' ? '搜索图片名称、来源或项目' : '搜索网页标题、文件名或链接')
+function matchesSearch(query: string, ...values: (string | null | undefined)[]) {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  const content = values.filter(Boolean).join(' ').toLocaleLowerCase()
+  return terms.every(term => content.includes(term))
+}
+const filteredFiles = computed(() => data.files.filter(file => matchesSearch(browse.searchFiles, fileDisplayName(file), file.name, file.by, projectName(file.projectId))))
+const filteredImages = computed(() => data.imgs.filter(image => matchesSearch(browse.searchImages, image.name, image.from, projectName(image.projectId))))
+function clearSearch() {
+  search.value = ''
+  void nextTick(() => searchInput.value?.focus())
+}
 const filesRoot = ref<HTMLElement>()
 const scrollKey = computed(() => tab.value === 'files' ? 'scrollFiles' : tab.value === 'img' ? 'scrollImages' : 'scrollPages')
 const { stopRestoring } = useBrowsingScroll(filesRoot, computed({ get: () => browse[scrollKey.value], set: value => { browse[scrollKey.value] = value } }),
@@ -52,6 +77,9 @@ const pageSlug = ref('')
 const pageHtml = ref<File | null>(null)
 const pageIcon = ref<File | null>(null)
 const pageSaving = ref(false)
+const pageError = ref('')
+const pageFormId = useId()
+const pageTitleInput = ref<HTMLInputElement>()
 const pageTitleAuto = ref(false)
 const pageSlugAuto = ref(false)
 const pageHtmlInput = ref<HTMLInputElement | null>(null)
@@ -78,10 +106,12 @@ function hostedPageSourceType(page: HostedPage) {
   return page.sourceType ?? (page.id.startsWith('run-report-') ? 'AI_RUN_REPORT' : 'MANUAL_UPLOAD')
 }
 const filteredHostedPages = computed(() =>
-  hostedPageSource.value === 'ALL'
-    ? data.hostedPages
-    : data.hostedPages.filter((page) => hostedPageSourceType(page) === hostedPageSource.value),
+  data.hostedPages.filter(page => (hostedPageSource.value === 'ALL' || hostedPageSourceType(page) === hostedPageSource.value)
+    && matchesSearch(browse.searchPages, page.title, page.fileName, page.slug, page.url, projectName(page.projectId))),
 )
+const resultCount = computed(() => tab.value === 'files' ? filteredFiles.value.length : tab.value === 'img' ? filteredImages.value.length : filteredHostedPages.value.length)
+const totalCount = computed(() => tab.value === 'files' ? data.files.length : tab.value === 'img' ? data.imgs.length : data.hostedPages.length)
+const listLoaded = computed(() => tab.value === 'files' ? data.fileLoadState === 'loaded' : tab.value === 'img' ? data.loadStates.images === 'loaded' : data.hostedPageLoadState === 'loaded')
 const hostedPageCount = computed(() =>
   Math.max(1, Math.ceil(filteredHostedPages.value.length / HOSTED_PAGE_SIZE)),
 )
@@ -95,7 +125,7 @@ const visibleHostedPages = computed(() =>
 /** 图床每页三排，避免一次展开数千张卡片阻塞页面。 */
 const IMG_PAGE = 15
 const { page: imagePage, pageCount: imagePageCount, visible: visibleImages } = useClientPagination(
-  computed(() => data.imgs), [], IMG_PAGE, { page: toRefs(browse).imagePage, ready: () => data.loadStates.images === 'loaded' },
+  filteredImages, [], IMG_PAGE, { page: toRefs(browse).imagePage, ready: () => data.loadStates.images === 'loaded' },
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
@@ -184,10 +214,12 @@ function openPageDialog(page?: HostedPage, html?: File) {
   pageSlug.value = page?.slug ?? ''
   pageHtml.value = null
   pageIcon.value = null
+  pageError.value = ''
   pageTitleAuto.value = !page
   pageSlugAuto.value = !page
   if (html) setHostedPageHtml(html)
   pageDialog.value = true
+  void nextTick(() => pageTitleInput.value?.focus())
 }
 
 function closePageDialog() {
@@ -231,15 +263,17 @@ function onPageIconDrop(event: DragEvent) {
 }
 
 async function savePage() {
+  if (pageSaving.value) return
   if (
     !pageTitle.value.trim() ||
     !pageSlug.value.trim() ||
     (!editingPage.value && !pageHtml.value)
   ) {
-    toast('请填写标题、链接后缀并选择 HTML 文件', 'ri-error-warning-line')
+    pageError.value = '请填写显示名称、链接后缀并选择 HTML 文件。'
     return
   }
   pageSaving.value = true
+  pageError.value = ''
   try {
     const page = await data.saveHostedPage({
       id: editingPage.value?.id,
@@ -252,7 +286,7 @@ async function savePage() {
     hostedPage.value = 1
     toast(`已发布「${page.title}」`, 'ri-global-line')
   } catch (error) {
-    toast(error instanceof Error ? error.message : '发布失败，请重试', 'ri-error-warning-line')
+    pageError.value = error instanceof Error ? error.message : '发布失败，请重试。已填写内容和所选文件仍保留。'
   } finally {
     pageSaving.value = false
   }
@@ -358,7 +392,10 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   if (target === browse.lastTarget || (!id && !route?.query.uploads)) return
   if (id && data.fileLoadState !== 'loaded') return
   browse.lastTarget = target
-  if (id) tab.value = 'files'
+  if (id) {
+    tab.value = 'files'
+    browse.searchFiles = ''
+  }
   await nextTick()
   stopRestoring()
   const element = id ? [...(filesRoot.value?.querySelectorAll<HTMLElement>('[data-file-id]') ?? [])].find(node => node.dataset.fileId === id)
@@ -373,12 +410,13 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   <div ref="filesRoot" class="files wao-page-frame">
     <div class="ftop">
       <div class="ftitle">资源库</div>
-      <div class="seg">
+      <div class="seg" role="group" aria-label="资源类型">
         <button
           v-for="t in ['files', 'img', 'pages'] as const"
           :key="t"
           class="seg-btn"
           :class="{ on: tab === t }"
+          :aria-pressed="tab === t"
           @click="tab = t"
         >
           {{ t === 'files' ? '文件' : t === 'img' ? '图床' : '网页托管' }}
@@ -412,6 +450,15 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
         hidden
         @change="onPick"
       />
+    </div>
+
+    <div class="resource-search-bar">
+      <div class="resource-search">
+        <i class="ri-search-line" aria-hidden="true"></i>
+        <input ref="searchInput" v-model="search" type="search" maxlength="200" :aria-label="searchLabel" :placeholder="searchLabel" />
+        <WaoButton v-if="search" variant="ghost" aria-label="清除资源搜索" @click="clearSearch"><i class="ri-close-line" aria-hidden="true"></i></WaoButton>
+      </div>
+      <span v-if="listLoaded" class="resource-count" role="status">{{ search.trim() || (tab === 'pages' && hostedPageSource !== 'ALL') ? `${resultCount} / ${totalCount} 项` : `共 ${totalCount} 项` }}</span>
     </div>
 
     <div
@@ -511,8 +558,11 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
           <template #actions><WaoButton variant="primary" :disabled="uploading > 0" @click="unifiedInput?.click()">选择文件</WaoButton></template>
         </WaoEmptyState>
         <p v-if="route?.query.file && data.fileLoadState === 'loaded' && !data.files.some(file => file.id === route?.query.file)" role="status">该文件已不在当前可访问列表中，请重新搜索。</p>
-        <div v-if="data.files.length" class="file-list">
-          <div v-for="(f, i) in data.files" :key="f.id || i" class="file-row" :data-file-id="f.id" :class="{ 'search-target': route?.query.file === f.id }" tabindex="-1">
+        <WaoEmptyState v-if="data.fileLoadState === 'loaded' && data.files.length && !filteredFiles.length" title="没有匹配的文件" description="试试文件名、上传者或项目名称，也可以清除搜索查看全部。" icon="ri-search-line">
+          <template #actions><WaoButton @click="clearSearch">清除搜索</WaoButton></template>
+        </WaoEmptyState>
+        <div v-if="filteredFiles.length" class="file-list">
+          <div v-for="(f, i) in filteredFiles" :key="f.id || i" class="file-row" :data-file-id="f.id" :class="{ 'search-target': route?.query.file === f.id }" tabindex="-1">
             <div class="file-icon"><i :class="f.icon"></i></div>
             <div class="file-main">
               <FileDisplayNameEditor :file="f" />
@@ -555,12 +605,13 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
             >
               <i class="ri-upload-2-line"></i>重新上传
             </button>
-            <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"
+            <a class="dl-btn" title="直接下载" :aria-label="`下载 ${fileDisplayName(f)}`" :href="absoluteUrl(f.link)"
               ><i class="ri-download-2-line"></i
             ></a>
             <button
               class="dl-btn danger"
               title="删除"
+              :aria-label="`删除文件 ${fileDisplayName(f)}`"
               @click="removeFile(f.id, fileDisplayName(f))"
             >
               <i class="ri-delete-bin-line"></i>
@@ -600,11 +651,12 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
                 background: `repeating-linear-gradient(45deg, ${im.c1} 0 10px, ${im.c2} 10px 20px)`,
               }"
             >
-              <img :src="im.url" :alt="im.name" loading="lazy" @click="openImage(im.url)" />
+              <button type="button" class="img-preview" :aria-label="`预览图片 ${im.name}`" @click="openImage(im.url)"><img :src="im.url" :alt="im.name" loading="lazy" /></button>
               <button
                 v-if="im.id"
                 class="img-del"
                 title="从图床删除"
+                :aria-label="`删除图片 ${im.name}`"
                 @click.stop="removeImage(im.id, im.name)"
               >
                 <i class="ri-delete-bin-line"></i>
@@ -620,8 +672,11 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
             </div>
           </div>
         </div>
-        <WaoPagination v-if="data.loadStates.images === 'loaded' && imagePageCount > 1" v-model:page="imagePage" :page-count="imagePageCount" :total="data.imgs.length" aria-label="图床分页" />
+        <WaoPagination v-if="data.loadStates.images === 'loaded' && imagePageCount > 1" v-model:page="imagePage" :page-count="imagePageCount" :total="filteredImages.length" aria-label="图床分页" />
 
+        <WaoEmptyState v-if="data.loadStates.images === 'loaded' && data.imgs.length && !filteredImages.length" title="没有匹配的图片" description="换个名称、来源或项目试试。" icon="ri-search-line">
+          <template #actions><WaoButton @click="clearSearch">清除搜索</WaoButton></template>
+        </WaoEmptyState>
         <div v-if="data.loadStates.images === 'loaded' && !data.imgs.length" class="img-empty">
           <i class="ri-image-add-line"></i>
           <div>图床还是空的——把图片拖到这里，或点右上角「上传图片」</div>
@@ -635,12 +690,13 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
         上传单文件 HTML，自定义公网链接后缀、浏览器标题和 icon。页面脚本在隔离环境中运行，无法读取
         WAO 登录态。
       </div>
-      <div class="page-source-bar" role="tablist" aria-label="网页托管类型">
+      <div class="page-source-bar" role="group" aria-label="网页托管类型">
         <span>类型</span>
         <button
           v-for="option in hostedPageSourceFilters"
           :key="option.id"
           :class="{ active: hostedPageSource === option.id }"
+          :aria-pressed="hostedPageSource === option.id"
           @click="selectHostedPageSource(option.id)"
         >
           {{ option.label }}
@@ -661,10 +717,9 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
         <i class="ri-global-line"></i>
         <div>还没有托管网页——点右上角“托管 HTML”快速发布</div>
       </div>
-      <div v-else-if="!filteredHostedPages.length" class="img-empty page-empty">
-        <i class="ri-filter-off-line"></i>
-        <div>当前类型下还没有托管网页</div>
-      </div>
+      <WaoEmptyState v-else-if="!filteredHostedPages.length" title="没有匹配的托管网页" description="可以清除搜索或切换到全部类型。" icon="ri-filter-off-line">
+        <template #actions><WaoButton v-if="search" @click="clearSearch">清除搜索</WaoButton><WaoButton v-if="hostedPageSource !== 'ALL'" @click="selectHostedPageSource('ALL')">查看全部类型</WaoButton></template>
+      </WaoEmptyState>
       <div v-else class="file-list">
         <div v-for="page in visibleHostedPages" :key="page.id" class="file-row">
           <div class="file-icon"><i class="ri-html5-line"></i></div>
@@ -689,6 +744,7 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
           <button
             class="dl-btn"
             title="站内预览"
+            :aria-label="`预览网页 ${page.title}`"
             @click="preview = { kind: 'html', name: page.title, url: page.url, sourceType: page.sourceType }"
           >
             <i class="ri-eye-line"></i>
@@ -700,10 +756,10 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
           >
             <i class="ri-upload-2-line"></i>重新上传
           </button>
-          <button class="dl-btn" title="修改" @click="openPageDialog(page)">
+          <button class="dl-btn" title="修改" :aria-label="`修改网页 ${page.title}`" @click="openPageDialog(page)">
             <i class="ri-edit-line"></i>
           </button>
-          <button class="dl-btn danger" title="删除" @click="removePage(page)">
+          <button class="dl-btn danger" title="删除" :aria-label="`删除网页 ${page.title}`" @click="removePage(page)">
             <i class="ri-delete-bin-line"></i>
           </button>
         </div>
@@ -718,12 +774,13 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
       </div>
     </template>
 
-    <div v-if="pageDialog" class="dialog-mask" @click.self="closePageDialog">
-      <form class="page-dialog" @submit.prevent="savePage">
-        <div class="dialog-title">{{ editingPage ? '修改托管网页' : '托管 HTML' }}</div>
+    <SettingsDialogShell v-if="pageDialog" :title="editingPage ? '修改托管网页' : '托管 HTML'" width="640px" height="auto" icon="ri-global-line" :close-disabled="pageSaving" @close="closePageDialog">
+      <form :id="pageFormId" class="page-dialog" :aria-busy="pageSaving" @submit.prevent="savePage">
         <label
           >WAO 显示名称<input
+            ref="pageTitleInput"
             v-model="pageTitle"
+            :disabled="pageSaving"
             maxlength="200"
             placeholder="托管列表中的名称，浏览器标题以 HTML 原文为准"
             @input="pageTitleAuto = false"
@@ -734,6 +791,7 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
             <span>/api/pages/</span
             ><input
               v-model="pageSlug"
+              :disabled="pageSaving"
               maxlength="80"
               placeholder="my-page"
               @input="pageSlugAuto = false"
@@ -803,14 +861,13 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
           </button>
           <input ref="pageIconInput" type="file" accept="image/*" hidden @change="onPageIconPick" />
         </div>
-        <div class="dialog-actions">
-          <button type="button" class="copy-btn" @click="closePageDialog">取消</button
-          ><button class="btn-primary" :disabled="pageSaving">
-            {{ pageSaving ? '发布中…' : '发布' }}
-          </button>
-        </div>
+        <p v-if="pageError" class="page-error" role="alert">{{ pageError }}</p>
       </form>
-    </div>
+      <template #footer><div class="dialog-actions">
+        <WaoButton :disabled="pageSaving" @click="closePageDialog">取消</WaoButton>
+        <WaoButton class="btn-primary" type="submit" :form="pageFormId" variant="primary" :loading="pageSaving">{{ pageSaving ? '发布中…' : pageError ? '重试发布' : '发布' }}</WaoButton>
+      </div></template>
+    </SettingsDialogShell>
 
     <FileSettingsModal
       v-if="settingsOpen"
@@ -828,6 +885,14 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
 </template>
 
 <style scoped>
+.resource-search-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wao-space-1); margin-top: var(--wao-space-2); }
+.resource-search { display: flex; align-items: center; flex: 1 1 260px; max-width: 440px; min-width: 0; gap: var(--wao-space-1); padding: 0 var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
+.resource-search:focus-within { border-color: var(--wao-primary); outline: 2px solid var(--wao-primary-soft); }
+.resource-search input { width: 100%; min-width: 0; min-height: 36px; padding: 0; border: 0; outline: none; background: transparent; color: var(--wao-text); font: inherit; }
+.resource-search input::-webkit-search-cancel-button { display: none; }
+.resource-count { color: var(--wao-text-3); font-size: var(--wao-font-help); white-space: nowrap; }
+.img-preview { width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.img-preview:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -3px; }
 .file-row.search-target { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .upload-results {
   margin: 16px 0;
@@ -1075,33 +1140,18 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
 }
-.dialog-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(15, 18, 30, 0.42);
-  display: grid;
-  place-items: center;
-  padding: 16px;
-}
 .page-dialog {
-  width: min(480px, 100%);
-  background: var(--wao-bg-card);
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  min-width: 0;
+  padding: var(--wao-space-3);
   display: grid;
-  gap: 14px;
+  gap: var(--wao-space-2);
 }
-.dialog-title {
-  font-size: 18px;
-  font-weight: 700;
-}
+.page-error { margin: 0; color: var(--wao-danger-strong); font-size: var(--wao-font-help); overflow-wrap: anywhere; }
 .page-dialog label,
 .page-file-field {
   display: grid;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--wao-font-help);
   font-weight: 600;
 }
 .page-dialog input {
@@ -1160,7 +1210,7 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   gap: 3px;
 }
 .page-file-picker b {
-  max-width: 390px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1372,7 +1422,8 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   opacity: 0;
   transition: opacity 0.12s;
 }
-.img-card:hover .img-del {
+.img-card:hover .img-del,
+.img-card:focus-within .img-del {
   opacity: 1;
 }
 .img-del:hover {
@@ -1445,6 +1496,10 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
 }
 
 @media (max-width: 760px) {
+  .page-dialog { padding: var(--wao-space-2); }
+  .page-dialog input { min-height: 44px; font-size: var(--wao-font-reading); }
+  .resource-search { max-width: none; }
+  .resource-search input { min-height: 44px; font-size: var(--wao-font-reading); }
   .files {
     padding: 16px 12px 28px;
   }
@@ -1486,7 +1541,7 @@ watch(() => [route?.query.file, route?.query.findRequest, route?.query.uploads, 
   }
 }
 @media (max-width: 760px), (hover: none), (pointer: coarse) {
-  .copy-btn, .dl-btn, .img-copy, .img-del, .seg-btn, .btn-primary, .btn-ghost {
+  .copy-btn, .dl-btn, .img-copy, .img-del, .seg-btn, .btn-primary, .btn-ghost, .settings-button, .page-source-bar button {
     min-width: 44px;
     min-height: 44px;
   }

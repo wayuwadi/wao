@@ -1,18 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Workspace from '@/views/KnowledgeWorkspaceView.vue'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useNavStore } from '@/stores/nav'
 vi.mock('@/views/KbDetailView.vue', () => ({ default: { template: '<textarea class="editor" />' } }))
+enableAutoUnmount(afterEach)
 describe('知识库工作区', () => {
-  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia()) })
+  let mobile = false
+  const mediaListeners = new Set<(event: MediaQueryListEvent) => void>()
+  const originalMatchMedia = window.matchMedia
+  beforeEach(() => {
+    localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia())
+    mobile = false; mediaListeners.clear()
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 900px)' && mobile,
+      media: query,
+      addEventListener: (_: string, callback: (event: MediaQueryListEvent) => void) => { if (query === '(max-width: 900px)') mediaListeners.add(callback) },
+      removeEventListener: (_: string, callback: (event: MediaQueryListEvent) => void) => mediaListeners.delete(callback),
+    })) as unknown as typeof window.matchMedia
+  })
+  afterEach(() => { window.matchMedia = originalMatchMedia; document.body.innerHTML = '' })
+  async function resize(narrow: boolean) {
+    mobile = narrow
+    mediaListeners.forEach(callback => callback({ matches: narrow } as MediaQueryListEvent))
+    await flushPromises()
+  }
   async function setup() {
     const data = seedDataStore()
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path:'/knowledge', component:Workspace }] })
     await router.push('/knowledge')
-    const wrapper = mount(Workspace, { global:{ plugins:[router], stubs:{ KnowledgeIconPicker:true, teleport:true } } })
+    const wrapper = mount(Workspace, { attachTo: document.body, global:{ plugins:[router], stubs:{ KnowledgeIconPicker:true, teleport:true } } })
     return { data, router, wrapper }
   }
   it('首页汇总目录，选择文档后同一编辑器在清单折叠时保留', async () => {
@@ -65,6 +84,71 @@ describe('知识库工作区', () => {
     setActivePinia(createPinia())
     localStorage.setItem('wao-nav-v1', JSON.stringify({ collapsed:false, foldedGroups:{} }))
     expect(useNavStore().collapsed).toBe(false)
+  })
+  it('库名与文档搜索都忽略大小写，空库仍能按名称找到', async () => {
+    const { wrapper, data } = await setup()
+    data.kbs = [{ ...data.kbs[0]!, name: 'WAO Docs', notes: false, folders: [] }]
+    await wrapper.get('input[type="search"]').setValue('  wao  ')
+    expect(wrapper.findAll('.index-library')).toHaveLength(1)
+    expect(wrapper.get('.index-library').text()).toContain('WAO Docs')
+    expect(wrapper.text()).not.toContain('没有匹配的内容')
+  })
+  it('窄屏默认让出正文，两种目录互斥，Escape 与遮罩关闭后恢复入口焦点', async () => {
+    mobile = true
+    const { wrapper } = await setup()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    expect(wrapper.get('.home-directory').isVisible()).toBe(false)
+    expect(wrapper.find('.navigation-mask').exists()).toBe(false)
+    const libraries = wrapper.get('.mobile-toolbar button:first-child')
+    const directory = wrapper.get('.mobile-toolbar button:nth-child(2)')
+    await libraries.trigger('click'); await flushPromises()
+    expect(wrapper.get('.libraries').isVisible()).toBe(true)
+    expect(wrapper.get('.home-directory').isVisible()).toBe(false)
+    expect(wrapper.get('.workspace-content').attributes('inert')).toBeDefined()
+    expect(document.activeElement).toBe(wrapper.get('.libraries .pane-toggle').element)
+    await wrapper.get('.libraries .pane-toggle').trigger('keydown', { key: 'Tab', shiftKey: true })
+    const libraryButtons = wrapper.findAll('.library-list button')
+    expect(document.activeElement).toBe(libraryButtons[libraryButtons.length - 1]!.element)
+    await directory.trigger('click'); await flushPromises()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    expect(wrapper.get('.home-directory').isVisible()).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.get('.home-directory').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(directory.element)
+    await libraries.trigger('click'); await wrapper.get('.navigation-mask').trigger('click'); await flushPromises()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(libraries.element)
+  })
+  it('窄屏选择后收起抽屉，折叠和调整屏幕不重挂编辑器也不覆盖桌面偏好', async () => {
+    const { wrapper, router } = await setup()
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    const saved = Object.fromEntries(Object.keys(sessionStorage).filter(key => key.startsWith('wao-task-view-v1:')).map(key => [key, sessionStorage.getItem(key)]))
+    await resize(true)
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    expect(wrapper.get('.home-directory').isVisible()).toBe(false)
+    await wrapper.get('.mobile-toolbar button:first-child').trigger('click')
+    await wrapper.findAll('.library-list button')[1]!.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.kb).toBeTruthy()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    const editor = wrapper.get('.editor').element
+    await wrapper.get('.mobile-toolbar button:first-child').trigger('click')
+    await wrapper.get('[aria-label="收起知识库清单"]').trigger('click')
+    expect(wrapper.get('.editor').element).toBe(editor)
+    await resize(false)
+    expect(wrapper.get('.editor').element).toBe(editor)
+    expect(wrapper.get('.libraries').classes()).not.toContain('collapsed')
+    for (const [key, value] of Object.entries(saved)) expect(sessionStorage.getItem(key)).toBe(value)
+    await router.push('/knowledge'); await flushPromises()
+    expect(wrapper.get('.home-directory').classes()).toContain('collapsed')
+    await resize(true)
+    await wrapper.get('.mobile-toolbar button:nth-child(2)').trigger('click')
+    await wrapper.get('.tree-node').trigger('click')
+    const doc = wrapper.findAll('.tree-node').find(node => node.find('.ri-file-text-line').exists())!
+    await doc.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.doc).toBeTruthy()
+    expect(wrapper.find('.navigation-mask').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('.mobile-toolbar button:first-child').element)
   })
 })
 

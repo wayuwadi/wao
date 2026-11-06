@@ -2,17 +2,24 @@
 import { computed,ref,watch,onMounted,onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRoutinesStore } from '@/stores/routines'
+import { usePreferenceStore } from '@/stores/preferences'
 import { habitScheduled,newRoutine,shiftDay,routineColors,type RoutineItem } from '@/api/personalRoutines'
 import RoutineEditor from '@/components/routines/RoutineEditor.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
-const store=useRoutinesStore(),route=useRoute(),selected=ref(''),status=ref('active'),group=ref(''),editing=ref(false),logging=ref(false)
-const items=computed(()=>(store.state?.items||[]).filter(i=>i.kind==='habit'&&i.status===status.value&&(!group.value||i.group===group.value)).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||a.group.localeCompare(b.group,'zh-CN')))
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+const store=useRoutinesStore(),preferences=usePreferenceStore(),route=useRoute(),selected=ref(''),status=ref('active'),group=ref<string|null>(null),editing=ref(false),logging=ref(false)
+const allHabits=computed(()=>(store.state?.items||[]).filter(i=>i.kind==='habit'))
+const groups=computed(()=>[...new Set(allHabits.value.map(i=>i.group||'其他'))])
+const filtering=computed(()=>group.value!==null||status.value!=='active')
+function clearFilters(){group.value=null;status.value='active'}
+const items=computed(()=>allHabits.value.filter(i=>i.status===status.value&&(group.value===null||(i.group||'其他')===group.value)).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||a.group.localeCompare(b.group,'zh-CN')))
 const active=computed(()=>items.value.find(i=>i.id===selected.value)||items.value[0]),summary=computed(()=>active.value?store.summary(active.value.id):undefined)
 const week=computed(()=>store.state?Array.from({length:7},(_,i)=>shiftDay(store.state!.today,i-6)):[])
-const monthDays=computed(()=>{if(!store.state)return [];const first=store.state.month+'-01',weekday=new Date(first+'T12:00:00Z').getUTCDay();return Array.from({length:42},(_,i)=>shiftDay(first,i-weekday))})
+const weekdays=computed(()=>preferences.weekStart==='周日'?['日','一','二','三','四','五','六']:['一','二','三','四','五','六','日'])
+const monthDays=computed(()=>{if(!store.state)return [];const first=store.state.month+'-01',weekday=new Date(first+'T12:00:00Z').getUTCDay(),offset=preferences.weekStart==='周日'?weekday:(weekday+6)%7;return Array.from({length:42},(_,i)=>shiftDay(first,i-offset))})
 const monthlyLogs=computed(()=>store.state?.logs.filter(l=>l.habitId===active.value?.id&&l.date.startsWith(store.state!.month)&&l.note).sort((a,b)=>b.date.localeCompare(a.date))||[])
 const logRemote=computed(()=>store.logDraft?store.log(store.logDraft.habitId,store.logDraft.date):undefined)
 const logConflict=computed(()=>store.logDraft&&(logRemote.value?.revision||0)!==store.logDraft.revision)
@@ -29,7 +36,7 @@ async function check(item:RoutineItem,day:string,forceLog=false){
 async function saveLog(){if(await store.saveLog())logging.value=false}
 function changeMonth(value:number){const d=new Date(store.state!.month+'-01T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+value);void store.load(d.toISOString().slice(0,7))}
 async function action(item:RoutineItem,change:Partial<RoutineItem>){await store.save({...item,...change})}
-watch(()=>store.identity,()=>{selected.value='';editing.value=false;logging.value=false;void store.load()},{immediate:true})
+watch(()=>store.identity,()=>{selected.value='';clearFilters();editing.value=false;logging.value=false;void store.load()},{immediate:true})
 watch(()=>route.query.habit,value=>{if(typeof value==='string')selected.value=value},{immediate:true})
 let timer:ReturnType<typeof setInterval>;function refresh(){void store.load()}
 onMounted(()=>{timer=setInterval(refresh,60_000);window.addEventListener('focus',refresh)});onBeforeUnmount(()=>{clearInterval(timer);window.removeEventListener('focus',refresh)})
@@ -39,9 +46,10 @@ onMounted(()=>{timer=setInterval(refresh,60_000);window.addEventListener('focus'
  <p v-if="store.error" role="alert" class="error">{{store.error}} <WaoButton @click="store.load()">重试</WaoButton></p><p v-if="store.draftError" role="alert" class="error">{{store.draftError}}</p>
  <div v-if="!editing&&store.drafts.habit?.revision" class="draft-banner">有未保存的习惯草稿 <WaoButton @click="editing=true">继续编辑</WaoButton><WaoButton @click="store.clear('habit')">舍弃草稿</WaoButton></div>
  <div v-if="store.logDraft" class="draft-banner">有未保存的打卡日志（{{store.logDraft.date}}） <WaoButton @click="logging=true">继续填写</WaoButton><WaoButton @click="store.logDraft=null">舍弃日志草稿</WaoButton></div>
- <div class="routine-toolbar"><select v-model="group" aria-label="习惯分组筛选"><option value="">全部分组</option><option v-for="g in [...new Set((store.state?.items||[]).filter(i=>i.kind==='habit').map(i=>i.group))]" :key="g" :value="g">{{g||'其他'}}</option></select><select v-model="status" aria-label="习惯状态筛选"><option value="active">进行中</option><option value="archived">已归档</option><option value="trash">回收站</option></select></div>
- <p v-if="!store.state" role="status">{{store.loading?'正在读取习惯…':'习惯尚未读取'}}</p><p v-else-if="!items.length" class="empty">这里还没有习惯，选择一个小目标开始。</p>
- <div v-else class="habit-layout">
+ <div class="routine-toolbar"><select v-model="group" aria-label="习惯分组筛选"><option :value="null">全部分组</option><option v-for="g in groups" :key="g" :value="g">{{g||'其他'}}</option></select><select v-model="status" aria-label="习惯状态筛选"><option value="active">进行中</option><option value="archived">已归档</option><option value="trash">回收站</option></select></div>
+ <p v-if="!store.state && !store.error" role="status">{{store.loading?'正在读取习惯…':'习惯尚未读取'}}</p>
+ <WaoEmptyState v-else-if="store.state && !items.length && !store.error" :title="filtering?'没有符合条件的习惯':'还没有进行中的习惯'" :description="filtering?'换个分组或状态，查看已有的习惯。':'选择一个小目标，从今天开始。'" icon="ri-seedling-line"><template #actions><WaoButton v-if="filtering" @click="clearFilters">清除筛选</WaoButton><WaoButton v-else variant="primary" @click="edit()">添加习惯</WaoButton></template></WaoEmptyState>
+ <div v-if="items.length" class="habit-layout">
   <section aria-label="习惯清单"><div class="week-strip"><span v-for="day in week" :key="day">{{['日','一','二','三','四','五','六'][new Date(day+'T12:00:00Z').getUTCDay()]}}<b>{{day.slice(8)}}</b></span></div>
    <WaoCard v-for="item in items" :key="item.id" class="habit-row" :class="[item.style,{selected:active?.id===item.id}]" :style="{'--habit-color':routineColors[item.color]}"><button class="habit-name" @click="selected=item.id"><span>{{item.emoji||'🌱'}}</span><div><strong>{{item.name}}</strong><small>{{item.group||'其他'}} · 累计 {{store.summary(item.id)?.total||0}} 天 · 连续 {{store.summary(item.id)?.streak||0}} {{store.summary(item.id)?.streakUnit||'次'}}</small></div></button><div class="day-dots"><button v-for="day in week" :key="day" :class="{done:done(item,day)}" :disabled="store.busy||!canCheck(item,day)" :aria-label="`${item.name} ${day} ${done(item,day)?'撤销打卡':'打卡'}`" @click="check(item,day)">{{done(item,day)?'✓':'·'}}</button></div></WaoCard>
   </section>
@@ -49,7 +57,7 @@ onMounted(()=>{timer=setInterval(refresh,60_000);window.addEventListener('focus'
    <p class="habit-target">目标 {{active.target}} {{active.unit}} · {{active.frequency==='weekly'?`每周 ${active.weeklyTarget} 天`:active.frequency==='interval'?`每隔 ${active.intervalDays} 天`:'按计划星期'}}<span v-if="active.frequency==='weekly'"> · 本周 {{summary?.weekCount||0}} / {{active.weeklyTarget}} 天</span></p>
    <div class="habit-actions"><WaoButton :disabled="store.busy||!canCheck(active,store.state!.today)" variant="primary" @click="check(active,store.state!.today)">{{done(active,store.state!.today)?'今天已完成 · 撤销':'今日打卡'}}</WaoButton><WaoButton :disabled="!canCheck(active,store.state!.today)" @click="check(active,store.state!.today,true)">写日志</WaoButton><RouterLink v-if="active.status==='active'" :to="{path:'/focus',query:{focusHabit:active.id}}">开始专注</RouterLink></div>
    <div class="habit-stats"><div><small>本月打卡</small><b>{{summary?.monthCount||0}} 天</b></div><div><small>总打卡</small><b>{{summary?.total||0}} 天</b></div><div><small>本月完成率</small><b>{{summary?.monthRate||0}}%</b></div><div><small>当前连续 / 最长</small><b>{{summary?.streak||0}} / {{summary?.bestStreak||0}} {{summary?.streakUnit}}</b></div></div>
-   <WaoCard class="habit-calendar"><div class="month-switch"><WaoButton aria-label="上个月" @click="changeMonth(-1)">‹</WaoButton><input type="month" aria-label="打卡月份" :value="store.state!.month" min="2000-01" max="2100-12" @change="store.load(($event.target as HTMLInputElement).value)" /><WaoButton aria-label="下个月" @click="changeMonth(1)">›</WaoButton></div><div class="calendar-grid"><small v-for="d in ['日','一','二','三','四','五','六']" :key="d">{{d}}</small><button v-for="day in monthDays" :key="day" :class="{outside:!day.startsWith(store.state!.month),done:done(active,day),today:day===store.state!.today}" :disabled="store.busy||!day.startsWith(store.state!.month)||!canCheck(active,day)" :aria-label="`${day} 打卡详情`" @click="check(active,day,true)"><span>{{Number(day.slice(8))}}</span><b>{{done(active,day)?'✓':store.log(active.id,day)?.amount||'·'}}</b></button></div><p class="calendar-hint">点击日期补卡或写日志；未来和非计划日期不可打卡。</p></WaoCard>
+   <WaoCard class="habit-calendar"><div class="month-switch"><WaoButton aria-label="上个月" @click="changeMonth(-1)">‹</WaoButton><input type="month" aria-label="打卡月份" :value="store.state!.month" min="2000-01" max="2100-12" @change="store.load(($event.target as HTMLInputElement).value)" /><WaoButton aria-label="下个月" @click="changeMonth(1)">›</WaoButton></div><div class="calendar-grid"><small v-for="d in weekdays" :key="d">{{d}}</small><button v-for="day in monthDays" :key="day" :class="{outside:!day.startsWith(store.state!.month),done:done(active,day),today:day===store.state!.today}" :disabled="store.busy||!day.startsWith(store.state!.month)||!canCheck(active,day)" :aria-label="`${day} 打卡详情`" @click="check(active,day,true)"><span>{{Number(day.slice(8))}}</span><b>{{done(active,day)?'✓':store.log(active.id,day)?.amount||'·'}}</b></button></div><p class="calendar-hint">点击日期补卡或写日志；未来和非计划日期不可打卡。</p></WaoCard>
    <section class="habit-logs"><h2>{{store.state!.month}} 打卡日志</h2><p v-if="!monthlyLogs.length">这个月还没有填写日志。</p><article v-for="log in monthlyLogs" :key="log.date"><time>{{log.date}} · {{log.amount}} {{active.unit}}</time><p>{{log.note}}</p><WaoButton :disabled="!canCheck(active,log.date)" @click="check(active,log.date,true)">编辑日志</WaoButton></article></section><p v-if="active.note" class="habit-note">{{active.note}}</p>
   </section>
  </div>

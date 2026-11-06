@@ -8,6 +8,7 @@ import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { apiPutTask } from '@/api/board'
 import { useToastHost } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
 import { usePreferenceStore } from '@/stores/preferences'
@@ -63,6 +64,31 @@ describe('新建任务的落库反馈', () => {
     vi.mocked(apiCreateVaultGroup).mockRejectedValueOnce(new Error('网络中断'))
     await expect(data.addVaultGroup('保留分组')).rejects.toThrow('网络中断')
     expect(data.vault).toHaveLength(groups)
+  })
+
+  it.each(['other-member', 'same-member'])('新建清单的旧账号回执不进入新账号列表（成员 %s）', async member => {
+    const session = useSessionStore()
+    session.account = { accountId: 'old-account', member: { id: 'same-member' } } as never
+    const created = { ...data.projects[0]!, id: 'created-in-old-account', name: '旧账号新清单' }
+    let finish!: (project: typeof created) => void
+    vi.mocked(apiCreateProject).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const pending = data.addProject({ name: created.name, area: '', goal: '', visAll: false })
+    session.account = { accountId: 'new-account', member: { id: member } } as never
+    const current = { ...data.projects[0]!, id: 'new-account-list', name: '新账号清单' }
+    data.projects = [current]
+    finish(created)
+    expect(await pending).toEqual(created)
+    expect(data.projects).toEqual([current])
+  })
+
+  it('同账号新建清单仍在服务端确认后进入列表', async () => {
+    const created = { ...data.projects[0]!, id: 'confirmed-list', name: '服务端已保存清单' }
+    let finish!: (project: typeof created) => void
+    vi.mocked(apiCreateProject).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const pending = data.addProject({ name: created.name, area: '', goal: '', visAll: false })
+    expect(data.projectById(created.id)).toBeUndefined()
+    finish(created); await pending
+    expect(data.projects[0]).toEqual(created)
   })
 
   it('新建响应迟到时继续串行保存最新输入，不回灌旧正文', async () => {

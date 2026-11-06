@@ -26,6 +26,8 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
+const examplePage = ref(5)
 import DataLoadStatus from '@/components/ui/DataLoadStatus.vue'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import type { ConfirmAction } from '@/composables/confirmAction'
@@ -602,6 +604,8 @@ const detailLabels = ref('')
             <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
             <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
             <WaoButton @click="showConfirmExample">演示删除确认与失败重试</WaoButton>
+            <p>分页在窄屏显示当前页、上一页和下一页，保留页码跳转；触屏操作区至少 44px。</p>
+            <WaoPagination v-model:page="examplePage" :page-count="24" :total="240" aria-label="示例分页" />
             <SettingsSearch current-tab="demo" @navigate="feedback = `演示找到设置入口：${$event}，没有离开本页。`" />
             <p role="status">{{ feedback }}</p>
           </WaoCard>

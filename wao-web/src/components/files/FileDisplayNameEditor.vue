@@ -11,7 +11,22 @@ const draft = ref('')
 const saving = ref(false)
 const state = ref<'idle' | 'saved' | 'error'>('idle')
 const error = ref('')
+const root = ref<HTMLElement | null>(null)
 const input = ref<HTMLInputElement | null>(null)
+const trigger = ref<HTMLButtonElement | null>(null)
+function focusStayedInEditor() {
+  return document.activeElement === document.body || !!root.value?.contains(document.activeElement)
+}
+function restoreFocus(onlyIfUnchanged = false) {
+  void nextTick(() => {
+    if (!onlyIfUnchanged || focusStayedInEditor()) trigger.value?.focus({ preventScroll: true })
+  })
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.key === 'Enter') { event.preventDefault(); void save() }
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() }
+}
 
 function begin() {
   if (!props.file.id || saving.value) return
@@ -30,6 +45,7 @@ function cancel() {
   editing.value = false
   state.value = 'idle'
   error.value = ''
+  restoreFocus()
 }
 
 async function save() {
@@ -40,6 +56,7 @@ async function save() {
     return
   }
   if (!props.file.id || saving.value) return
+  const startedInEditor = !!root.value?.contains(document.activeElement)
   saving.value = true
   state.value = 'idle'
   error.value = ''
@@ -47,6 +64,7 @@ async function save() {
     await data.renameFileDisplayName(props.file.id, displayName)
     editing.value = false
     state.value = 'saved'
+    if (startedInEditor && focusStayedInEditor()) restoreFocus(true)
   } catch (cause) {
     state.value = 'error'
     error.value = cause instanceof Error && cause.message ? cause.message : '保存失败，请重试'
@@ -57,7 +75,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="file-display-name">
+  <div ref="root" class="file-display-name">
     <template v-if="editing">
       <div class="rename-row">
         <input
@@ -66,8 +84,8 @@ async function save() {
           maxlength="255"
           aria-label="文件展示名称"
           :disabled="saving"
-          @keydown.enter.prevent="save"
-          @keydown.esc.prevent="cancel"
+          :aria-invalid="state === 'error'"
+          @keydown="onKeydown"
         />
         <button type="button" :disabled="saving" @click="save">
           {{ saving ? '保存中…' : state === 'error' ? '重试' : '保存' }}
@@ -79,7 +97,7 @@ async function save() {
     <template v-else>
       <div class="name-row">
         <b :title="fileDisplayName(file)">{{ fileDisplayName(file) }}</b>
-        <button v-if="file.id" type="button" title="修改 WAO 展示名称" @click="begin">
+        <button v-if="file.id" ref="trigger" type="button" title="修改 WAO 展示名称" :aria-label="`修改文件名称 ${fileDisplayName(file)}`" @click="begin">
           <i class="ri-edit-line"></i><span>改名</span>
         </button>
         <small v-if="state === 'saved'" class="rename-state saved" role="status">已保存</small>
@@ -161,6 +179,8 @@ async function save() {
 }
 .rename-state.error {
   color: var(--wao-danger);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 640px) {
   .name-row button span {
@@ -171,6 +191,9 @@ async function save() {
   }
   .rename-row input {
     flex-basis: 100%;
+    min-height: 44px;
+    font-size: var(--wao-font-reading);
   }
+  .name-row button, .rename-row button { min-height: 44px; min-width: 44px; }
 }
 </style>

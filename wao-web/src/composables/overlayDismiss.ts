@@ -3,7 +3,7 @@ import { onScopeDispose, watch } from 'vue'
 type Entry = { close: () => void | Promise<void>; outside?: (event: PointerEvent) => void }
 const stack: Entry[] = []
 function onEscape(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
   const top = stack[stack.length - 1]
   if (!top) return
   event.preventDefault()

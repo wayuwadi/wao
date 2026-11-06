@@ -4,6 +4,7 @@ import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskEditorUpload } from '@/composables/taskEditorUpload'
 const uploadEditorFile = useTaskEditorUpload()
 import { useTaskViewMemory, useTaskScrollMemory } from '@/composables/taskViewMemory'
+import { useInputComposition } from '@/composables/inputComposition'
 import { computed, defineAsyncComponent, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMemberPreference } from '@/composables/memberPreference'
 import { useSessionStore } from '@/stores/session'
@@ -445,6 +446,8 @@ const taskTitle = computed(() => source.value.subId
   ? data.subById(source.value.taskId, source.value.subId)?.text ?? ''
   : data.taskById(source.value.taskId)?.title ?? '')
 const titleDraft = ref('')
+const titleComposition = useInputComposition(), childComposition = useInputComposition()
+watch(selectedId, () => { titleComposition.end(); childComposition.end() })
 watch([selectedId, taskTitle], () => { titleDraft.value = taskTitle.value }, { immediate:true })
 function editTitle(event: Event) {
   const title = (event.target as HTMLInputElement).value
@@ -458,6 +461,10 @@ function editTitle(event: Event) {
 function finishTitle() {
   if (!titleDraft.value.trim()) titleDraft.value = taskTitle.value
   void data.flushTask(source.value.taskId)
+}
+function titleKey(event: KeyboardEvent) {
+  if (titleComposition.guard(event)) return
+  if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() }
 }
 const saveState = computed(() => data.taskSaveState(source.value.taskId))
 const contextMenu = ref<InstanceType<typeof TaskContextMenu> | null>(null)
@@ -543,8 +550,10 @@ function storeChildDraft(event: Event) {
 }
 async function addChild() {
   const parentId = selectedId.value
-  const member = useSessionStore().userId
-  if (!addingChild.value || !canAddChild.value || !childDraft.value.trim() || childBlocked.value) return
+  const session = useSessionStore(), member = session.userId, account = session.account?.accountId
+  if (!addingChild.value || !canAddChild.value || !childDraft.value.trim() || childBlocked.value || childComposition.active()) return
+  const sameContext = () => member === session.userId && account === session.account?.accountId && selectedId.value === parentId
+  const form = childInput.value?.form, restoreInput = !!form?.contains(document.activeElement)
   const { taskId, subId } = source.value
   const id = data.addSub(taskId, childDraft.value, subId)
   if (!id) { childDraftError.value = '未能添加子任务，请稍后重试'; return }
@@ -555,18 +564,19 @@ async function addChild() {
   if (!props.keepScopeOnChildAdd) emit('reveal', subItemKey(taskId, id))
   try {
     await data.flushTask(taskId)
-    if (member === useSessionStore().userId && selectedId.value === parentId && data.taskSaveState(taskId) === 'error') {
+    if (sameContext() && data.taskSaveState(taskId) === 'error') {
       childDraftError.value = '子任务已保留在任务草稿中，保存失败，请重试保存。'
     }
   }
-  catch { toast('子任务尚未保存，已保留草稿，请查看保存问题', 'ri-error-warning-line') }
+  catch { if (sameContext()) toast('子任务尚未保存，已保留草稿，请查看保存问题', 'ri-error-warning-line') }
   await nextTick()
-  if (member === useSessionStore().userId && selectedId.value === parentId && addingChild.value) childInput.value?.focus()
+  if (sameContext() && addingChild.value && restoreInput && (document.activeElement === document.body || form?.contains(document.activeElement))) childInput.value?.focus({ preventScroll: true })
 }
 function childKey(event: KeyboardEvent) {
+  if (childComposition.guard(event)) return
   if (event.key === 'Enter') {
     event.preventDefault()
-    if (!event.isComposing) void addChild()
+    void addChild()
   }
 }
 function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
@@ -665,7 +675,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="openChecklistMenu($event,selected.id)"><i class="ri-more-line"></i></WaoButton></div>
-        <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @keydown.enter="($event.target as HTMLInputElement).blur()" /></h2>
+        <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @compositionstart="titleComposition.start" @compositionend="titleComposition.end" @keydown="titleKey" /></h2>
         <div ref="descriptionHost" :key="selected.id" class="checklist-description">
           <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="hideGroups ? 120 : directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" @upload-file="uploadEditorFile" />
         </div>
@@ -678,7 +688,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           </div>
         </section>
         <form v-if="addingChild && canAddChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
-          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="添加子任务，回车创建" :disabled="childBlocked" @input="storeChildDraft" @keydown="childKey" />
+          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="添加子任务，回车创建" :disabled="childBlocked" @input="storeChildDraft" @compositionstart="childComposition.start" @compositionend="childComposition.end" @keydown="childKey" />
           <WaoButton type="submit" variant="primary" :disabled="!childDraft.trim() || childBlocked">添加</WaoButton>
           <WaoButton type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
           <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
