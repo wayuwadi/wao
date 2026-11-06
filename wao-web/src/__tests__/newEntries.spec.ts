@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
+import SiteFooter from '@/components/SiteFooter.vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import { useDataStore } from '@/stores/data'
@@ -33,6 +34,7 @@ function router() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
+      { path: '/knowledge', meta: { module: 'knowledge' }, component: { template: '<div />' } },
       { path: '/projects/:id', name: 'project', component: { template: '<div />' } },
       { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
     ],
@@ -124,6 +126,18 @@ describe('右上角新建入口', () => {
     await wrapper.vm.$router.push('/projects/p1')
     await flushPromises()
     expect(wrapper.find('.page-section-nav-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('知识库使用紧凑手机页脚，离开后恢复普通页面策略', async () => {
+    const wrapper = await mountLayout()
+    expect(wrapper.getComponent(SiteFooter).props('compactMobile')).toBe(false)
+    await wrapper.vm.$router.push('/knowledge')
+    await flushPromises()
+    expect(wrapper.getComponent(SiteFooter).props('compactMobile')).toBe(true)
+    await wrapper.vm.$router.push('/')
+    await flushPromises()
+    expect(wrapper.getComponent(SiteFooter).props('compactMobile')).toBe(false)
     wrapper.unmount()
   })
 })

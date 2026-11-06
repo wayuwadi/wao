@@ -8,6 +8,7 @@ import { PreviousTodoWriteRecovered } from '@/api/dayWorkspace'
 import { cancelCompanionResponse, captureCompanionTicket, respondWithCompanion, type CompanionTicket } from '@/composables/quietCompanions'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
+import { directoryParents } from '@/utils/knowledgeDirectory'
 import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft, isTaskDraftDeleted, markTaskDraftDeleted } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
 import {
@@ -47,6 +48,7 @@ import {
   apiMoveSubtask,
   apiPromoteSubtask,
   apiMoveTask,
+  apiMoveKnowledgeNode,
   apiReauthJob,
   apiUploadImage,
   apiUploadFile,
@@ -197,8 +199,21 @@ export const useDataStore = defineStore('data', () => {
   const tasks = ref<Task[]>([])
   const kbs = ref<KnowledgeBase[]>([])
   const docs = reactive<Record<string, Doc>>({})
+  let knowledgeCatalogVersion = 0
   /** 各知识库的归档文档 id；正文仍放在 docs 中，便于打开与恢复。 */
   const archivedDocIds = ref<Record<string, string[]>>({})
+  function replaceKnowledgeBases(list: KnowledgeBase[]) {
+    knowledgeCatalogVersion++
+    kbs.value = list
+    const visible = new Set(list.map(item => item.id))
+    for (const id of Object.keys(docs)) if (!visible.has(docs[id]!.kbId ?? '')) delete docs[id]
+    archivedDocIds.value = Object.fromEntries(Object.entries(archivedDocIds.value).filter(([id]) => visible.has(id)))
+  }
+  function hasDocumentContainer(doc: Doc) {
+    if (!doc.kbId) return true
+    const kb = kbById(doc.kbId)
+    return !!kb && (!doc.folderId || kb.folders.some(folder => folder.id === doc.folderId))
+  }
   const autos = ref<AutomationJob[]>([])
   const files = ref<FileItem[]>([])
   const hostedPages = ref<HostedPage[]>([])
@@ -297,6 +312,7 @@ export const useDataStore = defineStore('data', () => {
       taskDrafts.value = loadTaskDrafts()
       taskDataMember = requestMember
     }
+    const requestedKnowledge = JSON.stringify(kbs.value)
     // 已经进入过知识库 / 图床后，手动“重新加载”要继续刷新这些可见数据；首次启动仍保持按需。
     const reloadDocs = !domains && loadStates.docs === 'loaded'
     const reloadImages = !domains && loadStates.images === 'loaded'
@@ -393,7 +409,9 @@ export const useDataStore = defineStore('data', () => {
       ? refreshFiles().then(loaded => loaded ? files.value : null)
       : Promise.resolve(null)
     const knowledgeRequest = settle('knowledge', () => Promise.all([fetchKbs(), fetchKbGroups()]), ([kb, groups]) => {
-      kbs.value = kb
+      // A confirmed local create/delete/move after this request owns the newer tree.
+      // The next refresh starts with that tree and can accept other clients' changes.
+      if (JSON.stringify(kbs.value) === requestedKnowledge) replaceKnowledgeBases(kb)
       myGroups.value = groups
     })
     const [a, p, t, knowledge, fl, va, sc, sg, gl] = await Promise.all([
@@ -614,10 +632,28 @@ export const useDataStore = defineStore('data', () => {
   const docDirty = reactive<Record<string, boolean>>({})
   const docEditSequences: Record<string, number> = {}
   const docRestoreSequences: Record<string, number> = {}
+  const docLifecycleVersions: Record<string, number> = {}
+  const kbLifecycleVersions: Record<string, number> = {}
+  const folderLifecycleVersions: Record<string, number> = {}
+  const docDraftWrites = new Map<string, Promise<void>>()
+  const docDraftCleanups = new Map<string, symbol>()
+  function trackDocDraftWrite(id: string, request: Promise<void>) {
+    const pending = Promise.allSettled([docDraftWrites.get(id), request]).then(() => undefined)
+    docDraftWrites.set(id, pending)
+    void pending.then(() => { if (docDraftWrites.get(id) === pending) docDraftWrites.delete(id) })
+    return request
+  }
   let docMemberGeneration = 0
-  watch(() => useSessionStore().userId, () => {
+  watch(() => `${useSessionStore().account?.accountId ?? ''}:${useSessionStore().userId}`, () => {
     docMemberGeneration++
     docsRequest = null
+    knowledgeRefreshRequest = null
+    archivedDocRequests.clear()
+    archivedDocIds.value = {}
+    docDraftWrites.clear()
+    Object.keys(docLifecycleVersions).forEach(id => { delete docLifecycleVersions[id] })
+    Object.keys(kbLifecycleVersions).forEach(id => { delete kbLifecycleVersions[id] })
+    Object.keys(folderLifecycleVersions).forEach(id => { delete folderLifecycleVersions[id] })
     Object.keys(docs).forEach(id => { delete docs[id] })
     loadStates.docs = 'idle'
     delete loadErrors.docs
@@ -634,14 +670,18 @@ export const useDataStore = defineStore('data', () => {
   /** 保存最新本机草稿及基础版本；编辑和已确认版本推进使用同一持久化边界。 */
   async function persistLocalDocDraft(id: string, next: DocEdit, base: Doc): Promise<void> {
     const generation = docMemberGeneration
+    const lifecycle = docLifecycleVersions[id] ?? 0
+    const memberId = useSessionStore().userId || 'anonymous'
+    // Fresh input after restoration cancels an old deletion cleanup, even if the
+    // active member changes before an earlier IndexedDB write has settled.
+    docDraftCleanups.delete(`${memberId}\0${id}`)
     try {
       localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     } catch {
       docDraftErrors[id] = true
     }
-    const memberId = useSessionStore().userId || 'anonymous'
     if (next.content) {
-      await writeDocumentDraft({
+      await trackDocDraftWrite(id, writeDocumentDraft({
         id,
         memberId,
         sourceInputIds: next.sourceInputIds,
@@ -649,8 +689,8 @@ export const useDataStore = defineStore('data', () => {
         content: next.content,
         baseRev: next.baseRev ?? 1,
         updatedAt: Date.now(),
-      }).then(() => { if (generation === docMemberGeneration) docDraftErrors[id] = false })
-        .catch(() => { if (generation === docMemberGeneration) docDraftErrors[id] = true })
+      })).then(() => { if (generation === docMemberGeneration && lifecycle === (docLifecycleVersions[id] ?? 0)) docDraftErrors[id] = false })
+        .catch(() => { if (generation === docMemberGeneration && lifecycle === (docLifecycleVersions[id] ?? 0)) docDraftErrors[id] = true })
     }
   }
   /**
@@ -660,6 +700,7 @@ export const useDataStore = defineStore('data', () => {
    * 只在停顿处发一次请求，停手不到一秒内容就已经在服务端了。
    */
   function setDocEdit(id: string, patch: DocEdit) {
+    if (!docs[id] && docLifecycleVersions[id]) return
     if (docs[id]?.bodyLoaded === false) {
       markSaved(`doc:${id}`, false, '文档正文尚未加载，请加载成功后再编辑')
       return
@@ -693,6 +734,7 @@ export const useDataStore = defineStore('data', () => {
   /** 立即写透一篇文档；飞行中再次修改会在本次响应后自动补交最新草稿。 */
   async function persistDocNow(id: string): Promise<boolean> {
     clearTimeout(docPersistTimers[id])
+    if (!docs[id] && docLifecycleVersions[id]) return false
     if (docs[id]?.bodyLoaded === false) return false
     if (docConflicts[id]) return false
     if (docSavePromises[id]) return docSavePromises[id]!
@@ -703,6 +745,9 @@ export const useDataStore = defineStore('data', () => {
     const resolved = docOf(id)
     markSaving(`doc:${id}`)
     const requestGeneration = docMemberGeneration
+    const requestCatalogVersion = knowledgeCatalogVersion
+    const requestLifecycle = docLifecycleVersions[id] ?? 0
+    const isCurrentRequest = () => requestGeneration === docMemberGeneration && requestLifecycle === (docLifecycleVersions[id] ?? 0)
     const requestMember = useSessionStore().userId || 'anonymous'
     const request = apiPatchDoc(id, {
       sourceInputIds: captured.sourceInputIds,
@@ -711,7 +756,11 @@ export const useDataStore = defineStore('data', () => {
       content: captured.content,
       expectedRev: captured.baseRev ?? resolved.base.rev ?? 1,
     }).then(async (saved) => {
-      if (requestGeneration !== docMemberGeneration) return false
+      if (!isCurrentRequest()) return false
+      if (requestCatalogVersion !== knowledgeCatalogVersion && !hasDocumentContainer(saved)) {
+        markSaved(`doc:${id}`, false, '文档已删除或不可访问，本机草稿已保留')
+        return false
+      }
       docs[id] = saved
       markSaved(`doc:${id}`, true)
       const latest = docEdits.value[id]
@@ -727,21 +776,21 @@ export const useDataStore = defineStore('data', () => {
         latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
         // 第一版已落库，后续输入的草稿必须记住新基线；否则补交失败后刷新会误判为协同冲突。
         await persistLocalDocDraft(id, latest, saved)
-        if (requestGeneration !== docMemberGeneration) return false
+        if (!isCurrentRequest()) return false
         clearTimeout(docPersistTimers[id])
         docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
       }
       return true
     }).catch(async (cause: unknown) => {
-      if (requestGeneration !== docMemberGeneration) return false
+      if (!isCurrentRequest()) return false
       const message = cause instanceof Error ? cause.message : ''
       markSaved(`doc:${id}`, false, message)
       if (message.includes('其他窗口') || message.includes('刷新后处理')) {
         try {
           const remote = await fetchDoc(id)
-          if (requestGeneration === docMemberGeneration) docConflicts[id] = remote
+          if (isCurrentRequest()) docConflicts[id] = remote
         } catch {
-          if (requestGeneration === docMemberGeneration) docConflicts[id] = docs[id] ?? null
+          if (isCurrentRequest()) docConflicts[id] = docs[id] ?? null
         }
       }
       return false
@@ -758,6 +807,7 @@ export const useDataStore = defineStore('data', () => {
   async function restoreDocumentDraft(id: string): Promise<boolean> {
     if (docs[id]?.bodyLoaded === false && !(await ensureDocLoaded(id))) return false
     const restoreGeneration = docMemberGeneration
+    const restoreLifecycle = docLifecycleVersions[id] ?? 0
     const editSequence = docEditSequences[id] ?? 0
     const restoreSequence = docRestoreSequences[id] = (docRestoreSequences[id] ?? 0) + 1
     const memberId = useSessionStore().userId || 'anonymous'
@@ -770,13 +820,13 @@ export const useDataStore = defineStore('data', () => {
         id, memberId, title: legacy.title ?? base.title, content,
         baseRev: legacy.baseRev ?? base.rev ?? 1, updatedAt: Date.now(),
       }
-      await writeDocumentDraft(draft)
-        .then(() => { if (restoreGeneration === docMemberGeneration) docDraftErrors[id] = false })
-        .catch(() => { if (restoreGeneration === docMemberGeneration) docDraftErrors[id] = true })
+      await trackDocDraftWrite(id, writeDocumentDraft(draft))
+        .then(() => { if (restoreGeneration === docMemberGeneration && restoreLifecycle === (docLifecycleVersions[id] ?? 0)) docDraftErrors[id] = false })
+        .catch(() => { if (restoreGeneration === docMemberGeneration && restoreLifecycle === (docLifecycleVersions[id] ?? 0)) docDraftErrors[id] = true })
     } else {
       draft = await readDocumentDraft(memberId, id).catch(() => null)
     }
-    if (!draft || restoreGeneration !== docMemberGeneration || memberId !== (useSessionStore().userId || 'anonymous')
+    if (!draft || restoreGeneration !== docMemberGeneration || restoreLifecycle !== (docLifecycleVersions[id] ?? 0) || memberId !== (useSessionStore().userId || 'anonymous')
       || editSequence !== (docEditSequences[id] ?? 0)
       || restoreSequence !== docRestoreSequences[id]
       || base !== docs[id]) return false
@@ -816,6 +866,7 @@ export const useDataStore = defineStore('data', () => {
    * 也不能把用户刚敲的半句话吞掉。
    */
   function applyRemoteDoc(doc: Doc): boolean {
+    if (!docs[doc.id] && docLifecycleVersions[doc.id]) return false
     if (docPending(doc.id) || (doc.rev ?? 1) < (docs[doc.id]?.rev ?? 1)) return false
     const override = docEdits.value[doc.id]
     docs[doc.id] = doc
@@ -905,10 +956,13 @@ export const useDataStore = defineStore('data', () => {
   async function addFolder(kbId: string, name = '新建文件夹'): Promise<string | null> {
     const kb = kbById(kbId)
     if (!kb) return null
+    const generation = docMemberGeneration
     if (apiLive.value) {
       try {
         const f = await apiCreateFolder(kbId, name)
-        kb.folders.push(f)
+        const current = kbById(kbId)
+        if (generation !== docMemberGeneration || !current) return null
+        if (!current.folders.some(folder => folder.id === f.id)) current.folders.push(f)
         return f.id
       } catch {
         return null
@@ -929,11 +983,14 @@ export const useDataStore = defineStore('data', () => {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return null
+    const generation = docMemberGeneration
     if (apiLive.value) {
       try {
         const d = await apiCreateDoc({ kbId, folderId, title: '', templateId, pageType })
-        docs[d.id] = d
-        folder.docs.push(d.id)
+        const current = kbById(kbId)?.folders.find(folder => folder.id === folderId)
+        if (generation !== docMemberGeneration || !current) return null
+        if (!docs[d.id] || (docs[d.id]!.rev ?? 1) <= (d.rev ?? 1)) docs[d.id] = d
+        if (!current.docs.includes(d.id)) current.docs.push(d.id)
         return d.id
       } catch {
         // 在线状态下不能用只存在于内存的文档伪装成功；由入口保留失败态供用户重试。
@@ -949,6 +1006,87 @@ export const useDataStore = defineStore('data', () => {
     }
     folder.docs.push(id)
     return id
+  }
+
+  /** 服务端确认后合并目录；过期身份/已删除节点返回 false，接口失败原样抛出供界面重试。 */
+  async function moveKnowledgeNode(kbId: string, node: string, parent: string, expectedParent: string, beforeSibling?: string | null): Promise<boolean> {
+    const initial = kbById(kbId)
+    if (!initial) return false
+    const generation = docMemberGeneration
+    const kbLifecycle = kbLifecycleVersions[kbId] ?? 0
+    const requested = clone(initial)
+    const requestedParents = directoryParents(requested)
+    const lifecycles = { ...docLifecycleVersions }
+    const folderLifecycles = { ...folderLifecycleVersions }
+    const folderChanged = (id: string) => (folderLifecycles[`${kbId}\0${id}`] ?? 0) !== (folderLifecycleVersions[`${kbId}\0${id}`] ?? 0)
+    const saved = await apiMoveKnowledgeNode(kbId, node, parent, expectedParent, beforeSibling)
+    const current = kbById(kbId)
+    if (generation !== docMemberGeneration || !current || saved.id !== kbId || kbLifecycle !== (kbLifecycleVersions[kbId] ?? 0)) return false
+    if ([node, parent].some(key => key.startsWith('d:')
+      && (lifecycles[key.slice(2)] ?? 0) !== (docLifecycleVersions[key.slice(2)] ?? 0))) return false
+    if ([node, parent].some(key => key.startsWith('f:') && folderChanged(key.slice(2)))) return false
+    const currentParents = directoryParents(current)
+    if (!(node in currentParents) || (parent && !(parent in currentParents))) return false
+    const originalFolders = new Map(requested.folders.map(folder => [folder.id, folder]))
+    const currentFolders = new Map(current.folders.map(folder => [folder.id, folder]))
+    const originalLocations = new Map(requested.folders.flatMap(folder => folder.docs.map(id => [id, folder.id] as const)))
+    const currentLocations = new Map(current.folders.flatMap(folder => folder.docs.map(id => [id, folder.id] as const)))
+    // A full server snapshot must not undo unrelated creates, deletions or moves that
+    // completed locally while this move was in flight.
+    const locallyChanged = new Set([...currentLocations].filter(([id, folderId]) => originalLocations.get(id) !== folderId
+      || (lifecycles[id] ?? 0) !== (docLifecycleVersions[id] ?? 0)).map(([id]) => id))
+    const folders = saved.folders.filter(folder => !folderChanged(folder.id)
+      && (!originalFolders.has(folder.id) || currentFolders.has(folder.id))).map(folder => {
+      const local = currentFolders.get(folder.id), original = originalFolders.get(folder.id)
+      return { ...folder, name: local && original && local.name !== original.name ? local.name : folder.name,
+        docs: folder.docs.filter(id => !locallyChanged.has(id)
+          && (!originalLocations.has(id) || currentLocations.has(id))
+          && (lifecycles[id] ?? 0) === (docLifecycleVersions[id] ?? 0)) }
+    })
+    const mergedFolders = new Map(folders.map(folder => [folder.id, folder]))
+    for (const local of current.folders) {
+      let folder = mergedFolders.get(local.id)
+      if (!folder && (!originalFolders.has(local.id) || folderChanged(local.id))) {
+        folder = { ...local, docs: [...local.docs] }; folders.push(folder); mergedFolders.set(folder.id, folder)
+      }
+      if (folder) for (const id of local.docs) if (locallyChanged.has(id) && !folder.docs.includes(id)) folder.docs.push(id)
+    }
+    const merged = { ...current, folders, directory: { ...saved.directory }, directoryOrder: saved.directoryOrder }
+    const nodes = directoryParents({ ...merged, directory: {} })
+    for (const [key, value] of Object.entries(currentParents)) {
+      if (key in nodes && (requestedParents[key] !== value || key.startsWith('f:') && folderChanged(key.slice(2))
+        || key.startsWith('d:') && (lifecycles[key.slice(2)] ?? 0) !== (docLifecycleVersions[key.slice(2)] ?? 0))) merged.directory[key] = value
+    }
+    merged.directory = Object.fromEntries(Object.entries(merged.directory).filter(([key, value]) => key in nodes && (!value || value in nodes)))
+    merged.directoryOrder = [...new Set([...(saved.directoryOrder ?? Object.keys(directoryParents(saved))),
+      ...(current.directoryOrder ?? Object.keys(currentParents))])].filter(key => key in nodes)
+    Object.assign(current, merged)
+    knowledgeCatalogVersion++
+    const changedBodies: string[] = []
+    for (const folder of current.folders) for (const id of folder.docs) {
+      const loaded = docs[id]
+      if (loaded && loaded.folderId !== folder.id) {
+        if (loaded.bodyLoaded !== false) changedBodies.push(id)
+        docs[id] = { ...loaded, folderId: folder.id }
+      }
+    }
+    // Moving changes document revisions. Refresh only bodies already opened, with a
+    // small worker pool; metadata-only entries load their full version when opened.
+    let next = 0
+    if (apiLive.value) await Promise.all(Array.from({ length: Math.min(4, changedBodies.length) }, async () => {
+      while (next < changedBodies.length) {
+        const id = changedBodies[next++]!
+        if (generation !== docMemberGeneration || !kbById(kbId) || kbLifecycle !== (kbLifecycleVersions[kbId] ?? 0)) return
+        try {
+          const remote = await fetchDoc(id)
+          if (generation === docMemberGeneration && kbById(kbId) && docs[id]
+            && kbLifecycle === (kbLifecycleVersions[kbId] ?? 0)
+            && (lifecycles[id] ?? 0) === (docLifecycleVersions[id] ?? 0)
+            && remote.kbId === kbId && remote.folderId === docs[id]!.folderId && hasDocumentContainer(remote)) applyRemoteDoc(remote)
+        } catch { /* The move is saved; presence refresh or opening the document retries its body. */ }
+      }
+    }))
+    return generation === docMemberGeneration && !!kbById(kbId) && kbLifecycle === (kbLifecycleVersions[kbId] ?? 0)
   }
 
   /** 保存拖拽后的完整文档树；在线失败时恢复拖拽前的顺序与文件夹归属。 */
@@ -1059,13 +1197,14 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建知识库；apiLive 时经后端创建。 */
   async function addKb(payload: CreateKbPayload): Promise<KnowledgeBase | null> {
-    const session = useSessionStore()
-    const requestMember = session.userId, requestAccount = session.account?.accountId
+    const generation = docMemberGeneration
     if (apiLive.value) {
       try {
         const kb = await apiCreateKb({ ...payload, project: undefined })
-        if (requestMember === session.userId && requestAccount === session.account?.accountId) kbs.value.unshift(kb)
-        return kb
+        if (generation !== docMemberGeneration) return null
+        const current = kbById(kb.id)
+        if (!current) kbs.value.unshift(kb)
+        return current ?? kb
       } catch {
         return null
       }
@@ -1084,10 +1223,13 @@ export const useDataStore = defineStore('data', () => {
   async function updateKb(id: string, patch: PatchKbPayload) {
     const kb = kbById(id)
     if (!kb) return false
+    const generation = docMemberGeneration
     try {
       if (apiLive.value) {
         const updated = await apiPatchKb(id, patch)
-        Object.assign(kb, updated)
+        const current = kbById(id)
+        if (generation !== docMemberGeneration || !current) return false
+        Object.assign(current, updated)
       } else Object.assign(kb, patch)
       return true
     } catch { return false }
@@ -1102,23 +1244,64 @@ export const useDataStore = defineStore('data', () => {
   async function deleteKb(id: string) {
     const kb = kbById(id)
     if (kb?.notes) return
-    const session = useSessionStore()
-    const requestMember = session.userId, requestAccount = session.account?.accountId
+    const generation = docMemberGeneration
     if (apiLive.value) await apiDeleteKb(id)
-    if (requestMember !== session.userId || requestAccount !== session.account?.accountId) return
+    if (generation !== docMemberGeneration) return
+    const docIds = new Set([
+      ...(kbById(id)?.folders.flatMap(folder => folder.docs) ?? []),
+      ...(archivedDocIds.value[id] ?? []),
+      ...Object.values(docs).filter(doc => doc.kbId === id).map(doc => doc.id),
+    ])
     kbs.value = kbs.value.filter((k) => k.id !== id)
-    kb?.folders.forEach((f) => f.docs.forEach((docId) => delete docs[docId]))
-    for (const docId of archivedDocIds.value[id] ?? []) delete docs[docId]
+    kbLifecycleVersions[id] = (kbLifecycleVersions[id] ?? 0) + 1
+    knowledgeCatalogVersion++
     const { [id]: _archived, ...remainingArchives } = archivedDocIds.value
     archivedDocIds.value = remainingArchives
+    clearDeletedDocuments(docIds)
     void refreshTrash()
+  }
+
+  /** Only after server confirmation: cancel queued saves and invalidate in-flight replies. */
+  function clearDeletedDocuments(ids: Iterable<string>) {
+    const member = useSessionStore().userId || 'anonymous'
+    const edits = { ...docEdits.value }
+    for (const id of ids) {
+      const cleanupKey = `${member}\0${id}`, cleanup = Symbol()
+      docDraftCleanups.set(cleanupKey, cleanup)
+      docLifecycleVersions[id] = (docLifecycleVersions[id] ?? 0) + 1
+      clearTimeout(docPersistTimers[id])
+      delete docPersistTimers[id]
+      docSavePromises[id] = undefined
+      docRequests.delete(id)
+      delete docs[id]
+      delete edits[id]
+      delete docDirty[id]
+      delete docConflicts[id]
+      delete docDraftErrors[id]
+      delete docLoadErrors[id]
+      delete saveStates[`doc:${id}`]
+      // A local write already opening IndexedDB may finish after deletion. Remove its
+      // durable draft only after all writes started before confirmation have settled.
+      void (docDraftWrites.get(id) ?? Promise.resolve())
+        .then(() => {
+          // A restored document may already have fresh input by the time the old write
+          // settles. Its new draft belongs to the restored lifecycle and must survive.
+          if (docDraftCleanups.get(cleanupKey) !== cleanup) return
+          docDraftCleanups.delete(cleanupKey)
+          return removeDocumentDraft(member, id)
+        }).catch(() => undefined)
+    }
+    docEdits.value = edits
+    try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(edits)) } catch { /* Server deletion is already confirmed. */ }
   }
 
   /** 重命名文件夹；apiLive 时写透后端。 */
   async function renameFolder(kbId: string, folderId: string, name: string): Promise<boolean> {
     if (!kbById(kbId)?.folders.some(f => f.id === folderId)) return false
+    const generation = docMemberGeneration
     try {
       if (apiLive.value) await apiRenameFolder(kbId, folderId, name)
+      if (generation !== docMemberGeneration) return false
       const folder = kbById(kbId)?.folders.find(f => f.id === folderId)
       if (folder) folder.name = name
       return true
@@ -1127,33 +1310,39 @@ export const useDataStore = defineStore('data', () => {
 
   /** 删除文件夹（连同其下文档）—— 后端移入回收站。 */
   async function deleteFolder(kbId: string, folderId: string) {
-    const kb = kbById(kbId)
-    const folder = kb?.folders.find((f) => f.id === folderId)
-    if (!kb || !folder) return
+    if (!kbById(kbId)?.folders.some(folder => folder.id === folderId)) return
+    const generation = docMemberGeneration
     if (apiLive.value) await apiDeleteFolder(kbId, folderId)
-    folder.docs.forEach((docId) => delete docs[docId])
+    if (generation !== docMemberGeneration) return
+    const kb = kbById(kbId)
+    if (!kb) return
+    const folder = kb.folders.find(item => item.id === folderId)
+    const deletedIds = new Set(folder?.docs ?? [])
+    for (const doc of Object.values(docs)) if (doc.kbId === kbId && doc.folderId === folderId) deletedIds.add(doc.id)
     const archivedInFolder = (archivedDocIds.value[kbId] ?? [])
       .filter((docId) => docs[docId]?.folderId === folderId)
-    archivedInFolder.forEach((docId) => delete docs[docId])
+    for (const id of archivedInFolder) deletedIds.add(id)
     archivedDocIds.value = {
       ...archivedDocIds.value,
       [kbId]: (archivedDocIds.value[kbId] ?? []).filter((docId) => !archivedInFolder.includes(docId)),
     }
     kb.folders = kb.folders.filter((f) => f.id !== folderId)
+    const lifecycleKey = `${kbId}\0${folderId}`
+    folderLifecycleVersions[lifecycleKey] = (folderLifecycleVersions[lifecycleKey] ?? 0) + 1
+    knowledgeCatalogVersion++
+    clearDeletedDocuments(deletedIds)
     void refreshTrash()
   }
 
   /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
   async function deleteDoc(id: string) {
+    const generation = docMemberGeneration
     if (apiLive.value) await apiDeleteDoc(id)
+    if (generation !== docMemberGeneration) return
     kbs.value.forEach((k) => k.folders.forEach((f) => (f.docs = f.docs.filter((d) => d !== id))))
-    delete docs[id]
     archivedDocIds.value = Object.fromEntries(Object.entries(archivedDocIds.value)
       .map(([kbId, ids]) => [kbId, ids.filter((docId) => docId !== id)]))
-    const { [id]: _dropped, ...rest } = docEdits.value
-    docEdits.value = rest
-    localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
-    void removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
+    clearDeletedDocuments([id])
     void refreshTrash()
   }
 
@@ -1161,6 +1350,8 @@ export const useDataStore = defineStore('data', () => {
   async function archiveDoc(id: string): Promise<boolean> {
     const current = docs[id]
     if (!current?.kbId) return false
+    const generation = docMemberGeneration, lifecycle = docLifecycleVersions[id] ?? 0
+    const catalogVersion = knowledgeCatalogVersion
     let saved = current
     if (apiLive.value) {
       try {
@@ -1169,6 +1360,8 @@ export const useDataStore = defineStore('data', () => {
         return false
       }
     }
+    if (generation !== docMemberGeneration || lifecycle !== (docLifecycleVersions[id] ?? 0)) return false
+    if (catalogVersion !== knowledgeCatalogVersion && !hasDocumentContainer(current)) return false
     docs[id] = saved
     kbs.value.forEach((knowledgeBase) => knowledgeBase.folders.forEach((folder) => {
       folder.docs = folder.docs.filter((docId) => docId !== id)
@@ -1185,6 +1378,7 @@ export const useDataStore = defineStore('data', () => {
   async function unarchiveDoc(id: string): Promise<boolean> {
     const current = docs[id]
     if (!current?.kbId || !current.folderId) return false
+    const generation = docMemberGeneration, lifecycle = docLifecycleVersions[id] ?? 0
     let saved = current
     if (apiLive.value) {
       try {
@@ -1193,6 +1387,7 @@ export const useDataStore = defineStore('data', () => {
         return false
       }
     }
+    if (generation !== docMemberGeneration || lifecycle !== (docLifecycleVersions[id] ?? 0)) return false
     const folder = kbById(saved.kbId ?? current.kbId)?.folders
       .find((item) => item.id === (saved.folderId ?? current.folderId))
     if (!folder) return false
@@ -1206,28 +1401,50 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 拉取一个知识库的真实归档；失败保留上一帧并返回 false 供页面展示重试。 */
-  async function refreshArchivedDocs(kbId: string): Promise<boolean> {
-    if (!apiLive.value) return true
-    try {
-      const list = await fetchArchivedDocs(kbId)
-      const previous = archivedDocIds.value[kbId] ?? []
-      const next = list.map((doc) => doc.id)
-      previous.filter((id) => !next.includes(id)).forEach((id) => {
-        const returnedToTree = kbs.value.some((knowledgeBase) =>
-          knowledgeBase.folders.some((folder) => folder.docs.includes(id)))
-        if (!returnedToTree) delete docs[id]
-      })
-      list.forEach((doc) => (docs[doc.id] = doc))
-      archivedDocIds.value = { ...archivedDocIds.value, [kbId]: next }
+  function refreshArchivedDocs(kbId: string): Promise<boolean> {
+    if (!apiLive.value) return Promise.resolve(true)
+    const existing = archivedDocRequests.get(kbId)
+    if (existing) return existing
+    const generation = docMemberGeneration
+    const catalogVersion = knowledgeCatalogVersion
+    const lifecycles = { ...docLifecycleVersions }
+    const requested = new Map((archivedDocIds.value[kbId] ?? []).map(id => [id, docs[id]]))
+    const initialTree = new Set(kbs.value.flatMap(kb => kb.folders.flatMap(folder => folder.docs)))
+    const request = fetchArchivedDocs(kbId).then((list) => {
+      if (generation !== docMemberGeneration) return false
+      if (catalogVersion !== knowledgeCatalogVersion && !kbById(kbId)) return false
+      const inTree = new Set(kbs.value.flatMap(kb => kb.folders.flatMap(folder => folder.docs)))
+      const next = new Set<string>()
+      for (const doc of list) {
+        if ((lifecycles[doc.id] ?? 0) !== (docLifecycleVersions[doc.id] ?? 0)) continue
+        if (catalogVersion !== knowledgeCatalogVersion && !hasDocumentContainer(doc)) continue
+        // A restore completed while this request was in flight must remain in the live tree.
+        if (inTree.has(doc.id) && !initialTree.has(doc.id)) continue
+        next.add(doc.id)
+        const current = docs[doc.id]
+        const retainedBody = current && doc.bodyLoaded === false && current.bodyLoaded !== false && doc.rev === current.rev
+        if (!current || (!docPending(doc.id) && !retainedBody && (doc.rev ?? 1) >= (current.rev ?? 1))) docs[doc.id] = doc
+      }
+      for (const id of archivedDocIds.value[kbId] ?? []) {
+        if (next.has(id) || inTree.has(id)) continue
+        // Keep archives created/changed after the request, as well as unsaved local edits.
+        if (!requested.has(id) || requested.get(id) !== docs[id] || docPending(id)) next.add(id)
+        else delete docs[id]
+      }
+      archivedDocIds.value = { ...archivedDocIds.value, [kbId]: [...next] }
       return true
-    } catch {
-      return false
-    }
+    }).catch(() => false).finally(() => {
+      if (archivedDocRequests.get(kbId) === request) archivedDocRequests.delete(kbId)
+    })
+    archivedDocRequests.set(kbId, request)
+    return request
   }
 
   // ---- 回收站 ----
 
   let docsRequest: Promise<boolean> | null = null
+  let knowledgeRefreshRequest: Promise<boolean> | null = null
+  const archivedDocRequests = new Map<string, Promise<boolean>>()
   const docLoadErrors = reactive<Record<string, string>>({})
   const docRequests = new Map<string, Promise<boolean>>()
 
@@ -1237,15 +1454,21 @@ export const useDataStore = defineStore('data', () => {
     const existing = docRequests.get(id)
     if (existing) return existing
     const generation = docMemberGeneration
+    const catalogVersion = knowledgeCatalogVersion
+    const lifecycle = docLifecycleVersions[id] ?? 0
     delete docLoadErrors[id]
     const request = fetchDoc(id).then((remote) => {
-      if (generation !== docMemberGeneration) return false
+      if (generation !== docMemberGeneration || lifecycle !== (docLifecycleVersions[id] ?? 0)) return false
+      if (catalogVersion !== knowledgeCatalogVersion && !hasDocumentContainer(remote)) {
+        docLoadErrors[id] = '文档已删除或不可访问'
+        return false
+      }
       if (docPending(id) && docs[id]?.bodyLoaded !== false) return true
       if (!docs[id] || (remote.rev ?? 1) >= (docs[id]!.rev ?? 1)) docs[id] = remote
       if (docs[id]?.bodyLoaded === false) docLoadErrors[id] = '文档版本已更新，请重试'
       return docs[id]?.bodyLoaded !== false
     }).catch((cause: unknown) => {
-      if (generation === docMemberGeneration) {
+      if (generation === docMemberGeneration && lifecycle === (docLifecycleVersions[id] ?? 0)) {
         if ([403, 404].includes(Number((cause as { status?: number })?.status))) delete docs[id]
         docLoadErrors[id] = cause instanceof Error ? cause.message : '文档正文加载失败'
       }
@@ -1259,24 +1482,28 @@ export const useDataStore = defineStore('data', () => {
 
   function replaceDocs(list: Doc[], requested: Record<string, Doc>) {
     const previous = { ...docs }
+    const next: Record<string, Doc> = {}
     const archived = Object.values(archivedDocIds.value).flat()
       .flatMap((id) => docs[id] ? [docs[id]!] : [])
-    Object.keys(docs).forEach((id) => delete docs[id])
     list.forEach((doc) => {
       const old = previous[doc.id]
       // 目录刷新不卸载已加载的正文，也不能替换用户正在编辑的基线。
-      docs[doc.id] = old && (docPending(doc.id) || (old.rev ?? 1) > (doc.rev ?? 1)
+      next[doc.id] = old && (docPending(doc.id) || (old.rev ?? 1) > (doc.rev ?? 1)
+        || (old !== requested[doc.id] && old.folderId !== doc.folderId)
         || ((doc.bodyLoaded === false || doc.detailLoaded === false)
           && old.bodyLoaded !== false && old.detailLoaded !== false && old.rev === doc.rev)) ? old : doc
     })
     // A catalog requested before a save cannot authoritatively remove that save.
     // A later refresh still removes genuinely deleted documents.
     Object.values(previous).forEach((doc) => {
-      if (!docs[doc.id] && (doc !== requested[doc.id] || docPending(doc.id))) docs[doc.id] = doc
+      if (!next[doc.id] && (doc !== requested[doc.id] || docPending(doc.id))) next[doc.id] = doc
     })
     archived.forEach((doc) => {
-      if (!docs[doc.id]) docs[doc.id] = doc
+      if (!next[doc.id]) next[doc.id] = doc
     })
+    // Reconcile by key: never transiently remove a retained document or its loaded body.
+    for (const [id, doc] of Object.entries(next)) if (docs[id] !== doc) docs[id] = doc
+    for (const id of Object.keys(docs)) if (!next[id]) delete docs[id]
   }
 
   /**
@@ -1297,13 +1524,18 @@ export const useDataStore = defineStore('data', () => {
   function loadDocs(): Promise<boolean> {
     if (docsRequest) return docsRequest
     const generation = docMemberGeneration
+    const catalogVersion = knowledgeCatalogVersion
+    const lifecycles = { ...docLifecycleVersions }
     const requested = { ...docs }
     loadStates.docs = 'loading'
     delete loadErrors.docs
     const request = fetchDocs()
       .then((list) => {
         if (generation !== docMemberGeneration) return false
-        replaceDocs(list, requested)
+        const authorized = list.filter(doc =>
+          (lifecycles[doc.id] ?? 0) === (docLifecycleVersions[doc.id] ?? 0) &&
+          (catalogVersion === knowledgeCatalogVersion || hasDocumentContainer(doc)))
+        replaceDocs(authorized, requested)
         loadStates.docs = 'loaded'
         return true
       })
@@ -1328,8 +1560,10 @@ export const useDataStore = defineStore('data', () => {
   /** 重新拉取回收站列表。 */
   async function refreshTrash() {
     if (!apiLive.value) return
+    const generation = docMemberGeneration
     try {
-      trash.value = await fetchTrash()
+      const entries = await fetchTrash()
+      if (generation === docMemberGeneration) trash.value = entries
     } catch {
       /* 拉取失败时保留现有列表 */
     }
@@ -1338,7 +1572,13 @@ export const useDataStore = defineStore('data', () => {
   /** 从回收站恢复一个条目，随后重新拉取知识库与文档（父级可能一起被恢复）。 */
   async function restoreTrash(type: string, id: string) {
     if (!apiLive.value) return
+    const generation = docMemberGeneration
     await apiRestoreTrash(type, id)
+    if (generation !== docMemberGeneration) return
+    // A read started before restoration cannot include the restored item. Let it
+    // settle before issuing the refresh rather than reusing its obsolete result.
+    await Promise.all([knowledgeRefreshRequest, docsRequest])
+    if (generation !== docMemberGeneration) return
     await Promise.all([refreshKnowledge(), refreshTrash()])
   }
 
@@ -1350,18 +1590,31 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 重新拉取知识库与文档（恢复、别处新建之后用）。 */
-  async function refreshKnowledge() {
-    if (!apiLive.value) return
-    try {
-      const [kb] = await Promise.all([fetchKbs(), refreshDocs()])
-      if (Array.isArray(kb)) {
-        kbs.value = kb
-        const visible = new Set(kb.map(item => item.id))
-        Object.keys(docs).forEach(id => { if (!visible.has(docs[id]!.kbId ?? '')) delete docs[id] })
+  function refreshKnowledge(): Promise<boolean> {
+    if (!apiLive.value) return Promise.resolve(false)
+    if (knowledgeRefreshRequest) return knowledgeRefreshRequest
+    const generation = docMemberGeneration
+    const requestedKnowledge = JSON.stringify(kbs.value)
+    loadStates.knowledge = 'loading'
+    delete loadErrors.knowledge
+    const request = Promise.all([fetchKbs(), refreshDocs()]).then(([kb, docsLoaded]) => {
+      if (generation !== docMemberGeneration) return false
+      if (Array.isArray(kb) && JSON.stringify(kbs.value) === requestedKnowledge) {
+        replaceKnowledgeBases(kb)
       }
-    } catch {
-      /* 拉取失败时保留现有数据 */
-    }
+      loadStates.knowledge = 'loaded'
+      return docsLoaded
+    }).catch((cause: unknown) => {
+      if (generation === docMemberGeneration) {
+        loadStates.knowledge = 'error'
+        loadErrors.knowledge = cause instanceof Error && cause.message ? cause.message : DOMAIN_ERROR_MESSAGES.knowledge
+      }
+      return false
+    }).finally(() => {
+      if (knowledgeRefreshRequest === request) knowledgeRefreshRequest = null
+    })
+    knowledgeRefreshRequest = request
+    return request
   }
 
   // ---- task 变更 ----
@@ -2734,7 +2987,7 @@ export const useDataStore = defineStore('data', () => {
     isDocArchived, archivedDocsOf, areaColor,
     docEdits, docConflicts, docDraftErrors, setDocEdit, persistDocNow, restoreDocumentDraft, docOf, docPending, saveState, markSaving, markSaved,
     useServerDoc, saveDocConflictCopy,
-    applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
+    applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs, moveKnowledgeNode,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     archiveDoc, unarchiveDoc, refreshArchivedDocs,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,

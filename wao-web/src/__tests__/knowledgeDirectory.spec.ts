@@ -33,4 +33,39 @@ describe('混合知识库目录', () => {
     expect(directoryRows({ ...ordered, folders: [...ordered.folders, { id: 'c', name: '新分组', docs: [] }], directoryOrder: ['f:b', 'd:y', 'f:a', 'd:x'] }, id => id, {}, '').map(n => n.key))
       .toEqual(['f:b', 'd:y', 'f:a', 'd:x', 'f:c'])
   })
+  it('大量同级文档保持顺序，标题只读取一次', () => {
+    const docs = Array.from({ length: 12000 }, (_, index) => `doc-${index}`)
+    let reads = 0
+    const rows = directoryRows({ ...kb, folders: [{ id: 'large', name: '大目录', docs }], directory: undefined }, id => { reads++; return id }, {}, '')
+    expect(rows).toHaveLength(12001)
+    expect(rows[rows.length - 1]?.id).toBe('doc-11999')
+    expect(reads).toBe(12000)
+  })
+  it('深层导入目录遍历与搜索不会耗尽调用栈', () => {
+    const folders = Array.from({ length: 6000 }, (_, index) => ({ id: `f${index}`, name: `分组 ${index}`, docs: [] as string[] }))
+    const directory = Object.fromEntries(folders.slice(1).map((folder, index) => [`f:${folder.id}`, `f:f${index}`]))
+    const deep = { ...kb, folders, directory }
+    const rows = directoryRows(deep, id => id, groupLevelExpansion(deep), '')
+    expect(rows).toHaveLength(6000)
+    expect(rows[rows.length - 1]?.depth).toBe(5999)
+    expect(directoryRows(deep, id => id, {}, '分组 5999')).toHaveLength(6000)
+  })
+  it('搜索自动展开路径，但不改变传入的折叠选择', () => {
+    const expansion = { 'f:a': false, 'd:x': false }
+    expect(directoryRows(kb, id => id, expansion, 'Y').map(node => node.key)).toEqual(['f:a', 'd:x', 'f:b', 'd:y'])
+    expect(expansion).toEqual({ 'f:a': false, 'd:x': false })
+    expect(directoryRows(kb, id => id, expansion, '').map(node => node.key)).toEqual(['f:a'])
+  })
+  it('首页可保留命中文件夹和文档的所有后代，同时保留祖先路径', () => {
+    const source = { ...kb, folders: [...kb.folders, { id: 'c', name: '无关分组', docs: ['z'] }] }
+    expect(directoryRows(source, id => id, {}, '分组 B').map(node => node.key)).toEqual(['f:a', 'd:x', 'f:b'])
+    expect(directoryRows(source, id => id, { 'f:a': false }, '分组 B', undefined, { includeMatchedDescendants: true }).map(node => node.key))
+      .toEqual(['f:a', 'd:x', 'f:b', 'd:y'])
+    expect(directoryRows(source, id => id, { 'd:x': false }, 'X', undefined, { includeMatchedDescendants: true }).map(node => node.key))
+      .toEqual(['f:a', 'd:x', 'f:b', 'd:y'])
+  })
+  it('包含后代的检索不会因历史循环关系进入死循环', () => {
+    const cyclic = { ...kb, directory: { 'f:a': 'd:x', 'd:x': 'f:a', 'f:b': '' } }
+    expect(directoryRows(cyclic, id => id, {}, 'x', undefined, { includeMatchedDescendants: true })).toEqual([])
+  })
 })

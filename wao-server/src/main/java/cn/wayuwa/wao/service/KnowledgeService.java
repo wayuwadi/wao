@@ -487,11 +487,30 @@ public class KnowledgeService {
         return visibleDocs(entries).stream().map(entry -> {
             DocEntity note = notes.get(entry.getId());
             if (note != null) return toDtoWithBacklinks(note, List.of());
-            DocDto metadata = toDtoWithBacklinks(entry, List.of());
-            return new DocDto(metadata.id(), metadata.title(), metadata.author(), metadata.created(),
-                    metadata.updated(), metadata.auto(), metadata.links(), List.of(), null, List.of(),
-                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false, metadata.systemGenerated(), metadata.pageType(), metadata.drawingId());
+            return toCatalogDto(entry);
         }).toList();
+    }
+
+    /** 归档目录只读元数据；打开单篇时仍通过详情接口校验权限并读取完整正文与反向链接。 */
+    public List<DocDto> listArchivedDocCatalog(String kbId) {
+        requireKb(kbId);
+        return docMapper.selectList(aliveDocs()
+                .eq(DocEntity::getKbId, kbId).isNotNull(DocEntity::getArchivedAt)
+                .select(DocEntity::getId, DocEntity::getKbId, DocEntity::getFolderId, DocEntity::getTitle,
+                        DocEntity::getAuthorId, DocEntity::getAuto, DocEntity::getSystemGenerated,
+                        DocEntity::getCreatedLabel, DocEntity::getUpdatedLabel,
+                        DocEntity::getCreatedAt, DocEntity::getUpdatedAt, DocEntity::getRev,
+                        DocEntity::getTagsJson, DocEntity::getLinksJson, DocEntity::getPageType, DocEntity::getDrawingId)
+                .orderByDesc(DocEntity::getArchivedAt)).stream().map(this::toCatalogDto).toList();
+    }
+
+    private DocDto toCatalogDto(DocEntity entry) {
+        return new DocDto(entry.getId(), entry.getTitle(), entry.getAuthorId(),
+                stamp(entry.getCreatedAt(), entry.getCreatedLabel()), stamp(entry.getUpdatedAt(), entry.getUpdatedLabel()),
+                entry.getAuto(), withoutProjectLinks(readList(entry.getLinksJson(), LINKS_TYPE)), List.of(), null, List.of(),
+                entry.getKbId(), entry.getFolderId(), rev(entry),
+                readList(entry.getTagsJson(), new TypeReference<List<String>>() {}), false,
+                Boolean.TRUE.equals(entry.getSystemGenerated()), entry.getPageType() == null ? "document" : entry.getPageType(), entry.getDrawingId());
     }
 
     /** 列出全部日常文档（含正文与反向链接），不含回收站与归档里的。 */

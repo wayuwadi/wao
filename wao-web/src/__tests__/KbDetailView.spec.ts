@@ -13,7 +13,8 @@ import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
-import { apiMoveKnowledgeNode, apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { apiCreateDocTemplate, apiMoveKnowledgeNode, apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/board')>()
@@ -23,6 +24,7 @@ vi.mock('@/api/board', async (importOriginal) => {
     fetchDoc: vi.fn<typeof actual.fetchDoc>(),
     fetchDocTemplates: vi.fn<typeof actual.fetchDocTemplates>(),
     apiPatchDocTemplate: vi.fn<typeof actual.apiPatchDocTemplate>(),
+    apiCreateDocTemplate: vi.fn<typeof actual.apiCreateDocTemplate>(),
     apiDocPresence: vi.fn<typeof actual.apiDocPresence>().mockResolvedValue({
       rev: 0,
       peers: [],
@@ -66,6 +68,7 @@ describe('知识库详情目录体验', () => {
   }
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
     // 目录属于登录成员；先登录再装载样本，不能沿用匿名阶段的目录。
@@ -80,9 +83,10 @@ describe('知识库详情目录体验', () => {
     vi.mocked(fetchDoc).mockReset()
     vi.mocked(fetchDoc).mockImplementation(async id => JSON.parse(JSON.stringify(useDataStore().docs[id])))
     vi.mocked(apiPatchDocTemplate).mockReset()
+    vi.mocked(apiCreateDocTemplate).mockReset()
   })
 
-  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1', attach = false) {
+  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1', attach = true) {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/kb/:id', name: 'kb', component: KbDetailView }],
@@ -100,7 +104,7 @@ describe('知识库详情目录体验', () => {
       attachTo: attach ? document.body : undefined,
       global: {
         plugins: [pinia, router],
-        stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true },
+        stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true, teleport: true },
       },
     })
     await flushPromises()
@@ -115,6 +119,112 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.get('select option[value="成员可编辑"]').text()).toContain('组织内成员')
   })
 
+  it('切换知识库关闭原库设置草稿，原保存回执不能解锁新库表单', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const data = useDataStore(pinia)
+    let finishOld!: (value: boolean) => void
+    let finishNew!: (value: boolean) => void
+    const save = vi.spyOn(data, 'updateKb')
+      .mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+      .mockReturnValueOnce(new Promise(resolve => { finishNew = resolve }))
+    await wrapper.get('.library-star[title="知识库设置"]').trigger('click')
+    await wrapper.get('#knowledge-settings-form input').setValue('A 的设置草稿')
+    await wrapper.get('#knowledge-settings-form').trigger('submit')
+    await wrapper.vm.$router.push('/kb/k4')
+    await flushPromises()
+    expect(wrapper.find('#knowledge-settings-form').exists()).toBe(false)
+    await wrapper.get('.library-star[title="知识库设置"]').trigger('click')
+    expect((wrapper.get('#knowledge-settings-form input').element as HTMLInputElement).value).toBe(data.kbById('k4')!.name)
+    await wrapper.get('#knowledge-settings-form input').setValue('B 的设置草稿')
+    await wrapper.get('#knowledge-settings-form').trigger('submit')
+    finishOld(true)
+    await flushPromises()
+    expect(wrapper.find('#knowledge-settings-form').exists()).toBe(true)
+    expect(wrapper.get('#knowledge-settings-form input').attributes('disabled')).toBeDefined()
+    expect(save.mock.calls.map(args => args[0])).toEqual(['k3', 'k4'])
+    finishNew(true)
+    await flushPromises()
+    expect(wrapper.find('#knowledge-settings-form').exists()).toBe(false)
+  })
+
+  it('账号切换即使成员 ID 相同也关闭设置和确认操作', async () => {
+    const wrapper = await mountView('/kb/k3')
+    await wrapper.get('.library-star[title="知识库设置"]').trigger('click')
+    await wrapper.get('#knowledge-settings-form input').setValue('旧账号草稿')
+    useSessionStore(pinia).account!.accountId = 'another-account'
+    await flushPromises()
+    expect(wrapper.find('#knowledge-settings-form').exists()).toBe(false)
+    expect(wrapper.findComponent(ConfirmActionDialog).exists()).toBe(false)
+  })
+
+  it('模板按需请求，旧账号迟到的列表不能进入新账号', async () => {
+    let finishOld!: (value: Awaited<ReturnType<typeof fetchDocTemplates>>) => void
+    vi.mocked(fetchDocTemplates).mockReturnValueOnce(new Promise(resolve => { finishOld = resolve })).mockResolvedValueOnce([])
+    const wrapper = await mountView('/kb/k3', true)
+    expect(fetchDocTemplates).not.toHaveBeenCalled()
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
+    expect(fetchDocTemplates).toHaveBeenCalledTimes(1)
+    useSessionStore(pinia).account!.accountId = 'another-account'
+    await flushPromises()
+    expect(wrapper.find('.template-modal.manager').exists()).toBe(false)
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
+    finishOld([{ id: 'old-template', name: '旧账号私有模板', description: '', blocks: [], sourceDocId: 'd7', createdAt: '', updatedAt: '' }])
+    await flushPromises()
+    expect(wrapper.get('.template-modal.manager').text()).toContain('还没有模板')
+    expect(wrapper.text()).not.toContain('旧账号私有模板')
+  })
+
+  it('另存模板迟到回执不会关闭另一篇文档的新表单或继承提交状态', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    let finishOld!: (value: Awaited<ReturnType<typeof apiCreateDocTemplate>>) => void
+    vi.mocked(apiCreateDocTemplate).mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+    await wrapper.get('[aria-label="更多文档操作"]').trigger('click')
+    await wrapper.findAll('.doc-more-menu button').find(button => button.text().includes('另存为模板'))!.trigger('click')
+    await wrapper.get('#save-document-template').trigger('submit')
+    await wrapper.vm.$router.push('/kb/k3?doc=d8')
+    await flushPromises()
+    await wrapper.get('[aria-label="更多文档操作"]').trigger('click')
+    await wrapper.findAll('.doc-more-menu button').find(button => button.text().includes('另存为模板'))!.trigger('click')
+    expect(wrapper.get('#save-document-template input').attributes('disabled')).toBeUndefined()
+    await wrapper.get('#save-document-template input').setValue('新文档模板名称')
+    finishOld({ id: 'old-source-template', name: '前一篇模板', description: '', blocks: [], sourceDocId: 'd7', createdAt: '', updatedAt: '' })
+    await flushPromises()
+    expect((wrapper.get('#save-document-template input').element as HTMLInputElement).value).toBe('新文档模板名称')
+    expect(wrapper.get('#save-document-template input').attributes('disabled')).toBeUndefined()
+  })
+
+  it('目录移动回执晚于账号切换时不回填原账号数据', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const data = useDataStore(pinia)
+    const original = JSON.parse(JSON.stringify(data.kbById('k3')))
+    let finishMove!: (value: typeof original) => void
+    vi.mocked(apiMoveKnowledgeNode).mockReturnValueOnce(new Promise(resolve => { finishMove = resolve }))
+    await wrapper.get('[aria-label="更多文档操作"]').trigger('click')
+    await wrapper.get('[aria-label="在更多菜单中移动当前文档到文件夹"]').setValue(original.folders[1].id)
+    useSessionStore(pinia).account!.accountId = 'another-account'
+    await flushPromises()
+    finishMove({ ...original, name: '旧账号的延迟目录回执' })
+    await flushPromises()
+    expect(data.kbById('k3')!.name).not.toBe('旧账号的延迟目录回执')
+    expect(wrapper.text()).not.toContain('目录移动未完成')
+  })
+
+  it('新建文件夹的旧回执不在切换后的知识库打开重命名', async () => {
+    const wrapper = await mountView('/kb/k3')
+    let finishCreate!: (value: string | null) => void
+    vi.spyOn(useDataStore(pinia), 'addFolder').mockReturnValueOnce(new Promise(resolve => { finishCreate = resolve }))
+    const menu = wrapper.findAllComponents({ name: 'ResourceMenu' }).find(item => item.props('label') === '新增内容')!
+    menu.vm.$emit('select', 'folder')
+    await flushPromises()
+    await wrapper.vm.$router.push('/kb/k4')
+    finishCreate('old-folder')
+    await flushPromises()
+    expect(wrapper.find('.folder-input').exists()).toBe(false)
+    expect(wrapper.vm.$route.params.id).toBe('k4')
+  })
+
   it('共享成员不能打开知识库管理，但仍可使用个人模板', async () => {
     useDataStore().kbs.find(kb => kb.id === 'k3')!.ownerId = 'another-member'
     const wrapper = await mountView('/kb/k3', true)
@@ -125,16 +235,16 @@ describe('知识库详情目录体验', () => {
   it('删除旧账号知识库的成功回执不关闭同成员号新账号的页签或改变路由', async () => {
     const wrapper = await mountView('/kb/k3')
     const close = vi.spyOn(useTabsStore(), 'close')
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     let finish!: () => void
     vi.spyOn(useDataStore(), 'deleteKb').mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
     await wrapper.get('.library-star').trigger('click')
-    await wrapper.get('.template-modal footer .link-button').trigger('click')
+    await wrapper.get('.knowledge-dialog-actions button').trigger('click')
+    const deleting = wrapper.findComponent(ConfirmActionDialog).props('action').run()
     useSessionStore().account!.accountId = 'new-account-same-member'
-    finish(); await flushPromises()
+    finish(); await deleting; await flushPromises()
     expect(close).not.toHaveBeenCalled()
     expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe('/kb/k3')
-    confirm.mockRestore(); close.mockRestore()
+    close.mockRestore()
   })
 
   it('已有正文缓存重新打开时仍校验权限，404 后移除可展示正文', async () => {
@@ -243,7 +353,7 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3')
     expect(wrapper.find('.library-home').exists()).toBe(true)
     expect(wrapper.find('.doc-bar').exists()).toBe(false)
-    await wrapper.get('.home-documents button').trigger('click')
+    await wrapper.get('.home-documents button:has(.home-document-name)').trigger('click')
     await flushPromises()
     expect(wrapper.find('.doc-bar').exists()).toBe(true)
     await wrapper.get('.library-home-link').trigger('click')
@@ -300,20 +410,25 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.get('.sync-bar').text()).toContain('历史归档')
   })
 
-  it('切换知识库时加载新库归档，旧请求失败不污染新库状态', async () => {
+  it('按需加载归档，切换知识库后旧请求失败不污染新库状态', async () => {
     const data = useDataStore(pinia)
     let finishOld!: (value: boolean) => void
     const archived = vi.spyOn(data, 'refreshArchivedDocs')
       .mockReturnValueOnce(new Promise<boolean>(resolve => { finishOld = resolve }))
       .mockResolvedValueOnce(true)
     const wrapper = await mountView('/kb/k3', true)
+    expect(archived).not.toHaveBeenCalled()
+    await wrapper.get('.archive-head').trigger('click')
     await wrapper.vm.$router.push('/kb/k4')
+    await flushPromises()
+    expect(wrapper.get('.archive-head').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('.archive-head').trigger('click')
     await flushPromises()
     expect(archived.mock.calls.map(args => args[0])).toEqual(['k3', 'k4'])
     finishOld(false)
     await flushPromises()
-    // 空归档区在请求完成后隐藏；旧请求不能重新带回错误或加载提示。
-    expect(wrapper.find('.archive-tree').exists()).toBe(false)
+    expect(wrapper.get('.archive-tree').text()).toContain('还没有归档文档')
+    expect(wrapper.get('.archive-tree').text()).not.toContain('归档读取失败')
   })
 
   it('小记知识库目录和首页默认按更新时间倒序，可切换正序', async () => {
@@ -484,22 +599,177 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     const data = useDataStore(pinia)
     const remove = vi.spyOn(data, 'deleteDoc').mockResolvedValue(undefined)
-    const confirm = vi.spyOn(window, 'confirm')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
     const removeAction = () => wrapper.find('.doc-row').findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'delete')
 
     removeAction()
     await flushPromises()
     expect(remove).not.toHaveBeenCalled()
+    let dialog = wrapper.findComponent(ConfirmActionDialog)
+    expect(dialog.props('action').description).toContain('7 天内可恢复')
+    dialog.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.findComponent(ConfirmActionDialog).exists()).toBe(false)
     removeAction()
     await flushPromises()
+    dialog = wrapper.findComponent(ConfirmActionDialog)
+    await dialog.props('action').run()
     await flushPromises()
 
-    expect(confirm.mock.calls[0]?.[0]).toContain('7 天内可恢复')
     expect(remove).toHaveBeenCalledWith('d7')
-    confirm.mockRestore()
     wrapper.unmount()
+  })
+
+  it('阅读与专注保留编辑器、正文草稿和原来的目录偏好', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    const data = useDataStore(pinia)
+    data.setDocEdit('d7', { text: '尚未落库的正文' })
+    await flushPromises()
+    const editor = wrapper.get('.markdown-editor-stub').element
+    const original = JSON.stringify(data.docEdits.d7)
+    const edit = vi.spyOn(data, 'setDocEdit')
+    await wrapper.get('[aria-label="阅读文档"]').trigger('click')
+    expect(wrapper.get('.markdown-editor-stub').attributes('readonly')).toBeDefined()
+    expect(wrapper.get('.doc-title').attributes('readonly')).toBeDefined()
+    await wrapper.get('[aria-label="专注模式"]').trigger('click')
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.emitted('focus-change')?.[0]).toEqual([true])
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await wrapper.get('[aria-label="退出专注"]').trigger('click')
+    expect(wrapper.get('#kb-directory').attributes('style')).not.toContain('display: none')
+    await wrapper.get('[aria-label="编辑文档"]').trigger('click')
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    expect(wrapper.get('.markdown-editor-stub').attributes('readonly')).toBeUndefined()
+    expect(JSON.stringify(data.docEdits.d7)).toBe(original)
+    expect(edit).not.toHaveBeenCalled()
+  })
+
+  it('阅读模式点击目录重命名会进入编辑并聚焦标题', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    await wrapper.get('[aria-label="阅读文档"]').trigger('click')
+    const menu = wrapper.findAllComponents({ name: 'ResourceMenu' }).find(item => item.props('label') === `${useDataStore(pinia).docOf('d7').title}的更多操作`)!
+    menu.vm.$emit('select', 'rename')
+    await flushPromises()
+    expect(wrapper.get('.doc-title').attributes('readonly')).toBeUndefined()
+    expect(document.activeElement).toBe(wrapper.get('.doc-title').element)
+  })
+
+  it('大目录分批渲染，搜索仍覆盖未渲染的文档并支持继续显示', async () => {
+    const data = useDataStore(pinia)
+    const library = data.kbById('k3')!
+    library.folders = [{ id: 'large-folder', name: '大量文档', docs: Array.from({ length: 520 }, (_, index) => `large-${index}`) }]
+    for (let index = 0; index < 520; index++) data.docs[`large-${index}`] = { ...data.docs.d7!, id: `large-${index}`, title: `资料 ${index}`, kbId: 'k3', folderId: 'large-folder' }
+    const wrapper = await mountView('/kb/k3')
+    await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
+    expect(wrapper.findAll('.tree .directory-row')).toHaveLength(500)
+    await wrapper.get('.directory-load-more').trigger('click')
+    expect(wrapper.findAll('.tree .directory-row')).toHaveLength(521)
+    expect(document.activeElement?.getAttribute('data-node')).toBe('d:large-499')
+    await wrapper.get('.tree-search input').setValue('资料 519')
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(1)
+    expect(wrapper.get('.tree .doc-node').text()).toContain('资料 519')
+    expect(wrapper.find('.directory-load-more').exists()).toBe(false)
+  })
+
+  it('专注快捷键不打断输入法，退出后仍保持原收起偏好', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    await wrapper.get('.kb-detail').trigger('keydown', { key: 'F', altKey: true, shiftKey: true, isComposing: true })
+    expect(wrapper.find('[aria-label="退出专注"]').exists()).toBe(false)
+    await wrapper.get('.kb-detail').trigger('keydown', { key: 'F', altKey: true, shiftKey: true })
+    expect(wrapper.find('[aria-label="退出专注"]').exists()).toBe(true)
+    await wrapper.get('.kb-detail').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.get('.directory-toggle').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('长标题使用可增长文本域，输入法回车不丢失标题', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const title = wrapper.get('textarea.doc-title')
+    const input = '长标题'.repeat(60)
+    await title.setValue(input)
+    expect(useDataStore(pinia).docOf('d7').title).toBe(input)
+    const composing = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })
+    title.element.dispatchEvent(composing)
+    expect(composing.defaultPrevented).toBe(false)
+    const ordinary = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    title.element.dispatchEvent(ordinary)
+    expect(ordinary.defaultPrevented).toBe(true)
+  })
+
+  it('窄屏阅读宽度在收起目录后仍有效', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    await wrapper.get('[aria-label="文档宽度"] button:last-child').trigger('click')
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    expect(wrapper.get('.document-pane').classes()).toContain('content-narrow')
+  })
+
+  it('手机目录按需覆盖打开，选择当前文档也会收起且不重建编辑器', async () => {
+    const original = window.matchMedia
+    window.matchMedia = vi.fn(query => ({ matches: query === '(max-width: 760px)', media: query, onchange: null,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() })) as typeof window.matchMedia
+    try {
+      const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+      const editor = wrapper.get('.markdown-editor-stub').element
+      expect(wrapper.get('.directory-toggle').attributes('aria-expanded')).toBe('false')
+      await wrapper.get('.directory-toggle').trigger('click')
+      expect(wrapper.get('.document-pane').attributes('inert')).toBeDefined()
+      expect(document.activeElement).toBe(wrapper.get('.mobile-directory-close').element)
+      await wrapper.get('.doc-node.on').trigger('click')
+      expect(wrapper.get('.directory-toggle').attributes('aria-expanded')).toBe('false')
+      expect(wrapper.get('.document-pane').attributes('inert')).toBeUndefined()
+      expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+      wrapper.unmount()
+    } finally { window.matchMedia = original }
+  })
+
+  it('本库目录支持方向键、首尾导航和搜索后进入结果', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const nodes = wrapper.findAll('.tree [data-node]')
+    ;(nodes[0]!.element as HTMLElement).focus()
+    await nodes[0]!.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(nodes[1]!.element)
+    await nodes[1]!.trigger('keydown', { key: 'End' })
+    expect(document.activeElement).toBe(nodes[nodes.length - 1]!.element)
+    const search = wrapper.get('.tree-search input')
+    await search.setValue('健康')
+    await search.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(wrapper.get('.tree [data-node]').element)
+    await search.trigger('keydown', { key: 'Escape' })
+    expect((search.element as HTMLInputElement).value).toBe('')
+  })
+
+  it('首页按真实父子关系与自定义顺序显示，文件夹搜索保留后代', async () => {
+    const data = useDataStore(pinia)
+    const library = data.kbById('k3')!
+    const first = library.folders[0]!
+    library.directory = { 'd:d8': 'd:d7' }
+    library.directoryOrder = [`f:${first.id}`, 'd:d7', 'd:d8']
+    const wrapper = await mountView()
+    const child = wrapper.get('.home-directory-index [data-tree-key="d:d8"]')
+    expect(child.attributes('aria-level')).toBe('3')
+    await wrapper.get('[aria-label="搜索首页文档"]').setValue(first.name)
+    expect(wrapper.findAll('.home-document-name').map(node => node.text())).toContain(data.docs.d8!.title)
+    expect(wrapper.get('.home-result-count').text()).toContain('2')
+  })
+
+  it('删除失败保留文档和确认弹窗，可原位重试且成功后清理路由', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const data = useDataStore(pinia)
+    const remove = vi.spyOn(data, 'deleteDoc').mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined)
+    wrapper.find('.doc-row').findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'delete')
+    await flushPromises()
+    let buttons = wrapper.findComponent(ConfirmActionDialog).findAll('button')
+    await buttons[buttons.length - 1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(ConfirmActionDialog).text()).toContain('删除失败')
+    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBe('d7')
+    expect(data.docs.d7).toBeDefined()
+    buttons = wrapper.findComponent(ConfirmActionDialog).findAll('button')
+    await buttons[buttons.length - 1]!.trigger('click')
+    await flushPromises()
+    expect(remove).toHaveBeenCalledTimes(2)
+    expect(wrapper.findComponent(ConfirmActionDialog).exists()).toBe(false)
+    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBeUndefined()
   })
 
   it('右侧目录展示一至三级标题，并按三级缩进表达层级', async () => {
@@ -587,7 +857,7 @@ describe('知识库详情目录体验', () => {
     const close = wrapper.get('[aria-label="关闭文档大纲"]')
     expect(document.activeElement).toBe(close.element)
     await close.trigger('keydown', { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(wrapper.get('.toc-item').element)
+    expect(document.activeElement).toBe(wrapper.get('.outline-progress button').element)
     await wrapper.get('.toc').trigger('keydown', { key: 'Escape', isComposing: true })
     await wrapper.get('.toc').trigger('keydown', { key: 'Escape', keyCode: 229 })
     expect(wrapper.find('.toc').exists()).toBe(true)
@@ -608,7 +878,7 @@ describe('知识库详情目录体验', () => {
     expect(document.activeElement).toBe(wrapper.get('.directory-toggle').element)
   })
 
-  it('父子导航互斥，隐藏页签和切换同成员号的账号清理临时面板，不卸载编辑器', async () => {
+  it('父子导航互斥且同账号切页保留编辑器，切账号清理临时面板和旧正文', async () => {
     mobileViewport(); sessionStorage.clear()
     const visible = ref(true)
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge', component: KnowledgeWorkspaceView }] })
@@ -636,16 +906,17 @@ describe('知识库详情目录体验', () => {
     document.dispatchEvent(escape)
     expect(escape.defaultPrevented).toBe(false)
     visible.value = true; await flushPromises()
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
     await wrapper.get('.directory-toggle').trigger('click')
     useSessionStore().account!.accountId = 'different-account-same-member'
     await flushPromises()
     expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
-    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    expect(wrapper.find('.markdown-editor-stub').exists()).toBe(false)
     await openLibraries.trigger('click')
     useSessionStore().account!.accountId = 'third-account-same-member'
     await flushPromises()
     expect(wrapper.get('.libraries').isVisible()).toBe(false)
-    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    expect(wrapper.find('.markdown-editor-stub').exists()).toBe(false)
   })
 
   it('模板管理展示真实正文，并把编辑后的正文块与名称说明一起保存', async () => {
@@ -814,7 +1085,7 @@ describe('知识库详情目录体验', () => {
     )
     expect(localStorage.getItem('wao-doc-template-draft-v1:m1:other-template')).toBeNull()
     expect(wrapper.get('.template-edit-status').text()).toContain('尚未同步')
-    await wrapper.get('.template-modal.manager header > button').trigger('click')
+    await wrapper.get('[aria-label="关闭文档模板管理"]').trigger('click')
     expect(wrapper.find('.template-modal.manager').exists()).toBe(false)
     wrapper.unmount()
 

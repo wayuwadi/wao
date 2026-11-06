@@ -1579,6 +1579,24 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('只读切换关闭斜线菜单，过期菜单操作不能修改正文', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true })
+    const instance = w.vm as unknown as { editor: Editor; slashActions: { id: string }[]; chooseSlash: (action: { id: string }) => void }
+    instance.editor.commands.insertContent('/code')
+    await nextTick()
+    expect(document.querySelector('.slash-menu')).not.toBeNull()
+    const action = instance.slashActions.find(item => item.id === 'code')!
+    await w.setProps({ readonly: true })
+    const before = instance.editor.getJSON()
+    instance.chooseSlash(action)
+    await w.get('.tiptap').trigger('keydown', { key: 'Enter' })
+    expect(document.querySelector('.slash-menu')).toBeNull()
+    expect(instance.editor.getJSON()).toEqual(before)
+    await w.setProps({ readonly: false })
+    expect(document.querySelector('.slash-menu')).toBeNull()
+    w.unmount()
+  })
+
   it('高级插入菜单覆盖四类提示块、公式、图表与双三栏，并提供快捷键帮助', async () => {
     const w = await mountEditor({ modelValue: '', allowH1: true, advanced: true })
     const instance = w.vm as unknown as { slashActions: { id: string }[] }
@@ -2133,6 +2151,55 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('上传期间光标移动与输入不会改变图片插入位置或抢走焦点', async () => {
+    const w = await mountEditor({ modelValue: '第一段\n\n第二段' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection(4)
+    pasteInto(w.get('.tiptap').element, [new File(['image'], '位置.png', { type: 'image/png' })])
+    expect(w.vm.hasPendingUploads()).toBe(true)
+    e.commands.insertContentAt(1, '前置')
+    e.commands.setTextSelection(e.state.doc.content.size - 1)
+    const other = document.createElement('input'); document.body.append(other); other.focus()
+    const done = w.emitted('upload-image')![0]![1] as (url: string | null, name: string) => void
+    done('/api/images/anchor/raw', '位置.png'); await flushPromises()
+    const content = e.getJSON() as RichDocNode
+    const types = content.content?.map(node => node.type)
+    expect(types).toEqual(['paragraph', 'image', 'paragraph'])
+    expect(content.content?.[0]?.content?.[0]?.text).toBe('前置第一段')
+    expect(content.content?.[2]?.content?.[0]?.text).toBe('第二段')
+    expect(document.activeElement).toBe(other)
+    expect(w.vm.hasPendingUploads()).toBe(false)
+    other.remove(); w.unmount()
+  })
+
+  it('空文档连续两批图片按粘贴顺序插入，第一批不会使第二批锚点失效', async () => {
+    const w = await mountEditor({ modelValue: '' })
+    for (const name of ['first.png', 'second.png']) pasteInto(w.get('.tiptap').element, [new File(['image'], name, { type: 'image/png' })])
+    const uploads = w.emitted('upload-image') as [File, (url: string, name: string) => void][]
+    uploads[1]![1]('/api/images/second/raw', 'second.png')
+    uploads[0]![1]('/api/images/first/raw', 'first.png')
+    await flushPromises()
+    expect(w.findAll('.md-body img').map(img => img.attributes('src'))).toEqual(['/api/images/first/raw', '/api/images/second/raw'])
+    expect(w.vm.hasPendingUploads()).toBe(false)
+    w.unmount()
+  })
+
+  it.each(['readonly', 'replace', 'destroy', 'delete'] as const)('上传后 %s 不向另一篇正文或已移除位置插入', async action => {
+    const w = await mountEditor({ modelValue: '原始段落' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection(3)
+    pasteInto(w.get('.tiptap').element, [new File(['image'], '旧图.png', { type: 'image/png' })])
+    const done = w.emitted('upload-image')![0]![1] as (url: string | null, name: string) => void
+    if (action === 'readonly') await w.setProps({ readonly: true })
+    else if (action === 'replace') { e.commands.blur(); await w.setProps({ modelValue: '另一篇文档' }) }
+    else if (action === 'delete') e.commands.deleteRange({ from: 1, to: 5 })
+    else w.unmount()
+    const before = e.getJSON()
+    done('/api/images/stale/raw', '旧图.png'); await flushPromises()
+    expect(e.getJSON()).toEqual(before)
+    if (action !== 'destroy') { expect(w.vm.hasPendingUploads()).toBe(false); w.unmount() }
+  })
+
   it('划词格式、链接、润色和待办只使用一份清单，添加待办不改正文', async () => {
     setActivePinia(createPinia())
     const ui = useUiStore()
@@ -2534,8 +2601,242 @@ it('同一关键词再次定位时重新检查最新草稿，不把旧命中当�
   w.unmount()
 })
 
+describe('文内查找与安全替换', () => {
+  it('全部命中高亮，前后循环不抢查询焦点，大小写与关闭状态可操作', async () => {
+    const w = await mountEditor({ modelValue: 'Alpha alpha ALPHA', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    await w.vm.openSearch()
+    const input = w.get<HTMLInputElement>('[aria-label="查找内容"]')
+    expect(document.activeElement).toBe(input.element)
+    await input.setValue('alpha')
+    expect(w.findAll('.content-search-match')).toHaveLength(3)
+    expect(w.get('.find-status').text()).toBe('1 / 3')
+    await input.trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(w.get('.find-status').text()).toBe('3 / 3')
+    expect(document.activeElement).toBe(input.element)
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(w.get('.find-status').text()).toBe('1 / 3')
+    await w.get('[aria-label="区分大小写"]').trigger('click')
+    expect(w.get('.find-status').text()).toBe('1 / 1')
+    expect(w.get('.content-search-hit').text()).toBe('alpha')
+    await input.trigger('keydown', { key: 'Escape' })
+    expect(w.find('.find-panel').exists()).toBe(false)
+    expect(w.find('.content-search-match').exists()).toBe(false)
+    expect(e.getJSON()).toEqual(original)
+    expect(w.emitted('content-change')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('替换按当前大小写规则匹配且插入纯文本，整批只产生一个撤销步骤', async () => {
+    const w = await mountEditor({ modelValue: 'Alpha **alpha**\n\nALPHA 后文', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue('alpha')
+    await w.get('[aria-label="替换内容"]').setValue('<b>原样</b>')
+    const replace = () => w.findAll('button').find(button => button.text() === '替换')!
+    const replaceAll = () => w.findAll('button').find(button => button.text() === '全部替换')!
+    await replace().trigger('click')
+    expect(e.getText()).toContain('<b>原样</b> alpha')
+    expect(w.get('.find-status').text()).toBe('1 / 2')
+    e.commands.undo(); await nextTick()
+    expect(e.getJSON()).toEqual(before)
+    await replaceAll().trigger('click')
+    expect(e.getText().match(/<b>原样<\/b>/g)).toHaveLength(3)
+    expect(e.getHTML()).not.toContain('<b>原样</b>')
+    expect(w.text()).toContain('已替换 3 处，可撤销')
+    e.commands.undo(); await nextTick()
+    expect(e.getJSON()).toEqual(before)
+    e.commands.redo(); await nextTick()
+    expect(e.getText().match(/<b>原样<\/b>/g)).toHaveLength(3)
+    w.unmount()
+  })
+
+  it('查询保留空白，空替换可删除匹配；只读切换保留实例与撤销历史', async () => {
+    const w = await mountEditor({ modelValue: 'abc abc ABC', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue(' abc ')
+    expect(w.get('.find-status').text()).toBe('1 / 1')
+    await w.findAll('button').find(button => button.text() === '替换')!.trigger('click')
+    expect(e.getText()).toBe('abcABC')
+    const saved = e.getJSON()
+    const emits = w.emitted('content-change')?.length
+    await w.setProps({ readonly: true })
+    expect(w.find('[aria-label="替换内容"]').exists()).toBe(false)
+    expect(e.getJSON()).toEqual(saved)
+    expect(w.emitted('content-change')?.length).toBe(emits)
+    expect(w.get('.tiptap').attributes('aria-readonly')).toBe('true')
+    await w.setProps({ readonly: false })
+    expect((w.vm as unknown as { editor: Editor }).editor).toBe(e)
+    e.commands.undo(); await nextTick()
+    expect(e.getText()).toBe('abc abc ABC')
+    w.unmount()
+  })
+
+  it('上传期间全部替换保留插入锚点，完成后恢复替换并可一次撤销', async () => {
+    const w = await mountEditor({ modelValue: '插图位置\n\nalpha alpha', advanced: true })
+    const instance = w.vm as unknown as { editor: Editor; replaceAll: () => void }
+    const e = instance.editor
+    e.commands.setTextSelection(3)
+    pasteInto(w.get('.tiptap').element, [new File(['image'], '保留位置.png', { type: 'image/png' })])
+    const before = e.getJSON()
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue('alpha')
+    await w.get('[aria-label="替换内容"]').setValue('beta')
+    const all = () => w.findAll('button').find(button => button.text() === '全部替换')!
+    expect(all().attributes('disabled')).toBeDefined()
+    const hintId = all().attributes('aria-describedby')
+    expect(hintId).toBeTruthy()
+    expect(hintId ? document.getElementById(hintId)?.textContent : '').toContain('完成后可全部替换')
+    expect(w.findAll('button').find(button => button.text() === '替换')!.attributes('disabled')).toBeUndefined()
+    await w.get('[aria-label="下一个匹配"]').trigger('click')
+    instance.replaceAll()
+    expect(e.getJSON()).toEqual(before)
+    const done = w.emitted('upload-image')![0]![1] as (url: string, name: string) => void
+    done('/api/images/replace-safe/raw', '保留位置.png'); await flushPromises()
+    expect(w.get('.md-body img').attributes('src')).toBe('/api/images/replace-safe/raw')
+    expect(all().attributes('disabled')).toBeUndefined()
+    expect(all().attributes('aria-describedby')).toBeUndefined()
+    const withImage = e.getJSON()
+    await all().trigger('click')
+    expect(e.getText()).toContain('beta beta')
+    expect(w.findAll('.md-body img')).toHaveLength(1)
+    e.commands.undo(); await nextTick()
+    expect(e.getJSON()).toEqual(withImage)
+    w.unmount()
+  })
+
+  it('输入法确认不触发跳转，编辑正文后重新统计最新命中', async () => {
+    const w = await mountEditor({ modelValue: '桂花 桂花', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue('桂花')
+    await w.get('[aria-label="查找内容"]').trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(w.get('.find-status').text()).toBe('1 / 2')
+    e.commands.setContent('<p>桂花</p>')
+    await vi.waitFor(() => expect(w.get('.find-status').text()).toBe('1 / 1'))
+    w.unmount()
+  })
+
+  it('万级命中限制装饰节点但保留全部导航、替换和单步撤销', async () => {
+    const w = await mountEditor({ modelValue: 'word '.repeat(10_000), advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    await w.vm.openSearch()
+    await w.get('[aria-label="查找内容"]').setValue('word')
+    expect(w.get('.find-status').text()).toBe('1 / 10000')
+    expect(w.findAll('.content-search-match').length).toBeLessThanOrEqual(500)
+    await w.get('[aria-label="上一个匹配"]').trigger('click')
+    expect(w.get('.find-status').text()).toBe('10000 / 10000')
+    expect(e.state.selection.from).toBeGreaterThan(49_990)
+    await w.get('[aria-label="替换内容"]').setValue('字')
+    await w.findAll('button').find(button => button.text() === '全部替换')!.trigger('click')
+    expect(e.getText().match(/字/g)).toHaveLength(10_000)
+    expect(e.getText()).not.toContain('word')
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(before)
+    w.unmount()
+  }, 20_000)
+
+  it('过长查找词有明确反馈，空查询不能替换正文', async () => {
+    const w = await mountEditor({ modelValue: '原文保留', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.vm.focusSearch('词'.repeat(1001))
+    expect(w.get('.find-status').text()).toContain('查找内容过长')
+    await w.get('[aria-label="查找内容"]').setValue('')
+    const all = w.findAll('button').find(button => button.text() === '全部替换')!
+    expect(all.attributes('disabled')).toBeDefined()
+    expect(w.find('.content-search-match').exists()).toBe(false)
+    expect(e.getText()).toBe('原文保留')
+    expect(w.emitted('content-change')).toBeUndefined()
+    w.unmount()
+  })
+})
+
+it('工具栏插入菜单可搜索并用键盘选择，取消不会改正文', async () => {
+  const w = await mountEditor({ modelValue: '', advanced: true })
+  const e = (w.vm as unknown as { editor: Editor }).editor
+  await w.get('button[title="更多内容块（输入 / 也可打开）"]').trigger('click')
+  const input = document.querySelector<HTMLInputElement>('[aria-label="搜索内容块"]')!
+  expect(document.activeElement).toBe(input)
+  input.value = '不存在的块'; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  expect(document.querySelector('.slash-empty')?.textContent).toContain('没有匹配')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await nextTick()
+  expect(document.querySelector('.slash-menu')).toBeNull()
+  expect(e.getText()).toBe('')
+  await w.get('button[title="更多内容块（输入 / 也可打开）"]').trigger('click')
+  const second = document.querySelector<HTMLInputElement>('[aria-label="搜索内容块"]')!
+  second.value = 'code'; second.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  expect(document.querySelectorAll('.slash-option')).toHaveLength(1)
+  expect(document.getElementById(second.getAttribute('aria-activedescendant')!)?.textContent).toContain('代码块')
+  second.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await nextTick()
+  expect(e.isActive('codeBlock')).toBe(true)
+  w.unmount()
+})
+
 
 describe('拖入文档附件', () => {
+  it('空文档图片先上传完成不会使同次拖入附件的锚点失效', async () => {
+    setActivePinia(createPinia())
+    const w = await mountEditor({ modelValue: '', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'posAtCoords').mockReturnValue({ pos: 1, inside: 0 })
+    const files = [new File(['file'], '说明.pdf', { type: 'application/pdf' }), new File(['image'], '图.png', { type: 'image/png' })]
+    const event = { dataTransfer: { files }, clientX: 0, clientY: 0 } as unknown as DragEvent
+    e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, false))
+    const imageDone = w.emitted('upload-image')![0]![1] as (url: string, name: string) => void
+    imageDone('/api/images/mixed/raw', '图.png'); await flushPromises()
+    const fileDone = w.emitted('upload-file')![0]![1] as (item: unknown) => void
+    fileDone({ id: 'mixed-file', name: '说明.pdf', contentType: 'application/pdf' }); await nextTick()
+    expect(e.getJSON().content?.map(node => node.type)).toEqual(['image', 'fileCard', 'paragraph'])
+    expect(w.vm.hasPendingUploads()).toBe(false)
+    w.unmount()
+  })
+
+  it('排队附件绑定入队时的文档，切文后不会继续上传并插入旧队列', async () => {
+    const w = await mountEditor({ modelValue: '第一篇文档', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'posAtCoords').mockReturnValue({ pos: 3, inside: 0 })
+    const files = [new File(['a'], '第一篇-A.pdf', { type: 'application/pdf' }), new File(['b'], '第一篇-B.pdf', { type: 'application/pdf' })]
+    const event = { dataTransfer: { files }, clientX: 0, clientY: 0 } as unknown as DragEvent
+    e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, false))
+    expect(w.emitted('upload-file')).toHaveLength(1)
+    await w.setProps({ modelValue: '第二篇文档' })
+    expect(w.vm.hasPendingUploads()).toBe(false)
+    const done = w.emitted('upload-file')![0]![1] as (item: unknown) => void
+    done({ id: 'f1', name: files[0]!.name, contentType: 'application/pdf' }); await nextTick()
+    expect(w.emitted('upload-file')).toHaveLength(1)
+    expect(e.getText()).toBe('第二篇文档')
+    expect(w.find('.upload-queue').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('批量附件在原位置连续插入，光标移动与失败重试不重新绑定位置', async () => {
+    const w = await mountEditor({ modelValue: '第一段\n\n第二段', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'posAtCoords').mockReturnValue({ pos: 4, inside: 0 })
+    const files = [new File(['a'], 'A.pdf', { type: 'application/pdf' }), new File(['b'], 'B.pdf', { type: 'application/pdf' })]
+    const event = { dataTransfer: { files }, clientX: 0, clientY: 0 } as unknown as DragEvent
+    e.view.someProp('handleDrop', handler => handler(e.view, event, null as never, false))
+    e.commands.insertContentAt(1, '前置')
+    e.commands.setTextSelection(e.state.doc.content.size - 1)
+    const first = w.emitted('upload-file')![0]![1] as (item: unknown) => void
+    first(null); await nextTick()
+    const second = w.emitted('upload-file')![1]![1] as (item: unknown) => void
+    second({ id: 'b', name: 'B.pdf', contentType: 'application/pdf' }); await nextTick()
+    await w.get('.upload-queue button').trigger('click')
+    const retry = w.emitted('upload-file')![2]![1] as (item: unknown) => void
+    retry({ id: 'a', name: 'A.pdf', contentType: 'application/pdf' }); await nextTick()
+    const content = e.getJSON() as RichDocNode
+    expect(content.content?.map(node => node.type)).toEqual(['paragraph', 'fileCard', 'fileCard', 'paragraph'])
+    expect(content.content?.[0]?.content?.[0]?.text).toBe('前置第一段')
+    expect(content.content?.[3]?.content?.[0]?.text).toBe('第二段')
+    expect(w.vm.hasPendingUploads()).toBe(false)
+    w.unmount()
+  })
+
   it('混合文件拖入同时上传图片和附件，失败可以重试并保存卡片', async () => {
     const w = await mountEditor({ modelValue: '正文', advanced: true })
     const e = (w.vm as unknown as { editor: Editor }).editor

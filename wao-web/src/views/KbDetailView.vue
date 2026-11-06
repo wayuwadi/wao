@@ -9,15 +9,21 @@ import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import KnowledgeDirectoryTree from '@/components/knowledge/KnowledgeDirectoryTree.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
-import { apiMoveKnowledgeNode, fetchDoc as fetchMovedDoc } from '@/api/board'
+import { useDocumentOutline } from '@/composables/documentOutline'
+import { documentMarkdown, downloadDocumentMarkdown } from '@/utils/documentExport'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
 import { directoryParents, directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 /**
  * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
  *
- * 文档不再有「查看 / 编辑」两态 —— 打开就能写，跟任务描述一个手感（ADR-015）。
+ * 默认打开就能写（ADR-015）；阅读模式只关闭同一编辑器的输入，不重建正文。
  * 输入停顿即自动保存，右上角显示保存状态与此刻同在这篇文档里的人（ADR-017）。
  */
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -40,7 +46,6 @@ import { useNow } from '@/composables/now'
 import ResourceMenu from '@/components/ui/ResourceMenu.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import {
-  apiPatchKb,
   apiCreateDocTemplate,
   apiDeleteDocTemplate,
   apiPatchDocTemplate,
@@ -60,6 +65,7 @@ const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
 const session = useSessionStore()
+const currentIdentity = () => JSON.stringify([session.account?.accountId, session.userId])
 const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
@@ -73,24 +79,95 @@ const navigationComposition = useInputComposition()
 const directoryTrigger = ref<HTMLButtonElement | null>(null)
 const directoryPanel = ref<HTMLElement | null>(null)
 const outlinePanel = ref<HTMLElement | null>(null)
+const documentPane = ref<HTMLElement | null>(null)
+const outlineFloating = ref(false)
+const outlineManual = ref(false)
+const outlineVisible = computed(() => tocOpen.value && (isMobile.value || !outlineFloating.value || outlineManual.value) && !focused.value)
+let paneObserver: ResizeObserver | undefined
+watch(documentPane, element => {
+  paneObserver?.disconnect()
+  if (!element) return
+  const update = () => {
+    if (element.clientWidth) outlineFloating.value = element.clientWidth <= 1000
+    fitTitle()
+  }
+  update()
+  if (typeof ResizeObserver !== 'undefined') { paneObserver = new ResizeObserver(update); paneObserver.observe(element) }
+}, { flush: 'post' })
+onBeforeUnmount(() => paneObserver?.disconnect())
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
+const emit = defineEmits<{ 'focus-change': [focused: boolean] }>()
+const reading = ref(false)
+const focused = ref(false)
+const shortcutsOpen = ref(false)
+const characterCount = ref(0)
+const documentEditor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
+const modeTrigger = ref<HTMLButtonElement | null>(null)
+const focusTrigger = ref<HTMLButtonElement | null>(null)
+watch(focused, value => emit('focus-change', value), { flush: 'sync' })
+function toggleReading() {
+  if (!reading.value && documentEditor.value?.hasPendingUploads?.()) {
+    toast('图片或附件仍在上传，完成后再切换阅读', 'ri-upload-cloud-line')
+    return
+  }
+  documentEditor.value?.dismissTransientUi?.()
+  flushCurrentDoc()
+  reading.value = !reading.value
+}
+function toggleFocus() { focused.value = !focused.value }
+const documentShortcuts = [
+  ['Ctrl / ⌘ + S', '立即保存当前文档'],
+  ['Ctrl / ⌘ + F', '查找文档内容（正文内）'],
+  ['Ctrl / ⌘ + K', '插入或编辑链接'],
+  ['Ctrl / ⌘ + Z', '撤销编辑'],
+  ['/', '在空白段落插入内容块'],
+  ['Alt + Shift + F', '进入或退出专注'],
+  ['Esc', '关闭当前浮层或退出专注'],
+]
+function onWorkspaceKeydown(event: KeyboardEvent) {
+  if (event.defaultPrevented || navigationComposition.active(event)) return
+  if (event.key === 'Escape' && mobileDirectoryOpen.value) { event.preventDefault(); closeMobileDirectory(); return }
+  if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'f' && pageType.value === 'document' && doc.value) {
+    event.preventDefault(); toggleFocus()
+  } else if (event.key === 'Escape' && focused.value && !shareMenu.value && !moreMenuOpen.value && !shortcutsOpen.value
+    && !(event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"], [role="listbox"], .find-panel'))) {
+    focused.value = false
+    event.preventDefault()
+    nextTick(() => focusTrigger.value?.focus())
+  }
+}
+async function copyMarkdown() {
+  if (!doc.value) return
+  moreMenuOpen.value = false
+  const copied = await copyToClipboard(documentMarkdown(doc.value.title, body.value))
+  toast(copied ? '已复制当前文档的 Markdown' : '复制失败，请重试或导出 Markdown', copied ? 'ri-check-line' : 'ri-error-warning-line')
+}
+function exportMarkdown() {
+  if (!doc.value) return
+  moreMenuOpen.value = false
+  try { downloadDocumentMarkdown(doc.value.title, body.value) }
+  catch { toast('导出失败，请重试；文档内容未改变', 'ri-error-warning-line') }
+}
 
 const kbId = computed(() => String(route.params.id || route.query.kb || ''))
+let workspaceGeneration = 0
 const directoryWidth = ref(262)
 const paneMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
 const directoryCollapsed = computed({ get: () => isMobile.value ? !mobileDirectoryOpen.value : paneMemory.value.collapsed, set: value => { if (isMobile.value) mobileDirectoryOpen.value = !value; else paneMemory.value.collapsed = value } })
+const directoryVisible = computed(() => !focused.value && !directoryCollapsed.value)
+function closeMobileDirectory() { closeDirectory() }
 const kb = computed(() => data.kbById(kbId.value))
+watch(kb, library => { if (!library) { focused.value = false; reading.value = false } })
 
-const firstDocId = () => {
-  for (const f of kb.value?.folders ?? []) if (f.docs.length) return f.docs[0]!
-  return null
-}
 const docId = ref<string | null>((route.query.doc as string) || null)
+let documentNavigationRequest = 0
 // 桌面按篇展开；手机优先阅读正文，不把临时面板选择写入桌面偏好。
-watch(docId, () => { mobileTocOpen.value = false; if (!isMobile.value) desktopTocOpen.value = true; closeDirectory() })
+watch(docId, () => { mobileTocOpen.value = false; if (!isMobile.value) desktopTocOpen.value = true; outlineManual.value = false; focused.value = false; characterCount.value = 0; closeDirectory() })
 watch(isMobile, () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
 watch([() => session.account?.accountId, () => session.userId, pageVisible], () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
 watch(() => props.navigationHidden, hidden => { if (hidden) { mobileTocOpen.value = false; mobileDirectoryOpen.value = false } })
 watch(kbId, () => { mobileTocOpen.value = false; closeDirectory() })
+watch(() => session.userId, () => { focused.value = false; reading.value = false })
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const toolbarHost = ref<HTMLElement | null>(null)
@@ -113,7 +190,8 @@ async function toggleDirectory() {
   directoryPanel.value?.querySelector<HTMLButtonElement>('.mobile-directory-close')?.focus({ preventScroll: true })
 }
 async function toggleOutline() {
-  if (tocOpen.value) { closeOutline(); return }
+  if (outlineVisible.value) { closeOutline(); return }
+  outlineManual.value = true
   tocOpen.value = true
   if (!isMobile.value) return
   mobileDirectoryOpen.value = false
@@ -134,7 +212,18 @@ function navigationKeydown(event: KeyboardEvent, pane: 'directory' | 'outline') 
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
-const titleEl = ref<HTMLInputElement | null>(null)
+const titleEl = ref<HTMLTextAreaElement | null>(null)
+function fitTitle() {
+  const input = titleEl.value
+  if (!input) return
+  input.style.height = 'auto'
+  input.style.height = `${Math.max(input.scrollHeight, 42)}px`
+}
+function onTitleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing) return
+  event.preventDefault()
+  scrollEl.value?.querySelector<HTMLElement>('.doc-body .tiptap[contenteditable="true"]')?.focus()
+}
 watch([titleEl, () => route.query.findRequest, () => route.query.find, () => route.query.match, () => route.query.doc], async () => {
   if (route.query.match !== 'title' || typeof route.query.find !== 'string') return
   await nextTick()
@@ -172,6 +261,7 @@ const now = useNow()
 watch(
   () => [kbId.value, route.query.doc],
   () => {
+    documentNavigationRequest++
     flushCurrentDoc()
     docId.value = typeof route.query.doc === 'string' ? route.query.doc : null
   },
@@ -182,6 +272,7 @@ const doc = computed(() => (docId.value && data.docById(docId.value)
   && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
 const pageType = computed(() => base.value?.pageType ?? 'document')
+watch([titleEl, () => doc.value?.title, contentWidth, directoryCollapsed, focused], async () => { await nextTick(); fitTitle() }, { flush: 'post' })
 function pageIcon(id: string) { return ({ spreadsheet: 'ri-table-line', drawing: 'ri-artboard-line', document: 'ri-file-text-line' })[data.docById(id)?.pageType ?? 'document'] }
 const editingPrivateNote = computed(() => kbId.value === 'kb-notes' || base.value?.kbId === 'kb-notes')
 // 同一知识库仍复用一个页签，标题和地址指向当前文档，避免与“小记”模块同名。
@@ -195,6 +286,7 @@ const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived
 
 let archiveRequest = 0
 let archiveLoadingKb = ''
+let archiveLoaded = false
 async function loadArchivedDocs() {
   const targetKb = kbId.value
   if (!data.apiLive || (archivedLoading.value && archiveLoadingKb === targetKb)) return
@@ -206,6 +298,7 @@ async function loadArchivedDocs() {
     const loaded = await data.refreshArchivedDocs(targetKb)
     if (request !== archiveRequest || kbId.value !== targetKb) return
     archivedError.value = !loaded
+    archiveLoaded = loaded
     if (docId.value && data.isDocArchived(docId.value)) archivedOpen.value = true
   } catch {
     if (request === archiveRequest && kbId.value === targetKb) archivedError.value = true
@@ -213,9 +306,16 @@ async function loadArchivedDocs() {
     if (request === archiveRequest) archivedLoading.value = false
   }
 }
-watch([() => data.apiLive, kbId], ([live]) => {
-  if (live) void loadArchivedDocs()
+watch([kbId, currentIdentity], () => {
+  archiveRequest++
+  archiveLoaded = false
+  archivedOpen.value = false; archivedLoading.value = false; archivedError.value = false
+}, { flush: 'sync' })
+watch([() => data.apiLive, kbId, docId], ([live]) => {
+  // Most visits use the active directory. Fetch archives only on demand or for an archive deep link.
+  if (live && docId.value && !kb.value?.folders.some(folder => folder.docs.includes(docId.value!))) void loadArchivedDocs()
 }, { immediate: true })
+watch(archivedOpen, open => { if (!open) archiveLoaded = false; else if (!archiveLoaded) void loadArchivedDocs() })
 const author = computed(() => {
   if (base.value?.systemGenerated) return { name: '系统', initial: '系', color: '#7A5CC6' }
   const a = base.value?.author ?? ''
@@ -292,8 +392,33 @@ const backlinks = computed(() =>
 )
 
 /** 目录展示一至三级标题；旧文档标题没有层级时按二级处理。 */
-const toc = computed(() => doc.value ? richHeadings(doc.value.content).filter((item) => item.level <= 3) : [])
-const activeToc = ref(0)
+const storedHeadings = computed(() => doc.value ? richHeadings(doc.value.content) : [])
+const { activeIndex: activeToc, progress: readingProgress, renderedHeadings, onScroll: onDocScroll, goTo: goToHeading, toTop: backToTop } = useDocumentOutline(scrollEl, () => [docId.value, storedHeadings.value])
+// Once mounted, use the actual editor headings: setext, quotes and nested blocks share one order with scrolling.
+function tocGo(index: number) { goToHeading(index); if (isMobile.value) closeOutline() }
+const toc = computed(() => renderedHeadings.value ?? storedHeadings.value)
+const parentMap = computed(() => kb.value ? directoryParents(kb.value) : {})
+const docBreadcrumb = computed(() => {
+  const path: { key: string; title: string; id: string; document: boolean }[] = []
+  const visited = new Set<string>()
+  let key = parentMap.value[`d:${docId.value}`]
+  while (key && !visited.has(key)) {
+    visited.add(key)
+    const id = key.slice(2), document = key.startsWith('d:')
+    path.unshift({ key, id, document, title: document ? documentTitle(id) : kb.value?.folders.find(folder => folder.id === id)?.name ?? '' })
+    key = parentMap.value[key]
+  }
+  return path
+})
+async function goBreadcrumb(item: { key: string; id: string; document: boolean }) {
+  if (item.document) { await selectDoc(item.id); return }
+  focused.value = false
+  if (!isMobile.value) directoryCollapsed.value = false
+  mobileDirectoryOpen.value = isMobile.value; treeQuery.value = ''; folderOpen[item.key] = true
+  await nextTick()
+  const target = Array.from(treeElement.value?.querySelectorAll<HTMLButtonElement>('[data-node]') ?? []).find(node => node.dataset.node === item.key)
+  target?.scrollIntoView?.({ block: 'nearest' }); target?.focus()
+}
 
 const folderStates = computed(() => ({ ...(kb.value && !kb.value.notes ? groupLevelExpansion(kb.value) : {}), ...folderOpen }))
 function isOpen(fid: string) {
@@ -351,13 +476,17 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('pagehide', flushCurrentDoc)
   flushCurrentDoc()
+  emit('focus-change', false)
 })
 function preloadSheet(id: string) {
   if (data.docById(id)?.pageType === 'spreadsheet') void loadSheetRuntime().catch(() => {})
 }
 async function selectDoc(id: string) {
-  if (id === docId.value) { closeDirectory(); return }
+  closeDirectory()
+  const request = ++documentNavigationRequest, generation = workspaceGeneration
+  if (id === docId.value) return
   await flushSheet()
+  if (generation !== workspaceGeneration || request !== documentNavigationRequest) return
   flushCurrentDoc()
   docId.value = id
   void router.replace({ query: { ...route.query, doc: id } })
@@ -388,17 +517,20 @@ const templatePickerOpen = ref(false)
 async function createDocFrom(templateId?: string, type: 'document' | 'spreadsheet' | 'drawing' = 'document') {
   const folderId = newDocFolderId.value
   if (!folderId || creatingDoc.value) return
+  const targetKb = kbId.value, generation = workspaceGeneration, parent = newDocParent.value
   creatingDoc.value = true
-  const id = await data.addDoc(kbId.value, folderId, templateId, type)
+  const id = await data.addDoc(targetKb, folderId, templateId, type)
+  if (generation !== workspaceGeneration) return
   creatingDoc.value = false
   if (id) {
     newDocFolderId.value = null
     folderOpen[`f:${folderId}`] = true
-    if (newDocParent.value) { await moveNode(newDocParent.value, `d:${id}`); newDocParent.value = null }
+    if (parent) { await moveNode(parent, `d:${id}`); newDocParent.value = null }
+    if (generation !== workspaceGeneration) return
     selectDoc(id)
     toast(type === 'drawing' ? '已创建画板，可在草图中打开' : type === 'spreadsheet' ? '已创建表格' : templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
-    nextTick(() => titleEl.value?.focus())
+    nextTick(() => { if (docId.value === id) titleEl.value?.focus() })
   } else {
     toast('文档没有保存到服务器，请重试', 'ri-error-warning-line')
   }
@@ -412,6 +544,15 @@ const templateError = ref('')
 const templateManagerOpen = ref(false)
 const saveTemplateOpen = ref(false)
 const savingTemplate = ref(false)
+const saveTemplateError = ref('')
+let templateGeneration = 0
+let templateRequest = 0
+let templateSaveRequest = 0
+watch([docId, kbId, currentIdentity], () => {
+  templateSaveRequest++
+  saveTemplateOpen.value = false; savingTemplate.value = false; saveTemplateError.value = ''
+}, { flush: 'sync' })
+function invalidateTemplateListRequest() { templateRequest++; templateLoading.value = false }
 const templateForm = reactive({ name: '', description: '' })
 const editingTemplateId = ref<string | null>(null)
 const editingTemplateSaving = ref(false)
@@ -548,29 +689,45 @@ watch(
 )
 
 async function loadTemplates() {
-  if (!data.apiLive) return
+  if (!data.apiLive || templateLoading.value) return
+  const generation = templateGeneration, request = ++templateRequest
   templateLoading.value = true
   templateError.value = ''
   try {
-    templates.value = await fetchDocTemplates()
+    const result = await fetchDocTemplates()
+    if (generation === templateGeneration && request === templateRequest) templates.value = result
   } catch {
-    templateError.value = '模板加载失败，请重试'
+    if (generation === templateGeneration && request === templateRequest) templateError.value = '模板加载失败，请重试'
   } finally {
-    templateLoading.value = false
+    if (generation === templateGeneration && request === templateRequest) templateLoading.value = false
   }
 }
-// AppLayout 在子页面挂载后才异步 hydrate；服务端连通的那一刻再拉模板，不能只看首次 mounted。
-watch(() => data.apiLive, (live) => {
-  if (live) void loadTemplates()
+watch([() => data.apiLive, templatePickerOpen, templateManagerOpen], ([live, picker, manager]) => {
+  if (live && (picker || manager)) void loadTemplates()
 }, { immediate: true })
+watch(currentIdentity, () => {
+  templateGeneration++; templateRequest++
+  hydratingTemplateEdit = true
+  editingTemplateId.value = null
+  templates.value = []
+  templateLoading.value = false; templateError.value = ''; saveTemplateError.value = ''
+  templateManagerOpen.value = false; templatePickerOpen.value = false; saveTemplateOpen.value = false
+  savingTemplate.value = false; editingTemplateSaving.value = false; templateConflictRefreshing.value = false
+  hydratingTemplateEdit = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => { templateGeneration++; templateRequest++ })
 function openSaveTemplate() {
   templateForm.name = `${doc.value?.title || '未命名文档'}模板`
   templateForm.description = ''
+  saveTemplateError.value = ''
   saveTemplateOpen.value = true
 }
 async function saveAsTemplate() {
   if (!docId.value || !templateForm.name.trim() || savingTemplate.value) return
+  const generation = templateGeneration
+  const request = ++templateSaveRequest
   savingTemplate.value = true
+  saveTemplateError.value = ''
   try {
     const created = await apiCreateDocTemplate({
       name: templateForm.name.trim(),
@@ -579,13 +736,15 @@ async function saveAsTemplate() {
       blocks: doc.value?.blocks ?? [],
       content: doc.value?.content,
     })
+    if (generation !== templateGeneration) return
+    invalidateTemplateListRequest()
     templates.value.push(created)
-    saveTemplateOpen.value = false
+    if (request === templateSaveRequest) saveTemplateOpen.value = false
     toast('已另存为模板，可在新建文档时直接选择', 'ri-file-copy-2-line')
   } catch {
-    toast('模板没有保存成功，请重试', 'ri-error-warning-line')
+    if (generation === templateGeneration && request === templateSaveRequest) saveTemplateError.value = '模板没有保存成功，名称和说明已保留，请重试。'
   } finally {
-    savingTemplate.value = false
+    if (generation === templateGeneration && request === templateSaveRequest) savingTemplate.value = false
   }
 }
 function mayLeaveTemplateEdit() {
@@ -632,6 +791,7 @@ async function saveTemplateMeta(template: DocTemplate) {
     || editingTemplateSaving.value
     || templateEditState.value === 'conflict') return
   persistTemplateDraft(template)
+  const generation = templateGeneration
   editingTemplateSaving.value = true
   templateEditState.value = 'saving'
   try {
@@ -642,7 +802,11 @@ async function saveTemplateMeta(template: DocTemplate) {
       ...(editTemplateRichContent.value ? { content: editTemplateRichContent.value } : {}),
       expectedUpdatedAt: editingTemplateExpectedUpdatedAt.value,
     })
+    if (generation !== templateGeneration) return
+    invalidateTemplateListRequest()
     Object.assign(template, updated)
+    const listed = templates.value.find(item => item.id === template.id)
+    if (listed && listed !== template) Object.assign(listed, updated)
     hydratingTemplateEdit = true
     editTemplateForm.name = updated.name
     editTemplateForm.description = updated.description
@@ -656,27 +820,30 @@ async function saveTemplateMeta(template: DocTemplate) {
     templateDraftStorageError.value = false
     toast('模板名称、说明与正文已保存', 'ri-check-line')
   } catch (cause) {
+    if (generation !== templateGeneration) return
     editingTemplateSaving.value = false
     persistTemplateDraft(template)
     const conflict = cause instanceof Error && cause.message.includes('模板已被其他窗口更新')
     templateEditState.value = conflict ? 'conflict' : 'error'
     toast(conflict ? '服务器模板已有新版本，本机草稿已保留' : '模板修改失败，请重试', 'ri-error-warning-line')
   } finally {
-    editingTemplateSaving.value = false
+    if (generation === templateGeneration) editingTemplateSaving.value = false
   }
 }
 async function latestTemplateForConflict(templateId: string) {
   if (templateConflictRefreshing.value) return null
+  const generation = templateGeneration
   templateConflictRefreshing.value = true
   try {
     const latest = await fetchDocTemplates()
+    if (generation !== templateGeneration) return null
     templates.value = latest
     return latest.find((item) => item.id === templateId) ?? null
   } catch {
-    toast('服务器最新版没有加载成功，请重试', 'ri-error-warning-line')
+    if (generation === templateGeneration) toast('服务器最新版没有加载成功，请重试', 'ri-error-warning-line')
     return null
   } finally {
-    templateConflictRefreshing.value = false
+    if (generation === templateGeneration) templateConflictRefreshing.value = false
   }
 }
 async function discardConflictedTemplateDraft(templateId: string) {
@@ -704,24 +871,34 @@ async function confirmConflictedTemplateOverwrite(templateId: string) {
   persistTemplateDraft(latest)
   toast('已确认以本机草稿为准，请再次点击保存', 'ri-draft-line')
 }
-async function removeTemplate(template: DocTemplate) {
-  if (!window.confirm(`删除文档模板「${template.name}」？已用该模板创建的文档不会受影响。`)) return
-  try {
-    await apiDeleteDocTemplate(template.id)
+function removeTemplate(template: DocTemplate) {
+  const generation = templateGeneration
+  confirmAction({ title: '删除模板', description: `删除文档模板「${template.name}」？已用该模板创建的文档不会受影响。`, confirmLabel: '删除模板', run: async () => {
+    if (generation !== templateGeneration) return
+    try { await apiDeleteDocTemplate(template.id) }
+    catch { throw new Error('模板删除失败，内容仍然保留，请重试。') }
+    if (generation !== templateGeneration) return
+    invalidateTemplateListRequest()
     removeTemplateDraft(template.id)
     templates.value = templates.value.filter((item) => item.id !== template.id)
     toast(`已删除模板「${template.name}」`, 'ri-delete-bin-line')
-  } catch {
-    toast('模板删除失败，请重试', 'ri-error-warning-line')
-  }
+  } })
 }
 
 // ---- 文档树拖拽 ----
 
 const treeQuery = ref('')
-// 列表只读取标题及草稿覆盖，避免搜索/排序时重复转换整篇富文本。
+const treeSearchInput = ref<HTMLInputElement | null>(null)
+const treeFocusKey = ref('')
+// Body draft writes replace docEdits. Keep the title projection stable while typing body text.
+const directoryTitles = computed<Map<string, string>>(previous => {
+  const next = new Map<string, string>()
+  for (const folder of kb.value?.folders ?? []) for (const id of folder.docs) next.set(id, (data.docEdits[id]?.title ?? data.docById(id)?.title) || '未命名文档')
+  if (previous?.size === next.size && [...next].every(([id, title]) => previous.get(id) === title)) return previous
+  return next
+})
 function documentTitle(id: string): string {
-  return (data.docEdits[id]?.title ?? data.docById(id)?.title) || '未命名文档'
+  return directoryTitles.value.get(id) || (data.docEdits[id]?.title ?? data.docById(id)?.title) || '未命名文档'
 }
 const noteTimeOrder = ref<'desc' | 'asc'>('desc')
 function compareNoteTime(leftId: string, rightId: string): number {
@@ -740,7 +917,57 @@ const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderStates.value, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderStates.value, treeQuery.value, kb.value.notes ? compareNoteTime : undefined, { includeMatchedDescendants: true }) : [])
+const treeRenderLimit = ref(500)
+const renderedTreeRows = computed(() => mixedRows.value.slice(0, treeRenderLimit.value))
+watch([kbId, treeQuery], () => { treeRenderLimit.value = 500 }, { flush: 'sync' })
+const treeResultCount = computed(() => mixedRows.value.filter(node => node.kind === 'doc').length)
+watch(renderedTreeRows, rows => {
+  if (!rows.some(row => row.key === treeFocusKey.value)) treeFocusKey.value = rows.find(row => row.id === docId.value)?.key ?? rows[0]?.key ?? ''
+}, { immediate: true })
+async function focusTreeNode(key: string) {
+  const index = mixedRows.value.findIndex(node => node.key === key)
+  if (index >= treeRenderLimit.value) treeRenderLimit.value = Math.ceil((index + 1) / 500) * 500
+  treeFocusKey.value = key
+  await nextTick()
+  const target = Array.from(treeElement.value?.querySelectorAll<HTMLElement>('[data-node]') ?? []).find(node => node.dataset.node === key)
+  target?.focus({ preventScroll: true }); target?.scrollIntoView?.({ block: 'nearest' })
+}
+async function showMoreTreeRows() {
+  const firstNew = mixedRows.value[treeRenderLimit.value]?.key
+  treeRenderLimit.value += 500
+  if (firstNew) await focusTreeNode(firstNew)
+}
+function onTreeKeydown(event: KeyboardEvent) {
+  if (navigationComposition.active(event) || event.altKey || event.ctrlKey || event.metaKey) return
+  const key = (event.target as HTMLElement).closest<HTMLElement>('[data-node]')?.dataset.node
+  const index = mixedRows.value.findIndex(node => node.key === key)
+  const node = mixedRows.value[index]
+  if (!node) return
+  let next: string | undefined
+  switch (event.key) {
+    case 'ArrowDown': next = renderedTreeRows.value[Math.min(index + 1, renderedTreeRows.value.length - 1)]?.key; break
+    case 'ArrowUp': next = mixedRows.value[Math.max(0, index - 1)]?.key; break
+    case 'Home': next = mixedRows.value[0]?.key; break
+    case 'End': next = renderedTreeRows.value[renderedTreeRows.value.length - 1]?.key; break
+    case 'ArrowRight':
+      if (node.hasChildren && !isOpen(node.key) && !treeQuery.value.trim()) folderOpen[node.key] = true
+      else if (mixedRows.value[index + 1]?.parent === node.key) next = mixedRows.value[index + 1]?.key
+      break
+    case 'ArrowLeft':
+      if (node.hasChildren && isOpen(node.key) && !treeQuery.value.trim()) folderOpen[node.key] = false
+      else next = node.parent
+      break
+    default: return
+  }
+  event.preventDefault()
+  if (next) void focusTreeNode(next)
+}
+function onTreeSearchKeydown(event: KeyboardEvent) {
+  if (navigationComposition.active(event)) return
+  if (event.key === 'ArrowDown' && mixedRows.value[0]) { event.preventDefault(); void focusTreeNode(mixedRows.value[0].key) }
+  if (event.key === 'Escape' && treeQuery.value) { event.preventDefault(); event.stopPropagation(); treeQuery.value = '' }
+}
 const draggingNode = ref<string | null>(null)
 const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
 const directoryError = ref('')
@@ -761,12 +988,14 @@ function dragOverNode(key: string, event: DragEvent) {
   const row = event.currentTarget as HTMLElement
   const ratio = (event.clientY - row.getBoundingClientRect().top) / row.getBoundingClientRect().height
   const placement = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside'
-  const parents = directoryParents(kb.value)
+  const parents = parentMap.value
   const parent = placement === 'inside' ? key : parents[key] ?? ''
   if (node.startsWith('d:') && !parent) { dropTarget.value = null; return }
   let cursor = parent
+  const visited = new Set<string>()
   while (cursor) {
-    if (cursor === node) { dropTarget.value = null; return }
+    if (cursor === node || visited.has(cursor)) { dropTarget.value = null; return }
+    visited.add(cursor)
     cursor = parents[cursor] ?? ''
   }
   event.preventDefault()
@@ -801,6 +1030,7 @@ async function moveNode(parent: string, node = draggingNode.value, beforeSibling
 }
 async function persistNodeMove() {
   if (!pendingMove) return
+  const generation = workspaceGeneration
   const move = { ...pendingMove }
   const targetKb = data.kbById(move.kbId)
   if (!targetKb) return
@@ -808,47 +1038,44 @@ async function persistNodeMove() {
   treeSaveState.value = 'saving'
   try {
     const parents = directoryParents(targetKb)
-    const descendants = Object.keys(parents).filter(key => {
-      const seen = new Set<string>()
-      let cursor = key
-      while (cursor && !seen.has(cursor)) {
-        if (cursor === move.node) return true
-        seen.add(cursor); cursor = parents[cursor] ?? ''
-      }
-      return false
-    }).filter(key => key.startsWith('d:')).map(key => key.slice(2))
+    const children = new Map<string, string[]>()
+    for (const [key, parent] of Object.entries(parents)) {
+      const siblings = children.get(parent)
+      if (siblings) siblings.push(key); else children.set(parent, [key])
+    }
+    const descendants: string[] = [], pending = [move.node], visited = new Set<string>()
+    while (pending.length) {
+      const key = pending.pop()!
+      if (visited.has(key)) continue
+      visited.add(key)
+      if (key.startsWith('d:')) descendants.push(key.slice(2))
+      for (const child of children.get(key) ?? []) pending.push(child)
+    }
     for (const id of descendants) {
       if (data.docPending(id) && (!(await data.persistDocNow(id)) || data.docPending(id))) {
         throw new Error('请先完成文档保存，再重试移动目录')
       }
+      if (generation !== workspaceGeneration) return
     }
-    const previousFolders = new Map(descendants.map(id => [id, data.docById(id)?.folderId]))
-    const saved = await apiMoveKnowledgeNode(targetKb.id, move.node, move.parent, move.expectedParent, move.beforeSibling)
-    const currentKb = data.kbById(targetKb.id)
-    if (currentKb) Object.assign(currentKb, saved)
-    for (const folder of saved.folders) for (const id of folder.docs) {
-      const loaded = data.docById(id)
-      if (loaded) loaded.folderId = folder.id
-    }
+    const saved = await data.moveKnowledgeNode(targetKb.id, move.node, move.parent, move.expectedParent, move.beforeSibling)
+    if (generation !== workspaceGeneration) return
+    if (!saved) throw new Error('目录已变化')
     folderOpen[move.parent] = true
     treeSaveState.value = 'saved'
     pendingMove = null
-    if (data.apiLive) await Promise.all(descendants.filter(id => previousFolders.get(id)
-      && previousFolders.get(id) !== data.docById(id)?.folderId).map(async id => {
-        try { data.applyRemoteDoc(await fetchMovedDoc(id)) } catch { /* 协同心跳继续刷新，保留本机正文。 */ }
-      }))
   } catch {
+    if (generation !== workspaceGeneration) return
     treeSaveState.value = 'error'
     directoryError.value = '目录移动未完成，请先确认文档已保存后重试；若其他窗口已移动请刷新后重新选择'
   }
 }
 async function locateCurrentDoc() {
   treeQuery.value = ''
-  let ancestor = kb.value ? directoryParents(kb.value)[`d:${docId.value}`] : ''
+  let ancestor = parentMap.value[`d:${docId.value}`]
   const visited = new Set<string>()
-  while (ancestor && !visited.has(ancestor)) { visited.add(ancestor); folderOpen[ancestor] = true; ancestor = kb.value ? directoryParents(kb.value)[ancestor] : '' }
+  while (ancestor && !visited.has(ancestor)) { visited.add(ancestor); folderOpen[ancestor] = true; ancestor = parentMap.value[ancestor] }
   await nextTick()
-  treeElement.value?.querySelector(`[data-node="d:${docId.value}"]`)?.scrollIntoView({ block: 'nearest' })
+  await focusTreeNode(`d:${docId.value}`)
 }
 async function moveCurrentDoc(event: Event) {
   if (docId.value) await moveNode(`f:${(event.target as HTMLSelectElement).value}`, `d:${docId.value}`)
@@ -857,7 +1084,9 @@ async function moveCurrentDoc(event: Event) {
 
 const treeSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 async function addFolder() {
+  const generation = workspaceGeneration
   const id = await data.addFolder(kbId.value)
+  if (generation !== workspaceGeneration) return
   if (id) {
     startFolderRename(id)
     toast('已创建文件夹', 'ri-folder-add-line')
@@ -873,21 +1102,27 @@ async function commitFolderName(folderId: string) {
   const name = folderNameDraft.value.trim()
   if (!name) { folderRenameError.value = '名称不能为空'; return }
   folderRenameSaving.value = true
+  const generation = workspaceGeneration
   const saved = await data.renameFolder(kbId.value, folderId, name)
+  if (generation !== workspaceGeneration) return
   folderRenameSaving.value = false
   if (saved) { renamingFolder.value = null; folderRenameError.value = '' }
   else folderRenameError.value = '重命名失败，输入已保留，按回车重试'
 }
-async function removeFolder(folderId: string) {
+function removeFolder(folderId: string) {
   const folder = kb.value?.folders.find((f) => f.id === folderId)
   if (!folder) return
-  const archivedCount = archivedDocs.value.filter((item) => item.folderId === folderId).length
-  if (!window.confirm(`删除文件夹「${folder.name}」及其中 ${folder.docs.length + archivedCount} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
-  const gone = folder.docs.includes(docId.value ?? '')
-  try { await data.deleteFolder(kbId.value, folderId) }
-  catch { toast('删除失败，请先移出子分组后重试，目录未改变', 'ri-error-warning-line'); return }
-  if (gone) docId.value = firstDocId()
-  toast(`已把「${folder.name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  const targetKb = kbId.value
+  const identity = currentIdentity()
+  confirmAction({ title: '删除文件夹', description: `将「${folder.name}」及其中全部文档（包括已归档）放入回收站？7 天内可恢复。`, confirmLabel: '移入回收站', run: async () => {
+    if (identity !== currentIdentity()) return
+    const removedDoc = base.value?.folderId === folderId || folder.docs.includes(docId.value ?? '') ? docId.value : null
+    try { await data.deleteFolder(targetKb, folderId) }
+    catch { throw new Error('删除失败，请先移出子分组后重试。目录和文档仍然保留。') }
+    if (identity !== currentIdentity()) return
+    if (removedDoc && docId.value === removedDoc && kbId.value === targetKb) await goHome()
+    toast(`已把「${folder.name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  } })
 }
 /**
  * 删掉整个知识库并回到列表。
@@ -895,73 +1130,65 @@ async function removeFolder(folderId: string) {
  * <p>入口放在这里是因为：新建知识库后会直接进详情页，此前想删只能退回列表、
  * 在卡片上找齿轮 —— 找不到就等于删不掉。删除同样是软删除，7 天内可恢复。
  */
-async function removeKb() {
+function removeKb() {
   const target = kb.value
   if (!target) return
-  const requestMember = session.userId
-  const requestAccount = session.account?.accountId
-  const docTotal = target.folders.reduce((total, folder) => total + folder.docs.length, 0)
-    + archivedDocs.value.length
-  if (!window.confirm(`删除知识库「${target.name}」及其中 ${docTotal} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
   const name = target.name
-  try { await data.deleteKb(target.id) }
-  catch { toast('删除失败，知识库和文档已保留，请重试', 'ri-error-warning-line'); return }
-  if (requestMember !== session.userId || requestAccount !== session.account?.accountId) return
-  const next = tabs.close(`kb:${kbId.value}`)
-  await router.push(next?.path ?? '/knowledge')
-  toast(`已把「${name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  const identity = currentIdentity()
+  confirmAction({ title: '删除知识库', description: `将「${name}」及其中全部文档（包括已归档）放入回收站？7 天内可恢复。`, confirmLabel: '移入回收站', run: async () => {
+    if (identity !== currentIdentity()) return
+    try { await data.deleteKb(target.id) }
+    catch { throw new Error('知识库删除失败，内容仍然保留，请重试。') }
+    if (identity !== currentIdentity()) return
+    if (kbId.value === target.id) kbSettingsOpen.value = false
+    const next = tabs.close(`kb:${target.id}`)
+    if (kbId.value === target.id) await router.push(next?.path ?? '/knowledge?home=1')
+    toast(`已把「${name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  } })
 }
 
-async function removeDoc(id: string) {
+function removeDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
-  if (!window.confirm(`删除文档「${title}」？删除后会进入回收站，7 天内可恢复。`)) return
-  try { await data.deleteDoc(id) }
-  catch { toast('删除失败，请先移出子节点后重试，文档未改变', 'ri-error-warning-line'); return }
-  if (docId.value === id) docId.value = firstDocId()
-  toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  const identity = currentIdentity()
+  confirmAction({ title: '删除文档', description: `将「${title}」放入回收站？7 天内可恢复。`, confirmLabel: '移入回收站', run: async () => {
+    if (identity !== currentIdentity()) return
+    try { await data.deleteDoc(id) }
+    catch { throw new Error('删除失败，请先移出子节点后重试。文档仍然保留。') }
+    if (identity !== currentIdentity()) return
+    if (docId.value === id) await goHome()
+    toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+  } })
 }
-async function archiveDoc(id: string) {
+function archiveDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
-  if (!window.confirm(`归档文档「${title}」？正文会长期保留，并可随时从“已归档”恢复。`)) return
-  if (await data.archiveDoc(id)) {
-    archivedOpen.value = true
+  const identity = currentIdentity()
+  const targetKb = kbId.value
+  confirmAction({ title: '归档文档', danger: false, confirmLabel: '归档', description: `归档「${title}」后正文会长期保留，可随时从“已归档”恢复。`, run: async () => {
+    if (identity !== currentIdentity()) return
+    await flushSheet()
+    if (identity !== currentIdentity()) return
+    if (data.docPending(id)) await data.persistDocNow(id)
+    if (identity !== currentIdentity()) return
+    if (data.docPending(id) || data.saveState(`doc:${id}`).failed) throw new Error('请先保存文档再归档，当前草稿仍然保留。')
+    if (!await data.archiveDoc(id)) throw new Error('文档归档失败，内容和目录未改变，请重试。')
+    if (identity !== currentIdentity()) return
+    if (targetKb === kbId.value) archivedOpen.value = true
     toast(`已归档「${title}」`, 'ri-archive-line')
-  } else {
-    toast('文档归档失败，内容和目录未改变，请重试', 'ri-error-warning-line')
-  }
+  } })
 }
 async function unarchiveDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
-  if (await data.unarchiveDoc(id)) {
+  const generation = workspaceGeneration
+  const restored = await data.unarchiveDoc(id)
+  if (generation !== workspaceGeneration) return
+  if (restored) {
     const folderId = data.docById(id)?.folderId
-    if (folderId) folderOpen[folderId] = true
+    if (folderId) folderOpen[`f:${folderId}`] = true
     toast(`已把「${title}」恢复到原文件夹`, 'ri-inbox-unarchive-line')
   } else {
     toast('取消归档失败，文档仍在归档中，请重试', 'ri-error-warning-line')
   }
 }
-function tocGo(index: number) {
-  const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2, .doc-body h3')[index] as HTMLElement | undefined
-  const c = scrollEl.value
-  if (el && c)
-    c.scrollTop = Math.max(
-      0,
-      el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24,
-    )
-  if (isMobile.value) closeOutline()
-}
-function onDocScroll() {
-  const c = scrollEl.value
-  const headings = Array.from(c?.querySelectorAll('.doc-body h1, .doc-body h2, .doc-body h3') ?? []) as HTMLElement[]
-  if (!c || !headings.length) return
-  const top = c.getBoundingClientRect().top + 48
-  let passed = -1
-  headings.forEach((heading, index) => {
-    if (heading.getBoundingClientRect().top <= top) passed = index
-  })
-  activeToc.value = Math.max(0, passed)
-}
-
 /** 分享菜单开关（文档与小记共用同一个入口）。 */
 const exportingExcel = ref(false)
 async function exportSheetExcel() {
@@ -977,7 +1204,35 @@ async function exportSheetExcel() {
 }
 const shareMenu = ref(false)
 const moreMenuOpen = ref(false)
-watch(docId, () => { moreMenuOpen.value = false })
+const shareTrigger = ref<HTMLButtonElement | null>(null)
+const moreTrigger = ref<HTMLButtonElement | null>(null)
+const sharePanel = ref<HTMLElement | null>(null)
+const morePanel = ref<HTMLElement | null>(null)
+watch([shareMenu, moreMenuOpen], async ([share, more]) => {
+  await nextTick()
+  ;(share ? sharePanel.value : more ? morePanel.value : null)?.querySelector<HTMLElement>('button:not(:disabled), select:not(:disabled)')?.focus()
+})
+function onDocumentMenuKeydown(event: KeyboardEvent, type: 'share' | 'more') {
+  if (event.isComposing) return
+  const panel = type === 'share' ? sharePanel.value : morePanel.value
+  const close = () => { if (type === 'share') shareMenu.value = false; else moreMenuOpen.value = false }
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation(); close()
+    ;(type === 'share' ? shareTrigger.value : moreTrigger.value)?.focus()
+    return
+  }
+  if (event.target instanceof HTMLSelectElement) return
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  const items = Array.from(panel?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled)') ?? [])
+    .filter(item => getComputedStyle(item).display !== 'none')
+  if (!items.length) return
+  const current = items.indexOf(document.activeElement as HTMLElement)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+    : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+  event.preventDefault()
+  items[next]?.focus()
+}
+watch(docId, () => { moreMenuOpen.value = false; shareMenu.value = false; shareNoteId.value = ''; saveTemplateOpen.value = false })
 async function copyOriginalLink() {
   if (!docId.value) return
   shareMenu.value = false; moreMenuOpen.value = false
@@ -1046,6 +1301,8 @@ const homeFolderOpen = reactive<Record<string, boolean>>({})
 const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
 const homeOrder = ref<'directory' | 'updated' | 'title'>('directory')
 const homeSearch = computed(() => treeQuery.value.trim().toLocaleLowerCase())
+const homeDirectoryRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, homeFolderOpen, treeQuery.value, kb.value.notes ? compareNoteTime : undefined, { includeMatchedDescendants: true }) : [])
+const homeDirectoryMatches = computed(() => kb.value ? directoryRows(kb.value, documentTitle, {}, treeQuery.value, kb.value.notes ? compareNoteTime : undefined, { includeMatchedDescendants: true }) : [])
 const homeGroups = computed(() => {
   const groups = (kb.value?.folders ?? []).map(folder => ({
     id: folder.id,
@@ -1055,7 +1312,7 @@ const homeGroups = computed(() => {
       || documentTitle(id).toLocaleLowerCase().includes(homeSearch.value)),
   })).filter(folder => !homeSearch.value || folder.docs.length || folder.name.toLocaleLowerCase().includes(homeSearch.value))
   if (homeOrder.value === 'directory') return groups
-  const ids = [...new Set(groups.flatMap(folder => folder.docs))]
+  const ids = [...new Set(homeDirectoryMatches.value.filter(node => node.kind === 'doc').map(node => node.id))]
   const titleOf = documentTitle
   const timeOf = (id: string) => Date.parse(data.docById(id)?.updated || data.docById(id)?.created || '') || 0
   ids.sort((a, b) => homeOrder.value === 'updated'
@@ -1063,13 +1320,16 @@ const homeGroups = computed(() => {
     : titleOf(a).localeCompare(titleOf(b), 'zh-CN', { numeric: true }))
   return ids.length ? [{ id: `sorted:${homeOrder.value}`, name: homeOrder.value === 'updated' ? '最近更新' : '按名称', docs: ids }] : []
 })
-const homeResultCount = computed(() => homeGroups.value.reduce((total, group) => total + group.docs.length, 0))
-const allHomeGroupsOpen = computed(() => homeGroups.value.every(group => homeFolderOpen[group.id] !== false))
+const homeResultCount = computed(() => homeOrder.value === 'directory' ? homeDirectoryMatches.value.filter(node => node.kind === 'doc').length : homeGroups.value.reduce((total, group) => total + group.docs.length, 0))
+const allHomeGroupsOpen = computed(() => homeOrder.value === 'directory'
+  ? homeDirectoryRows.value.filter(node => node.hasChildren).every(node => homeFolderOpen[node.key] !== false)
+  : homeGroups.value.every(group => homeFolderOpen[group.id] !== false))
 function toggleHomeGroups() {
   const expand = !allHomeGroupsOpen.value
-  for (const group of homeGroups.value) homeFolderOpen[group.id] = expand
+  if (homeOrder.value === 'directory') for (const key of Object.keys(parentMap.value)) homeFolderOpen[key] = expand
+  else for (const group of homeGroups.value) homeFolderOpen[group.id] = expand
 }
-watch(kbId, () => { treeQuery.value = ''; homeOrder.value = 'directory' })
+watch(kbId, () => { treeQuery.value = ''; homeOrder.value = 'directory'; for (const key of Object.keys(homeFolderOpen)) delete homeFolderOpen[key] })
 // 搜索结果始终可见，清空后恢复用户此前的折叠选择。
 function isHomeGroupOpen(id: string) { return !!homeSearch.value || homeFolderOpen[id] !== false }
 const kbSettingsOpen = ref(false)
@@ -1103,7 +1363,10 @@ const docItems = [
   { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
 ]
 async function goHome() {
+  mobileDirectoryOpen.value = false
+  const request = ++documentNavigationRequest, generation = workspaceGeneration
   await flushSheet()
+  if (generation !== workspaceGeneration || request !== documentNavigationRequest) return
   flushCurrentDoc()
   docId.value = null
   const query = { ...route.query }; delete query.doc
@@ -1115,10 +1378,13 @@ function switchKb(event: Event) {
 }
 async function createNested(action: string, parent: string) {
   if (creatingDoc.value || treeSaveState.value === 'saving' || !kb.value) return
+  const generation = workspaceGeneration
   if (action === 'folder') {
     const id = await data.addFolder(kbId.value)
+    if (generation !== workspaceGeneration) return
     if (!id) { toast('分组创建失败，请重试', 'ri-error-warning-line'); return }
     await moveNode(parent, `f:${id}`)
+    if (generation !== workspaceGeneration) return
     startFolderRename(id)
     return
   }
@@ -1129,9 +1395,11 @@ async function createNested(action: string, parent: string) {
 const newDocParent = ref<string | null>(null)
 async function createAction(action: string, folderId?: string, parent?: string) {
   if (creatingDoc.value) return
+  const generation = workspaceGeneration
   newDocParent.value = parent ?? null
   if (action === 'folder') { await addFolder(); return }
   const target = folderId || currentFolderId.value || kb.value?.folders[0]?.id || await data.addFolder(kbId.value)
+  if (generation !== workspaceGeneration) return
   if (!target) { toast('创建目录失败，请重试', 'ri-error-warning-line'); return }
   templatePickerOpen.value = action === 'template'
   newDocFolderId.value = target
@@ -1143,6 +1411,7 @@ function folderAction(action: string, id: string) {
   else if (action === 'delete') void removeFolder(id)
 }
 async function docAction(action: string, id: string) {
+  const generation = workspaceGeneration
   if (action === 'delete') { await removeDoc(id); return }
   if (action === 'archive') { await archiveDoc(id); return }
   if (action === 'move') {
@@ -1150,14 +1419,17 @@ async function docAction(action: string, id: string) {
     moveFolderId.value = kb.value?.folders.find((folder) => folder.docs.includes(id))?.id || ''
     return
   }
-  selectDoc(id)
+  await selectDoc(id)
   await nextTick()
-  if (action === 'rename') { titleEl.value?.focus(); titleEl.value?.select() }
+  if (generation !== workspaceGeneration || docId.value !== id) return
+  if (action === 'rename') { reading.value = false; await nextTick(); titleEl.value?.focus(); titleEl.value?.select() }
   if (action === 'template') openSaveTemplate()
 }
 async function confirmMove() {
   if (!moveDocId.value || !moveFolderId.value) return
+  const generation = workspaceGeneration
   await moveNode(`f:${moveFolderId.value}`, `d:${moveDocId.value}`)
+  if (generation !== workspaceGeneration) return
   if (treeSaveState.value === 'saved') { folderOpen[`f:${moveFolderId.value}`] = true; moveDocId.value = null }
 }
 function openKbIconSettings() {
@@ -1176,27 +1448,45 @@ function openKbSettings() {
 }
 async function saveKbSettings() {
   if (!kbSettings.name.trim() || kbSettingsBusy.value || !kb.value) return
+  const targetKb = kbId.value, generation = workspaceGeneration
   kbSettingsBusy.value = true
   try {
     const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim(), icon: kbSettings.icon, perm: kbSettings.perm }
-    await apiPatchKb(kbId.value, patch)
-    Object.assign(kb.value, patch)
-    tabs.setMeta(`kb:${kbId.value}`, { label: patch.name, icon: patch.icon })
+    const saved = await data.updateKb(targetKb, patch)
+    if (generation !== workspaceGeneration) return
+    if (!saved) throw new Error('save failed')
+    tabs.setMeta(`kb:${targetKb}`, { label: patch.name, icon: patch.icon })
     kbSettingsOpen.value = false
-  } catch { kbSettingsError.value = '设置保存失败，输入已保留，请重试。' }
-  finally { kbSettingsBusy.value = false }
+  } catch { if (generation === workspaceGeneration) kbSettingsError.value = '设置保存失败，输入已保留，请重试。' }
+  finally { if (generation === workspaceGeneration) kbSettingsBusy.value = false }
 }
+
+// Forms belong to the library/account where they were opened. Late replies cannot
+// close or unlock a new library's form, even after navigating A → B → A.
+watch([kbId, currentIdentity], () => {
+  workspaceGeneration++
+  kbSettingsOpen.value = false; kbSettingsBusy.value = false; kbSettingsError.value = ''
+  Object.assign(kbSettings, { name: '', desc: '', icon: '', perm: '仅自己' })
+  moveDocId.value = null; moveFolderId.value = ''; pendingMove = null
+  treeSaveState.value = 'idle'; directoryError.value = ''
+  renamingFolder.value = null; folderNameDraft.value = ''; folderRenameSaving.value = false; folderRenameError.value = ''
+  newDocFolderId.value = null; newDocParent.value = null; creatingDoc.value = false; templatePickerOpen.value = false
+  saveTemplateOpen.value = false; shareNoteId.value = ''; shareMenu.value = false; moreMenuOpen.value = false; shortcutsOpen.value = false
+  focused.value = false; reading.value = false; mobileDirectoryOpen.value = false
+  directoryContext.value?.close?.(); dismissConfirmation()
+}, { flush: 'sync' })
+onBeforeUnmount(() => { workspaceGeneration++ })
 
 </script>
 
 <template>
   <ContextActionMenu ref="directoryContext" />
   <div v-if="!kb" class="missing">知识库不存在。</div>
-  <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': directoryCollapsed }">
-    <button ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" :aria-label="directoryCollapsed ? '展开知识库目录' : '收起知识库目录'" aria-controls="kb-directory" :aria-expanded="!directoryCollapsed" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
+  <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
+    <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryVisible ? '收起知识库目录' : '展开知识库目录'" :aria-label="directoryVisible ? '收起知识库目录' : '展开知识库目录'" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
     <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
     <!-- 左栏 -->
-    <div v-show="!directoryCollapsed" id="kb-directory" ref="directoryPanel" class="side" :style="{ '--directory-width': `${directoryWidth}px` }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="知识库目录" @keydown="navigationKeydown($event, 'directory')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
+    <div v-show="directoryVisible" id="kb-directory" ref="directoryPanel" class="side" :style="{ '--directory-width': `${directoryWidth}px` }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="知识库目录" @keydown="navigationKeydown($event, 'directory')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
       <button v-if="isMobile" type="button" class="mobile-directory-close" aria-label="关闭知识库目录" @click="closeDirectory"><i class="ri-close-line" aria-hidden="true" />关闭目录</button>
       <PaneResizeHandle v-if="!isMobile" :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
@@ -1217,22 +1507,23 @@ async function saveKbSettings() {
         </div>
       </div>
 
-      <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
+      <div class="tree-search"><label><i class="ri-search-line"></i><input ref="treeSearchInput" v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" @keydown="onTreeSearchKeydown" /><button v-if="treeQuery" type="button" aria-label="清除目录搜索" @click="treeQuery = ''; treeSearchInput?.focus()"><i class="ri-close-line" aria-hidden="true"></i></button></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
+      <p v-if="treeQuery.trim()" class="directory-search-count" role="status">找到 {{ treeResultCount }} 篇文档</p>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
       <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
-      <div ref="treeElement" class="tree" @contextmenu.prevent="openDirectoryContext($event)">
+      <div ref="treeElement" class="tree" role="tree" aria-label="知识库文档目录" @keydown="onTreeKeydown" @contextmenu.prevent="openDirectoryContext($event)">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
         <div v-if="draggingNode?.startsWith('f:')" class="root-drop" @dragover.prevent @drop.prevent.stop="moveNode('', draggingNode, null)">拖到这里移至目录顶层</div>
         <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
-        <div v-for="node in mixedRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
-          :style="{ '--node-depth': node.depth }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
+        <div v-for="node in renderedTreeRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
+          :style="{ '--node-depth': Math.min(node.depth, 8) }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
           @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
-          <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+          <button v-if="node.hasChildren" class="tree-caret" tabindex="-1" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown="folderNameKeydown($event, node.id)" @blur="commitFolderName(node.id)" />
-          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? isOpen(node.key) : undefined" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
+          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" role="treeitem" :aria-level="node.depth + 1" :aria-selected="docId === node.id" :aria-expanded="node.hasChildren ? (treeQuery.trim() ? true : isOpen(node.key)) : undefined" :tabindex="treeFocusKey === node.key ? 0 : -1" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="treeFocusKey = node.key; preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>
@@ -1240,12 +1531,14 @@ async function saveKbSettings() {
           <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" /></div>
         </div>
 
-        <section v-if="archivedDocs.length || archivedError || archivedLoading" class="archive-tree">
-          <button class="archive-head" @click="archivedOpen = !archivedOpen">
+        <button v-if="mixedRows.length > treeRenderLimit" type="button" class="directory-load-more" @click="showMoreTreeRows">继续显示目录（已显示 {{ renderedTreeRows.length }} / {{ mixedRows.length }}）</button>
+
+        <section class="archive-tree">
+          <button class="archive-head" :aria-expanded="archivedOpen" @click="archivedOpen = !archivedOpen">
             <i :class="archivedOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
             <i class="ri-archive-line"></i>
             <span>已归档</span>
-            <span class="folder-count wao-tabular">{{ archivedDocs.length }}</span>
+            <span v-if="archivedDocs.length" class="folder-count wao-tabular">{{ archivedDocs.length }}</span>
           </button>
           <div v-if="archivedOpen" class="doc-tree archived-list">
             <div v-if="archivedLoading" class="archive-state"><i class="ri-loader-4-line spin"></i>正在读取归档…</div>
@@ -1276,11 +1569,11 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane" :inert="isMobile && mobileDirectoryOpen ? true : undefined" :class="{ 'content-narrow': !directoryCollapsed && contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
+    <div ref="documentPane" class="document-pane" :inert="isMobile && mobileDirectoryOpen ? true : undefined" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
           <div v-if="directoryCollapsed && !doc" class="directory-home-bar" aria-hidden="true"></div>
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
-              <span class="ellip library-name">{{ kb.name }}</span>
+              <button class="ellip library-name breadcrumb-link" @click="goHome">{{ kb.name }}</button>
               <i class="ri-arrow-right-s-line b-sep"></i>
               <input v-if="pageType !== 'document'" class="sheet-title" :aria-label="pageType === 'drawing' ? '画布名称' : '表格名称'" :value="doc.title" @input="editTitle" />
               <span v-else class="ellip document-name">{{ doc.title || '未命名文档' }}</span>
@@ -1289,6 +1582,8 @@ async function saveKbSettings() {
             </div>
             <span v-if="saving || saveFailed || docSavedAt" class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
             <NoteWidthSwitch v-if="pageType === 'document'" v-model="contentWidth" label="文档宽度" />
+            <button v-if="pageType === 'document'" ref="modeTrigger" type="button" class="document-mode" :class="{ selected: reading }" :aria-label="reading ? '编辑文档' : '阅读文档'" :aria-pressed="reading" @click="toggleReading"><i :class="reading ? 'ri-edit-line' : 'ri-book-open-line'" aria-hidden="true"></i><span>{{ reading ? '编辑' : '阅读' }}</span></button>
+            <button v-if="pageType === 'document'" ref="focusTrigger" type="button" class="icon-act focus-toggle" :title="focused ? '退出专注（Esc）' : '专注模式（Alt + Shift + F）'" :aria-label="focused ? '退出专注' : '专注模式'" :aria-pressed="focused" @click="toggleFocus"><i :class="focused ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'" aria-hidden="true"></i></button>
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
@@ -1313,17 +1608,17 @@ async function saveKbSettings() {
             >
 
             <label v-if="docId && !currentArchived" class="move-document bar-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
-            <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="toggleOutline"><i class="ri-layout-right-line"></i><span>大纲</span></button>
+            <button v-if="pageType === 'document'" ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="outlineVisible" @click="toggleOutline"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
 
             <button v-if="pageType === 'spreadsheet'" class="icon-act" title="导出 Excel" aria-label="导出 Excel" :disabled="exportingExcel" @click="exportSheetExcel"><i class="ri-file-excel-2-line"></i></button>
             <div v-if="pageType !== 'drawing'" class="share-wrap bar-share">
-              <button class="icon-act" title="复制分享链接" @click="moreMenuOpen = false; shareMenu = !shareMenu">
+              <button ref="shareTrigger" class="icon-act" title="分享文档" aria-label="分享文档" aria-haspopup="menu" :aria-expanded="shareMenu" @click="moreMenuOpen = false; shareMenu = !shareMenu">
                 <i class="ri-links-line"></i>
               </button>
               <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
-              <div v-if="shareMenu" class="share-menu">
+              <div v-if="shareMenu" ref="sharePanel" class="share-menu" aria-label="文档分享选项" @keydown="onDocumentMenuKeydown($event, 'share')">
                 <div class="share-scope">
                   分享整篇{{ kb.notes ? '小记' : '文档' }} · 默认需登录，限时链接可免登录
                 </div>
@@ -1338,12 +1633,16 @@ async function saveKbSettings() {
               </div>
             </div>
             <div class="doc-more-wrap" :class="{ 'has-save-error': saveFailed }">
-              <button class="icon-act" title="更多文档操作" aria-label="更多文档操作" :aria-expanded="moreMenuOpen" @click="shareMenu = false; moreMenuOpen = !moreMenuOpen"><i class="ri-more-2-fill"></i></button>
+              <button ref="moreTrigger" class="icon-act" title="更多文档操作" aria-label="更多文档操作" aria-haspopup="menu" :aria-expanded="moreMenuOpen" @click="shareMenu = false; moreMenuOpen = !moreMenuOpen"><i class="ri-more-2-fill"></i></button>
               <div v-if="moreMenuOpen" class="menu-mask" @click="moreMenuOpen = false"></div>
-              <div v-if="moreMenuOpen" class="doc-more-menu" aria-label="更多文档操作">
+              <div v-if="moreMenuOpen" ref="morePanel" class="doc-more-menu" aria-label="更多文档操作" @keydown="onDocumentMenuKeydown($event, 'more')">
                 <div v-if="saving || saveFailed || docSavedAt" class="more-save"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></div>
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
+                <button v-if="pageType === 'document'" @click="moreMenuOpen = false; documentEditor?.openSearch()"><i class="ri-search-line"></i>查找文档内容</button>
+                <button v-if="pageType === 'document'" @click="copyMarkdown"><i class="ri-markdown-line"></i>复制 Markdown</button>
+                <button v-if="pageType === 'document'" @click="exportMarkdown"><i class="ri-download-2-line"></i>导出 Markdown</button>
                 <button v-if="pageType === 'document'" @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
+                <button v-if="pageType === 'document'" @click="moreMenuOpen = false; shortcutsOpen = true"><i class="ri-keyboard-line"></i>快捷键</button>
                 <button class="more-share" @click="copyOriginalLink"><i class="ri-file-text-line"></i>复制知识库原文链接</button>
                 <button v-if="pageType !== 'drawing'" class="more-share" @click="moreMenuOpen = false; openDocumentShare()"><i class="ri-links-line"></i>限时分享设置</button>
                 <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
@@ -1352,8 +1651,8 @@ async function saveKbSettings() {
             </div>
           </div>
 
-      <div ref="toolbarHost" class="document-toolbar"></div>
-      <div class="document-content">
+      <div ref="toolbarHost" v-show="!reading" class="document-toolbar"></div>
+      <div class="document-content" :class="{ 'has-outline': doc && outlineVisible && pageType === 'document' }">
     <div ref="scrollEl" class="doc-scroll" :inert="isMobile && mobileTocOpen ? true : undefined" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
       <div class="doc-wrap">
         <div class="doc-col">
@@ -1370,20 +1669,32 @@ async function saveKbSettings() {
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。</div>
             <div v-if="docTotal" class="home-list-heading"><span class="home-result-count" role="status">{{ homeSearch ? `找到 ${homeResultCount} 篇文档` : `${docTotal} 篇文档` }}</span><button v-if="!homeSearch && homeGroups.length" class="home-collapse" :aria-expanded="allHomeGroupsOpen" @click="toggleHomeGroups">{{ allHomeGroupsOpen ? '折叠全部分组' : '展开全部分组' }}</button><button v-if="homeSearch" class="home-clear-search" @click="treeQuery = ''">清空搜索</button></div>
             <p v-if="homeSearch && !homeGroups.length && data.loadStates.docs === 'loaded'" class="doc-empty">没有匹配的文件夹或文档，试试其他关键词。</p>
-            <section v-for="folder in homeGroups" :key="folder.id" class="home-folder">
+            <div v-if="homeOrder === 'directory'" class="home-documents home-directory-index">
+              <KnowledgeDirectoryTree :nodes="homeDirectoryRows" :expanded="homeFolderOpen" :searching="!!homeSearch" label="知识库首页目录" :icon-of="pageIcon" density="comfortable" @open="selectDoc" @toggle="(key, value) => homeFolderOpen[key] = value" @preload="preloadSheet">
+                <template #title="{ node }"><span :class="{ 'home-document-name': node.kind === 'doc' }">{{ node.title }}</span></template>
+                <template #suffix="{ node }"><span v-if="node.kind === 'doc'" class="home-document-leader" aria-hidden="true"></span><time v-if="node.kind === 'doc'" :title="absoluteTime(data.docById(node.id)?.updated ?? '')">{{ homeDocumentTime(data.docById(node.id)?.updated ?? '') }}</time></template>
+              </KnowledgeDirectoryTree>
+            </div>
+            <template v-else><section v-for="folder in homeGroups" :key="folder.id" class="home-folder">
               <button class="home-folder-title" :aria-expanded="isHomeGroupOpen(folder.id)" :disabled="!!homeSearch" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="isHomeGroupOpen(folder.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" aria-hidden="true"></i><span>{{ folder.name }}</span><span class="home-folder-count">{{ folder.docs.length }}</span></button>
               <div v-if="isHomeGroupOpen(folder.id)" class="home-documents"><button v-for="id in folder.docs" :key="id" @pointerenter="preloadSheet(id)" @focus="preloadSheet(id)" @click="selectDoc(id)"><i :class="pageIcon(id)" aria-hidden="true"></i><span class="home-document-name" :title="documentTitle(id)">{{ documentTitle(id) }}</span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button><p v-if="!folder.docs.length" class="folder-empty">此文件夹还没有文档</p></div>
-            </section>
+            </section></template>
           </section>
           <template v-if="doc">
-            <input
+            <nav v-if="pageType === 'document' && docBreadcrumb.length" class="document-path" aria-label="文档所在目录"><template v-for="(item, index) in docBreadcrumb" :key="item.key"><i v-if="index" class="ri-arrow-right-s-line" aria-hidden="true"></i><button type="button" :title="item.title" @click="goBreadcrumb(item)">{{ item.title }}</button></template></nav>
+            <textarea
               v-if="pageType === 'document'"
               ref="titleEl"
               class="doc-title"
+              rows="1"
               :value="doc.title"
+              :readonly="reading"
+              aria-label="文档标题"
               placeholder="未命名文档"
               @input="editTitle"
+              @keydown="onTitleKeydown"
             />
+            <div v-if="pageType === 'document'" class="document-byline"><span>{{ author.name }}</span><span :title="absoluteTime(base?.updated ?? '')">更新于 {{ updatedLabel }}</span><span>{{ characterCount.toLocaleString('zh-CN') }} 字</span><span v-if="characterCount">约 {{ Math.max(1, Math.ceil(characterCount / 500)) }} 分钟阅读</span><span v-if="reading" class="reading-label">阅读模式</span><span v-if="saving || saveFailed || docSavedAt" class="compact-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span></div>
 
             <div v-if="docLinks.length" class="doc-links">
               <span class="dl-label">关联</span>
@@ -1417,6 +1728,7 @@ async function saveKbSettings() {
             <KnowledgeSheet v-if="pageType === 'spreadsheet'" ref="sheetEditor" :document-id="docId ?? undefined" :content="bodyContent" :disabled="!!(docId && data.docConflicts[docId])" @change="onContentChange" />
             <KnowledgeDrawing v-else-if="pageType === 'drawing' && base?.drawingId" :key="base.drawingId" :drawing-id="base.drawingId" embedded />
             <MarkdownEditor v-bind="DOCUMENT_EDITOR_FEATURES" v-else
+              ref="documentEditor"
               :key="docId ?? 'empty-doc'"
               :search-request="String(route.query.findRequest ?? '')"
               :search-term="route.query.match === 'title' ? '' : typeof route.query.find === 'string' ? route.query.find : ''"
@@ -1424,6 +1736,8 @@ async function saveKbSettings() {
               :document="bodyContent?.document"
               :toolbar-target="toolbarHost"
               class="doc-body"
+              :readonly="reading"
+              hide-character-count
               bare
               allow-h1
               advanced
@@ -1439,6 +1753,7 @@ async function saveKbSettings() {
               :min-height="360"
               :peers="peers"
               @caret-line="setCaretLine"
+              @character-count="characterCount = $event"
               @content-change="onContentChange"
               @add-task="addSelectionToTask"
               @upload-image="onUploadImage"
@@ -1467,43 +1782,50 @@ async function saveKbSettings() {
       </div>
     </div>
 
-        <div v-if="isMobile && doc && mobileTocOpen && pageType === 'document'" class="mobile-outline-mask" aria-hidden="true" @click="closeOutline" />
-        <aside v-if="doc && tocOpen && pageType === 'document'" ref="outlinePanel" class="toc" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="文档大纲" @keydown="navigationKeydown($event, 'outline')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
-          <div class="toc-label"><span>文档大纲</span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
+        <div v-if="isMobile && doc && outlineVisible && pageType === 'document'" class="mobile-outline-mask" aria-hidden="true" @click="closeOutline" />
+        <aside v-if="doc && outlineVisible && pageType === 'document'" ref="outlinePanel" class="toc" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="文档大纲" @keydown="navigationKeydown($event, 'outline')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
+          <div class="toc-label"><span>文档大纲 <small>{{ toc.length || '' }}</small></span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
-            <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
+            <button v-for="(t, i) in toc" :key="t.id" class="toc-item" :title="t.text || '未命名标题'" :aria-current="activeToc === i ? 'location' : undefined" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text || '未命名标题' }}</button>
           </div>
+          <div class="outline-progress"><span>阅读进度 {{ readingProgress }}%</span><button type="button" @click="backToTop">回到顶部</button><progress :value="readingProgress" max="100" aria-label="文档阅读进度"></progress></div>
         </aside>
       </div>
     </div>
 
-    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><label>共享范围<select v-model="kbSettings.perm" :disabled="kbSettingsBusy"><option value="仅自己">仅自己：只有我可以查看和编辑</option><option value="成员可编辑">共享：组织内成员可以查看和编辑</option></select></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
-    <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
-    <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
-      <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
-        <header><div><h2>新建文档</h2><p>选择空白文档，或复用已有模板的正文结构。</p></div><button @click="newDocFolderId = null"><i class="ri-close-line"></i></button></header>
+    <SettingsDialogShell v-if="kbSettingsOpen" title="知识库设置" icon="ri-settings-3-line" width="560px" height="auto" appearance="compact" :close-disabled="kbSettingsBusy || !!confirmation" @close="kbSettingsOpen = false">
+      <form id="knowledge-settings-form" class="knowledge-dialog-form" @submit.prevent="saveKbSettings">
+        <KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" />
+        <label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" required /></label>
+        <label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" maxlength="2000" rows="3"></textarea></label>
+        <label>共享范围<select v-model="kbSettings.perm" :disabled="kbSettingsBusy"><option value="仅自己">仅自己：只有我可以查看和编辑</option><option value="成员可编辑">共享：组织内成员可以查看和编辑</option></select></label>
+        <p v-if="kbSettingsError" class="dialog-error" role="alert">{{ kbSettingsError }}</p>
+      </form>
+      <template #footer><div class="knowledge-dialog-actions"><WaoButton v-if="!kb.notes" variant="danger" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</WaoButton><span></span><WaoButton :disabled="kbSettingsBusy" @click="kbSettingsOpen = false">取消</WaoButton><WaoButton type="submit" form="knowledge-settings-form" variant="primary" :loading="kbSettingsBusy" :disabled="!kbSettings.name.trim()">保存</WaoButton></div></template>
+    </SettingsDialogShell>
+    <SettingsDialogShell v-if="moveDocId" title="移动文档" icon="ri-folder-transfer-line" width="480px" height="auto" appearance="compact" :close-disabled="treeSaveState === 'saving'" @close="moveDocId = null">
+      <form id="knowledge-move-form" class="knowledge-dialog-form" @submit.prevent="confirmMove"><label>目标分组<select v-model="moveFolderId" :disabled="treeSaveState === 'saving'"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" class="dialog-error" role="alert">{{ directoryError || '移动失败，请重试。' }}</p></form>
+      <template #footer><div class="knowledge-dialog-actions"><WaoButton :disabled="treeSaveState === 'saving'" @click="moveDocId = null">取消</WaoButton><WaoButton type="submit" form="knowledge-move-form" variant="primary" :loading="treeSaveState === 'saving'" :disabled="!moveFolderId">移动</WaoButton></div></template>
+    </SettingsDialogShell>
+    <SettingsDialogShell v-if="newDocFolderId && templatePickerOpen" title="新建文档" description="选择空白文档，或复用已有模板的正文结构。" icon="ri-file-add-line" width="680px" height="auto" appearance="compact" :close-disabled="creatingDoc" @close="newDocFolderId = null; templatePickerOpen = false">
+      <section class="template-modal template-shell-body">
         <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
         <div v-else-if="templateError" class="template-state error">{{ templateError }}<button @click="loadTemplates">重试</button></div>
         <div v-else class="template-grid">
           <button class="template-card blank" :disabled="creatingDoc" @click="createDocFrom()"><i class="ri-file-add-line"></i><b>空白文档</b><span>从空白页面开始写作</span></button>
           <button v-for="item in templates" :key="item.id" class="template-card" :disabled="creatingDoc" @click="createDocFrom(item.id)"><i class="ri-file-copy-2-line"></i><b>{{ item.name }}</b><span>{{ item.description || `${item.blocks.length} 个正文块` }}</span></button>
         </div>
-        <footer><button class="link-button" @click="newDocFolderId = null; templateManagerOpen = true">管理模板</button><span v-if="creatingDoc">正在创建并保存…</span></footer>
+        <footer><WaoButton :disabled="creatingDoc" @click="newDocFolderId = null; templatePickerOpen = false; templateManagerOpen = true">管理模板</WaoButton><span v-if="creatingDoc" role="status">正在创建并保存…</span></footer>
       </section>
-    </div>
+    </SettingsDialogShell>
 
-    <div v-if="saveTemplateOpen" class="modal-backdrop" @click.self="saveTemplateOpen = false">
-      <section class="template-modal compact" role="dialog" aria-modal="true" aria-label="另存为模板">
-        <header><div><h2>另存为模板</h2><p>保存当前正文快照，之后新建文档可直接复用。</p></div><button @click="saveTemplateOpen = false"><i class="ri-close-line"></i></button></header>
-        <label>模板名称<input v-model="templateForm.name" maxlength="128" autofocus /></label>
-        <label>使用说明<textarea v-model="templateForm.description" maxlength="512" rows="3" placeholder="例如：每天复盘时使用"></textarea></label>
-        <footer><button class="secondary" @click="saveTemplateOpen = false">取消</button><button class="primary" :disabled="!templateForm.name.trim() || savingTemplate" @click="saveAsTemplate">{{ savingTemplate ? '保存中…' : '保存模板' }}</button></footer>
-      </section>
-    </div>
+    <SettingsDialogShell v-if="saveTemplateOpen" title="另存为模板" description="保存当前正文快照，之后新建文档可直接复用。" icon="ri-file-copy-2-line" width="520px" height="auto" appearance="compact" :close-disabled="savingTemplate" @close="saveTemplateOpen = false">
+      <form id="save-document-template" class="knowledge-dialog-form" @submit.prevent="saveAsTemplate"><label>模板名称<input v-model="templateForm.name" maxlength="128" :disabled="savingTemplate" required /></label><label>使用说明<textarea v-model="templateForm.description" maxlength="512" rows="3" :disabled="savingTemplate" placeholder="例如：每天复盘时使用"></textarea></label><p v-if="saveTemplateError" class="dialog-error" role="alert">{{ saveTemplateError }}</p></form>
+      <template #footer><div class="knowledge-dialog-actions"><WaoButton :disabled="savingTemplate" @click="saveTemplateOpen = false">取消</WaoButton><WaoButton type="submit" form="save-document-template" variant="primary" :disabled="!templateForm.name.trim()" :loading="savingTemplate">保存模板</WaoButton></div></template>
+    </SettingsDialogShell>
 
-    <div v-if="templateManagerOpen" class="modal-backdrop" @click.self="closeTemplateManager">
-      <section class="template-modal manager" role="dialog" aria-modal="true" aria-label="文档模板管理">
-        <header><div><h2>文档模板管理</h2><p>模板属于当前账号；删除模板不会影响已创建的文档。</p></div><button :disabled="editingTemplateSaving" @click="closeTemplateManager"><i class="ri-close-line"></i></button></header>
+    <SettingsDialogShell v-if="templateManagerOpen" title="文档模板管理" description="模板属于当前账号；删除模板不会影响已创建的文档。" icon="ri-file-copy-2-line" width="780px" height="min(760px, calc(100dvh - 48px))" appearance="compact" :close-disabled="editingTemplateSaving || templateConflictRefreshing || !!confirmation" @close="closeTemplateManager">
+      <section class="template-modal manager template-shell-body">
         <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
         <div v-else-if="templateError" class="template-state error">{{ templateError }}<button @click="loadTemplates">重试</button></div>
         <div v-else-if="!templates.length" class="template-state empty"><i class="ri-file-copy-2-line"></i><b>还没有模板</b><span>打开任意文档，点击顶部“另存为模板”即可创建。</span></div>
@@ -1562,8 +1884,10 @@ async function saveKbSettings() {
           </article>
         </div>
       </section>
-    </div>
+    </SettingsDialogShell>
   </div>
+  <SettingsDialogShell v-if="shortcutsOpen" title="文档快捷键" icon="ri-keyboard-line" width="520px" height="auto" appearance="compact" @close="shortcutsOpen = false"><dl class="document-shortcuts"><div v-for="shortcut in documentShortcuts" :key="shortcut[0]"><dt>{{ shortcut[1] }}</dt><dd><kbd>{{ shortcut[0] }}</kbd></dd></div></dl><template #footer><WaoButton @click="shortcutsOpen = false">知道了</WaoButton></template></SettingsDialogShell>
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :note="data.docs[shareNoteId]?.kbId === 'kb-notes'" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
 </template>
 
@@ -2223,12 +2547,19 @@ async function saveKbSettings() {
   width: 100%;
   border: none;
   outline: none;
-  font-size: 27px;
+  font-size: calc(var(--wao-font-reading) * 2);
   font-weight: 700;
   color: var(--wao-text);
   background: none;
   padding: 2px 0;
-  border-radius: 6px;
+  border-radius: var(--wao-radius-control);
+  display: block;
+  resize: none;
+  overflow: hidden;
+  min-height: 42px;
+  font-family: inherit;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 .doc-title:focus {
   background: var(--wao-bg-sub);
@@ -2301,21 +2632,21 @@ async function saveKbSettings() {
   margin-top: 12px;
 }
 .doc-body :deep(.tiptap) {
-  font-size: var(--wao-font-body);
-  line-height: 1.95;
-  color: #33363f;
+  font-size: var(--wao-font-reading);
+  line-height: 1.85;
+  color: var(--wao-text);
   padding: 4px 0;
 }
 .doc-body :deep(h2) {
-  font-size: var(--wao-font-section);
+  font-size: 1.25em;
   margin: 26px 0 6px;
 }
 .doc-body :deep(h1) {
-  font-size: var(--wao-font-title);
+  font-size: 1.5em;
   margin: 30px 0 8px;
 }
 .doc-body :deep(h3) {
-  font-size: var(--wao-font-card-title);
+  font-size: 1.125em;
 }
 .doc-empty {
   margin-top: 26px;
@@ -2388,26 +2719,21 @@ async function saveKbSettings() {
 
 /* TOC */
 .toc {
-  position: absolute;
-  z-index: 30;
-  top: 12px;
-  right: 12px;
-  width: 240px;
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 24px);
+  position: relative;
+  flex: 0 0 208px;
+  width: 208px;
+  max-width: 100%;
+  max-height: 100%;
   box-sizing: border-box;
   overflow: auto;
-  padding: 14px;
-  border: 1px solid var(--wao-divider);
-  border-radius: 10px;
+  padding: var(--wao-space-3) var(--wao-space-2);
+  border-left: 1px solid var(--wao-divider);
   background: var(--wao-bg-card);
-  box-shadow: 0 8px 28px rgb(20 23 35 / 12%);
 }
 .toc-label {
   display: flex; align-items: center; justify-content: space-between;
   font-size: var(--wao-font-help);
   color: var(--wao-text-3);
-  letter-spacing: 1.5px;
   margin-bottom: 8px;
 }
 .toc-list {
@@ -2566,6 +2892,8 @@ async function saveKbSettings() {
 .directory-row .doc-node.on { background: transparent; }
 .directory-row .folder-name, .directory-row .doc-node-title { font-size: var(--wao-font-body); font-weight: 400; }
 .directory-row.selected .doc-node-title { font-weight: 600; }
+.directory-load-more { display: block; width: 100%; min-height: 40px; padding: var(--wao-space-1); border: 0; background: transparent; color: var(--wao-primary-text); font-size: var(--wao-font-help); text-align: left; cursor: pointer; }
+.directory-load-more:hover { background: var(--wao-bg-hover); }
 .tree-row-actions {
   position: absolute;
   right: 3px;
@@ -2577,12 +2905,13 @@ async function saveKbSettings() {
   background: var(--wao-bg-hover);
   border-radius: 6px;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 .directory-row.selected .tree-row-actions { background: var(--wao-primary-soft); }
 .directory-row:hover .tree-row-actions,
 .directory-row:focus-within .tree-row-actions,
-.directory-row:has(.resource-trigger[aria-expanded="true"]) .tree-row-actions { opacity: 1; pointer-events: auto; }
+.directory-row:has(.resource-trigger[aria-expanded="true"]) .tree-row-actions { opacity: 1; visibility: visible; pointer-events: auto; }
 .directory-row.drop-before::before, .directory-row.drop-after::after {
   content: '';
   position: absolute;
@@ -2597,6 +2926,82 @@ async function saveKbSettings() {
 .directory-row.drop-after::after { bottom: 0; }
 .directory-row.drop-inside { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .root-drop { margin: 2px 0 6px; padding: 9px; border: 1px dashed var(--wao-primary); border-radius: 7px; color: var(--wao-primary-text); font-size: var(--wao-font-caption); text-align: center; }
-@media (hover: none), (pointer: coarse) { .tree-row-actions { opacity: 1; pointer-events: auto; } }
+@media (hover: none), (pointer: coarse) { .tree-row-actions { opacity: 1; visibility: visible; pointer-events: auto; } }
+.directory-search-count { margin: 0; padding: 4px var(--wao-space-2); font-size: var(--wao-font-caption); color: var(--wao-text-3); }
+.tree-search label:focus-within { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.directory-row [data-node]:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.directory-row .doc-node { gap: 6px; }
+.home-documents.home-directory-index { padding-left: 0; }
+.home-directory-index :deep(.tree-node) { gap: var(--wao-space-1); }
+.home-directory-index :deep(.node-title) { flex: 0 1 auto; }
+.home-document-leader { flex: 1; min-width: var(--wao-space-2); border-bottom: 1px dashed var(--wao-line); }
+.home-directory-index time { flex-shrink: 0; color: var(--wao-text-3); font-size: var(--wao-font-caption); white-space: nowrap; }
+
+/* A quiet reading surface, with the same live editor and save lifecycle. */
+.document-mode { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; flex-shrink: 0; padding: 0 var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; cursor: pointer; }
+.document-mode.selected { background: var(--wao-primary-soft); border-color: var(--wao-primary-line); color: var(--wao-primary-text); }
+.document-focused > .document-pane > .doc-bar { padding-left: var(--wao-space-2); }
+.document-focused .doc-scroll:not(.library-home-scroll) .doc-col { max-width: 920px; }
+.document-focused .document-pane.content-narrow .doc-col { max-width: 650px; }
+.document-reading .doc-title:focus { background: transparent; box-shadow: none; }
+.document-path { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; margin-bottom: var(--wao-space-2); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
+.document-path button, .breadcrumb-link { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 2px 0; text-align: left; }
+.document-path button { max-width: 100%; overflow-wrap: anywhere; }
+.document-path button:hover, .breadcrumb-link:hover { color: var(--wao-primary-text); text-decoration: underline; }
+.document-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--wao-space-2); margin-top: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); line-height: 1.7; }
+.reading-label { color: var(--wao-primary-text); }
+.compact-save-status { display: none; }
+@container document-pane (max-width: 980px) { .compact-save-status { display: inline-flex; flex-basis: 100%; } }
+.doc-body :deep(h1), .doc-body :deep(h2), .doc-body :deep(h3) { scroll-margin-top: var(--wao-space-3); line-height: 1.5; }
+.toc-item.deep { color: var(--wao-text-3); }
+.toc-item { min-height: 32px; font-size: var(--wao-font-help); }
+.toc-label small { margin-left: 4px; font: inherit; }
+.outline-progress { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-top: var(--wao-space-3); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
+.outline-progress button { padding: 4px 0; border: 0; background: transparent; color: var(--wao-primary-text); font: inherit; cursor: pointer; }
+.outline-progress progress { width: 100%; height: 4px; accent-color: var(--wao-primary); }
+.document-shortcuts { display: grid; gap: var(--wao-space-2); padding: var(--wao-space-3); margin: 0; }
+.document-shortcuts > div { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--wao-space-1); }
+.document-shortcuts dd { margin: 0; }
+.document-shortcuts kbd { display: inline-block; padding: 4px var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-2); font-size: var(--wao-font-help); }
+.document-pane button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@container document-pane (max-width: 1000px) {
+  .toc { position: absolute; z-index: 30; inset: var(--wao-space-1) var(--wao-space-1) auto auto; width: 240px; max-width: calc(100% - var(--wao-space-2)); max-height: calc(100% - var(--wao-space-2)); border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); box-shadow: var(--wao-shadow-pop); padding: var(--wao-space-2); }
+  .document-content.has-outline .doc-scroll { padding-right: 0; }
+}
+@container document-pane (max-width: 520px) {
+  .home-directory-index :deep(.node-title) { flex: 1; }
+  .home-documents time, .home-document-leader { display: none; }
+  .doc-bar { gap: 6px; flex-wrap: wrap; }
+  .doc-location { flex-basis: 100%; min-height: 24px; }
+  .document-focused .doc-location { flex-basis: 100%; }
+  .doc-bar :deep(.note-width-switch) { margin-right: auto; }
+  .doc-wrap { padding: var(--wao-space-3) var(--wao-space-2) var(--wao-space-4); }
+  .doc-title { font-size: calc(var(--wao-font-reading) * 1.5); }
+}
+@media (pointer: coarse) {
+  .directory-row { height: 48px; padding-left: calc(4px + min(var(--node-depth), 3) * 12px); padding-right: 100px; }
+  .directory-row .folder-btn, .directory-row .doc-node { min-height: 44px; }
+  .tree-caret, .tree-caret-spacer { flex-basis: 44px; width: 44px; height: 44px; }
+  .tree-row-actions { top: 2px; height: 44px; }
+  .tree-row-actions :deep(.resource-trigger) { flex-basis: 44px; width: 44px; height: 44px; }
+  .tree-search input, .folder-input { font-size: var(--wao-font-reading); }
+  .document-mode, .icon-act, .toc-item, .document-path button, .outline-progress button, .doc-more-menu > button { min-height: 44px; }
+  .icon-act { min-width: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .kb-detail { animation: none; } }
+.directory-backdrop { position: absolute; inset: 0; z-index: 40; padding: 0; border: 0; background: var(--wao-mask-bg); cursor: pointer; }
+.knowledge-dialog-form { display: grid; gap: var(--wao-space-2); padding: var(--wao-space-3); }
+.knowledge-dialog-form label { display: grid; gap: var(--wao-space-1); color: var(--wao-text-2); font-size: var(--wao-font-help); }
+.knowledge-dialog-form :is(input, textarea, select) { width: 100%; min-width: 0; min-height: 40px; padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); color: var(--wao-text); background: var(--wao-bg-card); font: inherit; resize: vertical; }
+.knowledge-dialog-form :is(input, textarea, select):focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.knowledge-dialog-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--wao-space-1); }
+.knowledge-dialog-actions > span { flex: 1; }
+.dialog-error { margin: 0; color: var(--wao-danger-strong); overflow-wrap: anywhere; }
+.template-modal.template-shell-body { width: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: var(--wao-space-3); }
+@media (max-width: 760px) {
+  .kb-detail { flex-direction: row; }
+  .side { position: absolute; z-index: 41; inset: 0 auto 0 0; width: min(320px, calc(100% - 32px)); max-height: none; border-right: 1px solid var(--wao-line); border-bottom: 0; box-shadow: var(--wao-shadow-pop); }
+  .directory-toggle { z-index: 42; }
+}
 
 </style>

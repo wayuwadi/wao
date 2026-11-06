@@ -1,5 +1,11 @@
 # 接口入口
 
+## 知识库归档目录（2026-11-06）
+
+`GET /api/docs/archived?kbId={id}&catalog=true` 返回指定知识库的轻量归档目录，按归档时间倒序。标题、作者、归属、修订号、标签与页面类型保持原口径；`bodyLoaded=false`、`blocks=[]`、`content=null`、`backlinks=[]` 明确表示尚未读取正文。浏览器展开归档目录时使用此参数，打开单篇后仍调用 `GET /api/docs/{id}` 获取完整正文及反向链接。目录查询只读取该库的元数据，不加载全库正文或构建全局反链。
+
+不传 `catalog` 或传 `catalog=false` 保留原有完整归档响应。两个模式均重新校验当前会话/工作区令牌的知识库访问权限，不能访问时返回 404；此可选响应模式不增加 MCP / CLI 能力，也不扩大已有令牌授权。
+
 ## 资源库（2026-11-06）
 
 `GET /api/files` 和 `GET /api/images` 元数据新增只读 `byteSize`，以字节表示原文件的准确大小；图片同时返回 `contentType`、`createdAt` 和 `previewUrl`，原图仍使用 `url`。`GET /api/hosted-pages` 新增可排序的 `updatedAtIso` 和编辑版本 `revision`。字段增量兼容旧客户端；格式化的 `size/time/updatedAt` 保留。资源列表在数据库查询中限定已授权项目范围，再执行来源文档权限过滤，不载入二进制正文。
