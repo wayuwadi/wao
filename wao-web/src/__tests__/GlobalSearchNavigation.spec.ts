@@ -128,7 +128,8 @@ it('切换成员丢弃迟到正文，完整结果可分页且标题命中进入�
   await flushPromises()
   resolveOld([{ ...docs[0]!, id: 'old', title: '银杏旧成员内容' }]); await flushPromises()
   await w.get('input').setValue('银杏')
-  expect(w.findAll('.result')).toHaveLength(50)
+  // Large document indexes deliberately yield between batches; wait for the visible result.
+  await vi.waitFor(() => expect(w.findAll('.result')).toHaveLength(50))
   expect(w.text()).not.toContain('旧成员')
   await w.findAll('button').find(b => b.text().startsWith('显示更多内容'))!.trigger('click')
   expect(w.findAll('.result')).toHaveLength(51)

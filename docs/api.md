@@ -1,5 +1,11 @@
 # 接口入口
 
+## 知识库归档目录（2026-11-06）
+
+`GET /api/docs/archived?kbId={id}&catalog=true` 返回指定知识库的轻量归档目录，按归档时间倒序。标题、作者、归属、修订号、标签与页面类型保持原口径；`bodyLoaded=false`、`blocks=[]`、`content=null`、`backlinks=[]` 明确表示尚未读取正文。浏览器展开归档目录时使用此参数，打开单篇后仍调用 `GET /api/docs/{id}` 获取完整正文及反向链接。目录查询只读取该库的元数据，不加载全库正文或构建全局反链。
+
+不传 `catalog` 或传 `catalog=false` 保留原有完整归档响应。两个模式均重新校验当前会话/工作区令牌的知识库访问权限，不能访问时返回 404；此可选响应模式不增加 MCP / CLI 能力，也不扩大已有令牌授权。
+
 ## 智能清单显示偏好（2026-11-06）
 
 `GET /api/preferences/smart-list/items` 返回当前成员的清单显示选择（缺省为显示）。`PUT /api/preferences/smart-list/items/{projectId}` 接收 `{visible, expected}`，`expected` 为上次读取的空字符串、`0` 或 `1`。每个清单独立保存，存在并发修改时返回 409；重复提交已经保存的值是幂等的。偏好只影响待办工作台的所有、今天、明天和最近 7 天，不改变任务或清单的共享权限。

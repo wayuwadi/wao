@@ -25,23 +25,37 @@ export function contentHit(text: string, query: string, context = 48) {
     after: text.slice(index + needle.length, end) + (end < text.length ? '…' : '') }
 }
 
-/** Map matches across inline formatting to selection positions; never change document content. */
-export function editorSearchRanges(document: ProseMirrorNode, query: string) {
-  const matches: { from: number; to: number }[] = []
-  const needle = query.trim().toLocaleLowerCase()
+export interface EditorSearchRange { from: number; to: number }
+export interface EditorSearchOptions { caseSensitive?: boolean; trim?: boolean }
+
+/**
+ * Match literal readable text across formatting runs, keeping original UTF-16 positions.
+ * A Unicode regular expression avoids offset drift caused by lowercasing İ to two code units.
+ * Non-text inline nodes break a run: replacing a match must never delete an intervening atom.
+ */
+export function editorSearchRanges(document: ProseMirrorNode, query: string, options: EditorSearchOptions = {}) {
+  const matches: EditorSearchRange[] = []
+  const needle = options.trim === false ? query : query.trim()
   if (!needle) return matches
+  const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.caseSensitive ? 'gu' : 'giu')
   document.descendants((block, blockPos) => {
     if (!block.isTextblock) return
-    let text = ''; const positions: number[] = []
+    let text = '', start = 0
+    const collect = () => {
+      for (const match of text.matchAll(pattern)) {
+        matches.push({ from: start + match.index, to: start + match.index + match[0].length })
+      }
+      text = ''
+    }
     block.descendants((node, pos) => {
       const value = node.isText ? node.text ?? '' : node.type.name === 'hardBreak' ? '\n' : ''
+      if (!value) { collect(); return false }
+      const absolute = blockPos + 1 + pos
+      if (text && start + text.length !== absolute) collect()
+      if (!text) start = absolute
       text += value
-      for (let i = 0; i < value.length; i++) positions.push(blockPos + 1 + pos + i)
     })
-    const lower = text.toLocaleLowerCase()
-    for (let at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, at + needle.length)) {
-      matches.push({ from: positions[at]!, to: positions[at + needle.length - 1]! + 1 })
-    }
+    collect()
     return false
   })
   return matches

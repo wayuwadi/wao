@@ -71,6 +71,7 @@ class KnowledgeAccessServiceTest {
         KnowledgeAccessService.asMember("other", () -> {
             assertThat(knowledge.listKbs()).isEmpty(); assertThat(knowledge.listDocs()).isEmpty();
             assertThat(knowledge.listDocCatalog()).isEmpty(); assertThat(knowledge.listTrash()).isEmpty();
+            assertThatThrownBy(() -> knowledge.listArchivedDocCatalog(kb.getId())).isInstanceOf(NotFoundException.class);
             assertThatThrownBy(() -> knowledge.getDoc("secret")).isInstanceOf(NotFoundException.class);
             assertThatThrownBy(() -> knowledge.getDocRevision("secret")).isInstanceOf(NotFoundException.class);
             assertThatThrownBy(() -> knowledge.restore("doc", "secret")).isInstanceOf(NotFoundException.class);

@@ -65,8 +65,9 @@ public class DocController {
 
     /** 列出一个知识库中长期保留、但已退出日常文档树的归档文档。 */
     @GetMapping("/archived")
-    public ApiResponse<List<DocDto>> archived(@RequestParam String kbId) {
-        return ApiResponse.ok(knowledge.listArchivedDocs(kbId));
+    public ApiResponse<List<DocDto>> archived(@RequestParam String kbId,
+            @RequestParam(defaultValue = "false") boolean catalog) {
+        return ApiResponse.ok(catalog ? knowledge.listArchivedDocCatalog(kbId) : knowledge.listArchivedDocs(kbId));
     }
 
     @GetMapping("/{id}")

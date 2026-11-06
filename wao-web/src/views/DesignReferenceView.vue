@@ -306,7 +306,7 @@ const detailLabels = ref('')
             <p>普通复制保留文字与路径；粘贴完整网址后可单击打开。</p>
             <MarkdownEditor v-model="clipboardExample" slash-commands />
             <h3>统一文档编辑</h3>
-            <p>知识库、小记和任务详情共用工具栏与 / 菜单。两栏点 + 添加第三栏；单击链接编辑，Ctrl/⌘ + 点击打开；Ctrl/⌘ + K 插入链接。表格内用 Tab 切换单元格。</p>
+            <p>知识库、小记和任务详情共用工具栏与 / 菜单。插入菜单可搜索，方向键选择、Enter 插入、Esc 关闭；工具栏支持左右方向键。Ctrl/⌘ + F 查找正文，Enter / Shift + Enter 前后定位，全部替换可一次撤销。两栏点 + 添加第三栏；单击链接编辑，Ctrl/⌘ + 点击打开；Ctrl/⌘ + K 插入链接。表格内用 Tab 切换单元格。本区使用合成内容，不保存到账号。</p>
             <MarkdownEditor v-model="unifiedExample" v-bind="DOCUMENT_EDITOR_FEATURES" />
           </section>
         <section class="reference-section">

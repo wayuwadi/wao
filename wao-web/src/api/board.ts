@@ -93,8 +93,9 @@ export async function fetchDocs(): Promise<Doc[]> {
 }
 /** Explicit global search snapshot: all active documents including bodies, never merged into edit drafts. */
 export const fetchSearchDocuments = () => get<Doc[]>('/api/docs')
+/** 归档列表只读目录；正文与反向链接在打开单篇时按需读取。 */
 export const fetchArchivedDocs = (kbId: string) =>
-  get<Doc[]>(`/api/docs/archived?kbId=${encodeURIComponent(kbId)}`)
+  get<Doc[]>(`/api/docs/archived?kbId=${encodeURIComponent(kbId)}&catalog=true`)
 export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)

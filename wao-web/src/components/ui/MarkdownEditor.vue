@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
-import { editorSearchRanges } from '@/utils/contentSearch'
+import { editorSearchRanges, type EditorSearchRange } from '@/utils/contentSearch'
+import { replaceEditorSearchRanges } from '@/utils/editorSearchReplace'
 import { bookExcerptContent } from '@/utils/bookExcerpt'
 import { indentEditorSelection } from '@/utils/editorIndent'
 /**
@@ -32,6 +33,7 @@ import { CommandManager, Extension, mergeAttributes, type Editor } from '@tiptap
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
 import { NodeSelection, TextSelection, Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import { imageDisplayName } from '@/utils/imageDisplayName'
@@ -817,6 +819,8 @@ const mediaCopyContent = ref<RichDocContent | null>(null)
 const mediaTextCopied = ref(false)
 
 const autofocusOrigin = typeof document === 'undefined' ? null : document.activeElement
+const MAX_FIND_QUERY_LENGTH = 1000
+const MAX_SEARCH_HIGHLIGHTS = 500
 const searchHighlightKey = new PluginKey<DecorationSet>('contentSearchHighlight')
 const SearchHighlight = Extension.create({
   name: 'contentSearchHighlight',
@@ -826,9 +830,16 @@ const SearchHighlight = Extension.create({
       state: {
         init: () => DecorationSet.empty,
         apply(tr, previous) {
-          const hit = tr.getMeta(searchHighlightKey) as { from: number; to: number } | null | undefined
-          if (hit !== undefined) return hit ? DecorationSet.create(tr.doc, [Decoration.inline(hit.from, hit.to, { class: 'content-search-hit' })]) : DecorationSet.empty
-          return tr.docChanged ? (tr.before.textContent === tr.doc.textContent ? previous.map(tr.mapping, tr.doc) : DecorationSet.empty) : previous
+          const search = tr.getMeta(searchHighlightKey) as { ranges: EditorSearchRange[]; active: number } | null | undefined
+          if (search !== undefined) {
+            if (!search) return DecorationSet.empty
+            // Navigation/count/replacement still use every result; avoid thousands of extra DOM spans.
+            const start = Math.max(0, Math.min(search.active - MAX_SEARCH_HIGHLIGHTS / 2, search.ranges.length - MAX_SEARCH_HIGHLIGHTS))
+            return DecorationSet.create(tr.doc, search.ranges.slice(start, start + MAX_SEARCH_HIGHLIGHTS).map((range, index) =>
+              Decoration.inline(range.from, range.to, { class: start + index === search.active ? 'content-search-match content-search-hit' : 'content-search-match' })))
+          }
+          // Mapping decorations needs no full-document text comparison on every keystroke.
+          return tr.docChanged ? previous.map(tr.mapping, tr.doc) : previous
         },
       },
       props: { decorations: state => searchHighlightKey.getState(state) },
@@ -912,6 +923,7 @@ const editor = useEditor({
     MermaidBlock,
   ],
   editorProps: {
+    attributes: { role: 'textbox', 'aria-label': '文档正文', 'aria-multiline': 'true', 'aria-readonly': String(props.readonly) },
     handleDOMEvents: {
       copy: (view, event) => {
         if (!event.clipboardData || view.state.selection.empty) return false
@@ -1003,7 +1015,7 @@ const editor = useEditor({
     }
   }),
   onTransaction: ({ editor: e, transaction }) => {
-    if (transaction.docChanged) { refreshImageReferences(e); updateCharacterCount(e) }
+    if (transaction.docChanged) { refreshImageReferences(e); updateCharacterCount(e); scheduleFindRefresh() }
   },
   onUpdate: ({ editor: e }) => {
     tableMenu.value = null
@@ -1171,7 +1183,7 @@ function preserveTableSelection(event: MouseEvent) {
 
 /** 所有文字与块操作共享一个浮层，图片使用互斥的尺寸编辑器。 */
 function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
-  if (props.readonly || selectionDismissed.value || tableMenu.value || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value) return false
+  if (props.readonly || selectionDismissed.value || tableMenu.value || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value || findOpen.value) return false
   if (!e.isFocused && !selectionMenuEl.value?.contains(document.activeElement)) return false
   if (e.state.selection instanceof CellSelection) return props.advanced && multipleCells(e)
   if (e.isActive('codeBlock') || (e.isActive('table') && from === to)) return false
@@ -1737,6 +1749,8 @@ const blockPosition = ref(-1)
 const blockInsertPosition = ref<number | null>(null)
 const slashOpen = ref(false)
 const slashMenuEl = ref<HTMLElement | null>(null)
+const slashSearchInput = ref<HTMLInputElement | null>(null)
+const slashMenuId = `editor-slash-${component?.uid ?? 'menu'}`
 const slashPosition = ref({ left: '12px', top: '12px', maxHeight: '360px' })
 function positionSlashMenu(anchor?: HTMLElement) {
   const e = editor.value
@@ -1772,7 +1786,15 @@ const findOpen = ref(false)
 const helpOpen = ref(false)
 const findText = ref('')
 const replaceText = ref('')
-const findStatus = ref('')
+const findInput = ref<HTMLInputElement | null>(null)
+const findCaseSensitive = ref(false)
+const findMatches = ref<EditorSearchRange[]>([])
+const findIndex = ref(-1)
+const findNotice = ref('')
+const findStatus = computed(() => findText.value.length > MAX_FIND_QUERY_LENGTH ? '查找内容过长，请缩短至 1000 字以内' : !findText.value ? '输入关键词查找正文' : findMatches.value.length
+  ? `${findIndex.value + 1} / ${findMatches.value.length}` : '当前内容未找到')
+let findTimer: ReturnType<typeof setTimeout> | undefined
+let searchCache: { doc: ProseMirrorNode; text: string; caseSensitive: boolean; ranges: EditorSearchRange[] } | null = null
 const drawingsOpen = ref(false)
 const drawingsLoading = ref(false)
 const drawingsBusy = ref(false)
@@ -1789,6 +1811,7 @@ const visibleDrawings = computed(() => {
 })
 interface PendingUpload { id: string; file: File; state: 'queued' | 'uploading' | 'failed' }
 const pendingUploads = ref<PendingUpload[]>([])
+const fileUploadAnchors = new Map<string, { editor: Editor; resolve: (release?: boolean) => number | null }>()
 const COLOR_OPTIONS = ['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0']
 const HIGHLIGHT_OPTIONS = ['#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe']
 
@@ -1942,12 +1965,30 @@ function onFilePicked(event: Event) {
 }
 
 function queueFiles(files: File[]) {
-  if (props.readonly) return
+  const target = editor.value
+  if (props.readonly || !target || target.isDestroyed) return
   for (const file of files) {
     const upload: PendingUpload = { id: crypto.randomUUID(), file, state: 'queued' }
+    // Capture every item now, including files waiting behind an active upload.
+    fileUploadAnchors.set(upload.id, { editor: target, resolve: uploadAnchor(target) })
     pendingUploads.value.push(upload)
   }
   runNextFileUpload()
+}
+
+function removeFileUpload(id: string) {
+  fileUploadAnchors.get(id)?.resolve()
+  fileUploadAnchors.delete(id)
+  pendingUploads.value = pendingUploads.value.filter(upload => upload.id !== id)
+}
+
+function invalidateExternalUploads() {
+  externalContentVersion++
+  pendingImageCount.value = 0
+  imageInsertionQueue = Promise.resolve()
+  for (const anchor of fileUploadAnchors.values()) anchor.resolve()
+  fileUploadAnchors.clear()
+  pendingUploads.value = []
 }
 
 function runNextFileUpload() {
@@ -1964,11 +2005,23 @@ function retryFileUpload(uploadId: string) {
 
 function runFileUpload(uploadId: string) {
   const upload = pendingUploads.value.find((item) => item.id === uploadId)
-  if (!upload) return
+  const anchor = fileUploadAnchors.get(uploadId)
+  const target = anchor?.editor
+  if (!upload || !anchor || !target || target.isDestroyed || props.readonly) return
+  if (anchor.resolve(false) === null) { removeFileUpload(uploadId); runNextFileUpload(); return }
   upload.state = 'uploading'
-  const target = editor.value
+  let handled = false
   emit('upload-file', upload.file, (item) => {
-    if (!target || target.isDestroyed || target !== editor.value) return
+    if (handled) return
+    handled = true
+    const position = anchor.resolve(false)
+    if (target.isDestroyed || target !== editor.value) return
+    if (position === null) {
+      removeFileUpload(uploadId)
+      if (item) toast('附件已上传，原插入位置已改变。可从资源库重新插入。', 'ri-information-line')
+      runNextFileUpload()
+      return
+    }
     if (!item) {
       upload.state = 'failed'
       runNextFileUpload()
@@ -1977,7 +2030,7 @@ function runFileUpload(uploadId: string) {
     const mime = item.contentType || upload.file.type || 'application/octet-stream'
     const media = mime.startsWith('audio/') || mime.startsWith('video/')
     const id = item.id ?? ''
-    target.commands.insertContentAt(target.state.selection.to, {
+    target.chain().command(({ tr }) => { tr.setMeta('wao-upload-insertion', true); return true }).insertContentAt(position, {
       type: media ? 'mediaCard' : 'fileCard',
       attrs: {
         id,
@@ -1987,8 +2040,8 @@ function runFileUpload(uploadId: string) {
         mime,
         url: media && id ? `/api/files/${encodeURIComponent(id)}/stream` : item.link,
       },
-    }, { updateSelection: false })
-    pendingUploads.value = pendingUploads.value.filter((entry) => entry.id !== uploadId)
+    }, { updateSelection: false }).run()
+    removeFileUpload(uploadId)
     runNextFileUpload()
   })
 }
@@ -1997,36 +2050,119 @@ function clearFormatting() {
   editor.value?.chain().focus().unsetAllMarks().clearNodes().run()
 }
 
-function runFind(next = true) {
-  const needle = findText.value
+function searchMatches() {
   const e = editor.value
-  if (!needle || !e) {
-    findStatus.value = ''
-    return
+  if (!e || e.isDestroyed || !findText.value || findText.value.length > MAX_FIND_QUERY_LENGTH) return []
+  if (!searchCache || searchCache.doc !== e.state.doc || searchCache.text !== findText.value || searchCache.caseSensitive !== findCaseSensitive.value) {
+    searchCache = { doc: e.state.doc, text: findText.value, caseSensitive: findCaseSensitive.value,
+      ranges: editorSearchRanges(e.state.doc, findText.value, { caseSensitive: findCaseSensitive.value, trim: false }) }
   }
-  const matches = editorSearchRanges(e.state.doc, needle)
-  const start = next ? e.state.selection.to : 0
-  const match = matches.find(item => item.from >= start) ?? matches[0]
-  if (!match) {
-    e.view.dispatch(e.state.tr.setMeta(searchHighlightKey, null))
-    findStatus.value = '当前内容未找到，可能已有未保存修改'
-    return
+  return searchCache.ranges
+}
+
+function showFindMatch(index: number, reveal = true) {
+  const e = editor.value
+  if (!e || e.isDestroyed) return
+  findIndex.value = findMatches.value.length ? Math.max(0, Math.min(index, findMatches.value.length - 1)) : -1
+  const match = findMatches.value[findIndex.value]
+  let transaction = e.state.tr.setMeta(searchHighlightKey, { ranges: findMatches.value, active: findIndex.value })
+  if (match && reveal) transaction = transaction.setSelection(TextSelection.create(e.state.doc, match.from, match.to)).scrollIntoView()
+  e.view.dispatch(transaction)
+  if (match && reveal) e.view.dom.querySelector('.content-search-hit')?.scrollIntoView?.({ block: 'nearest' })
+}
+
+function refreshFind(reset = false, reveal = false) {
+  clearTimeout(findTimer)
+  const active = findMatches.value[findIndex.value]
+  findMatches.value = searchMatches()
+  const index = !reset && active ? findMatches.value.findIndex(match => match.from >= active.from) : 0
+  showFindMatch(index < 0 ? 0 : index, reveal)
+}
+
+function scheduleFindRefresh() {
+  if (!findOpen.value) return
+  clearTimeout(findTimer)
+  findTimer = setTimeout(() => { if (findOpen.value) refreshFind() }, 120)
+}
+
+function runFind(direction: 1 | -1 | 0 = 1) {
+  clearTimeout(findTimer)
+  const current = findMatches.value[findIndex.value]
+  findMatches.value = searchMatches()
+  const previous = current ? findMatches.value.findIndex(match => match.from === current.from && match.to === current.to) : -1
+  const total = findMatches.value.length
+  const index = !direction || previous < 0 ? (direction === -1 ? total - 1 : 0) : (previous + direction + total) % total
+  showFindMatch(index)
+}
+
+async function openSearch() {
+  if (!props.advanced) return
+  const e = editor.value
+  if (!findOpen.value && !findText.value && e && !e.state.selection.empty) {
+    const selection = e.state.doc.textBetween(e.state.selection.from, e.state.selection.to, '\n')
+    if (selection.length <= 120 && !selection.includes('\n')) findText.value = selection
   }
-  e.chain().focus().setTextSelection(match).scrollIntoView().run()
-  e.view.dispatch(e.state.tr.setMeta(searchHighlightKey, match))
-  e.view.dom.querySelector('.content-search-hit')?.scrollIntoView?.({ block: 'nearest' })
-  findStatus.value = `${matches.indexOf(match) + 1} / ${matches.length}`
+  findOpen.value = true
+  slashOpen.value = false
+  hideSelectionMenu()
+  await nextTick()
+  refreshFind(false)
+  findInput.value?.focus({ preventScroll: true })
+  findInput.value?.select()
+}
+
+function closeSearch(restoreFocus = true) {
+  findOpen.value = false
+  if (restoreFocus) editor.value?.view.focus()
+}
+
+function onFindKeydown(event: KeyboardEvent) {
+  if (event.isComposing) return
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation(); closeSearch()
+  } else if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+    event.preventDefault(); event.stopPropagation(); runFind(event.shiftKey ? -1 : 1)
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    event.preventDefault(); event.stopPropagation(); void openSearch()
+  }
 }
 
 function replaceCurrent() {
   const e = editor.value
-  if (!e || !findText.value) return
-  const { from, to } = e.state.selection
-  if (e.state.doc.textBetween(from, to, '\n') === findText.value) {
-    e.chain().focus().insertContent(replaceText.value).run()
-  }
-  runFind()
+  if (!e || props.readonly || !findText.value) return
+  // Recheck against the current document, including changes made while the panel had focus.
+  const active = findMatches.value[findIndex.value]
+  findMatches.value = searchMatches()
+  const match = active && findMatches.value.find(range => range.from === active.from && range.to === active.to)
+  if (!match) { showFindMatch(0); return }
+  // insertText preserves literal angle brackets and cannot turn replacement text into HTML.
+  e.view.dispatch(closeHistory(e.state.tr).insertText(replaceText.value, match.from, match.to))
+  e.view.dispatch(closeHistory(e.state.tr))
+  findMatches.value = searchMatches()
+  const following = findMatches.value.findIndex(range => range.from >= match.from + replaceText.value.length)
+  showFindMatch(following < 0 ? 0 : following)
+  findNotice.value = '已替换 1 处，可撤销'
 }
+
+function replaceAll() {
+  const e = editor.value
+  if (!e || props.readonly || !findText.value) return
+  const matches = searchMatches()
+  if (!matches.length) return
+  // One structural replacement keeps thousands of matches from generating thousands of plugin steps.
+  // Existing nodes, attributes and marks are retained; unlike setContent, this is fully undoable.
+  const replaced = replaceEditorSearchRanges(e.state.doc, matches, replaceText.value)
+  const transaction = closeHistory(e.state.tr).replaceWith(0, e.state.doc.content.size, replaced.content)
+  e.view.dispatch(transaction)
+  e.view.dispatch(closeHistory(e.state.tr))
+  refreshFind(true)
+  findNotice.value = `已替换 ${matches.length} 处，可撤销`
+}
+
+watch([findText, findCaseSensitive], () => {
+  findNotice.value = ''
+  if (findOpen.value) refreshFind(true)
+})
 
 const slashActions = computed<SlashAction[]>(() => [
   { id: 'h1', label: '一级标题', hint: '章节主标题', icon: 'ri-h-1', run: () => editor.value?.chain().focus().setHeading({ level: 1 }).run() },
@@ -2063,6 +2199,46 @@ const filteredSlashActions = computed(() => {
   return slashActions.value.filter((item) => !query || `${item.label} ${item.hint} ${item.id}`.toLowerCase().includes(query))
 })
 
+watch([slashOpen, slashIndex, filteredSlashActions], () => nextTick(() => {
+  const current = editor.value
+  if (!current || current.isDestroyed) return
+  const body = current.view.dom
+  if (slashOpen.value && slashFromInput.value) {
+    body.setAttribute('aria-controls', slashMenuId)
+    body.setAttribute('aria-expanded', 'true')
+    const active = filteredSlashActions.value[slashIndex.value]
+    if (active) body.setAttribute('aria-activedescendant', `${slashMenuId}-${active.id}`)
+    else body.removeAttribute('aria-activedescendant')
+  } else {
+    body.removeAttribute('aria-controls')
+    body.removeAttribute('aria-expanded')
+    body.removeAttribute('aria-activedescendant')
+  }
+}))
+
+function onSlashKeydown(event: KeyboardEvent) {
+  if (props.readonly || !slashOpen.value || event.isComposing || composing.value) return false
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation()
+    slashOpen.value = false
+    editor.value?.view.focus()
+    return true
+  }
+  const actions = filteredSlashActions.value
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault(); event.stopPropagation()
+    if (actions.length) slashIndex.value = (slashIndex.value + (event.key === 'ArrowDown' ? 1 : -1) + actions.length) % actions.length
+    return true
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault(); event.stopPropagation()
+    const action = actions[slashIndex.value]
+    if (action) chooseSlash(action)
+    return true
+  }
+  return false
+}
+
 function updateSlashMenu(e: Editor) {
   if (!(props.advanced || props.slashCommands) || props.readonly || composing.value) return
   blockInsertPosition.value = null
@@ -2083,7 +2259,7 @@ function updateSlashMenu(e: Editor) {
 
 function chooseSlash(action: SlashAction) {
   const e = editor.value
-  if (!e) return
+  if (!e || e.isDestroyed || props.readonly) return
   if (blockInsertPosition.value !== null) {
     const pos = blockInsertPosition.value
     blockInsertPosition.value = null
@@ -2109,16 +2285,19 @@ function insertAtBlock(event: MouseEvent) {
 }
 
 function toggleInsertMenu(event?: MouseEvent) {
+  if (props.readonly) return
   blockInsertPosition.value = null
   positionSlashMenu(event?.currentTarget as HTMLElement | undefined)
   slashFromInput.value = false
   slashQuery.value = ''
   slashIndex.value = 0
   slashOpen.value = !slashOpen.value
+  if (slashOpen.value) void nextTick(() => slashSearchInput.value?.focus({ preventScroll: true }))
 }
 
 function onEditorKeydown(event: KeyboardEvent) {
   if (event.isComposing || composing.value) return
+  if (onSlashKeydown(event)) return
   const imageEditor = editor.value
   if (props.imageContextControls && !props.readonly && imageEditor?.state.selection instanceof NodeSelection && imageEditor.isActive('image')) {
     if (props.imageReferences && ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
@@ -2145,6 +2324,10 @@ function onEditorKeydown(event: KeyboardEvent) {
     imageMenuRequested.value = true
   }
   if (event.key === 'Escape') {
+    if (linkDialog.value || tableMenu.value || findOpen.value || helpOpen.value) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
     linkDialog.value = null
     closeTableMenu()
     hideSelectionMenu()
@@ -2176,22 +2359,31 @@ function onEditorKeydown(event: KeyboardEvent) {
   }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && props.advanced) {
     event.preventDefault()
-    findOpen.value = true
-    nextTick(() => shell.value?.querySelector<HTMLInputElement>('.find-panel input')?.focus())
+    event.stopPropagation()
+    void openSearch()
     return
   }
-  if (!slashOpen.value || !filteredSlashActions.value.length) return
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault()
-    const delta = event.key === 'ArrowDown' ? 1 : -1
-    slashIndex.value = (slashIndex.value + delta + filteredSlashActions.value.length) % filteredSlashActions.value.length
-  } else if (event.key === 'Enter') {
-    event.preventDefault()
-    chooseSlash(filteredSlashActions.value[slashIndex.value]!)
-  } else if (event.key === 'Escape') {
-    event.preventDefault()
-    slashOpen.value = false
+}
+
+function preserveToolbarSelection(event: MouseEvent) {
+  if (event.target instanceof Element && event.target.closest('button')) event.preventDefault()
+}
+
+function onToolbarKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation(); editor.value?.view.focus()
+    return
   }
+  if (event.target instanceof HTMLSelectElement || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  const toolbar = event.currentTarget as HTMLElement
+  const controls = [...toolbar.querySelectorAll<HTMLElement>('button:not(:disabled), select, summary')]
+    .filter(control => !control.closest('details:not([open]) > div'))
+  const current = controls.indexOf(event.target as HTMLElement)
+  if (current < 0 || !controls.length) return
+  event.preventDefault()
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? controls.length - 1
+    : (current + (event.key === 'ArrowRight' ? 1 : -1) + controls.length) % controls.length
+  controls[index]?.focus()
 }
 
 function dismissTransientUi() {
@@ -2347,6 +2539,32 @@ function dataImageFile(src: string, alt: string, index: number): File | null {
 }
 
 type UploadedImage = { url: string; name: string }
+const pendingImageCount = ref(0)
+let externalContentVersion = 0
+
+/** Keep uploads attached to their original document and insertion point while typing continues. */
+function uploadAnchor(target: Editor) {
+  let position = target.state.selection.to
+  let removed = false
+  const version = externalContentVersion
+  const mapPosition = ({ transaction }: { transaction: Transaction }) => {
+    if (!transaction.docChanged) return
+    const mapped = transaction.mapping.mapResult(position, 1)
+    position = mapped.pos
+    removed ||= mapped.deletedAcross && !transaction.getMeta('wao-upload-insertion')
+  }
+  target.on('transaction', mapPosition)
+  return (release = true) => {
+    if (release) target.off('transaction', mapPosition)
+    return !removed && version === externalContentVersion && !target.isDestroyed && target === editor.value && !props.readonly
+      ? Math.min(position, target.state.doc.content.size) : null
+  }
+}
+
+function hasPendingUploads() {
+  return pendingImageCount.value > 0 || imageRotating.value || drawingsBusy.value || drawingCreating.value
+    || pendingUploads.value.some(upload => upload.state !== 'failed')
+}
 
 /**
  * 同一批图片并行上传，但等整批完成后按剪贴板 / 选择器里的原顺序插入。
@@ -2356,6 +2574,11 @@ type UploadedImage = { url: string; name: string }
  */
 let imageInsertionQueue = Promise.resolve()
 function insertImages(files: File[]) {
+  const target = editor.value
+  if (!files.length || !target || target.isDestroyed || props.readonly) return
+  const version = externalContentVersion
+  const resolveAnchor = uploadAnchor(target)
+  pendingImageCount.value += files.length
   const uploaded = Promise.all(
     files.map(
       (file) =>
@@ -2366,19 +2589,17 @@ function insertImages(files: File[]) {
   )
   imageInsertionQueue = imageInsertionQueue.then(async () => {
     const images = (await uploaded).filter((item): item is UploadedImage => item != null)
-    const currentEditor = editor.value
-    if (!images.length || !currentEditor) return
-    currentEditor
-      .chain()
-      .focus()
-      .insertContent(
-        images.map((image) => ({
-          type: 'image',
-          attrs: { src: image.url, alt: image.name },
-        })),
-      )
-      .run()
-  })
+    const position = resolveAnchor()
+    if (!images.length || target.isDestroyed || target !== editor.value) return
+    if (position === null) {
+      toast('图片已上传，原插入位置已改变。可从资源库重新插入。', 'ri-information-line')
+      return
+    }
+    // Do not steal focus or replace a selection the user made while the upload was pending.
+    target.chain().command(({ tr }) => { tr.setMeta('wao-upload-insertion', true); return true })
+      .insertContentAt(position, images.map(image => ({ type: 'image', attrs: { src: image.url, alt: image.name } })), { updateSelection: false }).run()
+  }).catch(() => { if (!target.isDestroyed) toast('图片插入失败，已上传图片仍可在资源库找到。', 'ri-error-warning-line') })
+    .finally(() => { resolveAnchor(); if (version === externalContentVersion) pendingImageCount.value -= files.length })
 }
 
 /** 打开系统图片选择器；不设置 capture，以便手机优先提供图册/文件选择。 */
@@ -2443,6 +2664,7 @@ function applyExternal(next: string) {
     pendingExternal = next
     return
   }
+  invalidateExternalUploads()
   e.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
 }
 function applyExternalDocument(next: RichDocNode | null) {
@@ -2453,6 +2675,7 @@ function applyExternalDocument(next: RichDocNode | null) {
     pendingExternalDocument = next
     return
   }
+  invalidateExternalUploads()
   e.commands.setContent(repairFilePathLinks(editorBlockImages(next)), { emitUpdate: false })
 }
 /** 失焦时把输入期间错过的外部更新补灌回来。 */
@@ -2461,6 +2684,7 @@ function flushExternal() {
   pendingExternalDocument = null
   if (nextDocument && editor.value && JSON.stringify(nextDocument) === JSON.stringify(props.document)
     && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
+    invalidateExternalUploads()
     editor.value.commands.setContent(repairFilePathLinks(editorBlockImages(nextDocument)), { emitUpdate: false })
     pendingExternal = null
     return
@@ -2468,6 +2692,7 @@ function flushExternal() {
   const next = pendingExternal
   pendingExternal = null
   if (next != null && next === props.modelValue && editor.value && next !== editor.value.getMarkdown()) {
+    invalidateExternalUploads()
     editor.value.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
   }
 }
@@ -2477,6 +2702,7 @@ function clearSentContent(expected: string): boolean {
   if (!e || e.getMarkdown() !== expected) return false
   pendingExternal = null
   pendingExternalDocument = null
+  invalidateExternalUploads()
   e.commands.clearContent(true)
   return true
 }
@@ -2500,9 +2726,18 @@ async function focusSearch(term: string) {
   findText.value = term
   findOpen.value = !!term
   await nextTick()
-  if (term) runFind(false)
+  if (term) runFind(0)
 }
-watch(findOpen, open => { if (!open && editor.value) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null)) })
+watch(findOpen, open => {
+  if (!open) {
+    clearTimeout(findTimer)
+    searchCache = null
+    findMatches.value = []
+    findIndex.value = -1
+    findNotice.value = ''
+    if (editor.value && !editor.value.isDestroyed) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null))
+  }
+})
 watch([() => props.searchTerm, editor, () => props.searchRequest], ([term], previous) => { if (term) void focusSearch(term); else if (previous?.[0]) findOpen.value = false }, { immediate: true })
 let handledFocusRequest = 0
 watch([() => props.focusRequest, editor, () => props.readonly], async ([request, current, readonly]) => {
@@ -2527,16 +2762,26 @@ function currentContent(): RichDocContent | null {
   const e = editor.value
   return e && editorReady.value ? { version: 1, document: e.getJSON(), markdown: e.getMarkdown() } : null
 }
-defineExpose({ currentContent, dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference, renameImageAt })
+defineExpose({ currentContent, hasPendingUploads, dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, openSearch, positionAtPoint, focusImageReference, renameImageAt })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
   () => props.readonly,
   // 只读切换不是正文修改；不能回发 content-change 把父组件的保存中状态重置为 idle。
-  (ro) => { closeTableMenu(); editor.value?.setEditable(!ro, false); for (const update of imageNodeViews) update() },
+  (ro) => {
+    closeTableMenu()
+    if (ro) { slashOpen.value = false; slashFromInput.value = false; blockInsertPosition.value = null }
+    editor.value?.setEditable(!ro, false)
+    editor.value?.view.dom.setAttribute('aria-readonly', String(ro))
+    for (const update of imageNodeViews) update()
+    if (!ro) runNextFileUpload()
+  },
 )
 
 onBeforeUnmount(() => {
+  invalidateExternalUploads()
+  clearTimeout(findTimer)
+  searchCache = null
   window.removeEventListener('resize', scheduleMeasure)
   document.removeEventListener('pointerdown', dismissSlashMenu, true)
   document.removeEventListener('scroll', dismissSlashMenu, true)
@@ -2598,44 +2843,54 @@ onBeforeUnmount(() => {
         <span>编辑工具</span>
         <i :class="toolbarOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
       </button>
-    <div v-show="toolbarTarget || toolbarOpen" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
-      <button type="button" title="撤销" :disabled="!editor.can().undo()" @click="editor.chain().focus().undo().run()"><i class="ri-arrow-go-back-line"></i></button>
-      <button type="button" title="重做" :disabled="!editor.can().redo()" @click="editor.chain().focus().redo().run()"><i class="ri-arrow-go-forward-line"></i></button>
+    <div v-show="toolbarTarget || toolbarOpen" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏" @mousedown="preserveToolbarSelection" @keydown="onToolbarKeydown">
+      <button type="button" title="撤销" :disabled="!editor.can().undo()" @click="editor.chain().focus().undo().run()" aria-label="撤销"><i class="ri-arrow-go-back-line"></i></button>
+      <button type="button" title="重做" :disabled="!editor.can().redo()" @click="editor.chain().focus().redo().run()" aria-label="重做"><i class="ri-arrow-go-forward-line"></i></button>
       <span class="tool-sep"></span>
       <select aria-label="段落样式" :value="editor.isActive('heading', { level: 1 }) ? 'h1' : editor.isActive('heading', { level: 2 }) ? 'h2' : editor.isActive('heading', { level: 3 }) ? 'h3' : editor.isActive('heading', { level: 4 }) ? 'h4' : 'paragraph'" @change="setBlockType(($event.target as HTMLSelectElement).value)">
-        <option value="paragraph">正文</option><option value="h1">一级标题</option><option value="h2">二级标题</option><option value="h3">三级标题</option><option value="h4">四级标题</option>
+        <option value="paragraph">正文</option><option v-if="allowH1" value="h1">一级标题</option><option value="h2">二级标题</option><option value="h3">三级标题</option><option value="h4">四级标题</option>
       </select>
-      <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
-      <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
-      <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
-      <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
-      <button type="button" title="行内代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
-      <details class="tool-palette"><summary title="文字颜色"><i class="ri-font-color"></i></summary><div><button v-for="color in COLOR_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`文字颜色 ${color}`" @click="editor.chain().focus().setColor(color).run()"></button></div></details>
-      <details class="tool-palette"><summary title="高亮颜色"><i class="ri-mark-pen-line"></i></summary><div><button v-for="color in HIGHLIGHT_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`高亮颜色 ${color}`" @click="editor.chain().focus().toggleHighlight({ color }).run()"></button></div></details>
+      <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" :aria-pressed="editor.isActive('bold')" @click="editor.chain().focus().toggleBold().run()" aria-label="粗体"><i class="ri-bold"></i></button>
+      <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" :aria-pressed="editor.isActive('italic')" @click="editor.chain().focus().toggleItalic().run()" aria-label="斜体"><i class="ri-italic"></i></button>
+      <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" :aria-pressed="editor.isActive('underline')" @click="editor.chain().focus().toggleUnderline().run()" aria-label="下划线"><i class="ri-underline"></i></button>
+      <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" :aria-pressed="editor.isActive('strike')" @click="editor.chain().focus().toggleStrike().run()" aria-label="删除线"><i class="ri-strikethrough"></i></button>
+      <button type="button" title="行内代码" :class="{ active: editor.isActive('code') }" :aria-pressed="editor.isActive('code')" @click="editor.chain().focus().toggleCode().run()" aria-label="行内代码"><i class="ri-code-line"></i></button>
+      <details class="tool-palette"><summary title="文字颜色" aria-label="文字颜色"><i class="ri-font-color"></i></summary><div><button v-for="color in COLOR_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`文字颜色 ${color}`" @click="editor.chain().focus().setColor(color).run()"></button></div></details>
+      <details class="tool-palette"><summary title="高亮颜色" aria-label="高亮颜色"><i class="ri-mark-pen-line"></i></summary><div><button v-for="color in HIGHLIGHT_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`高亮颜色 ${color}`" @click="editor.chain().focus().toggleHighlight({ color }).run()"></button></div></details>
       <span class="tool-sep"></span>
-      <button type="button" title="左对齐" :class="{ active: editor.isActive({ textAlign: 'left' }) }" @click="editor.chain().focus().setTextAlign('left').run()"><i class="ri-align-left"></i></button>
-      <button type="button" title="居中" :class="{ active: editor.isActive({ textAlign: 'center' }) }" @click="editor.chain().focus().setTextAlign('center').run()"><i class="ri-align-center"></i></button>
-      <button type="button" title="右对齐" :class="{ active: editor.isActive({ textAlign: 'right' }) }" @click="editor.chain().focus().setTextAlign('right').run()"><i class="ri-align-right"></i></button>
-      <button type="button" title="无序列表" :class="{ active: editor.isActive('bulletList') }" @click="editor.chain().focus().toggleBulletList().run()"><i class="ri-list-unordered"></i></button>
-      <button type="button" title="有序列表" :class="{ active: editor.isActive('orderedList') }" @click="editor.chain().focus().toggleOrderedList().run()"><i class="ri-list-ordered-2"></i></button>
-      <button type="button" title="任务列表" :class="{ active: editor.isActive('taskList') }" @click="editor.chain().focus().toggleTaskList().run()"><i class="ri-list-check-3"></i></button>
-      <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
-      <button type="button" title="图片" @click="chooseImage"><i class="ri-image-add-line"></i></button>
-      <button v-if="!compact" type="button" title="表格" @click="insertTable"><i class="ri-table-2"></i></button>
+      <button type="button" title="左对齐" :class="{ active: editor.isActive({ textAlign: 'left' }) }" :aria-pressed="editor.isActive({ textAlign: 'left' })" @click="editor.chain().focus().setTextAlign('left').run()" aria-label="左对齐"><i class="ri-align-left"></i></button>
+      <button type="button" title="居中" :class="{ active: editor.isActive({ textAlign: 'center' }) }" :aria-pressed="editor.isActive({ textAlign: 'center' })" @click="editor.chain().focus().setTextAlign('center').run()" aria-label="居中"><i class="ri-align-center"></i></button>
+      <button type="button" title="右对齐" :class="{ active: editor.isActive({ textAlign: 'right' }) }" :aria-pressed="editor.isActive({ textAlign: 'right' })" @click="editor.chain().focus().setTextAlign('right').run()" aria-label="右对齐"><i class="ri-align-right"></i></button>
+      <button type="button" title="无序列表" :class="{ active: editor.isActive('bulletList') }" :aria-pressed="editor.isActive('bulletList')" @click="editor.chain().focus().toggleBulletList().run()" aria-label="无序列表"><i class="ri-list-unordered"></i></button>
+      <button type="button" title="有序列表" :class="{ active: editor.isActive('orderedList') }" :aria-pressed="editor.isActive('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()" aria-label="有序列表"><i class="ri-list-ordered-2"></i></button>
+      <button type="button" title="任务列表" :class="{ active: editor.isActive('taskList') }" :aria-pressed="editor.isActive('taskList')" @click="editor.chain().focus().toggleTaskList().run()" aria-label="任务列表"><i class="ri-list-check-3"></i></button>
+      <button type="button" title="链接" @click="toggleLinkFromToolbar" aria-label="链接"><i class="ri-link"></i></button>
+      <button type="button" title="图片" @click="chooseImage" aria-label="图片"><i class="ri-image-add-line"></i></button>
+      <button v-if="!compact" type="button" title="表格" @click="insertTable" aria-label="表格"><i class="ri-table-2"></i></button>
       <button v-if="editor.isActive('table')" type="button" title="删除整个表格（可撤销）" aria-label="删除当前表格" @mousedown.prevent @click="runTableAction('deleteTable')"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除表格</span></button>
-      <button type="button" title="更多内容块（输入 / 也可打开）" @click="toggleInsertMenu"><i class="ri-add-circle-line"></i></button>
-      <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
-      <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
-      <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true"><i class="ri-question-line"></i></button>
+      <button type="button" title="更多内容块（输入 / 也可打开）" :aria-expanded="slashOpen && !slashFromInput" :aria-controls="slashMenuId" @click="toggleInsertMenu" aria-label="更多内容块（输入 / 也可打开）"><i class="ri-add-circle-line"></i></button>
+      <button type="button" title="查找替换（Ctrl/⌘+F）" aria-label="查找替换" :aria-expanded="findOpen" @click="findOpen ? closeSearch() : openSearch()"><i class="ri-search-line" aria-hidden="true"></i></button>
+      <button type="button" title="清除格式" @click="clearFormatting" aria-label="清除格式"><i class="ri-format-clear"></i></button>
+      <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true" aria-label="快捷键帮助（Ctrl/⌘+/）"><i class="ri-question-line"></i></button>
       <template v-if="$slots['toolbar-options']"><span class="tool-sep"></span><slot name="toolbar-options" /></template>
     </div>
     </div>
     </Teleport>
-    <form v-if="advanced && findOpen" class="find-panel" @submit.prevent="runFind()">
-      <input v-model="findText" placeholder="查找" aria-label="查找内容" />
-      <input v-if="!readonly" v-model="replaceText" placeholder="替换为" aria-label="替换内容" />
-      <button type="submit">下一个</button><button v-if="!readonly" type="button" @click="replaceCurrent">替换</button>
-      <span>{{ findStatus }}</span><button type="button" aria-label="关闭查找替换" @click="findOpen = false"><i class="ri-close-line"></i></button>
+    <form v-if="advanced && findOpen" class="find-panel" role="search" aria-label="文内查找" @submit.prevent="runFind()" @keydown="onFindKeydown">
+      <div class="find-row">
+        <div class="find-field"><i class="ri-search-line" aria-hidden="true"></i><input ref="findInput" v-model="findText" placeholder="查找正文" aria-label="查找内容" :maxlength="MAX_FIND_QUERY_LENGTH" autocomplete="off" spellcheck="false" /></div>
+        <span class="find-status" role="status" aria-live="polite" :title="findMatches.length > MAX_SEARCH_HIGHLIGHTS ? '高亮显示当前位置附近的匹配，所有结果均可跳转和替换' : undefined">{{ findStatus }}</span>
+        <button type="button" class="find-icon" title="区分大小写" aria-label="区分大小写" :aria-pressed="findCaseSensitive" @click="findCaseSensitive = !findCaseSensitive">Aa</button>
+        <button type="button" class="find-icon" title="上一处（Shift+Enter）" aria-label="上一个匹配" :disabled="!findMatches.length" @click="runFind(-1)"><i class="ri-arrow-up-line" aria-hidden="true"></i></button>
+        <button type="submit" class="find-icon" title="下一处（Enter）" aria-label="下一个匹配" :disabled="!findMatches.length"><i class="ri-arrow-down-line" aria-hidden="true"></i></button>
+        <button type="button" class="find-icon" title="关闭（Esc）" aria-label="关闭查找替换" @click="closeSearch()"><i class="ri-close-line" aria-hidden="true"></i></button>
+      </div>
+      <div v-if="!readonly" class="find-row find-replace-row">
+        <div class="find-field"><i class="ri-find-replace-line" aria-hidden="true"></i><input v-model="replaceText" placeholder="替换为" aria-label="替换内容" autocomplete="off" spellcheck="false" /></div>
+        <WaoButton variant="ghost" :disabled="!findMatches.length" @click="replaceCurrent">替换</WaoButton>
+        <WaoButton variant="ghost" :disabled="!findMatches.length" @click="replaceAll">全部替换</WaoButton>
+        <span v-if="findNotice" class="find-notice" role="status">{{ findNotice }}</span>
+      </div>
     </form>
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
@@ -2762,11 +3017,16 @@ onBeforeUnmount(() => {
         <button type="button" aria-label="在此块后插入内容" title="插入内容" @mousedown.prevent @click.stop="insertAtBlock"><i class="ri-add-line" aria-hidden="true"></i></button>
       </DragHandle>
       <Teleport to="body">
-      <div v-if="slashOpen && !readonly" ref="slashMenuEl" class="slash-menu" :style="{ ...slashPosition, zIndex: menuZIndex }" role="listbox" aria-label="插入内容块">
-        <button v-for="(action, index) in filteredSlashActions" :key="action.id" type="button" :class="{ active: slashIndex === index }" role="option" :aria-selected="slashIndex === index" @mousedown.prevent @click="chooseSlash(action)">
-          <i :class="action.icon"></i><span><b>{{ action.label }}</b><small>{{ action.hint }}</small></span>
-        </button>
+      <div v-if="slashOpen && !readonly" ref="slashMenuEl" class="slash-menu" :style="{ ...slashPosition, zIndex: menuZIndex }" @keydown="onSlashKeydown">
+        <div v-if="!slashFromInput" class="slash-search"><i class="ri-search-line" aria-hidden="true"></i><input ref="slashSearchInput" v-model="slashQuery" aria-label="搜索内容块" placeholder="搜索内容块…" role="combobox" aria-autocomplete="list" aria-expanded="true" :aria-controls="slashMenuId" :aria-activedescendant="filteredSlashActions[slashIndex] ? `${slashMenuId}-${filteredSlashActions[slashIndex]!.id}` : undefined" @input="slashIndex = 0" /></div>
+        <div v-else class="slash-heading">插入内容<span>{{ filteredSlashActions.length }} 项</span></div>
+        <div :id="slashMenuId" class="slash-options" role="listbox" aria-label="插入内容块">
+          <button v-for="(action, index) in filteredSlashActions" :id="`${slashMenuId}-${action.id}`" :key="action.id" type="button" class="slash-option" :class="{ active: slashIndex === index }" role="option" :aria-selected="slashIndex === index" tabindex="-1" @mousedown.prevent @mousemove="slashIndex = index" @click="chooseSlash(action)">
+            <i :class="action.icon" aria-hidden="true"></i><span><b>{{ action.label }}</b><small>{{ action.hint }}</small></span>
+          </button>
+        </div>
         <div v-if="!filteredSlashActions.length" class="slash-empty">没有匹配的内容块</div>
+        <div class="slash-footer" aria-hidden="true"><span>↑↓ 选择</span><span>Enter 插入</span><span>Esc 关闭</span></div>
       </div>
       </Teleport>
       <div v-if="pendingUploads.length" class="upload-queue" aria-live="polite">
@@ -2774,7 +3034,7 @@ onBeforeUnmount(() => {
           <i :class="upload.state === 'uploading' ? 'ri-loader-4-line spin' : 'ri-error-warning-line'"></i>
           <span><b>{{ upload.file.name }}</b><small>{{ upload.state === 'uploading' ? '正在上传，正文可继续编辑' : upload.state === 'queued' ? '等待上传' : '上传失败，本地文件尚未插入' }}</small></span>
           <button v-if="upload.state === 'failed'" type="button" @click="retryFileUpload(upload.id)">重试</button>
-          <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
+          <button v-if="upload.state === 'failed'" type="button" @click="removeFileUpload(upload.id)">移除</button>
         </div>
       </div>
       <div v-if="!readonly && !articleImageKey" class="image-actions">
@@ -3093,10 +3353,10 @@ onBeforeUnmount(() => {
   margin-left: auto;
   padding: 4px 8px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
-  font-size: 12px;
+  font-size: var(--wao-font-help);
   cursor: pointer;
 }
 .toolbar-toggle:hover,
@@ -3113,20 +3373,21 @@ onBeforeUnmount(() => {
   gap: 2px;
   padding: 5px 6px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--wao-bg-card) 96%, transparent);
-  box-shadow: 0 4px 16px rgba(20, 23, 35, 0.06);
+  border-radius: var(--wao-radius-control);
+  background: var(--wao-bg-card);
+  font: var(--wao-font-body) / 1.5 var(--wao-font);
 }
 .advanced-toolbar button,
 .advanced-toolbar select,
 .tool-palette summary {
   flex: 0 0 auto;
-  height: 30px;
-  min-width: 30px;
+  height: 32px;
+  min-width: 32px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--wao-radius-control);
   background: transparent;
   color: var(--wao-text-2);
+  font: inherit;
   cursor: pointer;
 }
 .advanced-toolbar button:hover,
@@ -3136,6 +3397,7 @@ onBeforeUnmount(() => {
   color: var(--wao-primary-text);
 }
 .advanced-toolbar button:disabled { opacity: .35; cursor: default; }
+.advanced-toolbar :focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .advanced-toolbar select { min-width: 76px; padding: 0 7px; }
 .tool-sep { width: 1px; height: 20px; margin: 0 3px; background: var(--wao-divider); }
 .tool-palette { position: relative; }
@@ -3152,35 +3414,45 @@ onBeforeUnmount(() => {
   gap: 6px;
   flex-wrap: wrap;
   border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   box-shadow: var(--wao-shadow-modal);
 }
 .tool-palette > div button { width: 28px; min-width: 28px; height: 28px; border: 2px solid var(--wao-bg-card); box-shadow: 0 0 0 1px var(--wao-line-control); }
-:deep(.content-search-hit) { background: #ffec99; color: #604a08; border-radius: 2px; }
+:deep(.content-search-match) { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }
+:deep(.content-search-hit) { background: var(--wao-primary-soft); color: var(--wao-primary-text); outline: 1px solid var(--wao-primary); }
 .find-panel {
   position: sticky;
-  top: 43px;
-  z-index: 7;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 7px;
+  top: 0;
+  z-index: 9;
+  display: grid;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1);
   border: 1px solid var(--wao-line-control);
-  border-top: 0;
-  border-radius: 0 0 9px 9px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
-  box-shadow: 0 8px 20px rgba(20, 23, 35, .08);
+  color: var(--wao-text);
+  font: var(--wao-font-body) / 1.5 var(--wao-font);
 }
-.find-panel input { min-width: 100px; flex: 1; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 0 8px; background: var(--wao-bg-card); color: var(--wao-text); }
-.find-panel button { height: 30px; border: 0; border-radius: 6px; padding: 0 9px; background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; white-space: nowrap; }
-.find-panel span { color: var(--wao-text-weak); font-size: 11px; white-space: nowrap; }
-.selection-menu { display: flex; align-items: center; gap: 1px; width: max-content; max-width: min(560px, calc(100vw - 24px)); overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #747783 transparent; padding: 4px; border-radius: 9px; background: #292b35; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.22); }
-.selection-menu button,.selection-language { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 32px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; font-size: 16px; cursor: pointer; }
-.selection-menu button:hover,.selection-language:hover,.selection-menu button[aria-pressed="true"] { background: rgba(255,255,255,.16); }
-.selection-menu button.selection-generate { flex-basis: auto; width: auto; gap: 4px; padding: 0 8px; font-size: 12px; }
-.selection-menu :focus-visible { outline: 2px solid #9dbbff; outline-offset: -2px; }
-.selection-divider { flex: 0 0 1px; height: 17px; background: rgba(255,255,255,.22); margin: 0 4px; }
+.find-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.find-field { display: flex; flex: 1 1 170px; align-items: center; gap: var(--wao-space-1); min-width: 0; padding-inline: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); color: var(--wao-text-3); }
+.find-field:focus-within { border-color: var(--wao-primary); outline: 1px solid var(--wao-primary); }
+.find-field input { width: 100%; min-width: 0; height: 32px; border: 0; outline: 0; padding: 0; background: transparent; color: var(--wao-text); font: inherit; }
+.find-panel .find-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 32px; min-height: 32px; border: 0; border-radius: var(--wao-radius-control); padding: 4px; background: transparent; color: var(--wao-text-2); font: inherit; cursor: pointer; }
+.find-panel .find-icon:hover:not(:disabled), .find-panel .find-icon[aria-pressed='true'] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.find-panel button:disabled { opacity: .45; cursor: default; }
+.find-panel button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+.find-panel :deep(.wao-button) { min-height: 32px; padding: 4px var(--wao-space-1); white-space: nowrap; }
+.find-status, .find-notice { color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.find-status { min-width: 3ch; padding-inline: 4px; font-variant-numeric: tabular-nums; }
+.find-notice { flex-basis: 100%; }
+@media (pointer: coarse) { .find-field input, .find-panel .find-icon, .find-panel :deep(.wao-button) { min-height: 44px; } }
+.selection-menu { display: flex; align-items: center; gap: 2px; width: max-content; max-width: min(560px, calc(100vw - 24px)); overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--wao-line-strong) transparent; padding: 4px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); box-shadow: var(--wao-shadow-pop); font: var(--wao-font-body) / 1.5 var(--wao-font); }
+.selection-menu button,.selection-language { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 34px; padding: 0; border: 0; border-radius: var(--wao-radius-control); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.selection-menu button:hover,.selection-language:hover,.selection-menu button[aria-pressed="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.selection-menu button.selection-generate { flex-basis: auto; width: auto; gap: 4px; padding: 0 var(--wao-space-1); font-size: var(--wao-font-help); }
+.selection-menu :focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.selection-divider { flex: 0 0 1px; height: 17px; background: var(--wao-line); margin: 0 4px; }
 .selection-language { position: relative; }
 .selection-language select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .context-toolbar { display:flex; gap:3px; padding:5px; border-radius:9px; background:#292b35; box-shadow:0 8px 24px rgba(0,0,0,.24); }
@@ -3190,18 +3462,31 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: min(340px, calc(100vw - 24px));
   max-height: 360px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 11px;
+  border-radius: var(--wao-radius-card);
   background: var(--wao-bg-card);
-  box-shadow: var(--wao-shadow-modal);
+  color: var(--wao-text);
+  box-shadow: var(--wao-shadow-pop);
+  font: var(--wao-font-body) / 1.5 var(--wao-font);
 }
-.slash-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
-.slash-menu > button:hover,.slash-menu > button.active { background: var(--wao-primary-soft); }
-.slash-menu > button > i { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; background: var(--wao-bg-sub); font-size: 16px; }
-.slash-menu span { min-width: 0; display: flex; flex-direction: column; }
-.slash-menu b { font-size: 12px; }.slash-menu small,.slash-empty { color: var(--wao-text-weak); font-size: 10.5px; }.slash-empty { padding: 16px; text-align: center; }
+.slash-options { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.slash-option { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); font: inherit; text-align: left; cursor: pointer; }
+.slash-option:hover,.slash-option.active { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.slash-option > i { flex-shrink: 0; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); font-size: var(--wao-font-section); }
+.slash-option span { min-width: 0; display: flex; flex-direction: column; }
+.slash-option b { font-size: var(--wao-font-body); font-weight: 500; }
+.slash-option small,.slash-empty { color: var(--wao-text-3); font-size: var(--wao-font-help); }
+.slash-empty { padding: var(--wao-space-2); text-align: center; }
+.slash-search { display: flex; flex-shrink: 0; align-items: center; gap: var(--wao-space-1); padding: 4px var(--wao-space-1); margin-bottom: 4px; border-bottom: 1px solid var(--wao-line); color: var(--wao-text-3); }
+.slash-search input { flex: 1; width: 100%; min-width: 0; min-height: 32px; border: 0; outline: 0; background: transparent; color: var(--wao-text); font: inherit; }
+.slash-heading,.slash-footer { display: flex; flex-shrink: 0; align-items: center; gap: var(--wao-space-1); padding: 6px var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
+.slash-heading { justify-content: space-between; }
+.slash-footer { border-top: 1px solid var(--wao-line); }
+@media (pointer: coarse) { .advanced-toolbar button, .advanced-toolbar select, .tool-palette summary, .selection-menu button, .selection-language { min-height: 44px; min-width: 44px; } }
 .upload-queue { margin:8px 0; display:grid; gap:6px; }.upload-queue > div { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--wao-line); border-radius:8px; background:var(--wao-bg-sub); }.upload-queue > div.failed { border-color:color-mix(in srgb,var(--wao-danger-strong) 35%,var(--wao-line)); }.upload-queue span { min-width:0; flex:1; display:flex; flex-direction:column; }.upload-queue b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }.upload-queue small { color:var(--wao-text-weak); font-size:10px; }.upload-queue button { border:0; background:transparent; color:var(--wao-primary-text); font-size:11px; cursor:pointer; }
 .block-drag-handle { z-index: 9; display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-weak); box-shadow: 0 4px 12px rgba(20,23,35,.1); cursor: grab; }
 .drawing-picker { padding: var(--wao-space-2); }
@@ -3980,7 +4265,7 @@ onBeforeUnmount(() => {
 .md-body :deep(details) { margin:12px 0; padding:8px 11px; border:1px solid var(--wao-line-control); border-radius:9px; }.md-body :deep(summary) { cursor:pointer; font-weight:650; }
 @media (max-width: 680px) {
   .advanced-toolbar { top: 0; border-radius: 8px; }
-  .find-panel { flex-wrap: wrap; top: 43px; }
+  .find-panel { top: 0; }
   .find-panel span { white-space: normal; overflow-wrap: anywhere; }
   .md-body :deep(div[data-columns]:not(.editor-columns)) { grid-template-columns:1fr !important; }
   .shortcut-grid { grid-template-columns:1fr; }

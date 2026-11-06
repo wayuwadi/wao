@@ -3,6 +3,7 @@ import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import KbDetailView from '@/views/KbDetailView.vue'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useDataStore } from '@/stores/data'
 import type { Doc, KnowledgeBase } from '@/types'
 
@@ -48,6 +49,8 @@ describe('知识库详情 · 文档归档', () => {
     wrapper = shallowMount(KbDetailView, { global: { plugins: [router] } })
 
     wrapper.find('.doc-row').findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'archive')
+    await flushPromises()
+    await wrapper.findComponent(ConfirmActionDialog).props('action').run()
     await flushPromises()
 
     expect(knowledgeBase.folders[0]!.docs).not.toContain('d1')

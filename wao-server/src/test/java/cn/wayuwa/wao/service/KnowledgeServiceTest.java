@@ -244,6 +244,30 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void archivedCatalogUsesOneScopedMetadataQueryWithoutBodiesOrGlobalBacklinks() {
+        DocEntity archived = doc("d-old", "k1", "f1");
+        archived.setPageType("spreadsheet");
+        archived.setBlocksJson("not parsed by a metadata-only request");
+        archived.setContentJson("not parsed either");
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(docMapper.selectList(any())).thenReturn(List.of(archived));
+
+        assertThat(service.listArchivedDocCatalog("k1")).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo("d-old");
+            assertThat(item.pageType()).isEqualTo("spreadsheet");
+            assertThat(item.bodyLoaded()).isFalse();
+            assertThat(item.blocks()).isEmpty();
+            assertThat(item.content()).isNull();
+            assertThat(item.backlinks()).isEmpty();
+        });
+        var query = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(docMapper).selectList(query.capture());
+        assertThat(query.getValue().getSqlSelect()).doesNotContain("blocks_json", "content_json", "content_markdown");
+        assertThat(query.getValue().getSqlSegment()).contains("kb_id", "deleted_at IS NULL", "archived_at IS NOT NULL", "ORDER BY archived_at DESC");
+        verify(docMapper, never()).selectBacklinkSources(anyString());
+    }
+
+    @Test
     void olderChatSnapshotCannotOverwriteOrMasqueradeAsTheLatestArchive() {
         KbEntity kb = kb("kb-chat");
         KbFolderEntity folder = folder("f-chat", kb.getId());

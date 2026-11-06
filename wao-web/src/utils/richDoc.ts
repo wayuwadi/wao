@@ -69,20 +69,32 @@ function nodeText(node: RichDocNode): string {
   return node.text ?? (node.content ?? []).map(nodeText).join('')
 }
 
-/** 目录只认顶层 H1–H3；稳定块 id 让滚动定位不再依赖标题文字。 */
+/** Include headings inside columns and callouts in document order; ignore fenced code. */
 export function richHeadings(content: RichDocContent): RichHeading[] {
   const document = content.document
   if (document?.type === 'doc') {
-    return (document.content ?? [])
-      .filter((node) => node.type === 'heading' && Number(node.attrs?.level) <= 3)
-      .map((node, index) => ({
-        id: String(node.attrs?.uid ?? `heading-${index}`),
-        text: nodeText(node),
+    const headings: RichHeading[] = []
+    const stack = [...(document.content ?? [])].reverse()
+    while (stack.length) {
+      const node = stack.pop()!
+      if (node.type === 'heading' && Number(node.attrs?.level ?? 2) <= 3) headings.push({
+        id: String(node.attrs?.uid ?? `heading-${headings.length}`), text: nodeText(node),
         level: Math.max(1, Math.min(3, Number(node.attrs?.level) || 2)),
-      }))
+      })
+      if (node.type !== 'codeBlock') for (let i = (node.content?.length ?? 0) - 1; i >= 0; i--) stack.push(node.content![i]!)
+    }
+    return headings
   }
+  let fence: { character: string; length: number } | null = null
   return content.markdown.split('\n').flatMap((line, index) => {
-    const match = /^(#{1,3})\s+(.+)$/.exec(line.trim())
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+    if (marker) {
+      if (!fence) fence = { character: marker[1]![0]!, length: marker[1]!.length }
+      else if (marker[1]![0] === fence.character && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = null
+      return []
+    }
+    if (fence) return []
+    const match = /^ {0,3}(#{1,3})\s+(.+?)(?:\s+#+\s*)?$/.exec(line)
     return match ? [{ id: `legacy-heading-${index}`, text: match[2]!, level: match[1]!.length }] : []
   })
 }
