@@ -27,6 +27,7 @@ describe('浮层 Esc 关闭顺序', () => {
       useOverlayDismiss(() => inner.value, innerClose, () => { inner.value = false })
     })
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229 }))
     expect(innerClose).not.toHaveBeenCalled()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(innerClose).toHaveBeenCalledOnce()

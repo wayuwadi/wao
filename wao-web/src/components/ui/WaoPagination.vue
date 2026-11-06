@@ -95,6 +95,8 @@ function jump() {
         </template>
       </div>
 
+      <span class="wao-pagination__compact" aria-live="polite">第 {{ page }} / {{ normalizedPageCount }} 页</span>
+
       <button
         type="button"
         class="wao-pagination__direction"
@@ -135,9 +137,10 @@ function jump() {
   justify-content: center;
   flex-wrap: wrap;
   gap: 6px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
+.wao-pagination__compact { display: none; white-space: nowrap; text-align: center; }
 .wao-pagination__navigation,
 .wao-pagination__meta {
   display: inline-flex;
@@ -146,9 +149,9 @@ function jump() {
 }
 .wao-pagination button,
 .wao-pagination input {
-  height: 29px;
+  height: 32px;
   border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
+  border-radius: var(--wao-radius-control);
   background: var(--wao-bg-card);
   color: var(--wao-text-2);
 }
@@ -220,14 +223,15 @@ function jump() {
   .wao-pagination__navigation {
     width: 100%;
     display: grid;
-    grid-template-columns: 29px minmax(0, 1fr) 29px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
     gap: 4px;
   }
   .wao-pagination__pages {
-    min-width: 0;
-    justify-content: center;
-    gap: 2px;
+    display: none;
   }
+  .wao-pagination__compact { display: block; align-self: center; }
+  .wao-pagination button, .wao-pagination input { min-width: 44px; min-height: 44px; }
+  .wao-pagination input { font-size: var(--wao-font-reading); }
   .wao-pagination__direction span {
     display: none;
   }
@@ -245,5 +249,8 @@ function jump() {
   .wao-pagination__jump {
     margin-left: auto;
   }
+}
+@media (pointer: coarse) {
+  .wao-pagination button, .wao-pagination input { min-height: 44px; min-width: 44px; }
 }
 </style>

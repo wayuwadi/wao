@@ -26,6 +26,8 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
+const examplePage = ref(5)
 import DataLoadStatus from '@/components/ui/DataLoadStatus.vue'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import type { ConfirmAction } from '@/composables/confirmAction'
@@ -204,6 +206,8 @@ const dialogTypes = [
   },
 ] as const
 const dialog = ref<'confirm' | 'form' | 'settings' | null>(null)
+const longTitlePreview = ref(false)
+const longPreviewTitle = '预览 ' + '关于下一阶段工作安排与阅读资料的完整名称演示'.repeat(10)
 const settingSection = ref('expression')
 const settingItems = [
   { id: 'expression', label: '表达偏好', icon: 'ri-quill-pen-line' },
@@ -498,6 +502,11 @@ const detailLabels = ref('')
             </div>
           </section>
           <section class="reference-section">
+            <h2>长资源名称</h2>
+            <p>预览标题最多显示两行，完整名称保留在可展开内容中；普通表单和确认提示继续完整换行。</p>
+            <WaoButton @click="longTitlePreview = true">查看长名称预览</WaoButton>
+          </section>
+          <section class="reference-section">
             <h2>项目设置分项</h2>
             <p>清单设置使用紧凑标题与轻量预览，成员和危险操作分项展示。以下为合成演示，不读取成员或写入账号。</p>
             <SettingsDialogShell title="项目设置示例" appearance="compact" width="760px" height="min(620px, calc(100dvh - 48px))" embedded :theme="theme">
@@ -618,6 +627,8 @@ const detailLabels = ref('')
             <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
             <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
             <WaoButton @click="showConfirmExample">演示删除确认与失败重试</WaoButton>
+            <p>分页在窄屏显示当前页、上一页和下一页，保留页码跳转；触屏操作区至少 44px。</p>
+            <WaoPagination v-model:page="examplePage" :page-count="24" :total="240" aria-label="示例分页" />
             <SettingsSearch current-tab="demo" @navigate="feedback = `演示找到设置入口：${$event}，没有离开本页。`" />
             <p role="status">{{ feedback }}</p>
           </WaoCard>
@@ -678,6 +689,12 @@ const detailLabels = ref('')
       </div>
     </div>
 
+    <SettingsDialogShell v-if="longTitlePreview" :title="longPreviewTitle" :title-max-lines="2" :theme="theme" appearance="compact" width="760px" @close="longTitlePreview = false">
+      <div class="dialog-demo-content">
+        <details><summary tabindex="0">完整名称</summary><p>{{ longPreviewTitle }}</p></details>
+        <p>标题保持紧凑，正文有足够阅读空间。这是合成演示，没有读取真实文件。</p>
+      </div>
+    </SettingsDialogShell>
     <SettingsDialogShell
       v-if="dialog"
       :theme="theme"

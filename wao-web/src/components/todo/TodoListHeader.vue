@@ -1,15 +1,33 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
+import { useInputComposition } from '@/composables/inputComposition'
 import TaskCaptureFields from '@/components/task/TaskCaptureFields.vue'
 import { emptyCapture, type CaptureFields } from '@/utils/taskCapture'
-const fields=defineModel<CaptureFields>('fields',{default:()=>emptyCapture()})
 import TodayDates from '@/components/routines/TodayDates.vue'
 import TodoViewControls from './TodoViewControls.vue'
 import type { TodoViewSettings, TodoDisplaySettings } from '@/utils/todoViewSettings'
-withDefaults(defineProps<{ saved?:boolean; batchMode?:boolean; heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
+const props=withDefaults(defineProps<{ saved?:boolean; batchMode?:boolean; heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
+const fields=defineModel<CaptureFields>('fields',{default:()=>emptyCapture()})
 const query=defineModel<string>('query',{default:''})
 const completed=defineModel<boolean>('completed',{default:false})
 const quick=defineModel<string>('quick',{required:true})
-defineEmits<{ batch:[]; navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
+const emit=defineEmits<{ batch:[]; navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
+const composition=useInputComposition(),quickInput=ref<HTMLInputElement>(),quickForm=ref<HTMLFormElement>()
+const searchInput=ref<HTMLInputElement>()
+function clearSearch(){query.value='';void nextTick(()=>searchInput.value?.focus({preventScroll:true}))}
+watch(()=>props.selection,composition.end)
+let restoreInput=false
+function submit(){if(!composition.active()&&!props.creating&&quick.value.trim())emit('add')}
+watch(()=>props.creating,async (creating,wasCreating)=>{
+ if(creating){restoreInput=!!quickForm.value?.contains(document.activeElement);return}
+ if(!wasCreating||!restoreInput)return
+ restoreInput=false
+ await nextTick()
+ if(document.activeElement===document.body||quickForm.value?.contains(document.activeElement)) {
+  const target=quickInput.value?.disabled ? quickForm.value?.querySelector<HTMLButtonElement>('button:not(:disabled)') : quickInput.value
+  target?.focus({preventScroll:true})
+ }
+})
 </script>
 <template>
  <div class="todo-list-header">
@@ -21,14 +39,14 @@ defineEmits<{ batch:[]; navigation:[]; add:[]; templates:[]; protect:[]; view:[P
     <button v-if="!['completed','abandoned'].includes(selection)" type="button" aria-label="使用任务模板" title="使用任务模板" @click="$emit('templates')"><i class="ri-file-copy-line" aria-hidden="true" /></button>
    </div>
    <div class="toolbar-line">
-    <label class="task-search"><i class="ri-search-line" aria-hidden="true" /><input v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务" /><button v-if="query" aria-label="清空搜索" @click="query=''" type="button"><i class="ri-close-line" aria-hidden="true" /></button></label>
+    <label class="task-search"><i class="ri-search-line" aria-hidden="true" /><input ref="searchInput" v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务" /><button v-if="query" aria-label="清空搜索" @click="clearSearch" type="button"><i class="ri-close-line" aria-hidden="true" /></button></label>
     <div v-if="$slots.filters" class="toolbar-filters"><slot name="filters" /></div>
     <button class="batch-toggle" type="button" :aria-label="batchMode?'退出批量选择':'批量选择'" :title="batchMode?'退出批量选择':'批量选择'" :aria-pressed="!!batchMode" @click="$emit('batch')"><i class="ri-checkbox-multiple-line" aria-hidden="true" /><span class="batch-label">{{batchMode?'退出批量':'批量选择'}}</span></button>
     <div class="view-options"><TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" /></div>
    </div>
   </header>
   <TodayDates v-if="selection==='today'" />
-  <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" class="quick-add" @submit.prevent="$emit('add')"><i class="ri-add-line" aria-hidden="true" /><input v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating || saved" @input="$emit('protect')" @keydown.enter="($event.isComposing || $event.keyCode===229) && $event.preventDefault()" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':saved?'重试标签':'添加'}}</button></form>
+  <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" ref="quickForm" class="quick-add" @submit.prevent="submit"><i class="ri-add-line" aria-hidden="true" /><input ref="quickInput" v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating || saved" @input="$emit('protect')" @compositionstart="composition.start" @compositionend="composition.end" @keydown="composition.guard" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':saved?'重试标签':'添加'}}</button></form>
   <TaskCaptureFields v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" v-model="fields" :title="quick" :saved="saved" :disabled="creating" @title="quick=$event;$emit('protect')" />
   <p v-if="error" role="alert">{{error}}</p>
  </div>

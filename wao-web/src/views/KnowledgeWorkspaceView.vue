@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
@@ -17,6 +17,8 @@ import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import KnowledgeDirectoryTree from '@/components/knowledge/KnowledgeDirectoryTree.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { usePageVisibility } from '@/composables/pageVisibility'
 
 const data = useDataStore(), route = useRoute(), router = useRouter(), session = useSessionStore()
 const now = useNow(60_000)
@@ -36,6 +38,7 @@ const { query, view } = toRefs(useBrowsingState('knowledge-home', { query: '', v
 }))
 const keyword = computed(() => query.value.trim().toLocaleLowerCase())
 const searchInput = ref<HTMLInputElement | null>(null)
+function clearSearch() { query.value = ''; void nextTick(() => searchInput.value?.focus({ preventScroll: true })) }
 const rowLimit = ref<Record<string, number>>({})
 const recentLimit = ref(30)
 // Body draft writes replace docEdits; retain the title projection when only body text changed.
@@ -84,37 +87,56 @@ function visibleRows(kbId: string, rows: DirectoryNode[]) { return rows.slice(0,
 function showMore(kbId: string) { rowLimit.value[kbId] = (rowLimit.value[kbId] ?? 80) + 100 }
 
 const narrow = ref(false), mobileLibrary = ref(false), mobileDirectory = ref(false)
+const pageVisible = usePageVisibility()
+const paneId = useId()
+let navigationTrigger: HTMLElement | null = null
 const mobileLibraryButton = ref<HTMLButtonElement | null>(null), mobileDirectoryButton = ref<HTMLButtonElement | null>(null)
 const librariesPanel = ref<HTMLElement | null>(null), directoryPanel = ref<HTMLElement | null>(null)
 const mobileNavigationOpen = computed(() => narrow.value && (mobileLibrary.value || mobileDirectory.value))
 const librariesExpanded = computed(() => narrow.value ? mobileLibrary.value : !memory.value.collapsed)
 const directoryExpanded = computed(() => narrow.value ? mobileDirectory.value : !directoryMemory.value.collapsed)
-function toggleLibraries() {
+function toggleLibraries(event?: MouseEvent) {
   if (narrow.value) {
+    if (mobileLibrary.value) { closeMobile(true); return }
+    navigationTrigger = event?.currentTarget as HTMLElement | null
     mobileLibrary.value = !mobileLibrary.value; mobileDirectory.value = false
     if (mobileLibrary.value) void nextTick(() => librariesPanel.value?.querySelector<HTMLElement>('.pane-toggle')?.focus())
   }
   else memory.value.collapsed = !memory.value.collapsed
 }
-function toggleDirectory() {
+function toggleDirectory(event?: MouseEvent) {
   if (narrow.value) {
+    if (mobileDirectory.value) { closeMobile(true); return }
+    navigationTrigger = event?.currentTarget as HTMLElement | null
     mobileDirectory.value = !mobileDirectory.value; mobileLibrary.value = false
     if (mobileDirectory.value) void nextTick(() => directoryPanel.value?.querySelector<HTMLElement>('.pane-toggle')?.focus())
   }
   else directoryMemory.value.collapsed = !directoryMemory.value.collapsed
 }
 function closeMobile(returnFocus = false) {
-  const trigger = mobileLibrary.value ? mobileLibraryButton.value : mobileDirectoryButton.value
+  const wasOpen = mobileLibrary.value || mobileDirectory.value
   mobileLibrary.value = false; mobileDirectory.value = false
-  if (returnFocus) void nextTick(() => trigger?.focus())
+  if (wasOpen && returnFocus) void nextTick(restoreNavigationFocus)
 }
-function onEscape(event: KeyboardEvent) {
-  if (!narrow.value || (!mobileLibrary.value && !mobileDirectory.value)) return
-  event.preventDefault(); event.stopPropagation(); closeMobile(true)
+function restoreNavigationFocus() {
+  if (!narrow.value || !pageVisible.value) return
+  const target = navigationTrigger?.isConnected ? navigationTrigger : mobileLibraryButton.value
+  target?.focus({ preventScroll: true })
 }
-function open(kb = '', doc = '') {
+const navigationDismiss = useOverlayDismiss(() => mobileNavigationOpen.value, () => closeMobile(true))
+function trapNavigation(event: KeyboardEvent) {
+  if (!mobileNavigationOpen.value || !navigationDismiss.isTopmost() || event.defaultPrevented || event.key !== 'Tab') return
+  const pane = mobileLibrary.value ? librariesPanel.value : directoryPanel.value
+  const buttons = [...(pane?.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), a[href], input:not(:disabled)') ?? [])]
+  const first = buttons[0], last = buttons[buttons.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+}
+async function open(kb = '', doc = '') {
+  const restoreFocus = mobileNavigationOpen.value
   closeMobile()
-  void router.push({ path: '/knowledge', query: { ...(kb ? { kb } : { home: '1' }), ...(doc ? { doc } : {}) } })
+  await router.push({ path: '/knowledge', query: { ...(kb ? { kb } : { home: '1' }), ...(doc ? { doc } : {}) } })
+  if (restoreFocus) await nextTick(restoreNavigationFocus)
 }
 function onShortcut(event: KeyboardEvent) {
   if (selected.value || creating.value || event.isComposing || event.altKey || event.shiftKey) return
@@ -124,18 +146,20 @@ function onShortcut(event: KeyboardEvent) {
   }
 }
 let viewport: MediaQueryList | undefined
-function updateViewport() { narrow.value = viewport?.matches ?? false; closeMobile() }
-onMounted(() => {
-  viewport = window.matchMedia?.('(max-width: 900px)')
-  updateViewport(); viewport?.addEventListener('change', updateViewport)
-  window.addEventListener('keydown', onShortcut)
-})
+function updateViewport(event?: MediaQueryListEvent) { narrow.value = event?.matches ?? viewport?.matches ?? false; closeMobile() }
+if (typeof window.matchMedia === 'function') {
+  viewport = window.matchMedia('(max-width: 900px)')
+  updateViewport(); viewport.addEventListener('change', updateViewport)
+}
+onMounted(() => window.addEventListener('keydown', onShortcut))
 onBeforeUnmount(() => {
   createGeneration++
   viewport?.removeEventListener('change', updateViewport)
   window.removeEventListener('keydown', onShortcut)
 })
 watch(query, () => { rowLimit.value = {}; recentLimit.value = 30 })
+watch(pageVisible, () => closeMobile())
+watch(() => route.fullPath, () => closeMobile(true))
 watch(selected, () => { documentFocus.value = false; closeMobile() })
 watch(() => data.kbById(selected.value), kb => { if (!kb) documentFocus.value = false }, { flush: 'sync' })
 let createGeneration = 0
@@ -146,10 +170,11 @@ watch(() => `${session.account?.accountId ?? ''}:${session.userId}`, () => {
 }, { flush: 'sync' })
 
 const creating = ref(false), saving = ref(false), name = ref(''), description = ref(''), icon = ref('wao-kb-icon-notebook'), error = ref('')
-function startCreate() {
+async function startCreate() {
   if (saving.value) return
-  if (mobileNavigationOpen.value) mobileLibraryButton.value?.focus()
-  name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''; creating.value = true; closeMobile()
+  closeMobile(true)
+  await nextTick()
+  name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''; creating.value = true
 }
 async function create() {
   if (!name.value.trim() || saving.value) return
@@ -166,16 +191,17 @@ async function create() {
 </script>
 
 <template>
-  <div class="knowledge-workspace bounded-workspace" :class="{ 'document-focused': documentFocus }" @keydown.esc="onEscape">
-    <div v-if="!documentFocus" class="mobile-workspace-bar">
-      <button ref="mobileLibraryButton" type="button" aria-label="选择知识库" :aria-expanded="mobileLibrary" @click="toggleLibraries"><i class="ri-book-2-line" aria-hidden="true" /><span>{{ selectedName }}</span><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
-      <button v-if="!selected" ref="mobileDirectoryButton" type="button" aria-label="查看全部目录" :aria-expanded="mobileDirectory" @click="toggleDirectory"><i class="ri-list-check" aria-hidden="true" />目录</button>
+  <div class="knowledge-workspace bounded-workspace" :class="{ 'document-focused': documentFocus }">
+    <div v-if="narrow && !documentFocus" class="mobile-workspace-bar mobile-toolbar" role="navigation" aria-label="知识库浏览">
+      <button ref="mobileLibraryButton" type="button" aria-label="选择知识库" :aria-controls="`${paneId}-libraries`" :aria-expanded="mobileLibrary" @click="toggleLibraries"><i class="ri-book-2-line" aria-hidden="true" /><span>{{ selectedName }}</span><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
+      <button v-if="!selected" ref="mobileDirectoryButton" type="button" aria-label="查看全部目录" :aria-controls="`${paneId}-directory`" :aria-expanded="mobileDirectory" @click="toggleDirectory"><i class="ri-list-check" aria-hidden="true" />目录</button>
+      <button type="button" class="mobile-add" aria-label="新增知识库" @click="startCreate"><i class="ri-add-line" aria-hidden="true" /></button>
     </div>
-    <button v-if="narrow && (mobileLibrary || mobileDirectory) && !documentFocus" type="button" class="mobile-backdrop" aria-label="关闭知识库导航" @click="closeMobile(true)" />
-    <aside v-show="!documentFocus" ref="librariesPanel" class="libraries" :class="{ collapsed: !librariesExpanded }" aria-label="知识库清单">
+    <button v-if="mobileNavigationOpen && !documentFocus" type="button" class="mobile-backdrop navigation-mask" aria-label="关闭知识库导航" tabindex="-1" @click="navigationDismiss.isTopmost() && closeMobile(true)" />
+    <aside v-show="!documentFocus && (!narrow || mobileLibrary)" :id="`${paneId}-libraries`" ref="librariesPanel" class="libraries" :class="{ collapsed: !librariesExpanded }" :role="narrow ? 'dialog' : undefined" :aria-modal="narrow ? true : undefined" aria-label="知识库清单" @keydown="trapNavigation">
       <header>
         <strong v-if="librariesExpanded">知识库</strong>
-        <button v-if="librariesExpanded" class="library-add icon-button" type="button" aria-label="新增知识库" title="新增知识库" @click="startCreate"><i class="ri-add-line" aria-hidden="true" /></button>
+        <button v-if="librariesExpanded && !narrow" class="library-add icon-button" type="button" aria-label="新增知识库" title="新增知识库" @click="startCreate"><i class="ri-add-line" aria-hidden="true" /></button>
         <button type="button" class="pane-toggle icon-button" :aria-label="librariesExpanded ? '收起知识库清单' : '展开知识库清单'" :aria-expanded="librariesExpanded" @click="toggleLibraries"><i class="ri-side-bar-line" aria-hidden="true" /></button>
       </header>
       <nav v-show="librariesExpanded" class="library-list" aria-label="选择知识库">
@@ -185,10 +211,10 @@ async function create() {
         <p v-if="!libraries.length && data.loadStates.knowledge === 'loaded'" class="navigation-empty">在这里整理你的知识</p>
       </nav>
     </aside>
-    <aside v-if="!selected" ref="directoryPanel" class="home-directory" :class="{ collapsed: !directoryExpanded }" :style="{ width: directoryExpanded ? `${directoryWidth}px` : '44px' }" aria-label="全部知识库目录">
+    <aside v-if="!selected" v-show="!narrow || mobileDirectory" :id="`${paneId}-directory`" ref="directoryPanel" class="home-directory" :class="{ collapsed: !directoryExpanded }" :style="{ width: directoryExpanded ? `${directoryWidth}px` : '44px' }" :role="narrow ? 'dialog' : undefined" :aria-modal="narrow ? true : undefined" aria-label="全部知识库目录" @keydown="trapNavigation">
       <header class="directory-header"><button type="button" class="pane-toggle icon-button" :aria-label="directoryExpanded ? '收起知识库目录' : '展开知识库目录'" :aria-expanded="directoryExpanded" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true" /></button><strong v-if="directoryExpanded">全部目录</strong><button v-if="directoryExpanded" type="button" class="icon-button" :disabled="!catalog.length || !!keyword" :aria-label="allExpanded ? '折叠全部目录' : '展开全部目录'" :title="allExpanded ? '折叠全部目录' : '展开全部目录'" @click="toggleAll"><i :class="allExpanded ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'" aria-hidden="true" /></button></header>
       <div v-show="directoryExpanded" class="all-tree">
-        <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
+        <PaneResizeHandle v-if="!narrow" :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
         <p v-if="keyword" class="tree-search-hint">“{{ query.trim() }}” 的匹配目录</p>
         <section v-for="item in treeGroups" :key="item.kb.id" class="tree-library">
           <button type="button" class="tree-library-title" :title="item.kb.name" @click="open(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><i class="ri-arrow-right-s-line" aria-hidden="true" /></button>
@@ -198,7 +224,7 @@ async function create() {
       </div>
     </aside>
     <main class="workspace-content" :inert="mobileNavigationOpen || undefined">
-      <KbDetailView v-if="selected" @focus-change="documentFocus = $event" />
+      <KbDetailView v-if="selected" :navigation-hidden="mobileNavigationOpen" @focus-change="documentFocus = $event" />
       <section v-else class="knowledge-home">
         <div class="home-inner">
           <header class="home-header">
@@ -207,11 +233,11 @@ async function create() {
               <label class="home-search"><i class="ri-search-line" aria-hidden="true" /><input ref="searchInput" v-model="query" type="search" aria-label="搜索知识库、文件夹或文档" aria-keyshortcuts="Control+j Meta+j" placeholder="搜索知识库、文件夹或文档" maxlength="200" /><kbd aria-hidden="true">Ctrl J</kbd></label>
               <div class="home-views" role="group" aria-label="内容展示方式"><button type="button" :class="{ active: view === 'directory' }" :aria-pressed="view === 'directory'" @click="view = 'directory'"><i class="ri-list-check" aria-hidden="true" />全部内容</button><button type="button" :class="{ active: view === 'recent' }" :aria-pressed="view === 'recent'" @click="view = 'recent'"><i class="ri-time-line" aria-hidden="true" />最近更新</button></div>
             </div>
-            <p v-if="keyword" class="search-summary" role="status">找到 {{ index.length }} 个知识库中的 {{ resultCount }} 篇文档<button type="button" @click="query = ''">清除搜索</button></p>
+            <p v-if="keyword" class="search-summary" role="status">找到 {{ index.length }} 个知识库中的 {{ resultCount }} 篇文档<button type="button" @click="clearSearch">清除搜索</button></p>
           </header>
           <WaoEmptyState v-if="(data.loadStates.knowledge === 'loading' || data.loadStates.knowledge === 'idle') && !libraries.length" title="正在读取知识库…" icon="ri-loader-4-line" role="status" />
           <WaoEmptyState v-else-if="data.loadStates.knowledge === 'error'" title="知识库读取失败" :description="libraries.length ? '以下为上次读取的目录，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert"><template #actions><WaoButton @click="data.retryDomain('knowledge')">重新读取知识库</WaoButton></template></WaoEmptyState>
-          <WaoEmptyState v-else-if="!index.length" :title="keyword ? '没有匹配的内容' : '还没有知识库'" :description="keyword ? '换个关键词，或清除搜索查看全部内容。' : '创建一个知识库，开始整理文档。'"><template #actions><WaoButton v-if="keyword" @click="query = ''">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template></WaoEmptyState>
+          <WaoEmptyState v-else-if="!index.length" :title="keyword ? '没有匹配的内容' : '还没有知识库'" :description="keyword ? '换个关键词，或清除搜索查看全部内容。' : '创建一个知识库，开始整理文档。'"><template #actions><WaoButton v-if="keyword" @click="clearSearch">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template></WaoEmptyState>
           <template v-if="view === 'directory'">
             <section v-for="item in index" :key="item.kb.id" class="index-library">
               <header class="index-library-header"><button type="button" class="library-title" @click="open(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><i class="ri-arrow-right-s-line" aria-hidden="true" /></button><span class="library-count">{{ item.count }} 篇文档</span></header>
@@ -324,6 +350,7 @@ time { color: var(--wao-text-3); font-size: var(--wao-font-caption); flex-shrink
   .mobile-workspace-bar { display: flex; justify-content: space-between; gap: var(--wao-space-1); flex: 0 0 44px; min-width: 0; border-bottom: 1px solid var(--wao-line); padding-inline: var(--wao-space-1); }
   .mobile-workspace-bar button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 0 var(--wao-space-1); border: 0; background: transparent; }
   .mobile-workspace-bar button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-bar .mobile-add { min-width: 44px; margin-left: auto; flex-shrink: 0; }
   .libraries, .home-directory { position: absolute; inset: 44px auto 0 0; width: min(300px, calc(100% - 32px)) !important; z-index: 6; box-shadow: var(--wao-shadow-pop); }
   .libraries.collapsed, .home-directory.collapsed { display: none; }
   .home-directory :deep(.pane-resize-handle) { display: none; }

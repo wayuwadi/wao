@@ -3,7 +3,7 @@ import type { CSSProperties } from 'vue'
 import { useIsMobile } from './viewport'
 
 /** 可见视口与编辑焦点共同判断键盘；双指缩放不能触发键盘布局。 */
-export function useMobileVisualViewport() {
+export function useMobileVisualViewport(variablePrefix = 'note') {
   const mobile = useIsMobile()
   const frame = ref<{ height: number; top: number } | null>(null)
   const reduced = ref(false)
@@ -37,7 +37,7 @@ export function useMobileVisualViewport() {
     document.removeEventListener('focusout', update)
   })
   const fullscreenStyle = computed<CSSProperties>(() => mobile.value && frame.value
-    ? { '--note-visible-height': `${frame.value.height}px`, '--note-visible-top': `${frame.value.top}px` }
+    ? { [`--${variablePrefix}-visible-height`]: `${frame.value.height}px`, [`--${variablePrefix}-visible-top`]: `${frame.value.top}px` }
     : {})
   return { isMobile: mobile, fullscreenStyle, keyboardOpen: computed(() => mobile.value && editing.value && reduced.value) }
 }

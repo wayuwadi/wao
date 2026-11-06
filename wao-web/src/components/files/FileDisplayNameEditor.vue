@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { useInputComposition } from '@/composables/inputComposition'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { fileDisplayName } from '@/utils/files'
 import {
@@ -24,7 +25,9 @@ const readingConflict = ref(false)
 const saving = ref(false)
 const state = ref<'idle' | 'saved' | 'error'>('idle')
 const error = ref('')
+const root = ref<HTMLElement | null>(null)
 const input = ref<HTMLInputElement | null>(null)
+const composition = useInputComposition()
 const errorId = `file-name-error-${useId()}`
 const draftKey = computed(() =>
   resourceNameDraftKey(session.account?.accountId, session.userId, props.file.id),
@@ -40,11 +43,30 @@ const remoteChanged = computed(
 const hasDraft = computed(() => editing.value && draft.value !== baseName.value)
 let generation = 0
 let restoring = false
+function focusStayedInEditor() {
+  return document.activeElement === document.body || !!root.value?.contains(document.activeElement)
+}
+function restoreFocus(onlyIfUnchanged = false) {
+  const activeGeneration = generation
+  void nextTick(() => {
+    if (activeGeneration !== generation) return
+    if (!onlyIfUnchanged || focusStayedInEditor()) root.value?.querySelector<HTMLButtonElement>('.name-row button')?.focus({ preventScroll: true })
+  })
+}
+function onKeydown(event: KeyboardEvent) {
+  if (composition.active(event)) {
+    if (event.key === 'Escape') event.stopPropagation()
+    return
+  }
+  if (event.key === 'Enter') { event.preventDefault(); void save() }
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() }
+}
 
 watch(
   target,
   () => {
     generation++
+    composition.end()
     restoring = true
     const saved = readResourceNameDraft(draftKey.value)
     baseName.value = saved?.base ?? fileDisplayName(props.file)
@@ -101,6 +123,7 @@ function cancel() {
   error.value = ''
   serverConflict.value = false
   readingConflict.value = false
+  restoreFocus()
 }
 
 async function save() {
@@ -110,7 +133,8 @@ async function save() {
     error.value = '展示名称不能为空'
     return
   }
-  if (!props.file.id || saving.value || remoteChanged.value || serverConflict.value) return
+  if (!props.file.id || saving.value || remoteChanged.value || serverConflict.value || composition.active()) return
+  const startedInEditor = !!root.value?.contains(document.activeElement)
   const activeGeneration = generation
   const key = draftKey.value
   const revision = readResourceNameDraft(key)?.revision
@@ -123,6 +147,7 @@ async function save() {
     if (activeGeneration !== generation) return
     editing.value = false
     state.value = 'saved'
+    if (startedInEditor && focusStayedInEditor()) restoreFocus(true)
   } catch (cause) {
     if (activeGeneration !== generation) return
     state.value = 'error'
@@ -170,7 +195,7 @@ async function refreshConflict() {
 </script>
 
 <template>
-  <div class="file-display-name">
+  <div ref="root" class="file-display-name">
     <template v-if="editing">
       <div class="rename-row">
         <input
@@ -181,8 +206,9 @@ async function refreshConflict() {
           :aria-invalid="!!error || remoteChanged || serverConflict"
           :aria-describedby="error || remoteChanged || serverConflict ? errorId : undefined"
           :disabled="saving"
-          @keydown.enter.prevent="save"
-          @keydown.esc.prevent="cancel"
+          @compositionstart="composition.start"
+          @compositionend="composition.end"
+          @keydown="onKeydown"
         />
         <WaoButton
           variant="ghost"

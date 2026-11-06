@@ -1,21 +1,58 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, toRefs } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAVIGATION_CATALOG, matchesFunction } from '@/config/navigationCatalog'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useNavStore } from '@/stores/nav'
+import { useSessionStore } from '@/stores/session'
+import { useBrowsingState, oneOf, validPage, validSearch } from '@/composables/browsingState'
+import { useBrowsingScroll } from '@/composables/browsingScroll'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 const Governance = defineAsyncComponent(() => import('@/components/nav/NavigationGovernance.vue'))
 const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
+const session = useSessionStore()
 const links = useQuickLinks()
-const query = ref('')
-const selected = ref('today')
+const browse = useBrowsingState('navigation', { query: '', selected: 'today', catalogPage: 1, scroll: 0 }, {
+  query: validSearch,
+  selected: oneOf('all', 'links', ...NAVIGATION_CATALOG.map(section => section.id)),
+  catalogPage: validPage,
+  scroll: value => typeof value === 'number' && Number.isFinite(value) && value >= 0,
+})
+const { query, selected, catalogPage } = toRefs(browse)
+const root = ref<HTMLElement>()
+const searchInput = ref<HTMLInputElement>()
 const governance = computed(() => route.query.view === 'governance')
+const effectiveCategory = computed(() => query.value.trim() ? 'all' : selected.value)
+const selectedLabel = computed(() => selected.value === 'all' ? '全部功能' : selected.value === 'links' ? '应用与链接' : NAVIGATION_CATALOG.find(section => section.id === selected.value)?.label)
+// 失败也代表本次读取结束：已知功能仍可浏览，失效的保存页码需要收口。
+const catalogReady = computed(() => (nav.layoutLoaded || !!nav.layoutError) && !nav.layoutLoading
+  && (links.loaded.value || !!links.loadError.value) && !links.loading.value)
+const { stopRestoring } = useBrowsingScroll(root, computed({
+  get: () => browse.scroll,
+  set: value => { if (!governance.value) browse.scroll = value },
+}), () => !governance.value && catalogReady.value,
+() => `${session.account?.accountId}:${session.userId}:${governance.value}`)
+function resetScroll() {
+  stopRestoring()
+  browse.scroll = 0
+  void nextTick(() => {
+    const container = root.value?.closest<HTMLElement>('.floating .window-content, .content') ?? root.value
+    if (container) container.scrollTop = 0
+  })
+}
+function resetResults() { catalogPage.value = 1; resetScroll() }
+function selectCategory(id: string) { selected.value = id; resetResults() }
+function changePage(page: number) { catalogPage.value = page; resetScroll() }
+async function showAll() {
+  query.value = ''; selected.value = 'all'; resetResults()
+  await nextTick()
+  searchInput.value?.focus({ preventScroll: true })
+}
 const sections = computed(() =>
   NAVIGATION_CATALOG.map((section) => ({
     ...section,
@@ -59,7 +96,7 @@ const catalogResults = computed(() => [
   ...(dynamicVisible.value ? visibleApps.value.map((app) => `app:${app.id}`) : []),
   ...(dynamicVisible.value ? visibleLinks.value.map((link) => `link:${link.id}`) : []),
 ])
-const { page: catalogPage, pageCount: catalogPageCount, visible: visibleCatalogResults } = useClientPagination(catalogResults, [query, selected])
+const { pageCount: catalogPageCount, visible: visibleCatalogResults } = useClientPagination(catalogResults, [], 10, { page: catalogPage, ready: () => catalogReady.value })
 const pageKeys = computed(() => new Set(visibleCatalogResults.value))
 const pagedSections = computed(() => sections.value.map((section) => ({
   ...section, items: section.items.filter((item) => pageKeys.value.has(`function:${item.id}`)),
@@ -89,7 +126,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="navigation-center wao-page-frame">
+  <main ref="root" class="navigation-center wao-page-frame">
     <header class="hero">
       <div>
         <span class="eyebrow">WAO / 导航</span>
@@ -112,29 +149,33 @@ onMounted(() => {
       <label class="search"
         ><i class="ri-search-line"></i
         ><input
+          ref="searchInput"
           v-model="query"
+          @input="resetResults"
           type="search"
+          maxlength="200"
           placeholder="搜索功能、旧名称、应用或链接"
           aria-label="搜索全部功能"
         /><span v-if="query.trim()">{{ resultCount }} 个结果</span
         ><kbd v-else>全局搜索也能找功能</kbd></label
       >
       <nav class="domains" aria-label="功能分类">
-        <button :class="{ active: selected === 'all' }" @click="selected = 'all'">全部</button
+        <button :class="{ active: effectiveCategory === 'all' }" :aria-pressed="effectiveCategory === 'all'" @click="selectCategory('all')">全部</button
         ><button
           v-for="section in NAVIGATION_CATALOG"
           :key="section.id"
-          :class="{ active: selected === section.id }"
-          @click="selected = section.id"
+          :class="{ active: effectiveCategory === section.id }"
+          :aria-pressed="effectiveCategory === section.id"
+          @click="selectCategory(section.id)"
         >
           <i :class="section.icon"></i>{{ section.label }}</button
-        ><button :class="{ active: selected === 'links' }" @click="selected = 'links'">
+        ><button :class="{ active: effectiveCategory === 'links' }" :aria-pressed="effectiveCategory === 'links'" @click="selectCategory('links')">
           应用与链接
         </button>
       </nav>
       <p v-if="previewsVisible || query.trim()" class="hint">
         <template v-if="previewsVisible">同一分类中，规划与示例入口列在最后，仍可打开查看。</template>
-        <template v-if="query.trim()">搜索覆盖所有分类，也包含未固定的功能。</template>
+        <template v-if="query.trim()">搜索覆盖所有分类，也包含未固定的功能；清空搜索后返回「{{ selectedLabel }}」。</template>
       </p>
       <div v-if="nav.layoutError || links.loadError.value" role="alert" class="status error">
         {{
@@ -214,16 +255,12 @@ onMounted(() => {
           </button>
         </div>
       </section>
-      <WaoPagination v-if="catalogPageCount > 1" v-model:page="catalogPage" :page-count="catalogPageCount" :total="resultCount" aria-label="功能与快捷链接查询结果分页" />
-      <div v-if="!resultCount" class="empty">
+      <WaoPagination v-if="catalogPageCount > 1" :page="catalogPage" @update:page="changePage" :page-count="catalogPageCount" :total="resultCount" aria-label="功能与快捷链接查询结果分页" />
+      <div v-if="!resultCount && !nav.layoutLoading && !links.loading.value && !nav.layoutError && !links.loadError.value" class="empty">
         <i class="ri-search-line"></i>
         <h2>没有找到匹配入口</h2>
         <p>试试功能原名、用途或旧名称。</p>
-        <button
-          @click="
-            query = ''; selected = 'all'
-          "
-        >
+        <button @click="showAll">
           查看全部功能
         </button>
       </div>

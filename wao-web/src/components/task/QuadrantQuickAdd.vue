@@ -6,6 +6,7 @@ import TaskCaptureFields from './TaskCaptureFields.vue'
 import { emptyCapture, capturePayload } from '@/utils/taskCapture'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
 import type { Priority } from '@/types'
+import { useInputComposition } from '@/composables/inputComposition'
 
 const props = defineProps<{ priority: Priority; projectId: string; label: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -14,12 +15,14 @@ const labels=useTaskLabelsStore(), fields=ref(emptyCapture(props.projectId,props
 const input = ref<HTMLInputElement>()
 const confirmed=ref(false)
 const title = ref(''), id = ref(''), error = ref(''), saving = ref(false)
+const composition = useInputComposition()
 const key = computed(() => `wao-quadrant-draft:${session.account?.accountId}:${session.userId}:${props.projectId}:${props.priority}`)
 let generation = 0
 onBeforeUnmount(() => { generation++ })
 watch(key, () => {
   generation++
   confirmed.value=false;title.value = ''; id.value = ''; error.value = ''; saving.value = false
+  composition.end()
   try { const draft = JSON.parse(localStorage.getItem(key.value) || '{}'); title.value = draft.title || ''; id.value = draft.id || ''; confirmed.value=!!draft.saved; fields.value={...emptyCapture(props.projectId,props.priority),...draft.fields} }
   catch { error.value = '无法读取草稿' }
 }, { immediate: true, flush: 'sync' })
@@ -30,12 +33,13 @@ function protect() {
 }
 watch(fields,protect,{deep:true})
 async function submit() {
-  if (!title.value.trim() || saving.value) return
+  if (!title.value.trim() || saving.value || composition.active()) return
   protect(); saving.value = true; error.value = ''
   const retryingLabels = confirmed.value
   const attempt = generation
   const active = () => attempt === generation && key.value === draftKey
   const draftKey = key.value, taskId = id.value, taskTitle = title.value.trim()
+  const form = input.value?.form, restoreInput = !!form?.contains(document.activeElement)
   try {
     const payload={...capturePayload(fields.value),title:taskTitle,desc:'',owner:session.userId}
     const existing = data.taskById(taskId)
@@ -57,19 +61,30 @@ async function submit() {
   } catch (e) {
     if (active()) error.value = e instanceof Error ? e.message : '任务未保存，请重试'
   } finally {
-    if (active()) { saving.value = false; await nextTick(); input.value?.focus() }
+    if (active()) {
+      saving.value = false; await nextTick()
+      if (active() && restoreInput && (document.activeElement === document.body || form?.contains(document.activeElement))) {
+        const target = input.value?.disabled ? form?.querySelector<HTMLButtonElement>('button:not(:disabled)') : input.value
+        target?.focus({ preventScroll: true })
+      }
+    }
   }
 }
 function leave(event: FocusEvent) {
   if (!title.value.trim() && !saving.value && !(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) emit('close')
 }
+function inputKey(event: KeyboardEvent) {
+  if (composition.guard(event)) return
+  if (event.key === 'Enter') { event.preventDefault(); void submit() }
+  if (event.key === 'Escape' && !saving.value) { event.preventDefault(); emit('close') }
+}
 onMounted(() => input.value?.focus())
 </script>
 
 <template>
-  <form class="quadrant-quick-add" :aria-label="`在${label}添加任务`" @submit.prevent="submit" @focusout="leave">
+  <form class="quadrant-quick-add" :aria-label="`在${label}添加任务`" @submit.prevent="submit" @focusout="leave" @compositionstart="composition.start" @compositionend="composition.end" @keydown="composition.guard">
     <div class="input-row">
-      <input ref="input" v-model="title" :aria-label="`${label}任务名称`" placeholder="输入任务名称，回车添加" :disabled="saving || confirmed" @input="protect" @keydown.enter.prevent="!$event.isComposing && submit()" @keydown.esc.prevent="!saving && emit('close')" />
+      <input ref="input" v-model="title" :aria-label="`${label}任务名称`" placeholder="输入任务名称，回车添加" :disabled="saving || confirmed" @input="protect" @keydown="inputKey" />
       <button :disabled="saving || !title.trim()">{{ saving ? '保存中…' : confirmed ? '重试标签' : error ? '重试' : '添加' }}</button>
       <button type="button" aria-label="收起添加任务" :disabled="saving" @click="emit('close')"><i class="ri-close-line" aria-hidden="true" /></button>
     </div>

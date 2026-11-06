@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { useMobileVisualViewport } from '@/composables/mobileVisualViewport'
 const props = withDefaults(
   defineProps<{
     title: string
+    titleMaxLines?: number
     description?: string
     width?: string
     height?: string
@@ -17,6 +19,7 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLElement>()
+const { fullscreenStyle } = useMobileVisualViewport('settings')
 const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const dismiss = useOverlayDismiss(
   () => !props.embedded,
@@ -26,7 +29,8 @@ function outside() {
   if (!props.closeDisabled && dismiss.isTopmost()) emit('close')
 }
 function trap(event: KeyboardEvent) {
-  if (props.embedded) return
+  // 编辑器缩进和内层浮层已经消费的 Tab 不交给外层再次处理。
+  if (props.embedded || event.defaultPrevented || !dismiss.isTopmost()) return
   if (event.key !== 'Tab') return
   const items = [
     ...(dialog.value?.querySelectorAll<HTMLElement>(
@@ -64,7 +68,9 @@ function trap(event: KeyboardEvent) {
 onMounted(async () => {
   if (props.embedded) return
   await nextTick()
-  dialog.value?.focus({ preventScroll: true })
+  if (dismiss.isTopmost() && !dialog.value?.contains(document.activeElement)) {
+    dialog.value?.focus({ preventScroll: true })
+  }
 })
 onBeforeUnmount(() => {
   if (!props.embedded && trigger?.isConnected) trigger.focus({ preventScroll: true })
@@ -76,7 +82,7 @@ onBeforeUnmount(() => {
       class="settings-dialog-mask"
       :class="{ embedded }"
       :data-wao-theme="theme"
-      :style="theme ? { colorScheme: theme } : undefined"
+      :style="{ ...(!embedded ? fullscreenStyle : {}), colorScheme: theme }"
       @click.self="!embedded && outside()"
     >
       <section
@@ -92,8 +98,13 @@ onBeforeUnmount(() => {
       >
         <header class="dialog-heading">
           <div v-if="appearance !== 'compact'" class="title-icon"><i :class="icon" aria-hidden="true"></i></div>
-          <div>
-            <h2>{{ title }}</h2>
+          <div class="dialog-title">
+            <h2
+              :class="{ 'limited-title': titleMaxLines && titleMaxLines > 0 }"
+              :style="titleMaxLines && titleMaxLines > 0 ? { '--dialog-title-lines': titleMaxLines } : undefined"
+              :title="title"
+              :aria-label="title"
+            >{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
           </div>
           <button
@@ -149,6 +160,11 @@ onBeforeUnmount(() => {
   padding: 22px 26px;
   border-bottom: 1px solid var(--wao-divider);
 }
+.dialog-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 h2 {
   margin: 0;
   font-size: var(--wao-font-title);
@@ -161,6 +177,12 @@ p {
   color: var(--wao-text-3);
   font-size: var(--wao-font-help);
   line-height: 1.6;
+}
+.limited-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--dialog-title-lines);
+  overflow: hidden;
 }
 .title-icon {
   flex-shrink: 0;
@@ -201,6 +223,7 @@ p {
   flex-direction: column;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .dialog-footer {
   flex-shrink: 0;
@@ -214,16 +237,21 @@ button:focus-visible {
 @media (max-width: 650px) {
   .settings-dialog-mask {
     padding: 0;
+    top: var(--settings-visible-top, 0px);
+    bottom: auto;
+    height: var(--settings-visible-height, 100dvh);
   }
   .settings-dialog-shell {
     width: 100%;
-    height: 100dvh;
-    max-height: 100dvh;
+    height: 100%;
+    max-height: 100%;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
     border-radius: 0;
     border: 0;
   }
   .dialog-heading {
-    padding: 18px 16px;
+    padding: max(18px, env(safe-area-inset-top)) var(--wao-space-2) 18px;
   }
   h2 {
     font-size: var(--wao-font-title);
@@ -233,9 +261,11 @@ button:focus-visible {
     height: 42px;
   }
   .dialog-footer {
-    padding: 12px 15px;
+    padding: 12px 15px max(12px, env(safe-area-inset-bottom));
   }
   .compact .dialog-heading, .compact .dialog-footer { padding: var(--wao-space-2); }
+  .compact .dialog-heading { padding-top: max(var(--wao-space-2), env(safe-area-inset-top)); }
+  .compact .dialog-footer { padding-bottom: max(var(--wao-space-2), env(safe-area-inset-bottom)); }
 }
 </style>
 
@@ -243,6 +273,7 @@ button:focus-visible {
 .settings-dialog-mask.embedded {
   position: static;
   display: block;
+  height: auto;
   padding: 0;
   background: none;
   z-index: auto;

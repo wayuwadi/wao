@@ -12,7 +12,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
-function setup(error = false, realEditor = false) {
+function setup(error = false, realEditor = false, attach = false) {
   const data = useDataStore()
   data.tasks = [{ ...data.tasks[0]!, id: 'parent', title: '父任务', desc: '父正文', status: '待办', subs: [
     { id: 'child', text: '子任务', desc: '子正文', done: false },
@@ -23,12 +23,26 @@ function setup(error = false, realEditor = false) {
   }
   const projection = projectWorkItems(data.tasks)
   const wrapper = mount(ProjectChecklistView, {
+    attachTo: attach ? document.body : undefined,
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
     global: { stubs: { RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' }, TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('标题输入法确认保持编辑焦点，普通回车才结束编辑', async () => {
+    const { wrapper } = setup()
+    const input = wrapper.get<HTMLInputElement>('[aria-label="任务标题"]')
+    const blur = vi.spyOn(input.element, 'blur')
+    await input.trigger('keydown', { key: 'Enter', isComposing: true })
+    await input.trigger('keydown', { key: 'Enter', keyCode: 229 })
+    await input.trigger('compositionstart')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(blur).not.toHaveBeenCalled()
+    await input.trigger('compositionend')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(blur).toHaveBeenCalledTimes(1)
+  })
   it('行内修改子任务状态不切换详情且保存到真实子项', async () => {
     const { data, wrapper } = setup()
     const update = vi.spyOn(data, 'setSubState')
@@ -317,12 +331,52 @@ describe('项目清单详情', () => {
     await input.setValue('第一项')
     await input.trigger('keydown', { key:'Enter', isComposing:true })
     expect(add).not.toHaveBeenCalled()
+    await input.trigger('keydown', { key:'Enter', keyCode:229 })
+    await input.trigger('compositionstart')
+    await input.trigger('keydown', { key:'Escape' })
+    await wrapper.get('.child-composer').trigger('submit')
+    expect(add).not.toHaveBeenCalled()
+    expect(wrapper.find('.child-composer').exists()).toBe(true)
+    await input.trigger('compositionend')
     await input.trigger('keydown', { key:'Enter' })
     await input.setValue('第二项')
     await input.trigger('keydown', { key:'Enter' })
     expect(add).toHaveBeenCalledTimes(2)
     expect(data.tasks[0]!.subs.map(sub => sub.text)).toEqual(expect.arrayContaining(['第一项', '第二项']))
     releases.forEach(release => release())
+  })
+  it('子任务保存期间移到标题继续编辑，回执不抢回输入焦点', async () => {
+    const { data, wrapper } = setup(false, false, true)
+    let finish!: () => void
+    vi.spyOn(data, 'flushTask').mockReturnValue(new Promise<void>(resolve => { finish = resolve }))
+    const input = wrapper.get<HTMLInputElement>('[aria-label="子任务名称"]')
+    await input.setValue('后台保存的子任务'); input.element.focus()
+    await input.trigger('keydown', { key: 'Enter' })
+    const title = wrapper.get<HTMLInputElement>('[aria-label="任务标题"]')
+    title.element.focus()
+    finish(); await flushPromises()
+    expect(document.activeElement).toBe(title.element)
+    expect(data.tasks[0]!.subs.some(sub => sub.text === '后台保存的子任务')).toBe(true)
+  })
+  it('子任务保存失败后保持连续输入焦点，同成员跨账号的迟到回执不回焦点或显示错误', async () => {
+    const session = useSessionStore()
+    session.account = { accountId: 'first', member: { id: 'same-member' } } as never
+    const { data, wrapper } = setup(false, false, true)
+    const releases: Array<() => void> = []
+    vi.spyOn(data, 'flushTask').mockImplementation(() => new Promise<void>(resolve => { releases.push(resolve) }))
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+    const input = wrapper.get<HTMLInputElement>('[aria-label="子任务名称"]')
+    await input.setValue('第一项'); input.element.focus()
+    await input.trigger('keydown', { key: 'Enter' }); input.element.blur()
+    releases.shift()!(); await flushPromises()
+    expect(document.activeElement).toBe(input.element)
+    expect(wrapper.get('.child-draft-error').text()).toContain('保存失败')
+    await input.setValue('第二项')
+    await input.trigger('keydown', { key: 'Enter' }); input.element.blur()
+    session.account = { accountId: 'second', member: { id: 'same-member' } } as never
+    releases.shift()!(); await flushPromises()
+    expect(document.activeElement).not.toBe(input.element)
+    expect(wrapper.find('.child-draft-error').exists()).toBe(false)
   })
   it('恢复已选任务时，即使任务稍后加载也直接显示子任务输入', async () => {
     const data = useDataStore()

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
+import { useIsMobile } from '@/composables/viewport'
+import { useInputComposition } from '@/composables/inputComposition'
+import { usePageVisibility } from '@/composables/pageVisibility'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { loadSheetRuntime } from '@/utils/knowledgeSheetRuntime'
 import KnowledgeSheet from '@/components/knowledge/KnowledgeSheet.vue'
@@ -54,6 +57,7 @@ const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const sheetEditor = ref<InstanceType<typeof KnowledgeSheet> | null>(null)
+const props = withDefaults(defineProps<{ navigationHidden?: boolean }>(), { navigationHidden: false })
 async function flushSheet() { await sheetEditor.value?.flush() }
 onBeforeRouteLeave(flushSheet)
 onBeforeRouteUpdate(flushSheet)
@@ -65,11 +69,20 @@ const currentIdentity = () => JSON.stringify([session.account?.accountId, sessio
 const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
-const tocOpen = ref(true)
+const isMobile = useIsMobile()
+const pageVisible = usePageVisibility()
+const desktopTocOpen = ref(true)
+const mobileTocOpen = ref(false)
+const mobileDirectoryOpen = ref(false)
+const tocOpen = computed({ get: () => isMobile.value ? mobileTocOpen.value : desktopTocOpen.value, set: value => { if (isMobile.value) mobileTocOpen.value = value; else desktopTocOpen.value = value } })
+const navigationComposition = useInputComposition()
+const directoryTrigger = ref<HTMLButtonElement | null>(null)
+const directoryPanel = ref<HTMLElement | null>(null)
+const outlinePanel = ref<HTMLElement | null>(null)
 const documentPane = ref<HTMLElement | null>(null)
 const outlineFloating = ref(false)
 const outlineManual = ref(false)
-const outlineVisible = computed(() => tocOpen.value && (!outlineFloating.value || outlineManual.value) && !focused.value)
+const outlineVisible = computed(() => tocOpen.value && (isMobile.value || !outlineFloating.value || outlineManual.value) && !focused.value)
 let paneObserver: ResizeObserver | undefined
 watch(documentPane, element => {
   paneObserver?.disconnect()
@@ -82,7 +95,6 @@ watch(documentPane, element => {
   if (typeof ResizeObserver !== 'undefined') { paneObserver = new ResizeObserver(update); paneObserver.observe(element) }
 }, { flush: 'post' })
 onBeforeUnmount(() => paneObserver?.disconnect())
-function toggleOutline() { const show = !outlineVisible.value; outlineManual.value = true; tocOpen.value = show }
 const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 const emit = defineEmits<{ 'focus-change': [focused: boolean] }>()
 const reading = ref(false)
@@ -113,7 +125,7 @@ const documentShortcuts = [
   ['Esc', '关闭当前浮层或退出专注'],
 ]
 function onWorkspaceKeydown(event: KeyboardEvent) {
-  if (event.isComposing || event.defaultPrevented) return
+  if (event.defaultPrevented || navigationComposition.active(event)) return
   if (event.key === 'Escape' && mobileDirectoryOpen.value) { event.preventDefault(); closeMobileDirectory(); return }
   if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'f' && pageType.value === 'document' && doc.value) {
     event.preventDefault(); toggleFocus()
@@ -141,34 +153,20 @@ const kbId = computed(() => String(route.params.id || route.query.kb || ''))
 let workspaceGeneration = 0
 const directoryWidth = ref(262)
 const paneMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
-const directoryCollapsed = computed({ get: () => paneMemory.value.collapsed, set: value => { paneMemory.value.collapsed = value } })
-const narrowScreen = ref(false)
-const mobileDirectoryOpen = ref(false)
-const directoryTrigger = ref<HTMLButtonElement | null>(null)
-const directoryVisible = computed(() => !focused.value && (narrowScreen.value ? mobileDirectoryOpen.value : !directoryCollapsed.value))
-let mobileMedia: MediaQueryList | undefined
-function updateMobileLayout() { narrowScreen.value = mobileMedia?.matches ?? false; mobileDirectoryOpen.value = false }
-onMounted(() => {
-  if (typeof window.matchMedia !== 'function') return
-  mobileMedia = window.matchMedia('(max-width: 760px)')
-  updateMobileLayout()
-  mobileMedia.addEventListener?.('change', updateMobileLayout)
-})
-onBeforeUnmount(() => mobileMedia?.removeEventListener?.('change', updateMobileLayout))
-function toggleDirectory() {
-  if (narrowScreen.value) {
-    mobileDirectoryOpen.value = !mobileDirectoryOpen.value
-    if (mobileDirectoryOpen.value) nextTick(() => treeSearchInput.value?.focus())
-  } else directoryCollapsed.value = !directoryCollapsed.value
-}
-function closeMobileDirectory() { mobileDirectoryOpen.value = false; nextTick(() => directoryTrigger.value?.focus()) }
+const directoryCollapsed = computed({ get: () => isMobile.value ? !mobileDirectoryOpen.value : paneMemory.value.collapsed, set: value => { if (isMobile.value) mobileDirectoryOpen.value = !value; else paneMemory.value.collapsed = value } })
+const directoryVisible = computed(() => !focused.value && !directoryCollapsed.value)
+function closeMobileDirectory() { closeDirectory() }
 const kb = computed(() => data.kbById(kbId.value))
 watch(kb, library => { if (!library) { focused.value = false; reading.value = false } })
 
 const docId = ref<string | null>((route.query.doc as string) || null)
 let documentNavigationRequest = 0
-// 每次打开另一篇文档默认展开；同篇文档内仍尊重手动收起。
-watch(docId, () => { tocOpen.value = true; outlineManual.value = false; focused.value = false; characterCount.value = 0; mobileDirectoryOpen.value = false })
+// 桌面按篇展开；手机优先阅读正文，不把临时面板选择写入桌面偏好。
+watch(docId, () => { mobileTocOpen.value = false; if (!isMobile.value) desktopTocOpen.value = true; outlineManual.value = false; focused.value = false; characterCount.value = 0; closeDirectory() })
+watch(isMobile, () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
+watch([() => session.account?.accountId, () => session.userId, pageVisible], () => { mobileTocOpen.value = false; mobileDirectoryOpen.value = false })
+watch(() => props.navigationHidden, hidden => { if (hidden) { mobileTocOpen.value = false; mobileDirectoryOpen.value = false } })
+watch(kbId, () => { mobileTocOpen.value = false; closeDirectory() })
 watch(() => session.userId, () => { focused.value = false; reading.value = false })
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
@@ -176,7 +174,43 @@ const toolbarHost = ref<HTMLElement | null>(null)
 const outlineTrigger = ref<HTMLButtonElement | null>(null)
 function closeOutline() {
   tocOpen.value = false
-  outlineTrigger.value?.focus()
+  void nextTick(() => outlineTrigger.value?.focus({ preventScroll: true }))
+}
+function closeDirectory() {
+  if (!mobileDirectoryOpen.value) return
+  mobileDirectoryOpen.value = false
+  void nextTick(() => directoryTrigger.value?.focus({ preventScroll: true }))
+}
+async function toggleDirectory() {
+  if (isMobile.value && mobileDirectoryOpen.value) { closeDirectory(); return }
+  directoryCollapsed.value = !directoryCollapsed.value
+  if (!isMobile.value) return
+  mobileTocOpen.value = false
+  await nextTick()
+  directoryPanel.value?.querySelector<HTMLButtonElement>('.mobile-directory-close')?.focus({ preventScroll: true })
+}
+async function toggleOutline() {
+  if (outlineVisible.value) { closeOutline(); return }
+  outlineManual.value = true
+  tocOpen.value = true
+  if (!isMobile.value) return
+  mobileDirectoryOpen.value = false
+  await nextTick()
+  outlinePanel.value?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+}
+function navigationKeydown(event: KeyboardEvent, pane: 'directory' | 'outline') {
+  if (event.defaultPrevented || navigationComposition.active(event)) return
+  if (event.key === 'Escape' && (isMobile.value || pane === 'outline')) {
+    event.preventDefault(); event.stopPropagation()
+    if (pane === 'outline') closeOutline(); else closeDirectory()
+    return
+  }
+  if (!isMobile.value || event.key !== 'Tab') return
+  const root = pane === 'directory' ? directoryPanel.value : outlinePanel.value
+  const controls = [...(root?.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]') ?? [])].filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden], [inert]') && getComputedStyle(element).display !== 'none')
+  const first = controls[0], last = controls[controls.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
 const titleEl = ref<HTMLTextAreaElement | null>(null)
 function fitTitle() {
@@ -206,6 +240,11 @@ const renamingFolder = ref<string | null>(null)
 const folderNameDraft = ref('')
 const folderRenameSaving = ref(false)
 const folderRenameError = ref('')
+function folderNameKeydown(event: KeyboardEvent, id: string) {
+  if (navigationComposition.active(event)) return
+  if (event.key === 'Enter') { event.preventDefault(); void commitFolderName(id) }
+  else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); renamingFolder.value = null; folderRenameError.value = '' }
+}
 function startFolderRename(id: string) {
   folderNameDraft.value = kb.value?.folders.find(folder => folder.id === id)?.name ?? ''
   folderRenameError.value = ''
@@ -354,8 +393,9 @@ const backlinks = computed(() =>
 
 /** 目录展示一至三级标题；旧文档标题没有层级时按二级处理。 */
 const storedHeadings = computed(() => doc.value ? richHeadings(doc.value.content) : [])
-const { activeIndex: activeToc, progress: readingProgress, renderedHeadings, onScroll: onDocScroll, goTo: tocGo, toTop: backToTop } = useDocumentOutline(scrollEl, () => [docId.value, storedHeadings.value])
+const { activeIndex: activeToc, progress: readingProgress, renderedHeadings, onScroll: onDocScroll, goTo: goToHeading, toTop: backToTop } = useDocumentOutline(scrollEl, () => [docId.value, storedHeadings.value])
 // Once mounted, use the actual editor headings: setext, quotes and nested blocks share one order with scrolling.
+function tocGo(index: number) { goToHeading(index); if (isMobile.value) closeOutline() }
 const toc = computed(() => renderedHeadings.value ?? storedHeadings.value)
 const parentMap = computed(() => kb.value ? directoryParents(kb.value) : {})
 const docBreadcrumb = computed(() => {
@@ -373,8 +413,8 @@ const docBreadcrumb = computed(() => {
 async function goBreadcrumb(item: { key: string; id: string; document: boolean }) {
   if (item.document) { await selectDoc(item.id); return }
   focused.value = false
-  if (!narrowScreen.value) directoryCollapsed.value = false
-  mobileDirectoryOpen.value = narrowScreen.value; treeQuery.value = ''; folderOpen[item.key] = true
+  if (!isMobile.value) directoryCollapsed.value = false
+  mobileDirectoryOpen.value = isMobile.value; treeQuery.value = ''; folderOpen[item.key] = true
   await nextTick()
   const target = Array.from(treeElement.value?.querySelectorAll<HTMLButtonElement>('[data-node]') ?? []).find(node => node.dataset.node === item.key)
   target?.scrollIntoView?.({ block: 'nearest' }); target?.focus()
@@ -442,7 +482,7 @@ function preloadSheet(id: string) {
   if (data.docById(id)?.pageType === 'spreadsheet') void loadSheetRuntime().catch(() => {})
 }
 async function selectDoc(id: string) {
-  mobileDirectoryOpen.value = false
+  closeDirectory()
   const request = ++documentNavigationRequest, generation = workspaceGeneration
   if (id === docId.value) return
   await flushSheet()
@@ -899,7 +939,7 @@ async function showMoreTreeRows() {
   if (firstNew) await focusTreeNode(firstNew)
 }
 function onTreeKeydown(event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+  if (navigationComposition.active(event) || event.altKey || event.ctrlKey || event.metaKey) return
   const key = (event.target as HTMLElement).closest<HTMLElement>('[data-node]')?.dataset.node
   const index = mixedRows.value.findIndex(node => node.key === key)
   const node = mixedRows.value[index]
@@ -924,9 +964,9 @@ function onTreeKeydown(event: KeyboardEvent) {
   if (next) void focusTreeNode(next)
 }
 function onTreeSearchKeydown(event: KeyboardEvent) {
-  if (event.isComposing) return
+  if (navigationComposition.active(event)) return
   if (event.key === 'ArrowDown' && mixedRows.value[0]) { event.preventDefault(); void focusTreeNode(mixedRows.value[0].key) }
-  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); treeQuery.value = '' }
+  if (event.key === 'Escape' && treeQuery.value) { event.preventDefault(); event.stopPropagation(); treeQuery.value = '' }
 }
 const draggingNode = ref<string | null>(null)
 const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
@@ -1444,10 +1484,11 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   <div v-if="!kb" class="missing">知识库不存在。</div>
   <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
     <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryVisible ? '收起知识库目录' : '展开知识库目录'" :aria-label="directoryVisible ? '收起知识库目录' : '展开知识库目录'" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
-    <button v-if="narrowScreen && mobileDirectoryOpen && !focused" type="button" class="directory-backdrop" aria-label="关闭知识库目录" @click="closeMobileDirectory"></button>
+    <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
     <!-- 左栏 -->
-    <div v-show="directoryVisible" id="kb-directory" class="side" :style="{ '--directory-width': `${directoryWidth}px` }">
-      <PaneResizeHandle :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
+    <div v-show="directoryVisible" id="kb-directory" ref="directoryPanel" class="side" :style="{ '--directory-width': `${directoryWidth}px` }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="知识库目录" @keydown="navigationKeydown($event, 'directory')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
+      <button v-if="isMobile" type="button" class="mobile-directory-close" aria-label="关闭知识库目录" @click="closeDirectory"><i class="ri-close-line" aria-hidden="true" />关闭目录</button>
+      <PaneResizeHandle v-if="!isMobile" :storage-key="`wao:directory-width:${session.currentUser.id}`" label="知识库目录宽度" :default-width="262" :max="520" @resize="directoryWidth = $event" />
       <div class="side-top">
         <button class="back" @click="router.push('/knowledge?home=1')">
           <i class="ri-arrow-left-line"></i>全部知识库
@@ -1481,7 +1522,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
           <button v-if="node.hasChildren" class="tree-caret" tabindex="-1" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
-            @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
+            @keydown="folderNameKeydown($event, node.id)" @blur="commitFolderName(node.id)" />
           <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" role="treeitem" :aria-level="node.depth + 1" :aria-selected="docId === node.id" :aria-expanded="node.hasChildren ? (treeQuery.trim() ? true : isOpen(node.key)) : undefined" :tabindex="treeFocusKey === node.key ? 0 : -1" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="treeFocusKey = node.key; preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
@@ -1528,7 +1569,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
     </div>
 
     <!-- 文档区 -->
-    <div ref="documentPane" class="document-pane" :inert="narrowScreen && mobileDirectoryOpen ? true : undefined" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
+    <div ref="documentPane" class="document-pane" :inert="isMobile && mobileDirectoryOpen ? true : undefined" :class="{ 'content-narrow': contentWidth === 'narrow' && pageType === 'document', 'editor-workspace': pageType === 'spreadsheet' || pageType === 'drawing' }">
           <div v-if="directoryCollapsed && !doc" class="directory-home-bar" aria-hidden="true"></div>
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
@@ -1612,7 +1653,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 
       <div ref="toolbarHost" v-show="!reading" class="document-toolbar"></div>
       <div class="document-content" :class="{ 'has-outline': doc && outlineVisible && pageType === 'document' }">
-    <div ref="scrollEl" class="doc-scroll" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
+    <div ref="scrollEl" class="doc-scroll" :inert="isMobile && mobileTocOpen ? true : undefined" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
@@ -1741,7 +1782,8 @@ onBeforeUnmount(() => { workspaceGeneration++ })
       </div>
     </div>
 
-        <aside v-if="doc && outlineVisible && pageType === 'document'" class="toc" aria-label="文档大纲" @keydown.esc.stop="closeOutline">
+        <div v-if="isMobile && doc && outlineVisible && pageType === 'document'" class="mobile-outline-mask" aria-hidden="true" @click="closeOutline" />
+        <aside v-if="doc && outlineVisible && pageType === 'document'" ref="outlinePanel" class="toc" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="文档大纲" @keydown="navigationKeydown($event, 'outline')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
           <div class="toc-label"><span>文档大纲 <small>{{ toc.length || '' }}</small></span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="t.id" class="toc-item" :title="t.text || '未命名标题'" :aria-current="activeToc === i ? 'location' : undefined" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text || '未命名标题' }}</button>
@@ -1857,6 +1899,9 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 .side-top > .back { min-height: 28px; margin-left: 40px; }
 .directory-collapsed > .document-pane > .doc-bar { padding-left: 52px; }
 .directory-home-bar { flex: 0 0 48px; border-bottom: 1px solid var(--wao-line); }
+.mobile-pane-mask { position:absolute; inset:0; z-index:40; background:var(--wao-mask-bg); }
+.mobile-outline-mask { position:absolute; inset:0; z-index:29; background:var(--wao-mask-bg); }
+.mobile-directory-close { display:flex; align-items:center; justify-content:flex-end; gap:var(--wao-space-1); min-height:44px; padding:var(--wao-space-1) var(--wao-space-2); border:0; background:var(--wao-bg-card); color:var(--wao-text); font:inherit; cursor:pointer; }
 @media (pointer: coarse) {
   .directory-toggle { top: 2px; left: var(--wao-space-1); width: 44px; height: 44px; }
   .side-top > .back { margin-left: 48px; }
@@ -2776,12 +2821,19 @@ onBeforeUnmount(() => { workspaceGeneration++ })
     flex-direction: column;
   }
   .side {
-    width: 100%;
-    flex: 0 0 auto;
-    max-height: 200px;
-    border-right: 0;
-    border-bottom: 1px solid var(--wao-line);
+    position:absolute;
+    inset:0 auto 0 0;
+    width:min(320px, calc(100% - 32px));
+    max-height:100%;
+    z-index:41;
+    box-shadow:var(--wao-shadow-pop);
   }
+  .side-top > .back { margin-left:0; min-height:44px; }
+  .directory-toggle { top:2px; left:var(--wao-space-1); width:44px; height:44px; }
+  .document-pane > .doc-bar { padding-left:60px; min-height:48px; }
+  .toc { width:min(320px, calc(100% - 24px)); }
+  .toc-item { min-height:44px; white-space:normal; overflow-wrap:anywhere; }
+  .toc-label .icon-act, .icon-act.outline-toggle { min-width:44px; min-height:44px; }
   .doc-scroll {
     min-height: 0;
   }

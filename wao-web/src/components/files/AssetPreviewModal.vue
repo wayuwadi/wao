@@ -102,6 +102,7 @@ onBeforeUnmount(() => {
 <template>
   <SettingsDialogShell
     :title="`预览 ${asset.name}`"
+    :title-max-lines="2"
     width="1080px"
     height="min(780px, calc(100dvh - 48px))"
     appearance="compact"
@@ -109,6 +110,10 @@ onBeforeUnmount(() => {
     @close="close"
   >
     <div class="preview-content" :aria-busy="loading">
+      <details v-if="asset.name.length > 32" :key="asset.name" class="preview-full-name">
+        <summary tabindex="0">完整名称</summary>
+        <p>{{ asset.name }}</p>
+      </details>
       <div v-if="loading" class="preview-state" role="status">
         <i class="ri-loader-4-line spin" aria-hidden="true"></i>
         {{ asset.kind === 'image' ? '正在加载图片…' : asset.kind === 'html' ? '正在打开网页…' : '正在读取文件…' }}
@@ -133,6 +138,7 @@ onBeforeUnmount(() => {
         :src="mediaUrl"
         :title="asset.name"
         :sandbox="htmlSandbox"
+        tabindex="0"
         @load="mediaLoaded"
         @error="mediaFailed"
       ></iframe>
@@ -141,8 +147,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-:deep(.dialog-heading > div) { min-width: 0; }
-:deep(.dialog-heading h2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-full-name { flex-shrink: 0; padding: 0 var(--wao-space-2); overflow-wrap: anywhere; }
+.preview-full-name summary { min-height: 44px; align-content: center; cursor: pointer; color: var(--wao-text-3); }
+.preview-full-name summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.preview-full-name p { margin: 0 0 var(--wao-space-2); user-select: text; }
 .preview-content {
   flex: 1;
   min-height: 0;

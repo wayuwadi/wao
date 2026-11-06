@@ -2182,11 +2182,13 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。知识库由用户按需另行创建和关联。 */
   async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
+    const session = useSessionStore()
+    const requestMember = session.userId, requestAccount = session.account?.accountId
     let created: Project | null = null
     if (apiLive.value) {
       try {
         created = await apiCreateProject(payload)
-        projects.value.unshift(created)
+        if (requestMember === session.userId && requestAccount === session.account?.accountId) projects.value.unshift(created)
       } catch (error) {
         // 在线保存失败必须保留表单，不能把本地临时记录当作已保存。
         throw error
