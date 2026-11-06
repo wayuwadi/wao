@@ -19,6 +19,37 @@ describe('data store · 图床', () => {
   const png = (name = 'a.png', bytes = 100) =>
     new File([new Uint8Array(bytes)], name, { type: 'image/png' })
 
+  it('已取消的图片不发起上传或创建本地图片，严格调用保留取消结论', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const beforeCalls = vi.mocked(apiUploadImage).mock.calls.length
+    expect(await data.uploadImage(png(), '', { signal: controller.signal })).toBeNull()
+    await expect(data.uploadImage(png(), '', { signal: controller.signal, throwOnError: true }))
+      .rejects.toMatchObject({ name: 'AbortError' })
+    expect(vi.mocked(apiUploadImage).mock.calls).toHaveLength(beforeCalls)
+    expect(data.imgs).toEqual([])
+  })
+
+  it('服务器上传取消后不能回退为本地 data URL', async () => {
+    const controller = new AbortController()
+    let fail!: (cause: Error) => void
+    vi.mocked(apiUploadImage).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    data.apiLive = true
+    const upload = data.uploadImage(png(), '', { signal: controller.signal })
+    controller.abort()
+    fail(new DOMException('上传已取消', 'AbortError'))
+    expect(await upload).toBeNull()
+    expect(data.imgs).toEqual([])
+  })
+
+  it('本地图片读取期间取消也不回写图床', async () => {
+    const controller = new AbortController()
+    const upload = data.uploadImage(png(), '', { signal: controller.signal })
+    controller.abort()
+    expect(await upload).toBeNull()
+    expect(data.imgs).toEqual([])
+  })
+
   it('切换账号后丢弃上传图片的迟到结果', async () => {
     const session = useSessionStore()
     session.account = { accountId: 'a', member: { id: 'same-member' } } as never

@@ -43,6 +43,79 @@ class ImageServiceTest {
     }
 
     @Test
+    void cachedPreviewAvoidsRepeatedOriginalReadsButAlwaysRechecksAccess() {
+        var privacy = mock(NoteAssetPrivacyService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "knowledgeAssets", privacy);
+        var image = new ImageBlobEntity();
+        image.setId("private"); image.setContentType("image/png"); image.setContent(new byte[]{1, 2, 3});
+        when(mapper.findMeta("private")).thenReturn(image);
+        when(mapper.selectById("private")).thenReturn(image);
+
+        service.preview("private");
+        service.preview("private");
+
+        verify(mapper, org.mockito.Mockito.times(1)).selectById("private");
+        verify(privacy, org.mockito.Mockito.times(2)).requireRead("images", "private");
+        org.mockito.Mockito.doThrow(new NotFoundException("资源不存在或无权访问"))
+                .when(privacy).requireRead("images", "private");
+        assertThatThrownBy(() -> service.preview("private")).isInstanceOf(NotFoundException.class);
+        verify(mapper, org.mockito.Mockito.times(1)).selectById("private");
+    }
+
+    @Test
+    void cachedPreviewCannotResurrectADeletedImageOrOutliveAContentRevision() {
+        var image = new ImageBlobEntity();
+        image.setId("revision"); image.setContentType("image/png"); image.setContentHash("first");
+        image.setContent(new byte[]{1});
+        when(mapper.findMeta("revision")).thenReturn(image);
+        when(mapper.selectById("revision")).thenReturn(image);
+        assertThat(service.preview("revision").content()).containsExactly(1);
+        image.setContentHash("second"); image.setContent(new byte[]{2});
+        assertThat(service.preview("revision").content()).containsExactly(2);
+        when(mapper.findMeta("revision")).thenReturn(null);
+        assertThatThrownBy(() -> service.preview("revision")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void concurrentRequestsForTheSamePreviewReadTheOriginalOnce() throws Exception {
+        var image = new ImageBlobEntity(); image.setId("burst"); image.setContentType("image/png");
+        image.setContent(new byte[]{1, 2, 3});
+        when(mapper.findMeta("burst")).thenReturn(image);
+        when(mapper.selectById("burst")).thenReturn(image);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(6);
+        var barrier = new java.util.concurrent.CyclicBarrier(6);
+        try {
+            var requests = new java.util.ArrayList<java.util.concurrent.Future<ImageService.Preview>>();
+            for (int i = 0; i < 6; i++) requests.add(executor.submit(() -> {
+                barrier.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                return service.preview("burst");
+            }));
+            for (var result : requests) assertThat(result.get(5, java.util.concurrent.TimeUnit.SECONDS).content())
+                    .containsExactly(1, 2, 3);
+            verify(mapper, org.mockito.Mockito.times(1)).selectById("burst");
+        } finally { executor.shutdownNow(); }
+    }
+
+    @Test
+    void storedTransparentPreviewKeepsPngContentTypeAndRejectsCorruptVariants() {
+        var objects = mock(BinaryObjectStore.class);
+        var s3 = new ImageService(mapper, content, settings, objects);
+        byte[] bytes = new byte[]{(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+        var image = new ImageBlobEntity(); image.setId("alpha");
+        image.setPreviewKey("previews/alpha/" + ImageService.sha256(bytes));
+        when(mapper.findMeta("alpha")).thenReturn(image);
+        when(objects.get(image.getPreviewKey())).thenReturn(bytes);
+        assertThat(s3.preview("alpha").contentType()).isEqualTo("image/png");
+        verify(mapper, never()).selectById("alpha");
+
+        image.setPreviewKey("previews/alpha/not-the-checksum");
+        image.setContentType("image/png"); image.setContent(new byte[]{4});
+        when(objects.get(image.getPreviewKey())).thenReturn(bytes);
+        when(mapper.selectById("alpha")).thenReturn(image);
+        assertThat(s3.preview("alpha").content()).containsExactly(4);
+    }
+
+    @Test
     void previewShrinksLargePngWithoutChangingTheStoredOriginal() throws Exception {
         BufferedImage source = new BufferedImage(1600, 900, BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < source.getHeight(); y++) {
@@ -94,6 +167,10 @@ class ImageServiceTest {
         assertThat(dto.from()).isEqualTo("任务 · 整理证件盒");
         assertThat(dto.url()).isEqualTo("/api/images/" + dto.id() + "/raw");
         assertThat(dto.size()).isEqualTo("3 B");
+        assertThat(dto.byteSize()).isEqualTo(3L);
+        assertThat(dto.contentType()).isEqualTo("image/png");
+        assertThat(dto.createdAt()).isNotBlank();
+        assertThat(dto.previewUrl()).isEqualTo("/api/images/" + dto.id() + "/preview");
     }
 
     @Test

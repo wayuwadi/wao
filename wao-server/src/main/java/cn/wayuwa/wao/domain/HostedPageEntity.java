@@ -19,6 +19,7 @@ public class HostedPageEntity {
     private String createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private long revision;
     public String getId() { return id; } public void setId(String value) { id = value; }
     public String getSlug() { return slug; } public void setSlug(String value) { slug = value; }
     public String getTitle() { return title; } public void setTitle(String value) { title = value; }
@@ -31,4 +32,5 @@ public class HostedPageEntity {
     public String getCreatedBy() { return createdBy; } public void setCreatedBy(String value) { createdBy = value; }
     public LocalDateTime getCreatedAt() { return createdAt; } public void setCreatedAt(LocalDateTime value) { createdAt = value; }
     public LocalDateTime getUpdatedAt() { return updatedAt; } public void setUpdatedAt(LocalDateTime value) { updatedAt = value; }
+    public long getRevision() { return revision; } public void setRevision(long value) { revision = value; }
 }

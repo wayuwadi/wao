@@ -20,8 +20,17 @@ public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
 
     /** 列出元数据，不含 {@code content}——图床列表不该把每张图的正文都读进内存。 */
     @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, created_at "
-            + "FROM image_blob ORDER BY created_at DESC")
+            + "FROM image_blob ORDER BY created_at DESC, id DESC")
     List<ImageBlobEntity> listMeta();
+
+    @Select({"<script>",
+            "SELECT id, name, content_type, byte_size, source, project_id, content_hash, created_at FROM image_blob WHERE",
+            "<choose><when test='projectId != null'>project_id = #{projectId}</when><otherwise>",
+            "project_id IS NULL <if test='projectIds != null and !projectIds.isEmpty()'>OR project_id IN",
+            "<foreach collection='projectIds' item='project' open='(' separator=',' close=')'>#{project}</foreach></if>",
+            "</otherwise></choose> ORDER BY created_at DESC, id DESC", "</script>"})
+    List<ImageBlobEntity> listVisibleMeta(@Param("projectIds") java.util.Set<String> projectIds,
+            @Param("projectId") String projectId);
 
     /**
      * 按内容摘要找一张已经存过的图，同样不读 {@code content}。

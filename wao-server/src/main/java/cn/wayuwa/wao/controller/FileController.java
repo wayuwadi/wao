@@ -120,7 +120,9 @@ public class FileController {
             @Valid @RequestBody RenameFileRequest request, HttpServletRequest http) {
         FileBlobEntity entity = files.metadata(id);
         requireAssetAccess(entity.getProjectId(), currentMember.id(http));
-        return ApiResponse.ok(files.renameDisplayName(id, request.displayName()));
+        return ApiResponse.ok(request.hasExpectedDisplayName()
+                ? files.renameDisplayName(id, request.displayName(), request.expectedDisplayName())
+                : files.renameDisplayName(id, request.displayName()));
     }
 
     /** 取一次公开下载挑战；算术题可关闭，一次性票据不可关闭。 */

@@ -1,5 +1,17 @@
 # 接口入口
 
+## 资源库（2026-11-06）
+
+`GET /api/files` 和 `GET /api/images` 元数据新增只读 `byteSize`，以字节表示原文件的准确大小；图片同时返回 `contentType`、`createdAt` 和 `previewUrl`，原图仍使用 `url`。`GET /api/hosted-pages` 新增可排序的 `updatedAtIso` 和编辑版本 `revision`。字段增量兼容旧客户端；格式化的 `size/time/updatedAt` 保留。资源列表在数据库查询中限定已授权项目范围，再执行来源文档权限过滤，不载入二进制正文。
+
+`PATCH /api/files/{id}` 接收 `{displayName, expectedDisplayName?}`。浏览器改名提交编辑开始时的原始 `displayName`：显式 `null` 匹配未设置名称，字符串按精确字节比较。名字已被其他客户端修改时返回 409，草稿保留并可读取最新名称；重复保存相同目标名称幂等。省略 `expectedDisplayName` 保持已有接口行为，删除的文件返回 404。
+
+`PUT /api/hosted-pages/{id}` 和 `PUT /api/hosted-pages/{id}/content` 的 multipart 新增可选 `expectedRevision`，取编辑开始时读取的非负整数版本；SQL 在写入时原子比较版本，过时返回 HTTP 409 / `code: 40900`，已删除返回 404。省略字段兼容旧调用。新建和迁移前已有页面版本为 0，每次编辑、正文替换及 AI 报告写入均原子加 1；列表和写入响应携带当前版本。只替换正文保留最新标题、后缀、图标和归属；未上传 HTML/icon 的编辑也不会写回旧正文。时间字段不承担并发校验。V207 仅新增 `hosted_page.revision BIGINT NOT NULL DEFAULT 0`，保留已有页面和正文。
+
+`GET /api/images/{id}/preview` 对 PNG/JPEG/BMP 按需生成最长边 768px 的派生图，保留透明和 EXIF 方向；原文件不改写。进程缓存最多 24MiB、256 项，单项不超过 1MiB；命中缓存前仍验证访问权限和记录存在。GIF/WebP/SVG 保持原格式；未知或损坏的历史图片沿用原始读取兜底。私有图片及预览响应保持 `private, no-store`，公开图片沿用一小时缓存。图片正文、公开小记图片别名和托管网页图标响应通过 CSP 沙箱禁止主动脚本和外部资源加载。
+
+浏览器新增分页、名称/来源检索、文件类型过滤、稳定排序与容量汇总；按账号和页签保留浏览条件。上传队列保留原项目归属，跨页继续、显示传输进度并等待服务端保存确认，成功后释放本机文件对象。旧客户端缺少 `byteSize` 时容量显示估算值。详细行为及验证入口见 [资源库规范](specs/resource-library.md)。本次不增加 HTTP 写入权限、工作区 MCP 或 CLI 命令，也不扩大既有令牌范围。
+
 ## 智能清单显示偏好（2026-11-06）
 
 `GET /api/preferences/smart-list/items` 返回当前成员的清单显示选择（缺省为显示）。`PUT /api/preferences/smart-list/items/{projectId}` 接收 `{visible, expected}`，`expected` 为上次读取的空字符串、`0` 或 `1`。每个清单独立保存，存在并发修改时返回 409；重复提交已经保存的值是幂等的。偏好只影响待办工作台的所有、今天、明天和最近 7 天，不改变任务或清单的共享权限。

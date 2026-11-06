@@ -1,12 +1,6 @@
 package cn.wayuwa.wao.service;
 
 import java.io.IOException;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -15,11 +9,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
-import javax.imageio.IIOImage;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.ImageWriteParam;
-import javax.imageio.ImageWriter;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -48,9 +37,10 @@ public class ImageService {
     @org.springframework.context.annotation.Lazy
     private NoteOriginalService noteOriginals;
 
-    private List<ImageBlobEntity> visibleMetadata() {
+    private List<ImageBlobEntity> visibleMetadata(List<ImageBlobEntity> metadata) {
+        if (metadata.isEmpty()) return List.of();
         var hidden = knowledgeAssets == null ? java.util.Set.<String>of() : knowledgeAssets.hiddenAssets("images");
-        return mapper.listMeta().stream().filter(item -> !hidden.contains(item.getId())).toList();
+        return metadata.stream().filter(item -> !hidden.contains(item.getId())).toList();
     }
 
     /** 单张图片基础设施硬上限 10MB；用户主动上传可在设置中进一步调低。 */
@@ -69,6 +59,9 @@ public class ImageService {
     private final ContentService content;
     private final FileSettingsService settings;
     private final BinaryObjectStore objects;
+    private final ImagePreviewCache previewCache = new ImagePreviewCache();
+    private final Object[] previewLocks = java.util.stream.IntStream.range(0, 16)
+            .mapToObj(ignored -> new Object()).toArray();
 
     public ImageService(ImageBlobMapper mapper, ContentService content, FileSettingsService settings) {
         this(mapper, content, settings, new DisabledBinaryObjectStore());
@@ -230,17 +223,14 @@ public class ImageService {
      * @return 图床条目列表
      */
     public List<ImageItemDto> list() {
-        List<ImageItemDto> out = new ArrayList<>(visibleMetadata().stream().map(this::toDto).toList());
+        List<ImageItemDto> out = new ArrayList<>(visibleMetadata(mapper.listMeta()).stream().map(this::toDto).toList());
         content.images().forEach(node -> out.add(fromSeed(node)));
         return out;
     }
 
     /** 列出当前成员可见的全局/项目图片；项目列表不混入历史演示条目。 */
     public List<ImageItemDto> list(Set<String> visibleProjectIds, String projectId) {
-        List<ImageItemDto> out = new ArrayList<>(visibleMetadata().stream()
-                .filter(entity -> projectId != null
-                        ? projectId.equals(entity.getProjectId())
-                        : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
+        List<ImageItemDto> out = new ArrayList<>(visibleMetadata(mapper.listVisibleMeta(visibleProjectIds, projectId)).stream()
                 .map(this::toDto).toList());
         if (projectId == null) content.images().forEach(node -> out.add(fromSeed(node)));
         return out;
@@ -299,75 +289,41 @@ public class ImageService {
 
     /** 小记列表读取轻量预览；原图字节保持不变，放大查看仍走 raw。 */
     public Preview preview(String id) {
-        requireKnowledgeAsset(id);
-        ImageBlobEntity meta = mapper.findMeta(id);
-        if (meta == null) throw new NotFoundException("图片不存在：" + id);
+        // Always recheck permissions and existence before consulting process-local cached bytes.
+        ImageBlobEntity meta = metadata(id);
+        ImagePreviewCache.Key key = ImagePreviewCache.Key.of(meta);
+        Preview cached = previewCache.get(key);
+        if (cached != null) return cached;
+        // Coalesce same-image decode bursts without serializing every thumbnail in the gallery.
+        synchronized (previewLocks[Math.floorMod(id.hashCode(), previewLocks.length)]) {
+            cached = previewCache.get(key);
+            if (cached != null) return cached;
+            Preview preview = loadPreview(id, meta);
+            previewCache.put(key, preview);
+            return preview;
+        }
+    }
+
+    private Preview loadPreview(String id, ImageBlobEntity meta) {
         if (meta.getPreviewKey() != null && !meta.getPreviewKey().isBlank()) {
             try {
                 byte[] fetched = objects.get(meta.getPreviewKey());
                 if (!meta.getPreviewKey().endsWith("/" + sha256(fetched))) {
                     throw new IllegalStateException("Preview checksum mismatch");
                 }
-                return new Preview("image/jpeg", fetched);
-            }
-            catch (RuntimeException ignored) { /* Fall back to the original. */ }
+                // Preserve immutable key/checksum conventions used by backup and restore tools.
+                boolean png = fetched.length >= 8 && fetched[0] == (byte) 0x89 && fetched[1] == 'P'
+                        && fetched[2] == 'N' && fetched[3] == 'G' && fetched[4] == 13
+                        && fetched[5] == 10 && fetched[6] == 26 && fetched[7] == 10;
+                return new Preview(png ? "image/png" : "image/jpeg", fetched);
+            } catch (RuntimeException ignored) { /* Fall back to the original. */ }
         }
-        ImageBlobEntity image = raw(id);
+        ImageBlobEntity image = rawSharedSnapshot(id);
         return createPreview(image.getContentType(), image.getContent());
     }
 
     private static Preview createPreview(String type, byte[] original) {
-        if (original.length <= 220_000 || !("image/png".equals(type) || "image/jpeg".equals(type))) {
-            return new Preview(type, original);
-        }
-        try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(original))) {
-            if (input == null) return new Preview(type, original);
-            var readers = ImageIO.getImageReaders(input);
-            if (!readers.hasNext()) return new Preview(type, original);
-            ImageReader reader = readers.next();
-            BufferedImage decoded;
-            try {
-                reader.setInput(input, true, true);
-                int width = reader.getWidth(0), height = reader.getHeight(0);
-                if (width < 1 || height < 1 || (long) width * height > 16_000_000L) {
-                    return new Preview(type, original);
-                }
-                decoded = reader.read(0);
-            } finally {
-                reader.dispose();
-            }
-            double scale = Math.min(1.0, 768.0 / Math.max(decoded.getWidth(), decoded.getHeight()));
-            int width = Math.max(1, (int) Math.round(decoded.getWidth() * scale));
-            int height = Math.max(1, (int) Math.round(decoded.getHeight() * scale));
-            BufferedImage thumbnail = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-            Graphics2D graphics = thumbnail.createGraphics();
-            try {
-                graphics.setColor(Color.WHITE);
-                graphics.fillRect(0, 0, width, height);
-                graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                graphics.drawImage(decoded, 0, 0, width, height, null);
-            } finally {
-                graphics.dispose();
-            }
-            var writers = ImageIO.getImageWritersByMIMEType("image/jpeg");
-            if (!writers.hasNext()) return new Preview(type, original);
-            ImageWriter writer = writers.next();
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            try (var imageOutput = ImageIO.createImageOutputStream(output)) {
-                writer.setOutput(imageOutput);
-                ImageWriteParam options = writer.getDefaultWriteParam();
-                options.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                options.setCompressionQuality(0.84f);
-                writer.write(null, new IIOImage(thumbnail, null, null), options);
-            } finally {
-                writer.dispose();
-            }
-            byte[] bytes = output.toByteArray();
-            return bytes.length < original.length ? new Preview("image/jpeg", bytes) : new Preview(type, original);
-        } catch (IOException | RuntimeException exception) {
-            // Unknown or damaged legacy images keep the existing raw-image behavior.
-            return new Preview(type, original);
-        }
+        return ResourceImagePreview.create(type, original);
     }
 
     public record Preview(String contentType, byte[] content) {}
@@ -382,6 +338,7 @@ public class ImageService {
         requireKnowledgeAsset(id);
         if(noteOriginals!=null)noteOriginals.requireAssetUnused("images",id);
         mapper.deleteById(id);
+        previewCache.invalidate(id);
     }
 
     private ImageItemDto toDto(ImageBlobEntity e) {
@@ -390,7 +347,9 @@ public class ImageService {
                 e.getId(), e.getName(), humanSize(e.getByteSize() == null ? 0 : e.getByteSize()),
                 e.getCreatedAt() == null ? "" : e.getCreatedAt().format(TIME_FMT),
                 e.getSource() == null ? "上传" : e.getSource(),
-                "/api/images/" + e.getId() + "/raw", tint[0], tint[1], e.getProjectId());
+                "/api/images/" + e.getId() + "/raw", tint[0], tint[1], e.getProjectId(), e.getByteSize(),
+                e.getContentType(), e.getCreatedAt() == null ? null : e.getCreatedAt().toString(),
+                "/api/images/" + e.getId() + "/preview");
     }
 
     private static ImageItemDto fromSeed(JsonNode n) {
