@@ -447,6 +447,28 @@ describe('task workspace',()=>{
   expect(add).not.toHaveBeenCalled();expect(flush).toHaveBeenCalledWith(existing.id)
   wrapper.unmount()
  })
+ it('快速创建失败后修改标题，重试仍用原ID并把新标题送入保存队列',async()=>{
+  const data=useDataStore(),base=data.tasks[0]!
+  const add=vi.spyOn(data,'addTask').mockImplementation(async(payload,id)=>{
+   const task={...base,...payload,id:id!};data.tasks.push(task);return {task,persisted:false}
+  })
+  const savedTitles:string[]=[]
+  vi.spyOn(data,'flushTask').mockImplementation(async id=>{savedTitles.push(data.taskById(id)!.title)})
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.get('[aria-label="添加任务"]').setValue('第一次标题')
+  await wrapper.get('.quick-add').trigger('submit');await flushPromises()
+  const id=add.mock.calls[0]![1]!
+  expect(wrapper.text()).toContain('任务未保存，请重试')
+  await wrapper.get('[aria-label="添加任务"]').setValue('修正后的标题')
+  await wrapper.get('.quick-add').trigger('submit');await flushPromises()
+  expect(add).toHaveBeenCalledTimes(1)
+  expect(data.tasks.filter(task=>task.id===id)).toHaveLength(1)
+  expect(savedTitles).toContain('修正后的标题')
+  expect(data.taskById(id)?.title).toBe('修正后的标题')
+  expect(wrapper.get('[aria-label="添加任务"]').element).toHaveProperty('value','')
+  wrapper.unmount()
+ })
 })
 
 it('恢复搜索且忽略旧查询；笔记保留在清单，放弃可找回，四象限仅保留角落添加',async()=>{

@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import KbDetailView from '@/views/KbDetailView.vue'
+import KnowledgeWorkspaceView from '@/views/KnowledgeWorkspaceView.vue'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
@@ -48,6 +50,20 @@ enableAutoUnmount(afterEach)
 let pinia: ReturnType<typeof createPinia>
 
 describe('知识库详情目录体验', () => {
+  const originalMatchMedia = window.matchMedia
+  afterEach(() => { window.matchMedia = originalMatchMedia; document.body.innerHTML = '' })
+  function mobileViewport() {
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 760px)' || query === '(max-width: 900px)', media: query,
+      addEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+    })) as unknown as typeof window.matchMedia
+    return async (mobile: boolean) => {
+      listeners.forEach(listener => listener({ matches: mobile } as MediaQueryListEvent))
+      await flushPromises()
+    }
+  }
   beforeEach(() => {
     localStorage.clear()
     pinia = createPinia()
@@ -66,7 +82,7 @@ describe('知识库详情目录体验', () => {
     vi.mocked(apiPatchDocTemplate).mockReset()
   })
 
-  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1') {
+  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1', attach = false) {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/kb/:id', name: 'kb', component: KbDetailView }],
@@ -81,6 +97,7 @@ describe('知识库详情目录体验', () => {
     })
     useDataStore(pinia).apiLive = apiLive
     const wrapper = mount(KbDetailView, {
+      attachTo: attach ? document.body : undefined,
       global: {
         plugins: [pinia, router],
         stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true },
@@ -103,6 +120,21 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3', true)
     expect(wrapper.find('.library-star[title="知识库设置"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="知识库设置"]').exists()).toBe(true)
+  })
+
+  it('删除旧账号知识库的成功回执不关闭同成员号新账号的页签或改变路由', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const close = vi.spyOn(useTabsStore(), 'close')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let finish!: () => void
+    vi.spyOn(useDataStore(), 'deleteKb').mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
+    await wrapper.get('.library-star').trigger('click')
+    await wrapper.get('.template-modal footer .link-button').trigger('click')
+    useSessionStore().account!.accountId = 'new-account-same-member'
+    finish(); await flushPromises()
+    expect(close).not.toHaveBeenCalled()
+    expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe('/kb/k3')
+    confirm.mockRestore(); close.mockRestore()
   })
 
   it('已有正文缓存重新打开时仍校验权限，404 后移除可展示正文', async () => {
@@ -162,6 +194,11 @@ describe('知识库详情目录体验', () => {
     const rename = vi.spyOn(data, 'renameFolder').mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     await wrapper.get('.folder-input').trigger('keydown', { key: 'Enter', isComposing: true })
     expect(rename).not.toHaveBeenCalled()
+    await wrapper.get('.folder-input').trigger('compositionstart')
+    await wrapper.get('.folder-input').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('.folder-input').trigger('compositionend')
+    await wrapper.get('.folder-input').trigger('keydown', { key: 'Escape', keyCode: 229 })
+    expect((wrapper.get('.folder-input').element as HTMLInputElement).value).toBe('尚未输入完成的新名称')
     await wrapper.get('.folder-input').trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(wrapper.text()).toContain('重命名失败')
@@ -501,6 +538,114 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
     const reopened = await mountView('/kb/k3?doc=d7')
     expect(reopened.find('.toc').exists()).toBe(true)
+  })
+
+  it('手机目录与大纲默认收起，临时展开、切换屏幕和跳篇不覆盖桌面选择或编辑器草稿', async () => {
+    const resize = mobileViewport()
+    sessionStorage.clear()
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true, 'm1', true)
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await wrapper.get('.markdown-editor-stub').setValue('手机阅读中保留的草稿')
+    const editor = wrapper.get('.markdown-editor-stub').element
+    await wrapper.get('[aria-label="展开知识库目录"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(true)
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="关闭知识库目录"]').element)
+    await wrapper.get('.mobile-pane-mask').trigger('click'); await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('.directory-toggle').element)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    await resize(false)
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(true)
+    expect(wrapper.find('.toc').exists()).toBe(true)
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    await wrapper.get('[aria-label="关闭文档大纲"]').trigger('click')
+    const desktopState = sessionStorage.getItem('wao-task-view-v1:account-m1:m1:knowledge-directory')
+    await resize(true)
+    await wrapper.get('[aria-label="文档大纲"]').trigger('click')
+    expect(wrapper.find('.toc').exists()).toBe(true)
+    await wrapper.get('[aria-label="展开知识库目录"]').trigger('click')
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await wrapper.get('.doc-node.on').trigger('click'); await flushPromises()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    expect((editor as HTMLTextAreaElement).value).toBe('手机阅读中保留的草稿')
+    await wrapper.vm.$router.replace('/kb/k3?doc=d8'); await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await resize(false)
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    expect(sessionStorage.getItem('wao-task-view-v1:account-m1:m1:knowledge-directory')).toBe(desktopState)
+  })
+
+  it('手机大纲跳转后让出正文，Escape尊重输入法，关闭恢复入口焦点', async () => {
+    mobileViewport()
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true, 'm1', true)
+    useDataStore(pinia).docs.d7!.blocks = [{ h: '验收标题', hLevel: 1 }]
+    await flushPromises()
+    const trigger = wrapper.get('[aria-label="文档大纲"]')
+    await trigger.trigger('click'); await flushPromises()
+    const close = wrapper.get('[aria-label="关闭文档大纲"]')
+    expect(document.activeElement).toBe(close.element)
+    await close.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(wrapper.get('.toc-item').element)
+    await wrapper.get('.toc').trigger('keydown', { key: 'Escape', isComposing: true })
+    await wrapper.get('.toc').trigger('keydown', { key: 'Escape', keyCode: 229 })
+    expect(wrapper.find('.toc').exists()).toBe(true)
+    await wrapper.get('.toc-item').trigger('click'); await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+    await trigger.trigger('click'); await wrapper.get('.toc').trigger('keydown', { key: 'Escape' }); await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+    await wrapper.get('[aria-label="展开知识库目录"]').trigger('click')
+    const search = wrapper.get('[aria-label="搜索本知识库文件夹和文档"]')
+    await search.trigger('compositionstart')
+    await search.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(true)
+    await search.trigger('compositionend')
+    await search.trigger('keydown', { key: 'Escape' }); await flushPromises()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('.directory-toggle').element)
+  })
+
+  it('父子导航互斥，隐藏页签和切换同成员号的账号清理临时面板，不卸载编辑器', async () => {
+    mobileViewport(); sessionStorage.clear()
+    const visible = ref(true)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge', component: KnowledgeWorkspaceView }] })
+    await router.push('/knowledge?kb=k3&doc=d7')
+    const wrapper = mount(KnowledgeWorkspaceView, { attachTo: document.body, global: {
+      plugins: [pinia, router], provide: { [pageVisibleKey as symbol]: visible }, stubs: { MarkdownEditor: MarkdownEditorStub },
+    } })
+    await flushPromises()
+    const editor = wrapper.get('.markdown-editor-stub').element
+    await wrapper.get('.directory-toggle').trigger('click')
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(true)
+    const openLibraries = wrapper.get('.mobile-toolbar button:first-child')
+    await openLibraries.trigger('click'); await flushPromises()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.get('.libraries').isVisible()).toBe(true)
+    await wrapper.get('.navigation-mask').trigger('click')
+    expect(wrapper.get('.workspace-content').element.hasAttribute('inert')).toBe(false)
+    await wrapper.get('[aria-label="文档大纲"]').trigger('click')
+    expect(wrapper.find('.toc').exists()).toBe(true)
+    await openLibraries.trigger('click'); await flushPromises()
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    visible.value = false; await flushPromises()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    document.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(false)
+    visible.value = true; await flushPromises()
+    await wrapper.get('.directory-toggle').trigger('click')
+    useSessionStore().account!.accountId = 'different-account-same-member'
+    await flushPromises()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    await openLibraries.trigger('click')
+    useSessionStore().account!.accountId = 'third-account-same-member'
+    await flushPromises()
+    expect(wrapper.get('.libraries').isVisible()).toBe(false)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
   })
 
   it('模板管理展示真实正文，并把编辑后的正文块与名称说明一起保存', async () => {

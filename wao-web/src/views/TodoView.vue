@@ -40,7 +40,19 @@ const data = useDataStore(), session = useSessionStore(), labels = useTaskLabels
 const listVisibility = useSmartListVisibility()
 const memory = useTaskViewMemory('todo', () => ({ navigationCollapsed: typeof window !== 'undefined' && window.innerWidth <= 600, selection: 'all' }))
 const routeLayout = ref<TodoLayout>()
-const selection = computed({get:()=>memory.value.selection === 'legacy' ? 'all' : memory.value.selection,set:v=>{if(v!==memory.value.selection)routeLayout.value=undefined; memory.value.selection=v; if (route.query.list || route.query.layout || route.query.scope) void router.replace({query:{...route.query,list:undefined,layout:undefined,scope:undefined}})}})
+const selection = computed({
+ get:()=>memory.value.selection === 'legacy' ? 'all' : memory.value.selection,
+ set:value=>{
+  if(value!==memory.value.selection)routeLayout.value=undefined
+  memory.value.selection=value
+  if(route.query.list || route.query.layout || route.query.scope || route.query.date) {
+   // 从日期链接离开回顾后，地址也要指向新选择；刷新和历史导航不能再打开旧日期。
+   void router.replace({query:{...route.query,layout:undefined,date:value==='review' ? route.query.date : undefined,
+    list:value.startsWith('project:') ? value.slice(8) : undefined,
+    scope:value==='review' || value.startsWith('project:') ? undefined : value}})
+  }
+ },
+})
 const navigationCollapsed = computed({get:()=>!!memory.value.navigationCollapsed,set:v=>{memory.value.navigationCollapsed=v}})
 const { view, display, ready: preferencesReady, changeView, changeDisplay, error: preferenceError, retry: retryPreferences } = useTodoViewPreferences(selection)
 watch(() => route.query.layout, value => { routeLayout.value = value === 'table' ? 'list' : TODO_VIEWS.find(item => item.id === value)?.id }, { immediate:true })
@@ -75,9 +87,9 @@ function listSaved(id: string) { listDialog.value = false; selection.value = 'pr
 watch(() => route.query.list, id => { if (typeof id === 'string' && id) memory.value.selection = 'project:' + id }, { immediate:true })
 const selectedDay = ref(data.today)
 const nav = [{id:'all',name:'所有',icon:'ri-inbox-line'},{id:'today',name:'今天',icon:'ri-sun-line'},{id:'tomorrow',name:'明天',icon:'ri-sun-foggy-line'},{id:'week',name:'最近 7 天',icon:'ri-calendar-2-line'},{id:'inbox',name:'收集箱',icon:'ri-inbox-archive-line'}]
-watch(() => route.query.scope, value => { if(!route.query.list && nav.some(item=>item.id===value)) memory.value.selection=String(value) }, { immediate:true })
+watch(() => route.query.scope, value => { if(!route.query.list && typeof value==='string' && (nav.some(item=>item.id===value) || ['completed','abandoned'].includes(value) || value.startsWith('tag:'))) memory.value.selection=value }, { immediate:true })
 watch(() => labels.identity, () => { void labels.load() }, { immediate:true })
-watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; selection.value='review' } }, {immediate:true})
+watch(() => route.query.date, date => { if(typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) { selectedDay.value=date; memory.value.selection='review' } }, {immediate:true})
 const order = useTaskOrderStore()
 const orderScope = computed(() => selection.value.startsWith('project:') ? selection.value : `todo:${selection.value}`)
 watch([orderScope, () => session.userId], () => { void order.load(orderScope.value) }, { immediate:true })

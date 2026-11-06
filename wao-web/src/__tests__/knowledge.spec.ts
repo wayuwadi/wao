@@ -3,8 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
-import { apiCreateNote } from '@/api/board'
-vi.mock('@/api/board', async original => ({ ...await original<typeof import('@/api/board')>(), apiCreateNote: vi.fn() }))
+import { apiCreateKb, apiCreateNote, apiDeleteKb } from '@/api/board'
+vi.mock('@/api/board', async original => ({ ...await original<typeof import('@/api/board')>(), apiCreateKb: vi.fn(), apiCreateNote: vi.fn(), apiDeleteKb: vi.fn(), fetchTrash: vi.fn(async () => []) }))
 
 /**
  * 知识库模块：小记、文档创建署名与回收站式删除。
@@ -20,6 +20,67 @@ describe('data store · 知识库', () => {
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)
+    vi.mocked(apiDeleteKb).mockReset()
+    vi.mocked(apiCreateKb).mockReset()
+  })
+
+  it.each(['new-member', 'same-member'])('旧账号创建回执不能加入新账号知识库列表（成员 %s）', async member => {
+    const session = useSessionStore()
+    session.account = { accountId: 'old-account', member: { id: 'same-member' } } as never
+    const created = { ...data.kbs[0]!, id: 'old-created', name: '旧账号新建知识库' }
+    let finish!: (kb: typeof created) => void
+    vi.mocked(apiCreateKb).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    data.apiLive = true
+    const pending = data.addKb({ name: created.name })
+    session.account = { accountId: 'new-account', member: { id: member } } as never
+    const current = { ...created, id: 'current-kb', name: '当前账号资料' }
+    data.kbs = [current]
+    finish(created); await pending
+    expect(data.kbs).toEqual([current])
+  })
+
+  it('同账号创建仍等待成功回执后加入列表', async () => {
+    const created = { ...data.kbs[0]!, id: 'confirmed-kb', name: '已保存知识库' }
+    let finish!: (kb: typeof created) => void
+    vi.mocked(apiCreateKb).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    data.apiLive = true
+    const pending = data.addKb({ name: created.name })
+    expect(data.kbById(created.id)).toBeUndefined()
+    finish(created)
+    expect(await pending).toEqual(created)
+    expect(data.kbs[0]).toEqual(created)
+  })
+
+  it('删除知识库等待服务端确认，失败时保留知识库和文档供重试', async () => {
+    const kb = data.kbs.find(item => !item.notes)!
+    const docIds = kb.folders.flatMap(folder => folder.docs)
+    const originalDocs = docIds.map(id => data.docById(id))
+    data.apiLive = true
+    vi.mocked(apiDeleteKb).mockRejectedValueOnce(new Error('断网'))
+    await expect(data.deleteKb(kb.id)).rejects.toThrow('断网')
+    expect(data.kbById(kb.id)).toBeDefined()
+    expect(docIds.map(id => data.docById(id))).toEqual(originalDocs)
+    let complete!: () => void
+    vi.mocked(apiDeleteKb).mockReturnValueOnce(new Promise<void>(resolve => { complete = resolve }))
+    const pending = data.deleteKb(kb.id)
+    expect(data.kbById(kb.id)).toBeDefined()
+    complete(); await pending
+    expect(data.kbById(kb.id)).toBeUndefined()
+    expect(docIds.every(id => !data.docById(id))).toBe(true)
+  })
+
+  it.each(['new-member', 'old-member'])('旧账号删除回执不能移除切换后账号的知识库（成员 %s）', async member => {
+    const session = useSessionStore()
+    session.account = { accountId: 'old-account', member: { id: 'old-member' } } as never
+    const original = data.kbs.find(item => !item.notes)!
+    data.apiLive = true
+    let complete!: () => void
+    vi.mocked(apiDeleteKb).mockReturnValueOnce(new Promise<void>(resolve => { complete = resolve }))
+    const pending = data.deleteKb(original.id)
+    session.account = { accountId: 'new-account', member: { id: member } } as never
+    data.kbs = [{ ...original, name: '新账号的资料' }]
+    complete(); await pending
+    expect(data.kbById(original.id)?.name).toBe('新账号的资料')
   })
 
   it('默认就有一个小记知识库，不用先建库才能记东西', () => {

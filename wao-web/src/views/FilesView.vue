@@ -245,6 +245,7 @@ const {
 const { retryUpload, checkUploadList } = uploads
 const pageDialog = ref(false)
 const pageFormId = `hosted-page-${useId()}`
+const pageTitleInput = ref<HTMLInputElement>()
 let pageGeneration = 0
 const editingPage = ref<HostedPage | null>(null)
 const pageExpectedRevision = ref<number>()
@@ -562,6 +563,10 @@ function openPageDialog(page?: HostedPage, html?: File) {
   pageIconError.value = ''
   if (html) setHostedPageHtml(html)
   pageDialog.value = true
+  const generation = pageGeneration
+  void nextTick(() => {
+    if (pageDialog.value && generation === pageGeneration) pageTitleInput.value?.focus({ preventScroll: true })
+  })
 }
 
 function closePageDialog() {
@@ -1511,6 +1516,7 @@ onBeforeUnmount(() => {
           required
         >
           <input
+            ref="pageTitleInput"
             :id="field.id"
             :aria-describedby="field.describedBy"
             :aria-invalid="field.invalid"
@@ -2312,6 +2318,9 @@ select:focus-visible,
   .page-dialog {
     padding: var(--wao-space-2);
   }
+  .page-dialog input {
+    min-height: 44px;
+  }
   .slug-input {
     flex-wrap: wrap;
   }
@@ -2329,7 +2338,9 @@ select:focus-visible,
   .resource-select select,
   .resource-search input,
   .unified-action,
-  .upload-results button {
+  .upload-results button,
+  .settings-button,
+  .btn-primary {
     min-height: 44px;
   }
   .dl-btn,

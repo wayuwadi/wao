@@ -149,6 +149,22 @@ describe('手机按需完整导航', () => {
     expect(wrapper.get('[title="待办"]').attributes('draggable')).not.toBe('true')
     wrapper.unmount()
   })
+
+  it('折叠桌面侧栏仍直接提供搜索入口，提示当前平台快捷键', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    useNavStore().collapsed = true
+    const { wrapper } = await mountNavigation('/')
+    const search = wrapper.get('[aria-label="搜索功能与内容"]')
+    expect(search.isVisible()).toBe(true)
+    expect(search.text()).toBe('搜索')
+    expect(search.attributes('title')).toContain(/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl+K')
+    await search.trigger('click')
+    expect(wrapper.emitted('open-search')).toHaveLength(1)
+    await wrapper.get('.side-collapse').trigger('click')
+    expect(wrapper.get('.search-text').text()).toBe('搜索功能与内容')
+    expect(wrapper.get('.kbd').text()).toContain('K')
+    wrapper.unmount()
+  })
 })
 
 describe('手机内容优先与安全区', () => {

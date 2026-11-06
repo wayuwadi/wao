@@ -1059,10 +1059,12 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建知识库；apiLive 时经后端创建。 */
   async function addKb(payload: CreateKbPayload): Promise<KnowledgeBase | null> {
+    const session = useSessionStore()
+    const requestMember = session.userId, requestAccount = session.account?.accountId
     if (apiLive.value) {
       try {
         const kb = await apiCreateKb({ ...payload, project: undefined })
-        kbs.value.unshift(kb)
+        if (requestMember === session.userId && requestAccount === session.account?.accountId) kbs.value.unshift(kb)
         return kb
       } catch {
         return null
@@ -1100,18 +1102,15 @@ export const useDataStore = defineStore('data', () => {
   async function deleteKb(id: string) {
     const kb = kbById(id)
     if (kb?.notes) return
+    const session = useSessionStore()
+    const requestMember = session.userId, requestAccount = session.account?.accountId
+    if (apiLive.value) await apiDeleteKb(id)
+    if (requestMember !== session.userId || requestAccount !== session.account?.accountId) return
     kbs.value = kbs.value.filter((k) => k.id !== id)
     kb?.folders.forEach((f) => f.docs.forEach((docId) => delete docs[docId]))
     for (const docId of archivedDocIds.value[id] ?? []) delete docs[docId]
     const { [id]: _archived, ...remainingArchives } = archivedDocIds.value
     archivedDocIds.value = remainingArchives
-    if (apiLive.value) {
-      try {
-        await apiDeleteKb(id)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
     void refreshTrash()
   }
 
@@ -1930,11 +1929,13 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。知识库由用户按需另行创建和关联。 */
   async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
+    const session = useSessionStore()
+    const requestMember = session.userId, requestAccount = session.account?.accountId
     let created: Project | null = null
     if (apiLive.value) {
       try {
         created = await apiCreateProject(payload)
-        projects.value.unshift(created)
+        if (requestMember === session.userId && requestAccount === session.account?.accountId) projects.value.unshift(created)
       } catch (error) {
         // 在线保存失败必须保留表单，不能把本地临时记录当作已保存。
         throw error

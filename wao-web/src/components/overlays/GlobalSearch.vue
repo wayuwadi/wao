@@ -54,9 +54,12 @@ const documentMatches = computed(() => {
   })
 })
 const activeResult = ref(0)
-watch([q, scope], () => {
+watch([q, scope], async () => {
   activeResult.value = 0
   documentLimit.value = 50
+  await nextTick()
+  const list = panel.value?.querySelector<HTMLElement>('.results')
+  if (list) list.scrollTop = 0
 })
 const inputEl = ref<HTMLInputElement | null>(null)
 onMounted(() => {
@@ -263,8 +266,35 @@ function moveResult(direction: number) {
   if (count) activeResult.value = (activeResult.value + direction + count) % count
 }
 function openSelected(event: KeyboardEvent) {
-  if (composing.value || event.isComposing) return
+  if (composing.value || event.isComposing || event.keyCode === 229) return
   results.value[activeResult.value]?.go()
+}
+function searchKeydown(event: KeyboardEvent) {
+  // 组合输入期间的方向键与回车属于输入法，不应被搜索导航吞掉。
+  if (event.defaultPrevented) return
+  if (composing.value || event.isComposing || event.keyCode === 229) {
+    // 部分输入法在结束候选时先清空 isComposing；仍不能让 Esc 关闭搜索。
+    if (event.key === 'Escape') event.stopPropagation()
+    return
+  }
+  if (event.altKey || event.ctrlKey || event.metaKey) return
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveResult(event.key === 'ArrowDown' ? 1 : -1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    openSelected(event)
+  }
+}
+async function clearQuery() {
+  q.value = ''
+  await nextTick()
+  inputEl.value?.focus({ preventScroll: true })
+}
+async function searchAll() {
+  scope.value = 'all'
+  await nextTick()
+  inputEl.value?.focus({ preventScroll: true })
 }
 </script>
 
@@ -278,15 +308,13 @@ function openSelected(event: KeyboardEvent) {
   >
     <div ref="panel" class="panel">
       <div class="bar">
-        <i class="ri-search-line bar-icon"></i>
+        <i class="ri-search-line bar-icon" aria-hidden="true"></i>
         <input
           ref="inputEl"
           v-model="q"
           @compositionstart="composing = true"
           @compositionend="composing = false"
-          @keydown.down.prevent="!composing && moveResult(1)"
-          @keydown.up.prevent="!composing && moveResult(-1)"
-          @keydown.enter.prevent="openSelected"
+          @keydown="searchKeydown"
           role="combobox"
           aria-label="搜索功能与内容"
           aria-controls="global-search-results"
@@ -295,20 +323,21 @@ function openSelected(event: KeyboardEvent) {
           :aria-activedescendant="results.length ? `search-result-${activeResult}` : undefined"
           placeholder="搜索任务、文件、小记、文档正文…"
         />
-        <WaoButton variant="ghost" :disabled="cache.refreshing" @click="loadDocuments"
-          >刷新正文</WaoButton
-        >
+        <WaoButton v-if="q" class="clear-query" variant="ghost" aria-label="清除搜索关键词" title="清除搜索关键词" @click="clearQuery">
+          <i class="ri-close-circle-line" aria-hidden="true"></i>
+        </WaoButton>
       </div>
-      <label class="search-filter"
-        >搜索范围<select v-model="scope" aria-label="搜索范围">
+      <div class="search-tools">
+        <label class="search-filter">搜索范围<select v-model="scope" aria-label="搜索范围">
           <option value="all">全部</option>
           <option value="tasks">任务与子任务</option>
           <option value="files">文件</option>
           <option value="docs">小记与文档</option>
           <option value="projects">项目</option>
           <option value="functions">功能与应用</option>
-        </select></label
-      >
+        </select></label>
+        <WaoButton v-if="needsDocs" variant="ghost" :loading="cache.refreshing" @click="loadDocuments">刷新正文</WaoButton>
+      </div>
       <p
         v-for="domain in incompleteDomains"
         :key="domain"
@@ -345,6 +374,7 @@ function openSelected(event: KeyboardEvent) {
             :key="i"
             class="result"
             role="option"
+            tabindex="-1"
             :id="`search-result-${results.indexOf(it)}`"
             :aria-selected="results[activeResult] === it"
             :class="{ selected: results[activeResult] === it }"
@@ -377,7 +407,11 @@ function openSelected(event: KeyboardEvent) {
           "
           class="empty"
         >
-          没有匹配结果——换个关键词试试
+          <p>{{ q.trim() ? '没有匹配结果，试试其他关键词' : '输入关键词开始搜索' }}</p>
+          <div v-if="q.trim()" class="empty-actions">
+            <WaoButton variant="ghost" @click="clearQuery">清除关键词</WaoButton>
+            <WaoButton v-if="scope !== 'all'" variant="ghost" @click="searchAll">搜索全部内容</WaoButton>
+          </div>
         </div>
       </div>
       <div class="footer">
@@ -415,12 +449,20 @@ function openSelected(event: KeyboardEvent) {
   font: inherit;
   font-size: var(--wao-font-body);
 }
+.clear-query { flex: none; min-width: 44px; min-height: 44px; padding: var(--wao-space-1); }
+.search-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1);
+}
 .search-filter {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--wao-space-1);
-  padding: var(--wao-space-1);
   font-size: var(--wao-font-help);
 }
 select {
@@ -435,6 +477,7 @@ select {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--wao-space-1);
   scrollbar-gutter: stable;
 }
@@ -495,6 +538,8 @@ select {
   text-align: center;
   color: var(--wao-text-3);
 }
+.empty p { margin: 0; }
+.empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--wao-space-1); margin-top: var(--wao-space-1); }
 .footer {
   padding: var(--wao-space-1);
   border-top: 1px solid var(--wao-line);

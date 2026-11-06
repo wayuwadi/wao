@@ -16,6 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
 const desktopToolbar = hasDesktopToolbar()
+const searchShortcut = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl+K'
 const isCollapsed = computed(() => !isMobile.value && nav.collapsed)
 const navigationWidth = ref(236)
 const menuRef = ref<HTMLElement | null>(null)
@@ -52,11 +53,11 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
       </button>
     </div>
 
-    <div v-if="!isCollapsed" class="search-row">
-      <button class="search" aria-label="搜索功能与内容" aria-keyshortcuts="Meta+K Control+K" @click="emit('open-search')">
-        <i class="ri-search-line"></i>
-        <span class="search-text">搜索功能与内容</span>
-        <span class="kbd">⌘K</span>
+    <div class="search-row" :class="{ 'compact-search-row': isCollapsed }">
+      <button class="search" :class="{ 'compact-search': isCollapsed }" aria-label="搜索功能与内容" :title="`搜索功能与内容（${searchShortcut}）`" aria-keyshortcuts="Meta+K Control+K" @click="emit('open-search')">
+        <i class="ri-search-line" aria-hidden="true"></i>
+        <span class="search-text">{{ isCollapsed ? '搜索' : '搜索功能与内容' }}</span>
+        <span v-if="!isCollapsed" class="kbd" aria-hidden="true">{{ searchShortcut }}</span>
       </button>
     </div>
 
@@ -268,6 +269,21 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
   flex: 1;
   text-align: left;
 }
+.compact-search-row { padding: 2px var(--wao-space-1) 6px; }
+.compact-search {
+  height: auto;
+  min-height: 44px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--wao-text-3);
+}
+.compact-search .search-text { flex: none; font-size: var(--wao-font-caption); text-align: center; }
+.compact-search:hover { background: var(--wao-bg-hover); border-color: transparent; }
+.search:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .kbd {
   font-size: 11px;
   border: 1px solid var(--wao-line-control);

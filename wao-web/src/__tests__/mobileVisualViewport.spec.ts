@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { useMobileVisualViewport } from '@/composables/mobileVisualViewport'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 
 class Viewport extends EventTarget {
   height = 844
@@ -12,7 +13,7 @@ let viewport: Viewport
 let media: EventTarget & { matches: boolean }
 let wrapper: VueWrapper | undefined
 const Probe = defineComponent({
-  setup: useMobileVisualViewport,
+  setup: () => useMobileVisualViewport(),
   template: '<div :style="fullscreenStyle" :data-keyboard="keyboardOpen" />',
 })
 const originalHeight = window.innerHeight
@@ -46,6 +47,25 @@ async function resize(height: number, top = 0, scale = 1) {
 }
 
 describe('手机编辑可见视口', () => {
+  it('通用弹窗跟随键盘可见范围，保留同一输入与底栏；缩放时交回浏览器', async () => {
+    wrapper = mount(SettingsDialogShell, { props: { title: '填写内容' }, slots: { default: '<input aria-label="标题" />', footer: '<button>保存</button>' }, attachTo: document.body })
+    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('input')!
+    input.value = '尚未保存的内容'
+    input.focus()
+    await resize(420, 38)
+    const mask = document.querySelector<HTMLElement>('.settings-dialog-mask')!
+    expect(mask.style.cssText).toContain('--settings-visible-height: 420px')
+    expect(mask.style.cssText).toContain('--settings-visible-top: 38px')
+    expect(document.querySelector('input')).toBe(input)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('尚未保存的内容')
+    expect(document.querySelector('.dialog-footer')?.textContent).toBe('保存')
+    await resize(420, 38, 2)
+    expect(mask.style.cssText).not.toContain('--settings-visible-height')
+    await resize(844)
+    expect(mask.style.cssText).toContain('--settings-visible-height: 844px')
+  })
   it('键盘收缩后跟随高度和偏移，收起时恢复', async () => {
     wrapper = mount(Probe)
     edit()

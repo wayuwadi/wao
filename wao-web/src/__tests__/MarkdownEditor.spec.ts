@@ -216,7 +216,7 @@ describe('代码块', () => {
     expect(e.getJSON()).toEqual(original)
     expect(e.getHTML()).not.toContain('自动换行')
     expect(e.getHTML()).not.toContain('code-block-head')
-    await w.get('button[aria-pressed]').trigger('click')
+    await w.get('.wao-code-block button[aria-pressed]').trigger('click')
     expect(w.get('.wao-code-block').classes()).toContain('code-wrap')
     expect(e.getJSON()).toEqual(original)
     w.unmount()
@@ -1521,10 +1521,13 @@ describe('MarkdownEditor（所见即所得）', () => {
     const e = (w.vm as unknown as { editor: Editor }).editor
     expect(w.find('.toolbar-toggle').exists()).toBe(false)
     expect(host.querySelector<HTMLElement>('.advanced-toolbar')?.style.display).not.toBe('none')
+    const bold = host.querySelector<HTMLButtonElement>('button[aria-label="粗体"]')!
+    expect(bold.getAttribute('aria-pressed')).toBe('false')
     e.commands.selectAll()
-    host.querySelector<HTMLButtonElement>('button[title="粗体"]')!.click()
+    bold.click()
     await nextTick()
     expect(e.getHTML()).toContain('<strong>正文</strong>')
+    expect(bold.getAttribute('aria-pressed')).toBe('true')
     expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 2 字')
     await w.setProps({ readonly: true, modelValue: '正文更新' })
     expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 4 字')

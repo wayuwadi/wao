@@ -1,4 +1,4 @@
-import { config, flushPromises, mount } from '@vue/test-utils'
+import { config, DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from '@/views/FilesView.vue'
@@ -51,6 +51,80 @@ function hostedPage(revision = 0): HostedPage {
 }
 
 describe('FilesView', () => {
+  it.each(['files', 'img', 'pages'] as const)('切换账号恢复%s搜索时保留该账号页码，只有用户搜索才重置', async tab => {
+    const pinia = createPinia(), session = useSessionStore(pinia)
+    const login = (id: string) => session.$patch({ account: { accountId: id, member: { id, name: id, initial: id, role: '', color: '' }, identities: [], createdAt: '' } })
+    login('first')
+    sessionStorage.setItem('wao-browse-v1:second:second:files', JSON.stringify({ tab, filePage: 3, imagePage: 3, hostedPage: 3, searchFiles: '报告', searchImages: '报告', searchPages: '报告' }))
+    const data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    const loadResources = () => {
+      data.files = Array.from({ length: 61 }, (_, index) => file(index, { name: `页面报告 ${index + 1}.pdf` }))
+      data.imgs = Array.from({ length: 31 }, (_, index) => ({ id: `im-${index}`, name: `页面报告 ${index + 1}`, url: `/images/${index}`, size: '', time: '', from: '', c1: '', c2: '' }))
+      data.hostedPages = Array.from({ length: 31 }, (_, index) => ({ id: `page-${index}`, title: `页面报告 ${index + 1}`, fileName: `${index}.html`, slug: `page-${index}`, hasIcon: false, updatedAt: '', url: `/api/pages/page-${index}` }))
+      data.fileLoadState = data.loadStates.images = data.hostedPageLoadState = 'loaded'
+    }
+    loadResources()
+    const wrapper = mount(FilesView, { global: { plugins: [pinia], stubs: { FileSettingsModal: true } } })
+    try {
+      await wrapper.findAll('.seg-btn')[tab === 'files' ? 0 : tab === 'img' ? 1 : 2]!.trigger('click')
+      await wrapper.get('.resource-search input').setValue('页面')
+      await wrapper.get('[aria-label="第 2 页"]').trigger('click')
+      login('second'); await flushPromises()
+      expect(data.files).toHaveLength(0)
+      loadResources(); await flushPromises()
+      expect((wrapper.get('.resource-search input').element as HTMLInputElement).value).toBe('报告')
+      expect(wrapper.get('[aria-current="page"]').text()).toBe('3')
+      const saved = JSON.parse(sessionStorage.getItem('wao-browse-v1:second:second:files')!)
+      expect(saved[tab === 'files' ? 'filePage' : tab === 'img' ? 'imagePage' : 'hostedPage']).toBe(3)
+      await wrapper.get('.resource-search input').setValue('页面报告')
+      expect(wrapper.get('[aria-current="page"]').text()).toBe('1')
+    } finally { wrapper.unmount() }
+  })
+
+  it('托管真实弹窗聚焦名称，发布按钮位于固定页脚，取消返回原入口', async () => {
+    const pinia = createPinia(), data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    const wrapper = mount(FilesView, { attachTo: document.body, global: { plugins: [pinia], stubs: { teleport: false, FileSettingsModal: true } } })
+    try {
+      await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+      const trigger = wrapper.get<HTMLButtonElement>('.ftop .btn-primary')
+      trigger.element.focus(); await trigger.trigger('click'); await flushPromises()
+      const dialog = new DOMWrapper(document.querySelector('[aria-label="托管 HTML"]')!)
+      const input = dialog.get<HTMLInputElement>('.page-dialog input')
+      expect(document.activeElement).toBe(input.element)
+      const form = dialog.get('form').element
+      const publish = dialog.get<HTMLButtonElement>('.dialog-footer .btn-primary')
+      expect(form.contains(publish.element)).toBe(false)
+      expect(publish.element.form).toBe(form)
+      await dialog.get('.dialog-actions button').trigger('click'); await flushPromises()
+      expect(document.querySelector('[aria-label="托管 HTML"]')).toBeNull()
+      expect(document.activeElement).toBe(trigger.element)
+    } finally { wrapper.unmount() }
+  })
+
+  it('清除资源筛选后将焦点交还搜索，可继续输入', async () => {
+    const pinia = createPinia(), data = useDataStore(pinia)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.files = [file(1)]; data.fileLoadState = 'loaded'
+    const wrapper = mount(FilesView, { attachTo: document.body, global: { plugins: [pinia], stubs: { FileSettingsModal: true } } })
+    try {
+      const input = wrapper.get<HTMLInputElement>('.resource-search input')
+      await input.setValue('无结果')
+      const clear = wrapper.get<HTMLButtonElement>('.resource-summary button')
+      clear.element.focus(); await clear.trigger('click'); await flushPromises()
+      expect(input.element.value).toBe('')
+      expect(document.activeElement).toBe(input.element)
+      expect(wrapper.findAll('.file-row')).toHaveLength(1)
+    } finally { wrapper.unmount() }
+  })
+
   it('网页编辑保存使用打开时的版本快照，并将版本传给HTML替换窗口', async () => {
     const { data, wrapper } = listFixture()
     const original = hostedPage(0)

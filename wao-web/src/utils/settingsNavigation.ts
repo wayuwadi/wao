@@ -56,7 +56,7 @@ export interface SettingsSearchResult {
 }
 
 const searchKeywords: Record<string, string> = {
-  common: '首页 日期 提醒 快捷键', appearance: '主题 深色 浅色 明暗 陪伴',
+  common: '首页 日期 提醒 庆祝 动画', appearance: '主题 深色 浅色 明暗 陪伴 每周 起始日 周一 周日 日历 本周 快捷键 界面 控件 风格 布局',
   notes: '润色 提示词 标签 配图 发现 小记 AI', account: '密码 邮箱 登录 飞书',
   'notification-policy': '消息 免打扰 通知', 'ai-accounts': '模型 Codex AI',
 }

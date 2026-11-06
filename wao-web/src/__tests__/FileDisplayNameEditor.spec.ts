@@ -23,6 +23,52 @@ const file = {
 }
 
 describe('FileDisplayNameEditor', () => {
+  it('慢网保存完成时不会从用户新选择的输入位置抢回焦点', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    let finish!: (value: typeof file) => void
+    vi.spyOn(data, 'renameFileDisplayName').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const outside = document.createElement('input')
+    document.body.append(outside)
+    const wrapper = mount(FileDisplayNameEditor, { attachTo: document.body, props: { file }, global: { plugins: [pinia] } })
+    await wrapper.get('[title="修改 WAO 展示名称"]').trigger('click')
+    await wrapper.get('input').setValue('新名称')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    outside.focus()
+    finish(file)
+    await flushPromises()
+    expect(wrapper.text()).toContain('已保存')
+    expect(document.activeElement).toBe(outside)
+    wrapper.unmount()
+    outside.remove()
+  })
+
+  it('中文组合输入的回车不保存，取消和保存后焦点回到改名入口', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const rename = vi.spyOn(data, 'renameFileDisplayName').mockResolvedValue({ ...file, displayName: '中文名称' })
+    const wrapper = mount(FileDisplayNameEditor, { attachTo: document.body, props: { file }, global: { plugins: [pinia] } })
+    await wrapper.get('[title="修改 WAO 展示名称"]').trigger('click')
+    await wrapper.get('input').setValue('中文名称')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter', isComposing: true })
+    await wrapper.get('input').trigger('keydown', { key: 'Enter', keyCode: 229 })
+    await wrapper.get('input').trigger('compositionstart')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+    expect(rename).not.toHaveBeenCalled()
+    expect(wrapper.get('input').element).toHaveProperty('value', '中文名称')
+    await wrapper.get('input').trigger('compositionend')
+    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+    expect(document.activeElement).toBe(wrapper.get('[title="修改 WAO 展示名称"]').element)
+    await wrapper.get('[title="修改 WAO 展示名称"]').trigger('click')
+    await wrapper.get('input').setValue('中文名称')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(rename).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(wrapper.get('[title="修改 WAO 展示名称"]').element)
+    wrapper.unmount()
+  })
+
   function createSession(accountId: string) {
     const pinia = createPinia()
     const session = useSessionStore(pinia)
