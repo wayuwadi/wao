@@ -36,6 +36,34 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('删除侧栏标签仅移除本人任务的关联，失败可重试',async()=>{
+  const wrapper=mount(TodoView,options);await flushPromises()
+  await wrapper.get('[aria-label="删除标签 联调"]').trigger('click')
+  expect(wrapper.text()).toContain('共享任务的更改对其他成员也可见')
+  expect(saveTaskLabels).not.toHaveBeenCalled()
+  vi.mocked(saveTaskLabels).mockRejectedValueOnce(new Error('网络错误'))
+  await buttonText(wrapper,'button','删除标签').trigger('click');await flushPromises()
+  expect(wrapper.text()).toContain('剩余 1 项未确认')
+  expect(wrapper.find('[aria-label="删除标签 联调"]').exists()).toBe(true)
+  await buttonText(wrapper,'button','重试').trigger('click');await flushPromises()
+  expect(vi.mocked(saveTaskLabels)).toHaveBeenLastCalledWith({taskId:'parent',subId:'child',revision:1,tags:[]})
+  expect(wrapper.find('[aria-label="删除标签 联调"]').exists()).toBe(false)
+  wrapper.unmount()
+ })
+ it('删除确认固定本人范围，并拒绝覆盖之后的标签修改',async()=>{
+  const data=useDataStore()
+  data.tasks[1]!.owner='another-member'
+  const wrapper=mount(TodoView,options);await flushPromises()
+  const labels=useTaskLabelsStore()
+  labels.rows[JSON.stringify(['other',''])]={taskId:'other',subId:'',revision:2,tags:['联调']}
+  await wrapper.get('[aria-label="删除标签 联调"]').trigger('click')
+  labels.rows[JSON.stringify(['parent','child'])]={taskId:'parent',subId:'child',revision:2,tags:['联调','新标签']}
+  await buttonText(wrapper,'button','删除标签').trigger('click');await flushPromises()
+  expect(wrapper.text()).toContain('标签已被修改')
+  expect(saveTaskLabels).not.toHaveBeenCalled()
+  expect(labels.get('other').tags).toEqual(['联调'])
+  wrapper.unmount()
+ })
  it('三种视图共用任务与保存：看板按状态移动、时间线显示执行区间和截止标记',async()=>{
   const data=useDataStore(), base=data.tasks[0]!
   data.tasks=[
@@ -341,7 +369,7 @@ describe('task workspace',()=>{
 
  it('标签浮层可取消勾选，失败保留草稿并允许重试',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
-  await wrapper.findAll('.task-navigation>button').find(b=>b.text().includes('联调'))!.trigger('click');await flushPromises()
+  await wrapper.findAll('.task-navigation button').find(b=>b.text().includes('联调'))!.trigger('click');await flushPromises()
   const editor=wrapper.findComponent(TaskLabelEditor)
   await editor.get('button').trigger('click');await flushPromises()
   expect(editor.get('[role="dialog"]').attributes('aria-label')).toBe('编辑任务标签')
@@ -408,7 +436,7 @@ describe('task workspace',()=>{
  })
  it('filters child labels while retaining ancestry and selecting the matching child',async()=>{
   const wrapper=mount(TodoView,options);await flushPromises()
-  const tag=wrapper.findAll('.task-navigation>button').find(b=>b.text().includes('联调'))!
+  const tag=wrapper.findAll('.task-navigation button').find(b=>b.text().includes('联调'))!
   await tag.trigger('click');await flushPromises()
   expect(wrapper.findAll('.checklist-row')).toHaveLength(2)
   expect(wrapper.get('[aria-label="任务标题"]').element).toHaveProperty('value','独立子任务')
