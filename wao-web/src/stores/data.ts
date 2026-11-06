@@ -86,6 +86,7 @@ import {
   type CreateJobPayload,
   type CreateKbPayload,
   type GoalDto,
+  type FileUploadProgress,
   type PatchJobPayload,
   type PatchKbPayload,
 } from '@/api/board'
@@ -95,6 +96,7 @@ import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type Docume
 import { nowIso, todayIso } from '@/utils/time'
 import { mergeSubtasks } from '@/utils/subtaskMerge'
 import { mergeServerList } from '@/utils/mergeServerList'
+import { createResourceListLoader } from '@/utils/resourceListLoader'
 import { subtaskState } from '@/utils/subtaskTree'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
@@ -245,6 +247,36 @@ export const useDataStore = defineStore('data', () => {
     ])) as Record<DataDomain, DataLoadState>,
   )
   const loadErrors = reactive<Partial<Record<DataDomain, string>>>({})
+  const filesLoader = createResourceListLoader<FileItem>({
+    read: () => fetchFiles(), current: () => files.value, replace: value => { files.value = value }, key: item => item.id ?? item.link,
+    loading: () => { fileLoadState.value = loadStates.files = 'loading'; fileLoadError.value = ''; delete loadErrors.files },
+    loaded: () => { fileLoadState.value = loadStates.files = 'loaded'; fileLoadError.value = ''; delete loadErrors.files; apiLive.value = true },
+    failed: cause => {
+      fileLoadState.value = loadStates.files = 'error'
+      fileLoadError.value = loadErrors.files = cause instanceof Error && cause.message ? cause.message : '暂时无法读取文件，请稍后重试'
+    },
+  })
+  const imagesLoader = createResourceListLoader<ImageItem>({
+    read: () => fetchImages(), current: () => imgs.value, replace: value => { imgs.value = value }, key: item => item.id ?? item.url,
+    loading: () => { loadStates.images = 'loading'; delete loadErrors.images },
+    loaded: () => { loadStates.images = 'loaded'; delete loadErrors.images; apiLive.value = true },
+    failed: cause => { loadStates.images = 'error'; loadErrors.images = cause instanceof Error && cause.message ? cause.message : DOMAIN_ERROR_MESSAGES.images },
+  })
+  const pagesLoader = createResourceListLoader<HostedPage>({
+    read: () => fetchHostedPages(), current: () => hostedPages.value, replace: value => { hostedPages.value = value }, key: item => item.id,
+    loading: () => { hostedPageLoadState.value = 'loading'; hostedPageLoadError.value = '' },
+    loaded: () => { hostedPageLoadState.value = 'loaded'; hostedPageLoadError.value = ''; apiLive.value = true },
+    failed: cause => { hostedPageLoadState.value = 'error'; hostedPageLoadError.value = cause instanceof Error && cause.message ? cause.message : '托管网页读取失败，请稍后重试' },
+  })
+  const resourceSession = useSessionStore()
+  watch(() => `${resourceSession.account?.accountId ?? ''}:${resourceSession.userId}`, () => {
+    // Clear immediately, including logout and an account change with the same member id.
+    filesLoader.reset(); imagesLoader.reset(); pagesLoader.reset()
+    files.value = []; imgs.value = []; hostedPages.value = []
+    fileLoadState.value = loadStates.files = 'idle'; fileLoadError.value = ''
+    loadStates.images = hostedPageLoadState.value = 'idle'; hostedPageLoadError.value = ''
+    delete loadErrors.files; delete loadErrors.images
+  }, { flush: 'sync' })
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
   const vaultError = ref(false)
 
@@ -373,25 +405,9 @@ export const useDataStore = defineStore('data', () => {
         loadErrors.tasks = taskLoadError.value
         return null
       }) : Promise.resolve(null)
-    const fileRequest = requested.has('files') ? fetchFiles()
-      .then((loadedFiles) => {
-        if (requestMember !== useSessionStore().userId) return null
-        files.value = loadedFiles
-        fileLoadState.value = 'loaded'
-        loadStates.files = 'loaded'
-        apiLive.value = true
-        return loadedFiles
-      })
-      .catch((cause: unknown) => {
-        if (requestMember !== useSessionStore().userId) return null
-        fileLoadState.value = 'error'
-        fileLoadError.value = cause instanceof Error && cause.message
-          ? cause.message
-          : '暂时无法读取音乐库，请稍后重试'
-        loadStates.files = 'error'
-        loadErrors.files = fileLoadError.value
-        return null
-      }) : Promise.resolve(null)
+    const fileRequest = requested.has('files')
+      ? refreshFiles().then(loaded => loaded ? files.value : null)
+      : Promise.resolve(null)
     const knowledgeRequest = settle('knowledge', () => Promise.all([fetchKbs(), fetchKbGroups()]), ([kb, groups]) => {
       // A confirmed local create/delete/move after this request owns the newer tree.
       // The next refresh starts with that tree and can accept other clients' changes.
@@ -2572,35 +2588,43 @@ export const useDataStore = defineStore('data', () => {
   async function uploadImage(
     file: File,
     source?: string,
-    options?: { requirePersisted?: boolean; projectId?: string },
+    options?: { requirePersisted?: boolean; projectId?: string; throwOnError?: boolean; onProgress?: (progress: FileUploadProgress) => void; signal?: AbortSignal },
   ): Promise<ImageRef | null> {
-    const uploadSession = useSessionStore()
-    const member = uploadSession.userId, account = uploadSession.account?.accountId
-    const sameSession = () => member === uploadSession.userId && account === uploadSession.account?.accountId
-    if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) return null
-    if (apiLive.value) {
+    const sameSession = imagesLoader.ticket()
+    if (options?.signal?.aborted) {
+      if (options.throwOnError) options.signal.throwIfAborted()
+      return null
+    }
+    if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES || file.size === 0) {
+      if (options?.throwOnError) throw new Error(!file.type.startsWith('image/') ? '请选择图片文件' : file.size === 0 ? '图片为空，请重新选择' : '图片超过 10MB 上限，请压缩后重新选择')
+      return null
+    }
+    if (apiLive.value || options?.requirePersisted) {
       try {
-        const item = await apiUploadImage(file, source, options?.projectId)
+        const item = await (options?.onProgress || options?.signal
+          ? apiUploadImage(file, source, options.projectId, { signal: options.signal, onProgress: progress => { if (sameSession()) options.onProgress?.(progress) } })
+          : apiUploadImage(file, source, options?.projectId))
         if (!sameSession()) return null
-        imgs.value.unshift(item)
+        imagesLoader.upsert(item)
         return { name: item.name, url: item.url }
-      } catch {
-        if (options?.requirePersisted) return null
+      } catch (cause) {
+        if (options?.throwOnError) throw cause
+        if (options?.requirePersisted || options?.signal?.aborted) return null
         /* 普通离线演示态仍可回落成本地 data URL。 */
       }
     }
-    if (options?.requirePersisted || !sameSession()) return null
+    if (options?.requirePersisted || options?.signal?.aborted || !sameSession()) return null
     const url = await new Promise<string | null>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result))
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(file)
     })
-    if (!url || !sameSession()) return null
+    if (!url || options?.signal?.aborted || !sameSession()) return null
     const name = file.name || '粘贴的图片'
     // 回落的图也要进图床列表——「所有上传的图都能在文件与图床里看到」不该因为
     // 后端临时不可用就出现缺口，只是这一张不会持久化。
-    imgs.value.unshift({
+    imagesLoader.upsert({
       name, url, size: humanSize(file.size), time: '刚刚',
       from: source || '本地上传（未持久化）', c1: '#E8ECFA', c2: '#DDE3F6',
     })
@@ -2609,128 +2633,89 @@ export const useDataStore = defineStore('data', () => {
 
   /** 普通文件业务硬上限 200MiB；服务端还会按文件与图床设置执行更低的真实上限。 */
   const MAX_FILE_BYTES = 200 * 1024 * 1024
-  async function refreshFiles(): Promise<boolean> {
-    const member = useSessionStore().userId
-    const account = useSessionStore().account?.accountId
-    fileLoadState.value = 'loading'
-    fileLoadError.value = ''
-    loadStates.files = 'loading'
-    delete loadErrors.files
+  function refreshFiles(): Promise<boolean> {
+    return filesLoader.refresh()
+  }
+  async function uploadFile(file: File, projectId?: string, privateNote = false, options?: { throwOnError?: boolean; onProgress?: (progress: FileUploadProgress) => void; signal?: AbortSignal }) {
+    if ((!apiLive.value && !options?.throwOnError) || file.size > MAX_FILE_BYTES || file.size === 0) {
+      if (options?.throwOnError) throw new Error(file.size === 0 ? '文件为空，请重新选择' : '文件超过 200MB 上限，请压缩后重新选择')
+      return null
+    }
+    const sameSession = filesLoader.ticket()
     try {
-      const loaded = await fetchFiles()
-      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return false
-      files.value = loaded
-      fileLoadState.value = 'loaded'
-      loadStates.files = 'loaded'
-      apiLive.value = true
-      return true
-    } catch (cause: unknown) {
-      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return false
-      fileLoadState.value = 'error'
-      fileLoadError.value = cause instanceof Error && cause.message
-        ? cause.message
-        : '暂时无法读取文件，请稍后重试'
-      loadStates.files = 'error'
-      loadErrors.files = fileLoadError.value
-      return false
+      const item = await (options?.onProgress || options?.signal
+        ? apiUploadFile(file, projectId, privateNote, { signal: options.signal, onProgress: progress => { if (sameSession()) options.onProgress?.(progress) } })
+        : privateNote ? apiUploadFile(file, projectId, true) : apiUploadFile(file, projectId))
+      if (!sameSession()) return null
+      filesLoader.upsert(item)
+      return item
+    } catch (cause) {
+      if (options?.throwOnError) throw cause
+      return null
     }
   }
-  async function uploadFile(file: File, projectId?: string, privateNote = false) {
-    if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
-    const member = useSessionStore().userId
-    const account = useSessionStore().account?.accountId
-    try {
-      const item = await (privateNote ? apiUploadFile(file, projectId, true) : apiUploadFile(file, projectId))
-      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return null
-      files.value.unshift(item)
-      fileLoadState.value = 'loaded'
-      fileLoadError.value = ''
-      return item
-    } catch { return null }
-  }
   async function replaceFile(id: string, file: File) {
-    const updated = await apiReplaceFile(id, file)
-    const index = files.value.findIndex((item) => item.id === id)
-    if (index >= 0) files.value.splice(index, 1, updated)
-    return updated
+    return filesLoader.mutate(id, async () => {
+      const sameSession = filesLoader.ticket()
+      const updated = await apiReplaceFile(id, file)
+      if (!sameSession()) throw new Error('账号已切换，请在原账号中核对替换结果')
+      filesLoader.upsert(updated)
+      return updated
+    })
   }
-  async function renameFileDisplayName(id: string, displayName: string) {
-    const updated = await apiRenameFile(id, displayName)
-    const index = files.value.findIndex((file) => file.id === id)
-    if (index >= 0) files.value.splice(index, 1, updated)
-    return updated
+  async function renameFileDisplayName(id: string, displayName: string, expectedDisplayName?: string | null) {
+    return filesLoader.mutate(id, async () => {
+      const sameSession = filesLoader.ticket()
+      const updated = await (expectedDisplayName === undefined
+        ? apiRenameFile(id, displayName)
+        : apiRenameFile(id, displayName, expectedDisplayName))
+      if (!sameSession()) throw new Error('账号已切换，请在原账号中核对改名结果')
+      filesLoader.upsert(updated)
+      return updated
+    })
   }
   async function deleteFile(id: string) {
     if (!apiLive.value) throw new Error('服务暂不可用，文件尚未删除，请稍后重试。')
-    const member = useSessionStore().userId
-    await apiDeleteFile(id)
-    if (member !== useSessionStore().userId) return
-    files.value = files.value.filter((file) => file.id !== id)
+    return filesLoader.mutate(id, async () => {
+      const sameSession = filesLoader.ticket()
+      await apiDeleteFile(id)
+      if (!sameSession()) return
+      filesLoader.remove(id)
+    })
   }
-  async function refreshHostedPages() {
-    hostedPageLoadState.value = 'loading'
-    hostedPageLoadError.value = ''
-    try {
-      hostedPages.value = await fetchHostedPages()
-      hostedPageLoadState.value = 'loaded'
-      return true
-    } catch (cause: unknown) {
-      hostedPageLoadState.value = 'error'
-      hostedPageLoadError.value = cause instanceof Error && cause.message
-        ? cause.message
-        : '人工上传的 HTML 读取失败'
-      return false
-    }
+  function refreshHostedPages() {
+    return pagesLoader.refresh()
   }
-  async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string; projectId?: string }) {
-    const item = await apiSaveHostedPage(payload)
-    hostedPages.value = [item, ...hostedPages.value.filter((page) => page.id !== item.id)]
-    return item
+  async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string; projectId?: string; expectedRevision?: number }) {
+    return pagesLoader.mutate(payload.id ?? uid('new-page-'), async () => {
+      const sameSession = pagesLoader.ticket()
+      const item = await apiSaveHostedPage(payload)
+      if (!sameSession()) throw new Error('账号已切换，请在原账号中核对网页保存结果')
+      pagesLoader.upsert(item)
+      return item
+    })
   }
-  async function replaceHostedPage(id: string, html: File) {
-    const updated = await apiReplaceHostedPage(id, html)
-    const index = hostedPages.value.findIndex((page) => page.id === id)
-    if (index >= 0) hostedPages.value.splice(index, 1, updated)
-    return updated
+  async function replaceHostedPage(id: string, html: File, expectedRevision?: number) {
+    return pagesLoader.mutate(id, async () => {
+      const sameSession = pagesLoader.ticket()
+      const updated = await (expectedRevision === undefined ? apiReplaceHostedPage(id, html) : apiReplaceHostedPage(id, html, expectedRevision))
+      if (!sameSession()) throw new Error('账号已切换，请在原账号中核对网页替换结果')
+      pagesLoader.upsert(updated)
+      return updated
+    })
   }
   async function deleteHostedPage(id: string) {
-    const member = useSessionStore().userId
-    await apiDeleteHostedPage(id)
-    if (member !== useSessionStore().userId) return
-    hostedPages.value = hostedPages.value.filter((page) => page.id !== id)
+    return pagesLoader.mutate(id, async () => {
+      const sameSession = pagesLoader.ticket()
+      await apiDeleteHostedPage(id)
+      if (!sameSession()) return
+      pagesLoader.remove(id)
+    })
   }
 
   /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
-  let imagesRequest: Promise<boolean> | null = null
-  let imagesRequestIdentity = ''
-  async function refreshImages() {
-    const session = useSessionStore()
-    const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
-    const requestedBy = identity()
-    if (imagesRequest && imagesRequestIdentity === requestedBy) return imagesRequest
-    imagesRequestIdentity = requestedBy
-    loadStates.images = 'loading'
-    delete loadErrors.images
-    const operation = fetchImages()
-      .then((list) => {
-        if (requestedBy !== identity()) return false
-        imgs.value = list
-        loadStates.images = 'loaded'
-        return true
-      })
-      .catch((cause: unknown) => {
-        if (requestedBy !== identity()) return false
-        loadStates.images = 'error'
-        loadErrors.images = cause instanceof Error && cause.message
-          ? cause.message
-          : DOMAIN_ERROR_MESSAGES.images
-        return false
-      })
-      .finally(() => {
-        if (imagesRequest === operation) imagesRequest = null
-      })
-    imagesRequest = operation
-    return operation
+  function refreshImages() {
+    return imagesLoader.refresh()
   }
 
   /**
@@ -2743,10 +2728,12 @@ export const useDataStore = defineStore('data', () => {
    */
   async function deleteImage(id: string) {
     if (!apiLive.value) throw new Error('服务暂不可用，图片尚未删除，请稍后重试。')
-    const member = useSessionStore().userId
-    await apiDeleteImage(id)
-    if (member !== useSessionStore().userId) return
-    imgs.value = imgs.value.filter((i) => i.id !== id)
+    return imagesLoader.mutate(id, async () => {
+      const sameSession = imagesLoader.ticket()
+      await apiDeleteImage(id)
+      if (!sameSession()) return
+      imagesLoader.remove(id)
+    })
   }
 
   /** 人类可读文件大小，与后端 ImageService.humanSize 口径一致。 */

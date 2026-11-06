@@ -101,16 +101,25 @@ export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)
 export const fetchFiles = (projectId?: string) =>
   get<FileItem[]>(`/api/files${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`)
-export async function apiUploadFile(file: File, projectId?: string, privateNote = false): Promise<FileItem> {
+export interface FileUploadProgress { loaded: number; total?: number }
+export interface FileUploadOptions { onProgress?: (progress: FileUploadProgress) => void; signal?: AbortSignal }
+export async function apiUploadFile(file: File, projectId?: string, privateNote = false, options?: FileUploadOptions): Promise<FileItem> {
   const form = new FormData()
   form.append('file', file)
   if (privateNote) form.append('privateNote', 'true')
   if (projectId) form.append('projectId', projectId)
-  const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
+  const res = await http.post<ApiResponse<FileItem>>('/api/files', form, {
+    timeout: 120_000,
+    ...(options?.onProgress ? { onUploadProgress: options.onProgress } : {}),
+    ...(options?.signal ? { signal: options.signal } : {}),
+  })
   return res.data.data
 }
-export const apiRenameFile = (id: string, displayName: string) =>
-  patch<FileItem>(`/api/files/${id}`, { displayName })
+export const apiRenameFile = (id: string, displayName: string, expectedDisplayName?: string | null) =>
+  patch<FileItem>(`/api/files/${id}`, {
+    displayName,
+    ...(expectedDisplayName !== undefined ? { expectedDisplayName } : {}),
+  })
 export async function apiReplaceFile(id: string, file: File) {
   const form = new FormData()
   form.append('file', file)
@@ -131,6 +140,7 @@ export async function apiSaveHostedPage(payload: {
   slug: string
   title: string
   projectId?: string
+  expectedRevision?: number
 }): Promise<HostedPage> {
   const form = new FormData()
   if (payload.html) form.append('html', payload.html)
@@ -138,6 +148,7 @@ export async function apiSaveHostedPage(payload: {
   form.append('slug', payload.slug)
   form.append('title', payload.title)
   if (payload.projectId) form.append('projectId', payload.projectId)
+  if (payload.id && payload.expectedRevision !== undefined) form.append('expectedRevision', String(payload.expectedRevision))
   const res = payload.id
     ? await http.put<ApiResponse<HostedPage>>(`/api/hosted-pages/${payload.id}`, form, {
         timeout: 120_000,
@@ -145,9 +156,10 @@ export async function apiSaveHostedPage(payload: {
     : await http.post<ApiResponse<HostedPage>>('/api/hosted-pages', form, { timeout: 120_000 })
   return res.data.data
 }
-export async function apiReplaceHostedPage(id: string, html: File) {
+export async function apiReplaceHostedPage(id: string, html: File, expectedRevision?: number) {
   const form = new FormData()
   form.append('html', html)
+  if (expectedRevision !== undefined) form.append('expectedRevision', String(expectedRevision))
   const res = await http.put<ApiResponse<HostedPage>>(
     `/api/hosted-pages/${encodeURIComponent(id)}/content`, form, { timeout: 120_000 },
   )
@@ -160,10 +172,13 @@ export async function fetchPublicFilePreview(id: string, ticket: string) {
   const res = await http.get<ApiResponse<{ content: string }>>(`/api/files/${encodeURIComponent(id)}/public-preview`, { params: { ticket } })
   return res.data.data
 }
-export const fetchFilePreview = (id: string) =>
-  get<{ id: string; name: string; contentType: string; content: string }>(
-    `/api/files/${id}/preview`,
+export async function fetchFilePreview(id: string, options?: { signal?: AbortSignal }) {
+  // Read the current replacement and allow a dismissed preview to stop its request.
+  const res = await http.get<ApiResponse<{ id: string; name: string; contentType: string; content: string }>>(
+    `/api/files/${encodeURIComponent(id)}/preview`, { signal: options?.signal },
   )
+  return res.data.data
+}
 /** 公开：取一道人机校验题。 */
 export const apiDownloadChallenge = (id: string) =>
   post<{ challengeId: string; question: string; captchaEnabled: boolean }>(
@@ -257,6 +272,7 @@ export async function apiUploadImage(
   file: File,
   source?: string,
   projectId?: string,
+  options?: FileUploadOptions,
 ): Promise<ImageItem> {
   const form = new FormData()
   form.append('file', file)
@@ -265,6 +281,8 @@ export async function apiUploadImage(
   const res = await http.post<ApiResponse<ImageItem>>('/api/images', form, {
     // 上传比普通接口慢，用更宽的超时，避免大图在弱网下被 10s 直接掐断
     timeout: 60_000,
+    ...(options?.onProgress ? { onUploadProgress: options.onProgress } : {}),
+    ...(options?.signal ? { signal: options.signal } : {}),
   })
   return res.data.data
 }

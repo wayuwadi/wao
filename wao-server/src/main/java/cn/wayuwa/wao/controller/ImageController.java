@@ -63,22 +63,33 @@ public class ImageController {
 
     /** 直出全尺寸图片；无损优化可在同一 URL 切换 MIME，缓存须定期复核。 */
     @GetMapping("/{id}/raw")
-    public ResponseEntity<byte[]> raw(@PathVariable String id) {
+    public ResponseEntity<byte[]> raw(@PathVariable String id, HttpServletRequest request) {
         ImageBlobEntity e = images.raw(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(e.getContentType()))
-                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
+                .cacheControl(imageCacheControl(request))
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", ImageContentPolicy.SANDBOX)
                 .body(e.getContent());
     }
 
     /** 列表用小图；历史数据回填时同一 id 可增加预存变体。 */
     @GetMapping("/{id}/preview")
-    public ResponseEntity<byte[]> preview(@PathVariable String id) {
+    public ResponseEntity<byte[]> preview(@PathVariable String id, HttpServletRequest request) {
         ImageService.Preview image = images.preview(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(image.contentType()))
-                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
+                .cacheControl(imageCacheControl(request))
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", ImageContentPolicy.SANDBOX)
                 .body(image.content());
+    }
+
+    private static CacheControl imageCacheControl(HttpServletRequest request) {
+        // ResponseEntity headers must not overwrite the privacy guard with a public cache policy.
+        return Boolean.TRUE.equals(request.getAttribute("wao.private-note-asset"))
+                ? CacheControl.noStore().cachePrivate()
+                : CacheControl.maxAge(Duration.ofHours(1)).cachePublic();
     }
 
     @DeleteMapping("/{id}")

@@ -93,19 +93,31 @@ public class HostedPageController {
     @PutMapping(value = "/hosted-pages/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> update(@PathVariable String id, @RequestParam(required = false) MultipartFile html,
             @RequestParam String slug, @RequestParam String title, @RequestParam(required = false) MultipartFile icon,
+            @RequestParam(required = false) Long expectedRevision,
             HttpServletRequest request) {
         String projectId = pages.projectId(id);
         if (projectId != null) projects.requireAccess(projectId, currentMember.id(request));
-        return ApiResponse.ok(pages.update(id, html, slug, title, icon));
+        return ApiResponse.ok(expectedRevision == null ? pages.update(id, html, slug, title, icon)
+                : pages.update(id, html, slug, title, icon, expectedRevision));
+    }
+
+    public ApiResponse<HostedPageDto> update(String id, MultipartFile html, String slug, String title, MultipartFile icon,
+            HttpServletRequest request) {
+        return update(id, html, slug, title, icon, null, request);
     }
 
     @PutMapping(value = "/hosted-pages/{id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> replace(@PathVariable String id, @RequestParam MultipartFile html,
+            @RequestParam(required = false) Long expectedRevision,
             HttpServletRequest request) {
         String memberId = currentMember.id(request);
         String projectId = pages.projectId(id);
         if (projectId != null) projects.requireAccess(projectId, memberId);
-        return ApiResponse.ok(pages.replace(id, html));
+        return ApiResponse.ok(expectedRevision == null ? pages.replace(id, html) : pages.replace(id, html, expectedRevision));
+    }
+
+    public ApiResponse<HostedPageDto> replace(String id, MultipartFile html, HttpServletRequest request) {
+        return replace(id, html, null, request);
     }
 
     @DeleteMapping("/hosted-pages/{id}")
@@ -140,6 +152,7 @@ public class HostedPageController {
         HostedPageEntity page = pages.publicPage(slug);
         if (page.getIconContent() == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(page.getIconContentType()))
-                .cacheControl(CacheControl.noCache()).header("X-Content-Type-Options", "nosniff").body(page.getIconContent());
+                .cacheControl(CacheControl.noCache()).header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", ImageContentPolicy.SANDBOX).body(page.getIconContent());
     }
 }

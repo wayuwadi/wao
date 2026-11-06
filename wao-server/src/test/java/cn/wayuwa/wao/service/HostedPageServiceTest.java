@@ -24,6 +24,7 @@ class HostedPageServiceTest {
         assertThat(item.slug()).isEqualTo("my-demo");
         assertThat(item.sourceType()).isEqualTo("MANUAL_UPLOAD");
         assertThat(item.url()).isEqualTo("/api/pages/my-demo");
+        assertThat(item.updatedAtIso()).isNotBlank();
         verify(mapper).insert(any(HostedPageEntity.class));
     }
 
@@ -69,10 +70,11 @@ class HostedPageServiceTest {
     @Test void updateKeepsExistingHtmlAndIconWhenFilesAreOmitted() {
         HostedPageEntity entity = new HostedPageEntity(); entity.setId("p1"); entity.setSlug("old"); entity.setTitle("旧");
         entity.setFileName("old.html"); entity.setHtmlContent("<p>正文</p>".getBytes()); entity.setIconContent(new byte[] { 1 }); entity.setIconContentType("image/png");
-        when(mapper.selectById("p1")).thenReturn(entity);
+        when(mapper.findMetaById("p1")).thenReturn(entity);
+        when(mapper.updateDetails(entity, false, false, null)).thenReturn(1);
         var item = service.update("p1", null, "new", "新", null);
         assertThat(item.slug()).isEqualTo("new"); assertThat(entity.getHtmlContent()).isNotEmpty(); assertThat(item.hasIcon()).isTrue();
-        verify(mapper).updateById(entity);
+        verify(mapper).updateDetails(entity, false, false, null);
     }
 
     @Test void aiRunReportUsesStablePageAndPreservesManualMetadataOnUpdate() {
@@ -85,7 +87,8 @@ class HostedPageServiceTest {
         HostedPageEntity existing = new HostedPageEntity();
         existing.setId("run-report-ar123"); existing.setSlug("custom-report"); existing.setTitle("自定义标题");
         existing.setFileName("report.html"); existing.setHtmlContent("<p>第一版</p>".getBytes(StandardCharsets.UTF_8));
-        when(mapper.selectById("run-report-ar123")).thenReturn(existing);
+        when(mapper.findMetaById("run-report-ar123")).thenReturn(existing);
+        when(mapper.replaceReportContent(existing)).thenReturn(1);
         var next = new MockMultipartFile("html", "report.html", "text/html", "<p>第二版</p>".getBytes(StandardCharsets.UTF_8));
 
         var updated = service.saveRunReport("ar123", next, "不应覆盖", "wg");
@@ -93,7 +96,7 @@ class HostedPageServiceTest {
         assertThat(updated.slug()).isEqualTo("custom-report");
         assertThat(updated.title()).isEqualTo("自定义标题");
         assertThat(new String(existing.getHtmlContent(), StandardCharsets.UTF_8)).contains("第二版");
-        verify(mapper).updateById(existing);
+        verify(mapper).replaceReportContent(existing);
     }
 
     @Test void reportUrlsLoadOnlyExistingMetadata() {
@@ -121,8 +124,8 @@ class HostedPageServiceTest {
         entity.setProjectId("p1"); entity.setSourceType("MANUAL_UPLOAD");
         entity.setIconContent(new byte[] { 1 }); entity.setIconContentType("image/png");
         entity.setHtmlContent("old".getBytes(StandardCharsets.UTF_8));
-        when(mapper.selectById("h1")).thenReturn(entity);
-        when(mapper.replaceContent(entity)).thenReturn(1);
+        when(mapper.findMetaById("h1")).thenReturn(entity);
+        when(mapper.replaceContent(entity, null)).thenReturn(1);
         var html = new MockMultipartFile("html", "new.html", "text/html", "<p>新版</p>".getBytes(StandardCharsets.UTF_8));
         var result = service.replace("h1", html);
         assertThat(result.id()).isEqualTo("h1");
@@ -132,14 +135,14 @@ class HostedPageServiceTest {
         assertThat(result.projectId()).isEqualTo("p1");
         assertThat(entity.getIconContent()).containsExactly((byte) 1);
         assertThat(new String(service.render(entity), StandardCharsets.UTF_8)).contains("<p>新版</p>");
-        verify(mapper).replaceContent(entity);
+        verify(mapper).replaceContent(entity, null);
         org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).updateById(any(HostedPageEntity.class));
     }
 
     @Test void replacementRejectsEmptyWrongTypeAndInvalidEncodingBeforePersisting() {
         var entity = new HostedPageEntity();
         entity.setId("h1"); entity.setSlug("stable"); entity.setTitle("保留标题");
-        when(mapper.selectById("h1")).thenReturn(entity);
+        when(mapper.findMetaById("h1")).thenReturn(entity);
         for (var file : List.of(
                 new MockMultipartFile("html", "empty.html", "text/html", new byte[0]),
                 new MockMultipartFile("html", "wrong.pdf", "application/pdf", "bad".getBytes()),
@@ -147,7 +150,7 @@ class HostedPageServiceTest {
                 new MockMultipartFile("html", "large.html", "text/html", new byte[10 * 1024 * 1024 + 1]))) {
             assertThatThrownBy(() -> service.replace("h1", file)).isInstanceOf(BadRequestException.class);
         }
-        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(any());
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(any(), any());
     }
 
 }

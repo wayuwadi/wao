@@ -21,7 +21,16 @@ public record ImageItemDto(
         String url,
         String c1,
         String c2,
-        String projectId) {
+        String projectId,
+        Long byteSize,
+        String contentType,
+        String createdAt,
+        String previewUrl) {
+    /** 保留旧调用，新增字段由真实存储元数据提供。 */
+    public ImageItemDto(String id, String name, String size, String time, String from, String url, String c1,
+            String c2, String projectId) {
+        this(id, name, size, time, from, url, c1, c2, projectId, null, null, null, null);
+    }
     /** 滚动兼容：没有项目参数的既有内部调用视为未分类。 */
     public ImageItemDto(String id, String name, String size, String time, String from, String url, String c1,
             String c2) {

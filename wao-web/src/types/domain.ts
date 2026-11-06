@@ -51,6 +51,10 @@ export interface HostedPage {
   sourceType?: 'MANUAL_UPLOAD' | 'AI_RUN_REPORT'
   hasIcon: boolean
   updatedAt: string
+  /** 可排序的真实更新时间；旧服务可能缺失。 */
+  updatedAtIso?: string | null
+  /** 服务端递增修订号，用于编辑与替换的并发保护；旧服务可能缺失。 */
+  revision?: number
   url: string
   /** 为空表示全局未分类；有值时归入对应项目。 */
   projectId?: string | null
@@ -524,6 +528,8 @@ export interface FileItem {
   /** 服务端保存的 MIME；旧接口数据可能缺失，调用方需按扩展名兜底。 */
   contentType?: string
   size: string
+  /** 真实字节数；size 仅供本地化展示，旧数据可能缺失。 */
+  byteSize?: number | null
   icon: string
   time: string
   /** 真实创建时间；time 只用于面向人的本地化展示。 */
@@ -538,9 +544,14 @@ export interface ImageItem {
   id?: string
   name: string
   size: string
+  byteSize?: number | null
+  contentType?: string | null
+  createdAt?: string | null
   time: string
   from: string
   url: string
+  /** 列表使用轻量预览，放大查看和复制继续使用原图 url。 */
+  previewUrl?: string | null
   c1: string
   c2: string
   projectId?: string | null
