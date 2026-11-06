@@ -48,6 +48,11 @@ import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import CellMenu from '@/components/task/CellMenu.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
+import TaskCaptureFields from '@/components/task/TaskCaptureFields.vue'
+import { emptyCapture } from '@/utils/taskCapture'
+const captureExampleTitle = ref('明天下午三点整理阅读笔记')
+const captureExample = ref(emptyCapture())
+const captureExampleProjects = [{ id: 'design-reading', name: '阅读计划 · 示例' }, { id: 'design-life', name: '生活安排 · 示例' }]
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 const deadlineExample = ref('2026-10-20')
 const taskMenuExample = ref<InstanceType<typeof ContextActionMenu>>()
@@ -421,6 +426,17 @@ const detailLabels = ref('')
             </TodoDayLayout>
           </section>
           <section class="reference-section">
+            <h2>任务快速录入</h2>
+            <p>先写任务，再展开属性；识别到的时间先预览，明确采用后才更新。以下标题、清单和字段均为本页演示。</p>
+            <WaoCard>
+              <WaoField v-slot="field" label="任务标题 · 示例" hint="试试明天、周五或具体日期；采用时间不会创建任务。">
+                <input :id="field.id" v-model="captureExampleTitle" :aria-describedby="field.describedBy" />
+              </WaoField>
+              <TaskCaptureFields v-model="captureExample" :title="captureExampleTitle" :projects="captureExampleProjects" @title="captureExampleTitle = $event" />
+              <WaoButton variant="ghost" @click="captureExample = emptyCapture(); captureExampleTitle = '明天下午三点整理阅读笔记'">恢复演示</WaoButton>
+            </WaoCard>
+          </section>
+          <section class="reference-section">
             <h2>按钮层级</h2>
             <div class="button-examples">
               <WaoButton variant="primary" @click="feedback = '主操作演示，没有写入账号。'"
@@ -655,7 +671,7 @@ const detailLabels = ref('')
           <WaoCard variant="soft"
             ><h3>参考与代码保持对应</h3>
             <p>
-              颜色来自实际主题变量，卡片、按钮、字段、弹窗和设置区使用公共组件。组件变化，参考随同一版本更新。
+              颜色来自实际主题变量，卡片、按钮、字段、弹窗和设置区使用公共组件。组件变化，参考随同一版本更新。手机任务、日历、专注和项目工作区的页脚仅保留浏览器与备案入口，目标高度 44–60px，右侧为悬浮新建预留 56px；桌面保持完整品牌。
             </p></WaoCard
           >
         </template>

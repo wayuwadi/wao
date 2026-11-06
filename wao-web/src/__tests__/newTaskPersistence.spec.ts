@@ -4,6 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
+// This suite verifies persistence, not the editor. Stop its lazy import at the
+// module boundary so slower CI workers cannot finish loading after teardown.
+vi.mock('@/components/ui/MarkdownEditor.vue', () => ({ default: { name: 'MarkdownEditor', props: ['modelValue', 'readonly'], template: '<div />' } }))
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { apiPutTask } from '@/api/board'
 import { useToastHost } from '@/composables/toast'
@@ -175,7 +178,7 @@ describe('新建任务的落库反馈', () => {
   it('新建默认不设置截止，保存后仍为空', async () => {
     putTask.mockImplementation((id, task) => savedTask(id, task))
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
-    expect(wrapper.find('.pills .pill.on').text()).toBe('不设置')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="截止日期"]').element.value).toBe('')
     await wrapper.get('[aria-label="截止日期"]').setValue('2026-11-04')
     await wrapper.get('[aria-label="截止日期"]').setValue('')
     await wrapper.find('.title-input').setValue('不排期的任务')

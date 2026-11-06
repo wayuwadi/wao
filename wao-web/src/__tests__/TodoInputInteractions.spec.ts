@@ -56,6 +56,19 @@ it('保存期间主动切换到搜索后，不抢回快速输入焦点', async (
   expect(document.activeElement).toBe(search.element)
 })
 
+it('任务已创建但标签失败时保留标题锁定，焦点落在标签重试入口', async () => {
+  const wrapper = header(), input = wrapper.get<HTMLInputElement>('[aria-label="添加任务"]')
+  input.element.focus(); await wrapper.setProps({ creating: true }); input.element.blur()
+  await wrapper.setProps({ creating: false, saved: true, error: '任务已保存，标签读取失败，请重试' })
+  await flushPromises()
+  expect(input.element.disabled).toBe(true)
+  const retry = wrapper.get<HTMLButtonElement>('.quick-add button')
+  expect(retry.text()).toBe('重试标签')
+  expect(document.activeElement).toBe(retry.element)
+  await retry.trigger('click')
+  expect(wrapper.emitted('add')).toHaveLength(1)
+})
+
 it('清单改名直接聚焦名称，输入法不保存或关闭，失败保留输入并可重试', async () => {
   const data = useDataStore(), project = data.projects[0]!
   const update = vi.spyOn(data, 'updateProject').mockResolvedValueOnce(false).mockResolvedValue(true)

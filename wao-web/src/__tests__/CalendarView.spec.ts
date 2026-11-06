@@ -112,6 +112,7 @@ let pinia: ReturnType<typeof createPinia>
 describe('日历成员隔离、清单与时间轴', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
     router = createRouter({
@@ -145,6 +146,128 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.mocked(fetchAttendance).mockReset()
     vi.mocked(syncAttendance).mockReset()
     vi.mocked(fetchVault).mockReset().mockResolvedValue([])
+    vi.mocked(apiPutTask).mockReset()
+  })
+
+  it('并列未排期任务拖入时段保留截止，支持精确跨日调整及撤销', async () => {
+    const data = useDataStore(pinia), session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' }); session.members = [me]
+    data.tasks = [{ ...data.tasks[0]!, id: 'unplanned', title: '虚构周报', owner: me.id, status: '待办', start: '', due: '2026-11-10', startAt: null, endAt: null, editVersion: 'v0', subs: [], activity: [] }]
+    let version = 0
+    vi.mocked(apiPutTask).mockImplementation(async (_id, task) => ({ ...task, editVersion: `v${++version}` }))
+    const w = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await w.get('[aria-label="选择日历日期"]').setValue('2026-11-06')
+    await w.find('.view-switch button:last-child').trigger('click')
+    await flushPromises()
+    await w.get('[data-planner-task="unplanned"]').trigger('dragstart')
+    await w.get('[data-time-day="2026-11-06"] [data-hour="23"]').trigger('drop')
+    await flushPromises()
+    expect(data.tasks[0]).toMatchObject({ startAt: '2026-11-06T23:00', endAt: '2026-11-07T00:00', due: '2026-11-10' })
+    expect(w.find('[data-planner-task="unplanned"]').exists()).toBe(false)
+    expect(w.get('.schedule-feedback').text()).toContain('执行安排已保存')
+    await w.get('.timeline-event').trigger('contextmenu')
+    await flushPromises()
+    const times = w.findAll('.planner-editor input[type=datetime-local]')
+    await times[1]!.setValue('2026-11-07T02:30')
+    await w.findAll('.planner-actions button').find(b => b.text() === '保存安排')!.trigger('click')
+    await flushPromises()
+    expect(data.tasks[0]!.endAt).toBe('2026-11-07T02:30')
+    await w.findAll('.schedule-feedback button').find(b => b.text() === '撤销本次安排')!.trigger('click')
+    await flushPromises()
+    expect(data.tasks[0]).toMatchObject({ endAt: '2026-11-07T00:00', due: '2026-11-10' })
+  })
+
+  it('日历任务可检索，切换账号清空排期编辑与撤销入口', async () => {
+    const data = useDataStore(pinia), session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '管理员' }
+    const other = { ...me, id: 'wd', name: '另一账号' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' }); session.members = [me, other]
+    data.tasks = [{ ...data.tasks[0]!, id: 'lookup', title: '虚构检索任务', owner: me.id, status: '待办', start: '2026-11-06', due: '', startAt: null, endAt: null, editVersion: 'v0', subs: [], activity: [] }]
+    const w = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await w.get('[aria-label="选择日历日期"]').setValue('2026-11-06')
+    await w.get('[aria-label="搜索日历事项"]').setValue('虚构检索任务')
+    expect(w.get('.calendar-search-results').text()).toContain('虚构检索任务')
+    await w.get('.event').trigger('contextmenu')
+    await flushPromises()
+    expect(w.find('.planner-editor').exists()).toBe(true)
+    session.accept({ accountId: 'a2', member: other, identities: [], createdAt: '2026-01-01T00:00:00' })
+    await flushPromises()
+    expect(w.find('.planner-editor').exists()).toBe(false)
+    expect(w.get('.member-calendar select').element).toHaveProperty('value', 'wd')
+    expect(w.find('.schedule-feedback').exists()).toBe(false)
+    expect(w.text()).not.toContain('虚构检索任务')
+  })
+
+  it('23点拖选创建使用次日零点，避免无效24:00输入', async () => {
+    const ui = useUiStore(pinia), data = useDataStore(pinia)
+    const w = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await w.find('.view-switch button:last-child').trigger('click')
+    await w.get('[data-hour="23"]').trigger('mousedown')
+    await w.get('.timeline').trigger('mouseup')
+    document.querySelector<HTMLButtonElement>('.create-choice-grid button')!.click()
+    await flushPromises()
+    const next = new Date(Date.parse(`${data.today}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+    expect(ui.modalStartAt).toBe(`${data.today}T23:00`)
+    expect(ui.modalEndAt).toBe(`${next}T00:00`)
+  })
+
+  it('离开再返回恢复日历日期、视图与并列面板状态', async () => {
+    const first = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await first.get('[aria-label="选择日历日期"]').setValue('2026-12-17')
+    await first.findAll('.view-switch button')[2]!.trigger('click')
+    await first.get('.planner-toggle').trigger('click')
+    await flushPromises()
+    first.unmount()
+    const second = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(second.get('[aria-label="选择日历日期"]').element).toHaveProperty('value', '2026-12-17')
+    expect(second.get('.view-switch .on').text()).toBe('周')
+    expect(second.find('.calendar-task-planner').exists()).toBe(false)
+  })
+
+  it('首次日视图定位08点，加载事件和返回视图保留用户位置，显式定位更新记忆', async () => {
+    const rect=vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){return new DOMRect(0,this.classList.contains('time-day')?-(this.closest('.cal-card')?.scrollTop??0):0,600,400)})
+    const data=useDataStore(pinia)
+    const w=mount(CalendarView,{global:{plugins:[pinia,router]}})
+    await w.get('[aria-label="选择日历日期"]').setValue('2026-12-17')
+    await w.find('.view-switch button:last-child').trigger('click');await flushPromises()
+    const card=w.get('.cal-card').element as HTMLElement
+    expect(card.scrollTop).toBe(480)
+    card.scrollTop=725;await w.get('.cal-card').trigger('scroll')
+    data.tasks.push({...data.tasks[0]!,id:'late-calendar',owner:useSessionStore(pinia).currentUser.id,start:'2026-12-17',due:'2026-12-17'})
+    await flushPromises();expect(card.scrollTop).toBe(725)
+    await w.findAll('.view-switch button')[1]!.trigger('click');await flushPromises()
+    await w.find('.view-switch button:last-child').trigger('click');await flushPromises()
+    expect(card.scrollTop).toBe(725)
+    await w.findAll('.timeline-locate button').find(b=>b.text()==='08:00')!.trigger('click');await flushPromises()
+    expect(card.scrollTop).toBe(480)
+    card.scrollTop=0;await w.get('.cal-card').trigger('scroll')
+    await w.findAll('.view-switch button')[1]!.trigger('click');await flushPromises()
+    await w.find('.view-switch button:last-child').trigger('click');await flushPromises()
+    expect(card.scrollTop).toBe(0)
+    rect.mockRestore()
+  })
+  it('当天首次周视图按上海当前时间前两小时定位，当前时间入口可重新定位', async () => {
+    const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse('2026-11-06T06:30:00Z'))
+    const rect=vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){return new DOMRect(0,this.classList.contains('time-day')?-(this.closest('.cal-card')?.scrollTop??0):0,600,400)})
+    const w=mount(CalendarView,{global:{plugins:[pinia,router]}})
+    await w.get('[aria-label="选择日历日期"]').setValue('2026-11-06')
+    await w.findAll('.view-switch button')[2]!.trigger('click');await flushPromises()
+    expect((w.get('.cal-card').element as HTMLElement).scrollTop).toBe(750)
+    await w.findAll('.timeline-locate button').find(b=>b.text()==='当前时间')!.trigger('click');await flushPromises()
+    expect((w.get('.cal-card').element as HTMLElement).scrollTop).toBe(810)
+    rect.mockRestore();clock.mockRestore()
+  })
+  it('手机初次隐藏排期面板，用户打开后的已有偏好仍保留',async()=>{
+    const width=window.innerWidth
+    Object.defineProperty(window,'innerWidth',{configurable:true,value:390})
+    const first=mount(CalendarView,{global:{plugins:[pinia,router]}})
+    expect(first.find('.calendar-task-planner').exists()).toBe(false)
+    await first.get('.planner-toggle').trigger('click');await flushPromises();first.unmount()
+    const second=mount(CalendarView,{global:{plugins:[pinia,router]}})
+    expect(second.find('.calendar-task-planner').exists()).toBe(true)
+    Object.defineProperty(window,'innerWidth',{configurable:true,value:width})
   })
 
   it('首页来源定位真实生日编辑器，保留明确分类和首页渠道', async () => {

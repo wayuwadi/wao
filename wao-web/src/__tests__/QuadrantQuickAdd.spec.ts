@@ -49,6 +49,26 @@ it('空标题不创建，关闭再打开恢复未提交草稿，中文输入确�
   w.unmount()
 })
 
+it('展开属性里的标签输入法确认也不会提交整个象限表单', async () => {
+  const data = useDataStore()
+  const add = vi.spyOn(data, 'addTask').mockResolvedValue({ task: data.tasks[0]!, persisted: false })
+  const w = mountAdd()
+  try {
+    await w.get('input').setValue('等待填写标签')
+    const tags = w.get('input[placeholder="用逗号分隔"]')
+    await tags.trigger('compositionstart')
+    await tags.trigger('keydown', { key: 'Enter' })
+    await w.get('form').trigger('submit')
+    expect(add).not.toHaveBeenCalled()
+    await tags.trigger('compositionend')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true })
+    tags.element.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(1)
+  } finally { w.unmount() }
+})
+
 it.each([true, false])('象限保存结束恢复输入焦点（保存成功：%s）', async persisted => {
   const data = useDataStore()
   let finish!: (result: Awaited<ReturnType<typeof data.addTask>>) => void
