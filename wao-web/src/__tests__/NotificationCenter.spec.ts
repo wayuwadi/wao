@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
+import { useDataStore } from '@/stores/data'
+import { useUiStore } from '@/stores/ui'
+import type { Task } from '@/types'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import type { NotificationCenterSnapshot } from '@/api/notificationCenter'
 
@@ -70,6 +73,7 @@ async function mounted() {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
+      { path: '/todo', component: { template: '<div />' } },
       { path: '/dashboard', component: { template: '<div />' } },
       { path: '/system-reports', component: { template: '<div />' } },
       { path: '/request-monitoring', component: { template: '<div />' } },
@@ -78,10 +82,11 @@ async function mounted() {
   })
   await router.push('/')
   await router.isReady()
+  const pinia = createPinia()
   return {
-    router,
+    router, pinia,
     wrapper: mount(NotificationCenter, {
-      global: { plugins: [router, createPinia()], stubs: { Teleport: true } },
+      global: { plugins: [router, pinia], stubs: { Teleport: true } },
     }),
   }
 }
@@ -160,6 +165,28 @@ describe('右上角通知中心', () => {
     await wrapper.find('.event-row.clickable').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/projects/p1?task=t1')
+    wrapper.unmount()
+  })
+
+  it('同一任务提醒可重复打开已关闭详情，且不读取或打开不可访问任务', async () => {
+    api.fetch.mockResolvedValue({ ...sample, events:[{ ...sample.events[0]!, id:'routine:task', type:'INTERNAL', targetPath:'/todo?task=t1' }] })
+    const { wrapper, router, pinia } = await mounted()
+    const data = useDataStore(pinia), ui = useUiStore(pinia)
+    data.tasks = [{id:'t1', title:'本人任务'} as Task]
+    const hydrate = vi.spyOn(data, 'hydrate')
+    await router.push('/todo?task=t1')
+    for (let attempt=0; attempt<2; attempt++) {
+      ui.closeTask()
+      await wrapper.get('.notification-trigger').trigger('click'); await flushPromises()
+      await wrapper.get('.event-row.clickable').trigger('click'); await flushPromises()
+      expect(ui.openTaskId).toBe('t1')
+      expect(router.currentRoute.value.fullPath).toBe('/todo?task=t1')
+    }
+    ui.closeTask(); data.tasks=[]
+    await wrapper.get('.notification-trigger').trigger('click'); await flushPromises()
+    await wrapper.get('.event-row.clickable').trigger('click'); await flushPromises()
+    expect(ui.openTaskId).toBeNull()
+    expect(hydrate).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

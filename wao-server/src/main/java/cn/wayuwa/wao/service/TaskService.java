@@ -46,6 +46,8 @@ public class TaskService {
     private final WorkItemNumberService numbers;
     @org.springframework.beans.factory.annotation.Autowired
     private TodoHistoryService todoHistory;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher events;
 
     public TaskService(TaskMapper taskMapper, ObjectMapper json, FeishuCommentNotifier commentNotifier,
             FeishuTaskNotifier taskNotifier, MemberService members, ProjectService projects, WorkItemNumberService numbers) {
@@ -258,6 +260,7 @@ public class TaskService {
         recordTodo(before, e, memberId, "TASK_CHANGED", null);
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
+        if (events != null && DONE.equals(e.getStatus()) && !DONE.equals(previousStatus)) events.publishEvent(new TaskCompletedEvent(e.getId()));
         return toDto(e);
     }
 
@@ -343,6 +346,7 @@ public class TaskService {
         }
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
+        if (events != null && DONE.equals(e.getStatus()) && !DONE.equals(previousStatus)) events.publishEvent(new TaskCompletedEvent(e.getId()));
         return toDto(e);
     }
 

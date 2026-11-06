@@ -16,6 +16,7 @@ import { toast } from '@/composables/toast'
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import TaskLabelEditor from '@/components/task/TaskLabelEditor.vue'
+import TaskTimeSettings from './TaskTimeSettings.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -1082,7 +1083,8 @@ async function uploadAttachment(event: Event) {
       <div v-if="!openSub && parentTask" class="task-hierarchy-links">
         <div v-if="parentTask">父任务：<button @click="ui.openTask(parentTask.id)">#{{ parentTask.number ?? '…' }} {{ parentTask.title }}</button></div>
       </div>
-      <TaskDetailLayout
+      <TaskTimeSettings v-if="task && !openSubId && task.workItemType!=='note'" :key="task.id" :task-id="task.id" />
+    <TaskDetailLayout
         ref="detailLayout"
         :context-key="detailContextKey"
         :description="detailDescription"

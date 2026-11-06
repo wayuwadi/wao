@@ -32,11 +32,12 @@ class NotificationCenterMySqlTest {
             s.execute("INSERT INTO ai_task_run VALUES ('own','visible','shared','wg','succeeded',NOW()),('others','visible','shared','wd','succeeded',NOW()),('running','visible','shared','wg','running',NULL)");
             s.execute("CREATE TABLE internal_notification (id VARCHAR(64),member_id VARCHAR(64),title TEXT,body TEXT,target_path TEXT,created_at DATETIME)");
             s.execute("INSERT INTO internal_notification VALUES ('date','wg','日期','提醒','/countdowns',NOW()),('habit','wd','习惯','提醒','/habits?habit=x',NOW()),('group',NULL,'组织','旧提醒','/countdowns',NOW())");
+            s.execute("INSERT INTO internal_notification VALUES ('task','wg','任务','本人提醒','/todo?task=visible',NOW()),('task-other','wd','任务','私有提醒','/todo?task=hidden',NOW()),('task-group',NULL,'任务','组织旧提醒','/todo?task=visible',NOW())");
             try (var p = c.prepareStatement(NotificationCenterMapper.EVENT_UNION.replace("#{memberId}", "?"))) {
                 for (int i = 1; i <= p.getParameterMetaData().getParameterCount(); i++) p.setString(i, "wg");
                 var ids = new ArrayList<String>();
                 try (var r = p.executeQuery()) { while (r.next()) ids.add(r.getString("event_id")); }
-                assertThat(ids).containsExactlyInAnyOrder("mention-chat:yes", "mention-comment:visible:1", "ai-run:own", "routine:date");
+                assertThat(ids).containsExactlyInAnyOrder("mention-chat:yes", "mention-comment:visible:1", "ai-run:own", "routine:date", "routine:task");
             }
         }
     }

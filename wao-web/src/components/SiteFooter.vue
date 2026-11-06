@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { fetchPublicSiteInfo, type SiteInfo } from '@/api/system'
 import WaoLogo from '@/components/WaoLogo.vue'
+import { useIsMobile } from '@/composables/viewport'
 
-defineProps<{
+const props = defineProps<{
   /** 登录后应用的悬浮新建入口会占据手机右下角，需为它额外留白。 */
   reserveMobileActions?: boolean
   /** 应用壳右下角的品牌签名，独立于侧栏折叠状态。 */
   showBrand?: boolean
+  /** 任务工作区的手机页脚只保留浏览器入口与备案链接。 */
+  compactMobile?: boolean
 }>()
+const isMobile = useIsMobile()
+const compact = computed(() => props.compactMobile && isMobile.value)
 
 const site = ref<SiteInfo | null>(null)
 
@@ -24,21 +29,21 @@ onMounted(async () => {
 <template>
   <footer
     class="site-footer"
-    :class="{ 'reserve-mobile-actions': reserveMobileActions, 'has-brand': showBrand }"
+    :class="{ 'reserve-mobile-actions': reserveMobileActions, 'has-brand': showBrand && !compact, 'compact-mobile': compact }"
     aria-label="网站备案信息"
   >
     <div class="footer-info">
       <a href="/download">浏览器使用</a>
-      <span class="separator">·</span>
-      <span>© {{ new Date().getFullYear() }} {{ site?.siteName ?? 'WAO' }}</span>
-      <span v-if="site?.description" class="separator">·</span>
-      <span v-if="site?.description">{{ site?.description }}</span>
+      <span v-if="!compact" class="separator">·</span>
+      <span v-if="!compact">© {{ new Date().getFullYear() }} {{ site?.siteName ?? 'WAO' }}</span>
+      <span v-if="!compact && site?.description" class="separator">·</span>
+      <span v-if="!compact && site?.description">{{ site?.description }}</span>
       <span v-if="site?.icpNumber" class="separator">·</span>
       <a v-if="site?.icpNumber" :href="site?.icpUrl" target="_blank" rel="noopener noreferrer">{{
         site?.icpNumber
       }}</a>
     </div>
-    <span v-if="showBrand" class="footer-brand"><WaoLogo wordmark /><span class="brand-tagline">Life OS</span></span>
+    <span v-if="showBrand && !compact" class="footer-brand"><WaoLogo wordmark /><span class="brand-tagline">Life OS</span></span>
   </footer>
 </template>
 
@@ -83,5 +88,14 @@ onMounted(async () => {
   }
   .site-footer.has-brand { gap: 8px; }
   .footer-brand .brand-tagline { display: none; }
+  .site-footer.compact-mobile {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 var(--wao-space-1);
+    color: var(--wao-text-3);
+  }
+  .site-footer.compact-mobile.reserve-mobile-actions {
+    padding-right: calc(var(--wao-space-1) * 7);
+  }
 }
 </style>
