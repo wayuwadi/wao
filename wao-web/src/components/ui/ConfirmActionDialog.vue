@@ -33,7 +33,7 @@ async function submit() {
     </div>
     <template #footer>
       <div class="confirmation-actions">
-        <WaoButton :disabled="busy" @click="emit('close')">取消</WaoButton>
+        <WaoButton :disabled="busy" @click="emit('close')">{{ error ? '关闭' : '取消' }}</WaoButton>
         <WaoButton :variant="action.danger === false ? 'primary' : 'danger'" :loading="busy" @click="submit">{{ busy ? '正在处理…' : error ? '重试' : action.confirmLabel || '确认删除' }}</WaoButton>
       </div>
     </template>

@@ -15,6 +15,7 @@ import { isTaskFinished } from '@/utils/projectCompletion'
 import { personalWorkItems } from '@/utils/personalWorkItems'
 import ProjectChecklistView from '@/components/task/ProjectChecklistView.vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
+import TaskTemplatePicker from '@/components/task/TaskTemplatePicker.vue'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import TaskListDialog from '@/components/todo/TaskListDialog.vue'
@@ -27,6 +28,7 @@ import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useConfirmAction } from '@/composables/confirmAction'
 import { TODO_VIEWS, type TodoLayout, type TodoViewSettings } from '@/utils/todoViewSettings'
 const reschedule = ref(false)
+const templatePicker = ref(false)
 const data = useDataStore(), session = useSessionStore(), labels = useTaskLabelsStore(), route = useRoute(), router = useRouter()
 const memory = useTaskViewMemory('todo', () => ({ navigationCollapsed: false, selection: 'all' }))
 const routeLayout = ref<TodoLayout>()
@@ -169,18 +171,19 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" />
+    <TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect" />
     <p v-if="preferenceError" class="move-error" role="status">{{preferenceError}} <button @click="retryPreferences()">重试同步视图</button></p>
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups :group-overdue="selection==='today'" v-else-if="layout!=='quadrant'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="projection.items" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
-     <template #list-header><TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @protect="protect" /></template>
+    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="projection.items" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
+     <template #list-header><TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect" /></template>
      <template #section-action="{section}"><button v-if="selection==='today' && section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
     <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="showDone" />
    </template>
   </main>
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
+  <TaskTemplatePicker v-if="templatePicker" :project-id="destinationProject?.id ?? ''" :destination="destinationName" :invalid-destination="selection.startsWith('project:') && !destinationProject" @close="templatePicker=false" />
   <ContextActionMenu ref="listMenu" />
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <TaskListDialog v-if="listDialog" :project="editingList" @close="listDialog=false" @saved="listSaved" />
