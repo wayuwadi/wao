@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
+import { useSmartListVisibility } from '@/stores/smartListVisibility'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import { matchesTaskDate, type TaskDateFilter } from '@/utils/taskWorkspaceFilter'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -28,6 +29,7 @@ import { TODO_VIEWS, type TodoLayout, type TodoViewSettings } from '@/utils/todo
 const reschedule = ref(false)
 const templatePicker = ref(false)
 const data = useDataStore(), session = useSessionStore(), labels = useTaskLabelsStore(), route = useRoute(), router = useRouter()
+const listVisibility = useSmartListVisibility()
 const memory = useTaskViewMemory('todo', () => ({ navigationCollapsed: false, selection: 'all' }))
 const routeLayout = ref<TodoLayout>()
 const selection = computed({get:()=>memory.value.selection === 'legacy' ? 'all' : memory.value.selection,set:v=>{if(v!==memory.value.selection)routeLayout.value=undefined; memory.value.selection=v; if (route.query.list || route.query.layout || route.query.scope) void router.replace({query:{...route.query,list:undefined,layout:undefined,scope:undefined}})}})
@@ -82,7 +84,14 @@ async function move(source:string,target:string|null,side:'before'|'inside'|'aft
 }
 // 共享权限决定能否打开项目，个人工作台另按归属收敛，避免将可见任务当成本人待办。
 const personal = computed(()=>personalWorkItems(projection.value.items, projection.value.refs, session.userId))
-const scope = computed(()=>selection.value.startsWith('project:') ? projection.value.items.filter(t=>t.project===selection.value.slice(8)) : personal.value)
+const isSmartList = computed(() => ['all','today','tomorrow','week'].includes(selection.value))
+const contextItems = computed(() => isSmartList.value ? projection.value.items.filter(task => listVisibility.isVisible(task.project)) : projection.value.items)
+const scope = computed(()=>selection.value.startsWith('project:') ? projection.value.items.filter(t=>t.project===selection.value.slice(8)) : isSmartList.value ? personal.value.filter(task=>listVisibility.isVisible(task.project)) : personal.value)
+const hiddenPendingProjects = computed(() => {
+ const ids = new Set(personal.value.filter(task => task.project && !listVisibility.isVisible(task.project)
+   && ['saving','error'].includes(data.taskSaveState(projection.value.refs[task.id]?.taskId ?? task.id))).map(task => task.project))
+ return [...ids].map(id => ({ id, name: data.projectById(id)?.name ?? '当前清单' }))
+})
 const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
 const filtered = computed(() => scope.value.filter(task => {
@@ -142,13 +151,16 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <template v-else>
     <TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect" />
     <p v-if="preferenceError" class="move-error" role="status">{{preferenceError}} <button @click="retryPreferences()">重试同步视图</button></p>
+    <p v-if="isSmartList && listVisibility.error" class="move-error" role="status">{{listVisibility.error}} <button @click="listVisibility.retry()">重新读取</button></p>
+    <p v-if="isSmartList && hiddenPendingProjects.length" class="move-error" role="status">已隐藏的清单中有任务正在保存或保存失败：<button v-for="project in hiddenPendingProjects" :key="project.id" @click="selection='project:'+project.id">打开{{project.name}}</button></p>
+    <p v-if="isSmartList && !listVisibility.ready" role="status">正在读取智能清单显示设置…</p>
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant'" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="projection.items" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
+    <ProjectChecklistView :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="contextItems" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
      <template #list-header><TodoListHeader v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect" /></template>
      <template #section-action="{section}"><button v-if="selection==='today' && section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
-    <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="[]" v-else :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="projection.items" :item-refs="projection.refs" :show-done="showDone" />
+    <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="[]" v-else-if="layout==='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="contextItems" :item-refs="projection.refs" :show-done="showDone" />
    </template>
   </main>
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />

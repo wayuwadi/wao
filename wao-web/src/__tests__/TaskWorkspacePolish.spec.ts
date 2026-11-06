@@ -14,6 +14,7 @@ import { connectTaskChanges } from '@/api/taskChanges'
 vi.mock('vue-router',()=>({useRoute:()=>({query:{}}),useRouter:()=>({push:vi.fn()})}))
 vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[]),saveTaskLabels:vi.fn(async(v)=>({...v,revision:v.revision+1}))}))
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
+vi.mock('@/api/smartListVisibility',()=>({fetchSmartListVisibility:vi.fn(async()=>({})),saveSmartListVisibility:vi.fn(async()=>{})}))
 enableAutoUnmount(afterEach)
 beforeEach(()=>{
   vi.restoreAllMocks(); localStorage.clear(); sessionStorage.clear(); clearToasts(); setActivePinia(createPinia())
