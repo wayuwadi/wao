@@ -24,6 +24,8 @@ import type { Project } from '@/types'
 import TodoListHeader from '@/components/todo/TodoListHeader.vue'
 import OverdueRescheduleDialog from '@/components/todo/OverdueRescheduleDialog.vue'
 import { toast } from '@/composables/toast'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import { useConfirmAction } from '@/composables/confirmAction'
 import { TODO_VIEWS, type TodoLayout, type TodoViewSettings } from '@/utils/todoViewSettings'
 const reschedule = ref(false)
 const templatePicker = ref(false)
@@ -85,6 +87,32 @@ const personal = computed(()=>personalWorkItems(projection.value.items, projecti
 const scope = computed(()=>selection.value.startsWith('project:') ? projection.value.items.filter(t=>t.project===selection.value.slice(8)) : personal.value)
 const visibleTags = computed(()=>[...new Set(personal.value.flatMap(task=>tagsFor(task.id)))].sort((a,b)=>a.localeCompare(b,'zh-CN')))
 const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return labels.get(ref?.taskId ?? id,ref?.subId).tags }
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
+function deleteTag(tag:string) {
+ if (!labels.ready || labels.error || data.taskLoadState !== 'loaded') return
+ const identity = labels.identity
+ const pending = personal.value.flatMap(task => {
+  const source = projection.value.refs[task.id]
+  const row = labels.get(source?.taskId ?? task.id, source?.subId)
+  return row.tags.includes(tag) ? [{ ...row, tags:[...row.tags] }] : []
+ })
+ const count = pending.length
+ if (!count) return
+ confirmAction({ title:`删除标签“${tag}”`, description:`将从当前由你负责的 ${count} 个任务或子任务中移除此标签，任务和其他标签会保留。共享任务的更改对其他成员也可见。其他成员负责的任务不受影响。`, confirmLabel:'删除标签', async run() {
+  while (pending.length) {
+   if (labels.identity !== identity) throw new Error('账号已切换，请重新操作')
+   const row = pending[0]!
+   if (!personal.value.some(task => { const source=projection.value.refs[task.id]; return (source?.taskId ?? task.id) === row.taskId && (source?.subId ?? '') === row.subId })) throw new Error('任务范围已变化，请取消并刷新后重新确认。已完成的修改会保留。')
+   const current = labels.get(row.taskId, row.subId)
+   if (current.revision !== row.revision) throw new Error('标签已被修改，请取消并刷新后重新操作。已完成的修改会保留。')
+   try { await labels.save({ ...row, tags:row.tags.filter(value => value !== tag) }) }
+   catch { throw new Error(`部分任务可能已处理，剩余 ${pending.length} 项未确认。请重试；如标签已被修改，请取消并刷新后重新操作。`) }
+   pending.shift()
+  }
+  if (selection.value === 'tag:'+tag && !visibleTags.value.includes(tag)) selection.value='all'
+  toast('标签已从所选任务中移除','ri-check-line')
+ } })
+}
 const filtered = computed(() => scope.value.filter(task => {
  if(selection.value==='abandoned') return task.status==='已放弃'
  if(task.status==='已放弃') return false
@@ -132,7 +160,10 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
     <button :class="{active:selection==='project:'+project.id}" @click="selection='project:'+project.id"><i class="ri-list-check" aria-hidden="true"></i><span>{{ project.name }}</span></button>
     <button :aria-label="`清单操作 ${project.name}`" @click="openListMenu(project,$event)"><i class="ri-more-line" /></button>
    </div>
-   <p>标签</p><button v-for="tag in visibleTags" :key="tag" :class="{active:selection==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line" aria-hidden="true"></i>{{ tag }}</button>
+   <p>标签</p><div v-for="tag in visibleTags" :key="tag" class="list-entry">
+    <button :class="{active:selection==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line" aria-hidden="true"></i><span>{{ tag }}</span></button>
+    <button :aria-label="`删除标签 ${tag}`" :disabled="!labels.ready || !!labels.error || data.taskLoadState !== 'loaded'" @click="deleteTag(tag)"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
+   </div>
    <small v-if="labels.error" role="alert">{{ labels.error }}<button @click="labels.load()">重试</button></small>
    <div class="nav-footer"><button :class="{active:selection==='abandoned'}" @click="selection='abandoned'"><i class="ri-close-circle-line"></i>已放弃</button><button :class="{active:selection==='completed'}" @click="selection='completed'"><i class="ri-checkbox-circle-line"></i>已完成</button><button :class="{active:selection==='review'}" @click="selection='review'"><i class="ri-history-line"></i>每日回顾</button></div>
   </nav>
@@ -154,6 +185,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
   <TaskTemplatePicker v-if="templatePicker" :project-id="destinationProject?.id ?? ''" :destination="destinationName" :invalid-destination="selection.startsWith('project:') && !destinationProject" @close="templatePicker=false" />
   <ContextActionMenu ref="listMenu" />
+  <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
   <TaskListDialog v-if="listDialog" :project="editingList" @close="listDialog=false" @saved="listSaved" />
   <ProjectSettingsModal v-if="settingsList" :project="settingsList" @close="settingsList=undefined" @deleted="settingsList=undefined;selection='all'" />
  </div>
