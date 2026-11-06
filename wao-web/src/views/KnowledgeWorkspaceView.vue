@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, toRefs } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import KbDetailView from './KbDetailView.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
+import { useBrowsingState, validSearch } from '@/composables/browsingState'
 import WaoField from '@/components/ui/WaoField.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
@@ -19,7 +21,7 @@ const session = useSessionStore()
 const directoryMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
 const directoryWidth = ref(262)
 const folderOpen = ref<Record<string, boolean>>({})
-const query = ref('')
+const { query } = toRefs(useBrowsingState('knowledge-home', { query: '' }, { query: validSearch }))
 const index = computed(() => libraries.value.map(kb => ({ kb, rows: directoryRows(kb, id => data.docById(id)?.title || '未命名文档', {}, kb.name.includes(query.value.trim()) ? '' : query.value) })).filter(item => item.rows.length || !query.value.trim() || item.kb.name.includes(query.value.trim())))
 function open(kb = '', doc = '') { void router.push({ path: '/knowledge', query: { ...(kb ? { kb } : { home: '1' }), ...(doc ? { doc } : {}) } }) }
 const creating = ref(false), saving = ref(false), name = ref(''), description = ref(''), icon = ref('wao-kb-icon-notebook'), error = ref('')
@@ -59,14 +61,20 @@ async function create() {
       <KbDetailView v-if="selected" />
       <section v-else class="knowledge-home">
         <header><h1>知识库</h1><p>全部内容</p><WaoField label="查找文件" v-slot="field"><input :id="field.id" v-model="query" type="search" placeholder="搜索知识库、文件夹或文档" /></WaoField></header>
-        <p v-if="!index.length" class="empty">{{ query ? '没有匹配的内容' : '暂无知识库，点击左侧新增知识库开始整理。' }}</p>
+        <WaoEmptyState v-if="data.loadStates.knowledge === 'loading' || data.loadStates.knowledge === 'idle'" title="正在读取知识库…" icon="ri-loader-4-line" role="status" />
+        <WaoEmptyState v-else-if="data.loadStates.knowledge === 'error'" title="知识库读取失败" :description="libraries.length ? '以下为上次读取的目录，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert">
+          <template #actions><WaoButton @click="data.retryDomain('knowledge')">重新读取知识库</WaoButton></template>
+        </WaoEmptyState>
+        <WaoEmptyState v-else-if="!index.length" :title="query.trim() ? '没有匹配的内容' : '还没有知识库'" :description="query.trim() ? '换个关键词，或清除搜索查看全部内容。' : '创建一个知识库，开始整理文档。'">
+          <template #actions><WaoButton v-if="query.trim()" @click="query = ''">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template>
+        </WaoEmptyState>
         <section v-for="item in index" :key="item.kb.id" class="index-library">
           <button class="library-title" @click="open(item.kb.id)"><i :class="item.kb.icon" />{{ item.kb.name }}<i class="ri-arrow-right-s-line" /></button>
           <div v-for="node in item.rows" :key="node.key" class="index-row" :style="{ paddingInlineStart: `${node.depth * 20}px` }">
             <button v-if="node.kind === 'doc'" @click="open(item.kb.id, node.id)"><i class="ri-file-text-line" />{{ node.title }}</button>
             <span v-else><i class="ri-folder-line" />{{ node.title }}</span>
           </div>
-          <p v-if="!item.rows.length" class="empty">暂无文档</p>
+          <p v-if="!item.rows.length && data.loadStates.knowledge === 'loaded'" class="empty">暂无文档</p>
         </section>
       </section>
     </main>

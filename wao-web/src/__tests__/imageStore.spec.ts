@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { absoluteUrl } from '@/utils/share'
-import { apiDeleteImage } from '@/api/board'
-vi.mock('@/api/board', async original => ({ ...await original<object>(), apiDeleteImage: vi.fn<typeof apiDeleteImage>().mockResolvedValue(undefined) }))
+import { useSessionStore } from '@/stores/session'
+import { apiDeleteImage, apiUploadImage, fetchImages, fetchFiles } from '@/api/board'
+vi.mock('@/api/board', async original => ({ ...await original<object>(), apiDeleteImage: vi.fn<typeof apiDeleteImage>().mockResolvedValue(undefined), apiUploadImage: vi.fn<typeof apiUploadImage>(), fetchImages: vi.fn<typeof fetchImages>(), fetchFiles: vi.fn<typeof fetchFiles>() }))
 
 /** 图床：所有上传口子的图都要能在「文件与图床」里看到。 */
 describe('data store · 图床', () => {
@@ -17,6 +18,36 @@ describe('data store · 图床', () => {
 
   const png = (name = 'a.png', bytes = 100) =>
     new File([new Uint8Array(bytes)], name, { type: 'image/png' })
+
+  it('切换账号后丢弃上传图片的迟到结果', async () => {
+    const session = useSessionStore()
+    session.account = { accountId: 'a', member: { id: 'same-member' } } as never
+    let finish!: (image: import('@/types').ImageItem) => void
+    vi.mocked(apiUploadImage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    data.apiLive = true
+    const upload = data.uploadImage(png(), '图床', { requirePersisted: true })
+    session.account = { accountId: 'b', member: { id: 'same-member' } } as never
+    finish({ id: 'old', name: '旧图片', url: '/old.png' } as import('@/types').ImageItem)
+    expect(await upload).toBeNull()
+    expect(data.imgs).toEqual([])
+  })
+
+  it('新账号可以独立刷新，旧文件与图床回执不会覆盖新账号列表', async () => {
+    const session = useSessionStore()
+    session.account = { accountId: 'a', member: { id: 'm' } } as never
+    let oldImages!: (images: import('@/types').ImageItem[]) => void
+    let oldFiles!: (files: import('@/types').FileItem[]) => void
+    vi.mocked(fetchImages).mockImplementationOnce(() => new Promise(resolve => { oldImages = resolve })).mockResolvedValueOnce([])
+    vi.mocked(fetchFiles).mockImplementationOnce(() => new Promise(resolve => { oldFiles = resolve })).mockResolvedValueOnce([])
+    const beforeImages = data.refreshImages(), beforeFiles = data.refreshFiles()
+    session.account = { accountId: 'b', member: { id: 'm' } } as never
+    await Promise.all([data.refreshImages(), data.refreshFiles()])
+    oldImages([{ id: 'private-image' } as import('@/types').ImageItem])
+    oldFiles([{ id: 'private-file' } as import('@/types').FileItem])
+    expect(await beforeImages).toBe(false); expect(await beforeFiles).toBe(false)
+    expect(data.imgs).toEqual([]); expect(data.files).toEqual([])
+    expect(data.loadStates.images).toBe('loaded'); expect(data.fileLoadState).toBe('loaded')
+  })
 
   it('后端离线时回落成 data URL，但仍然进图床列表', async () => {
     const before = data.imgs.length
