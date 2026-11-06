@@ -1699,16 +1699,36 @@ export const useDataStore = defineStore('data', () => {
     return Object.keys(docEdits.value).length === 0
   }
 
+  /** 旧评论接口成功后刷新版本；请求期间的新输入一律保留原版本以便冲突保护。 */
+  async function refreshAfterComment(id: string, task: Task, member: string, account: string | undefined, version: number) {
+    if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId || taskById(id) !== task) return
+    try {
+      const remote = await apiGetTask(id)
+      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId || taskById(id) !== task
+          || (taskPersistVersions[id] ?? 0) !== version || taskDrafts.value[id] || taskPersisting[id]) return
+      Object.assign(task, remote)
+      taskSubBases[id] = clone(remote.subs ?? [])
+    } catch { /* 读取失败时保留原版本；后续保存由版本校验保护。 */ }
+  }
+
   /** 独立追加评论，避免评论与富文本全文自动保存互相覆盖。 */
   async function addTaskComment(id: string, text: string) {
     const task = taskById(id)
     if (!task) return false
+    const member = useSessionStore().userId
+    const account = useSessionStore().account?.accountId
     await flushTask(id)
+    if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId || taskById(id) !== task) return false
+    if (taskSaveState(id) === 'error') return false
+    const version = taskPersistVersions[id] ?? 0
     try {
       const comment = apiLive.value
         ? await apiAddTaskComment(id, text)
         : { id: 'c' + Date.now(), who: currentAuthor(), time: nowIso(), text }
-      task.comments.push(comment)
+      // A successful request belongs to the original account even if the user
+      // switched accounts while it was in flight. Do not insert it into the new store.
+      if (member === useSessionStore().userId && account === useSessionStore().account?.accountId && taskById(id) === task) task.comments.push(comment)
+      if (apiLive.value) await refreshAfterComment(id, task, member, account, version)
       return true
     } catch { return false }
   }
@@ -1728,13 +1748,17 @@ export const useDataStore = defineStore('data', () => {
     const body = text.trim()
     if (!body) return false
     const previous = comment.text
+    const member = useSessionStore().userId
+    const account = useSessionStore().account?.accountId
+    const version = taskPersistVersions[id] ?? 0
     comment.text = body
     if (!apiLive.value) return true
     try {
       await apiUpdateTaskComment(id, commentKey(comment, index), body)
+      await refreshAfterComment(id, task, member, account, version)
       return true
     } catch {
-      comment.text = previous
+      if (member === useSessionStore().userId && account === useSessionStore().account?.accountId && taskById(id) === task && comment.text === body) comment.text = previous
       return false
     }
   }
@@ -1749,13 +1773,20 @@ export const useDataStore = defineStore('data', () => {
     const comment = task?.comments[index]
     if (!task || !comment) return false
     const key = commentKey(comment, index)
+    const member = useSessionStore().userId
+    const account = useSessionStore().account?.accountId
+    const version = taskPersistVersions[id] ?? 0
     task.comments.splice(index, 1)
     if (!apiLive.value) return true
     try {
       await apiDeleteTaskComment(id, key)
+      await refreshAfterComment(id, task, member, account, version)
       return true
     } catch {
-      task.comments.splice(index, 0, comment)
+      if (member === useSessionStore().userId && account === useSessionStore().account?.accountId && taskById(id) === task
+          && !task.comments.some(item => item === comment || (!!comment.id && item.id === comment.id))) {
+        task.comments.splice(Math.min(index, task.comments.length), 0, comment)
+      }
       return false
     }
   }
@@ -2349,8 +2380,11 @@ export const useDataStore = defineStore('data', () => {
   }
   async function uploadFile(file: File, projectId?: string, privateNote = false) {
     if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
+    const member = useSessionStore().userId
+    const account = useSessionStore().account?.accountId
     try {
       const item = await (privateNote ? apiUploadFile(file, projectId, true) : apiUploadFile(file, projectId))
+      if (member !== useSessionStore().userId || account !== useSessionStore().account?.accountId) return null
       files.value.unshift(item)
       fileLoadState.value = 'loaded'
       fileLoadError.value = ''

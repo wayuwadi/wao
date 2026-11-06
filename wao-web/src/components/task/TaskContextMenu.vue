@@ -5,6 +5,7 @@ import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
+import TaskTemplateSaveDialog from './TaskTemplateSaveDialog.vue'
 import { useTaskPinsStore } from '@/stores/taskPins'
 import type { TaskMenuAction } from '@/api/taskMenu'
 import { toast } from '@/composables/toast'
@@ -16,7 +17,9 @@ import { PROJECT_PRIORITY_COLORS, PROJECT_PRIORITY_LABELS } from '@/utils/projec
 import { shareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { shiftDay } from '@/utils/taskDeadline'
-import { todayIso } from '@/utils/time'
+import { absoluteTime, relativeTime, todayIso } from '@/utils/time'
+import { activitySentence } from '@/utils/activity'
+import { downloadTaskMarkdown, exportTaskSelection, printTaskMarkdown } from '@/utils/taskSelectionExport'
 import type { Task, Priority } from '@/types'
 import type { ContextAction } from '@/types/contextAction'
 import type { ProjectItemRefs } from '@/utils/projectWorkItems'
@@ -27,10 +30,17 @@ const pins=useTaskPinsStore()
 const actions=useProjectItemActions(()=>props.itemRefs)
 const menu=ref<InstanceType<typeof ContextActionMenu>>()
 const formId=useId()
-const target=ref<Task>(), mode=ref<''|'date'|'move'|'parent'|'delete'|'abandon'|'note'|'error'>('')
+const target=ref<Task>(), mode=ref<''|'date'|'move'|'parent'|'delete'|'abandon'|'note'|'activity'|'error'>('')
 const date=ref(''), destination=ref(''), saving=ref(false), error=ref('')
 const quick=ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}>()
 const source=ref<{taskId:string;subId?:string}>({taskId:''})
+const templateTarget=ref<{taskId:string;subId?:string} | null>(null)
+const attachmentInput=ref<HTMLInputElement | null>(null)
+const attachmentTarget=ref<{taskId:string;member:string;account:string | undefined} | null>(null)
+const uploading=ref(false)
+const activities=computed(()=>(data.taskById(source.value.taskId)?.activity ?? []).map(item=>({
+ ...item, description:activitySentence(item,session.userId,id=>session.memberById(id).name),
+})))
 const descendants = (id:string) => {
  const ids=new Set([id]); let changed=true
  while(changed){changed=false;for(const task of data.tasks)if(task.parentTaskId&&ids.has(task.parentTaskId)&&!ids.has(task.id)){ids.add(task.id);changed=true}}
@@ -42,11 +52,48 @@ const parents=computed(()=>{
 })
 function movable(task:Task){return !actions.isSub(task.id)&&!task.parentTaskId&&!data.tasks.some(t=>t.parentTaskId===task.id)}
 function close(){menu.value?.close()}
-watch(()=>session.userId,()=>{close();mode.value='';quick.value=undefined;target.value=undefined},{flush:'sync'})
-function dialog(value:'date'|'move'|'parent'|'delete'|'abandon'|'note') {
+watch([()=>session.userId,()=>session.account?.accountId],()=>{close();mode.value='';quick.value=undefined;templateTarget.value=null;target.value=undefined},{flush:'sync'})
+function dialog(value:'date'|'move'|'parent'|'delete'|'abandon'|'note'|'activity') {
  if(!target.value)return
  mode.value=value;error.value='';date.value=target.value.due||todayIso()
  destination.value=value==='move'?target.value.project:value==='parent'?(target.value.parentTaskId??''):''
+}
+function chooseAttachment() {
+ if(!target.value || source.value.subId || uploading.value)return
+ attachmentTarget.value={taskId:source.value.taskId,member:session.userId,account:session.account?.accountId}
+ attachmentInput.value?.click()
+}
+async function uploadAttachment(event:Event) {
+ const input=event.target as HTMLInputElement, file=input.files?.[0], selected=attachmentTarget.value
+ input.value='';attachmentTarget.value=null
+ if(!file || !selected || uploading.value || selected.member!==session.userId || selected.account!==session.account?.accountId)return
+ if(file.size>data.MAX_FILE_BYTES){toast('文件超过 200MB，无法上传','ri-error-warning-line');return}
+ uploading.value=true
+ try {
+  const uploaded=await data.uploadFile(file)
+  if(selected.member!==session.userId || selected.account!==session.account?.accountId)return
+  if(!uploaded?.id)throw new Error('文件上传失败，请重试')
+  const current=data.taskById(selected.taskId)
+  if(!current)throw new Error('文件已上传，但任务已不存在，可在文件中查看')
+  if(!current.files.some(item=>item.id===uploaded.id)) data.patchTask(current.id,{files:[...current.files,{id:uploaded.id,name:uploaded.name,size:uploaded.size,icon:uploaded.icon}]},`上传并关联了文件「${uploaded.name}」`)
+  if(!current.files.some(item=>item.id===uploaded.id))throw new Error('文件已上传，但任务关联未能保存，可在文件中查看')
+  await data.flushTask(current.id)
+  if(selected.member!==session.userId || selected.account!==session.account?.accountId)return
+  if(data.taskSaveState(current.id)==='error')throw new Error('文件已上传，关联保存在任务草稿中，请重试保存任务')
+  toast('文件已上传并关联到任务','ri-check-line')
+ }catch(e){if(selected.member===session.userId && selected.account===session.account?.accountId)toast(e instanceof Error?e.message:'文件上传失败，请重试','ri-error-warning-line')}
+ finally{uploading.value=false}
+}
+function outputTask(kind:'download'|'print') {
+ try {
+  const snapshot=exportTaskSelection(data.tasks,source.value.taskId,source.value.subId,{
+   origin:window.location.origin,
+   projectName:id=>data.projectById(id)?.name ?? (id || '收集箱'),
+   memberName:id=>session.memberById(id).name,
+  })
+  if(kind==='download')downloadTaskMarkdown(snapshot.title,snapshot.markdown)
+  else printTaskMarkdown(snapshot.title,snapshot.markdown)
+ }catch(e){toast(e instanceof Error?e.message:'无法生成任务快照，请重试','ri-error-warning-line')}
 }
 async function run(change:()=>void|Promise<void>, dateChange=false) {
  const task=target.value, member=session.userId
@@ -134,10 +181,15 @@ function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[
   {id:'parent',label:task.parentTaskId?'调整主任务':'关联主任务',icon:'ri-links-line',disabled,run:()=>dialog('parent')},
   {id:'move',label:'移动到',icon:'ri-folder-transfer-line',disabled:disabled||!movable(task),run:()=>dialog('move')},
   {id:'tags',label:'标签',icon:'ri-price-tag-3-line',run:()=>{quick.value={...ref,mode:'tags'}}},
+  ...(!ref.subId?[{id:'attachment',label:'上传附件',icon:'ri-attachment-line',disabled:disabled||uploading.value,run:chooseAttachment}]:[]),
   {id:'focus',label:'开始专注',icon:'ri-timer-line',separatorBefore:true,run:async()=>{await router.push({path:'/focus',query:{focusTask:ref.taskId,focusSub:ref.subId}})}},
+  {id:'activity',label:'任务动态',icon:'ri-list-check-2',run:()=>dialog('activity')},
+  {id:'template',label:'保存为模板',icon:'ri-save-line',run:()=>{templateTarget.value={...ref}}},
   {id:'duplicate',label:'创建副本',icon:'ri-file-copy-line',separatorBefore:true,disabled,run:()=>menuAction('duplicate')},
   {id:'convert',label:note?'转换为任务':'转换为笔记',icon:note?'ri-checkbox-line':'ri-sticky-note-line',disabled:disabled||hasChildren||abandoned,run:()=>note?menuAction('task'):dialog('note')},
   {id:'link',label:'复制链接',icon:'ri-link',separatorBefore:true,run:()=>copyText(shareUrl(ref.taskId,ref.subId),'任务链接已复制')},
+  {id:'export',label:'导出 Markdown',icon:'ri-upload-line',run:()=>outputTask('download')},
+  {id:'print',label:'打印',icon:'ri-printer-line',run:()=>outputTask('print')},
   {id:'id',label:'复制任务编号',icon:'ri-hashtag',run:()=>copyText(String(task.number??ref.subId??ref.taskId),'任务编号已复制')},
   {id:'open',label:'打开任务详情',icon:'ri-file-list-3-line',run:()=>actions.open(task.id)},
   ...extra.filter(item=>item.id!=='add-child'),
@@ -150,8 +202,10 @@ defineExpose({openAt,close})
 </script>
 <template>
  <ContextActionMenu ref="menu" />
+ <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
  <TaskQuickActionDialog v-if="quick" v-bind="quick" @close="quick=undefined" />
- <SettingsDialogShell v-if="mode" :title="({date:'选择日期',move:'移动到',parent:'关联主任务',delete:'删除任务',abandon:'放弃任务',note:'转换为笔记',error:'操作尚未完成'})[mode]" width="440px" height="320px" :close-disabled="saving" @close="mode=''">
+ <TaskTemplateSaveDialog v-if="templateTarget" v-bind="templateTarget" @close="templateTarget=null" />
+ <SettingsDialogShell v-if="mode" :title="({date:'选择日期',move:'移动到',parent:'关联主任务',delete:'删除任务',abandon:'放弃任务',note:'转换为笔记',activity:'任务动态',error:'操作尚未完成'})[mode]" width="440px" height="320px" :close-disabled="saving" @close="mode=''">
   <form :id="formId" class="task-menu-form" @submit.prevent="apply">
    <label v-if="mode==='date'">截止日期<input v-model="date" type="date" :disabled="saving" /></label>
    <label v-if="mode==='move'">目标清单<select v-model="destination" :disabled="saving"><option value="">收集箱</option><option v-for="p in data.projects" :key="p.id" :value="p.id">{{p.name}}</option></select><small>内嵌子项随主任务移动。</small></label>
@@ -159,10 +213,11 @@ defineExpose({openAt,close})
    <div v-if="mode==='delete'">确定删除「{{target?.title}}」？<p>{{source.subId?'下级子任务会保留并上移一级。':'内嵌子事项会一并删除，独立子任务会保留并移回顶层。'}}</p></div>
    <p v-if="mode==='abandon'">放弃「{{target?.title}}」及其未完成子任务？之后可在“已放弃”中重新开始。</p>
    <p v-if="mode==='note'">转换后保留在当前清单，不再作为待办参与日期视图和四象限。内容与附件保留，也可以转换回任务。</p>
+   <div v-if="mode==='activity'" class="activity-list"><small v-if="source.subId">显示所属主任务及其子任务的动态。</small><p v-if="!activities.length">暂无动态</p><div v-for="(item,index) in activities" :key="index" class="activity-item"><span>{{item.description}}</span><time :title="absoluteTime(item.time)">{{relativeTime(item.time)}}</time></div></div>
    <p v-if="error" role="alert">{{error}}</p>
 
   </form>
-  <template #footer><div class="task-menu-footer"><WaoButton type="button" :disabled="saving" @click="mode=''">关闭</WaoButton><WaoButton v-if="error" type="button" @click="mode='';ui.openTask(source.taskId)">查看保存问题</WaoButton><WaoButton v-if="mode!=='error'" type="submit" :form="formId" :variant="mode==='delete'?'danger':'primary'" :loading="saving">{{mode==='delete'?(error?'重试删除':'确认删除'):'确定'}}</WaoButton></div></template>
+  <template #footer><div class="task-menu-footer"><WaoButton type="button" :disabled="saving" @click="mode=''">关闭</WaoButton><WaoButton v-if="error" type="button" @click="mode='';ui.openTask(source.taskId)">查看保存问题</WaoButton><WaoButton v-if="mode!=='error' && mode!=='activity'" type="submit" :form="formId" :variant="mode==='delete'?'danger':'primary'" :loading="saving">{{mode==='delete'?(error?'重试删除':'确认删除'):'确定'}}</WaoButton></div></template>
  </SettingsDialogShell>
 </template>
 <style scoped>
@@ -170,4 +225,5 @@ defineExpose({openAt,close})
 label {display:flex;flex-direction:column;gap:var(--wao-space-1);}
 input,select {width:100%;min-width:0;box-sizing:border-box;min-height:var(--wao-control-height);padding:var(--wao-space-1);font:inherit;color:var(--wao-text);border:1px solid var(--wao-line-control);border-radius:var(--wao-radius-control);background:var(--wao-bg-card);}
 small {color:var(--wao-text-3);}p {color:var(--wao-danger-strong);overflow-wrap:anywhere;}.task-menu-footer {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:var(--wao-space-1);}
+.activity-list { max-height:180px; overflow:auto; }.activity-list p { color:var(--wao-text-3); }.activity-item { display:flex; flex-direction:column; padding:var(--wao-space-1) 0; border-bottom:1px solid var(--wao-line); }.activity-item time { color:var(--wao-text-3); font-size:var(--wao-font-help); }
 </style>

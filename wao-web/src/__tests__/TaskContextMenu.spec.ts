@@ -6,6 +6,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 import { projectWorkItems } from '@/utils/projectWorkItems'
 import TaskContextMenu from '@/components/task/TaskContextMenu.vue'
 import { todayIso } from '@/utils/time'
+import * as taskOutput from '@/utils/taskSelectionExport'
 vi.mock('vue-router',()=>({useRouter:()=>({push:vi.fn()})}))
 enableAutoUnmount(afterEach)
 beforeEach(()=>{localStorage.clear();sessionStorage.clear();setActivePinia(createPinia());seedDataStore()})
@@ -67,6 +68,43 @@ describe('统一任务菜单',()=>{
   await wrapper.get('form').trigger('submit');await flushPromises()
   expect(move).toHaveBeenCalledExactlyOnceWith('parent','child','destination','')
   expect(patch).not.toHaveBeenCalled()
+ })
+ it('任务动态从命中的主任务读取，子项明确说明动态范围',async()=>{
+  const {data,wrapper}=await setup()
+  data.taskById('parent')!.activity=[{icon:'ri-add-line',color:'',text:'添加了子任务',time:'2026-11-06T10:00:00+08:00',by:'me'}]
+  await wrapper.get('[aria-label="任务动态"]').trigger('click')
+  expect(wrapper.text()).toContain('所属主任务及其子任务的动态')
+  expect(wrapper.text()).toContain('添加了子任务')
+  expect(wrapper.find('button[type="submit"]').exists()).toBe(false)
+ })
+ it('主任务更多菜单上传后关联到命中的任务并保存，子项不冒充支持独立附件',async()=>{
+  const {data,wrapper,child,patch}=await setup()
+  expect(wrapper.find('[aria-label="上传附件"]').exists()).toBe(false)
+  await wrapper.vm.openAt(new MouseEvent('contextmenu'),data.tasks[0]!)
+  const uploaded={...data.files[0]!,id:'uploaded-file',name:'brief.txt'}
+  const upload=vi.spyOn(data,'uploadFile').mockResolvedValue(uploaded)
+  patch.mockImplementation((id,fields)=>{Object.assign(data.taskById(id)!,fields)})
+  await wrapper.get('[aria-label="上传附件"]').trigger('click')
+  const input=wrapper.get('input[type="file"]')
+  Object.defineProperty(input.element,'files',{configurable:true,value:[new File(['test'],'brief.txt',{type:'text/plain'})]})
+  await input.trigger('change');await flushPromises()
+  expect(upload).toHaveBeenCalledTimes(1)
+  expect(data.taskById('parent')!.files.some(file=>file.id==='uploaded-file')).toBe(true)
+  expect(data.flushTask).toHaveBeenCalledWith('parent')
+  await wrapper.vm.openAt(new MouseEvent('contextmenu'),child)
+  expect(wrapper.find('[aria-label="上传附件"]').exists()).toBe(false)
+ })
+ it('导出和打印使用当前子任务范围',async()=>{
+  const {wrapper,child}=await setup()
+  const download=vi.spyOn(taskOutput,'downloadTaskMarkdown').mockImplementation(()=>{})
+  const print=vi.spyOn(taskOutput,'printTaskMarkdown').mockImplementation(()=>{})
+  await wrapper.get('[aria-label="导出 Markdown"]').trigger('click')
+  expect(download).toHaveBeenCalledOnce()
+  expect(download.mock.calls[0]![0]).toBe('测试子项')
+  expect(download.mock.calls[0]![1]).toContain('/api/share/tasks/parent/subs/child.md')
+  await wrapper.vm.openAt(new MouseEvent('contextmenu'),child)
+  await wrapper.get('[aria-label="打印"]').trigger('click')
+  expect(print.mock.calls[0]![0]).toBe('测试子项')
  })
 })
 

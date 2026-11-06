@@ -36,6 +36,22 @@ beforeEach(()=>{
  data.tasks=[{...source,id:'parent',title:'主任务',owner:'wg',status:'待办',subs:[{id:'child',text:'独立子任务',done:false,due:data.today}]},{...source,id:'other',title:'其他任务',owner:'wg',status:'待办',subs:[]}]
 })
 describe('task workspace',()=>{
+ it('在今天直接回车添加子任务后，保留当前视图和继续输入的入口',async()=>{
+  const data=useDataStore()
+  data.tasks[0]!.due=data.today
+  vi.spyOn(data,'flushTask').mockResolvedValue()
+  vi.spyOn(data,'taskSaveState').mockReturnValue('saved')
+  const wrapper=mount(TodoView,options);await flushPromises()
+  const today=buttonText(wrapper,'.task-navigation button','今天')
+  await today.trigger('click');await flushPromises()
+  await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')
+  const input=wrapper.get('[aria-label="子任务名称"]')
+  await input.setValue('今天快速添加')
+  await input.trigger('keydown',{key:'Enter'});await flushPromises()
+  expect(today.classes()).toContain('active')
+  expect(wrapper.get('[aria-label="子任务名称"]').element).toHaveProperty('value','')
+  expect(data.taskById('parent')?.subs.some(sub=>sub.text==='今天快速添加')).toBe(true)
+ })
  it('三种视图共用任务与保存：看板按状态移动、时间线显示执行区间和截止标记',async()=>{
   const data=useDataStore(), base=data.tasks[0]!
   data.tasks=[

@@ -6,13 +6,14 @@ withDefaults(defineProps<{ heading:string; count:number; selection:string; navig
 const query=defineModel<string>('query',{default:''})
 const completed=defineModel<boolean>('completed',{default:false})
 const quick=defineModel<string>('quick',{required:true})
-defineEmits<{ navigation:[]; add:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
+defineEmits<{ navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
 </script>
 <template>
  <div class="todo-list-header">
   <header><button class="navigation-toggle" :aria-label="navigationCollapsed?'展开待办导航':'收起待办导航'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="$emit('navigation')"><i class="ri-layout-left-line" /></button><h1>{{heading}}</h1><span class="count">{{count}}</span>
    <button v-if="!['completed','abandoned'].includes(selection)" class="completed-toggle" :aria-pressed="completed" @click="completed=!completed"><i class="ri-checkbox-circle-line" aria-hidden="true" />{{completed?'返回未完成':'已完成'}}</button>
    <label class="task-search"><i class="ri-search-line" aria-hidden="true" /><input v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务（含已完成）" /><button v-if="query" aria-label="清空搜索" @click="query=''" type="button"><i class="ri-close-line" aria-hidden="true" /></button></label>
+   <button v-if="!['completed','abandoned'].includes(selection)" type="button" aria-label="使用任务模板" title="使用任务模板" @click="$emit('templates')"><i class="ri-file-copy-line" aria-hidden="true" /></button>
    <TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" />
 </header>
   <TodayDates v-if="selection==='today'" />
