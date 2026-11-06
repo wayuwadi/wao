@@ -49,4 +49,3 @@ it('桌面首次保留导航，已有明确收起设置不受默认值影响',as
   wrapper=mount(TodoView,viewOptions);await flushPromises()
   expect(wrapper.find('[aria-label="展开待办导航"]').exists()).toBe(true)
 })
-
