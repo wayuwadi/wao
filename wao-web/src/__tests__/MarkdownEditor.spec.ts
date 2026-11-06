@@ -2684,7 +2684,9 @@ describe('文内查找与安全替换', () => {
     await w.get('[aria-label="替换内容"]').setValue('beta')
     const all = () => w.findAll('button').find(button => button.text() === '全部替换')!
     expect(all().attributes('disabled')).toBeDefined()
-    expect(document.getElementById(all().attributes('aria-describedby'))?.textContent).toContain('完成后可全部替换')
+    const hintId = all().attributes('aria-describedby')
+    expect(hintId).toBeTruthy()
+    expect(hintId ? document.getElementById(hintId)?.textContent : '').toContain('完成后可全部替换')
     expect(w.findAll('button').find(button => button.text() === '替换')!.attributes('disabled')).toBeUndefined()
     await w.get('[aria-label="下一个匹配"]').trigger('click')
     instance.replaceAll()
