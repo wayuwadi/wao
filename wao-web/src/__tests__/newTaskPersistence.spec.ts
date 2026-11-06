@@ -4,6 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
+// This suite verifies persistence, not the editor. Stop its lazy import at the
+// module boundary so slower CI workers cannot finish loading after teardown.
+vi.mock('@/components/ui/MarkdownEditor.vue', () => ({ default: { name: 'MarkdownEditor', props: ['modelValue', 'readonly'], template: '<div />' } }))
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { apiPutTask } from '@/api/board'
 import { useToastHost } from '@/composables/toast'
