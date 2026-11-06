@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
@@ -8,6 +8,7 @@ import TaskQuickActionDialog from './TaskQuickActionDialog.vue'
 import TaskTemplateSaveDialog from './TaskTemplateSaveDialog.vue'
 import { useTaskPinsStore } from '@/stores/taskPins'
 import type { TaskMenuAction } from '@/api/taskMenu'
+import { deadlineFeedback } from '@/composables/taskChangeFeedback'
 import { toast } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -36,8 +37,10 @@ const quick=ref<{taskId:string;subId?:string;mode:'tags'|'child'|'priority'}>()
 const source=ref<{taskId:string;subId?:string}>({taskId:''})
 const templateTarget=ref<{taskId:string;subId?:string} | null>(null)
 const attachmentInput=ref<HTMLInputElement | null>(null)
-const attachmentTarget=ref<{taskId:string;member:string;account:string | undefined} | null>(null)
+const attachmentTarget=ref<{taskId:string;member:string;account:string | undefined;epoch:number} | null>(null)
 const uploading=ref(false)
+let identityEpoch=0, alive=true
+onBeforeUnmount(()=>{alive=false;identityEpoch++})
 const activities=computed(()=>(data.taskById(source.value.taskId)?.activity ?? []).map(item=>({
  ...item, description:activitySentence(item,session.userId,id=>session.memberById(id).name),
 })))
@@ -52,7 +55,7 @@ const parents=computed(()=>{
 })
 function movable(task:Task){return !actions.isSub(task.id)&&!task.parentTaskId&&!data.tasks.some(t=>t.parentTaskId===task.id)}
 function close(){menu.value?.close()}
-watch([()=>session.userId,()=>session.account?.accountId],()=>{close();mode.value='';quick.value=undefined;templateTarget.value=null;target.value=undefined},{flush:'sync'})
+watch([()=>session.userId,()=>session.account?.accountId],()=>{identityEpoch++;date.value='';destination.value='';close();mode.value='';quick.value=undefined;templateTarget.value=null;target.value=undefined;source.value={taskId:''};saving.value=false;uploading.value=false;attachmentTarget.value=null;error.value=''},{flush:'sync'})
 function dialog(value:'date'|'move'|'parent'|'delete'|'abandon'|'note'|'activity') {
  if(!target.value)return
  mode.value=value;error.value='';date.value=target.value.due||todayIso()
@@ -60,29 +63,29 @@ function dialog(value:'date'|'move'|'parent'|'delete'|'abandon'|'note'|'activity
 }
 function chooseAttachment() {
  if(!target.value || source.value.subId || uploading.value)return
- attachmentTarget.value={taskId:source.value.taskId,member:session.userId,account:session.account?.accountId}
+ attachmentTarget.value={taskId:source.value.taskId,member:session.userId,account:session.account?.accountId,epoch:identityEpoch}
  attachmentInput.value?.click()
 }
 async function uploadAttachment(event:Event) {
  const input=event.target as HTMLInputElement, file=input.files?.[0], selected=attachmentTarget.value
  input.value='';attachmentTarget.value=null
- if(!file || !selected || uploading.value || selected.member!==session.userId || selected.account!==session.account?.accountId)return
+ if(!file || !selected || uploading.value || selected.member!==session.userId || selected.account!==session.account?.accountId || selected.epoch!==identityEpoch || !alive)return
  if(file.size>data.MAX_FILE_BYTES){toast('文件超过 200MB，无法上传','ri-error-warning-line');return}
  uploading.value=true
  try {
   const uploaded=await data.uploadFile(file)
-  if(selected.member!==session.userId || selected.account!==session.account?.accountId)return
+  if(selected.member!==session.userId || selected.account!==session.account?.accountId || selected.epoch!==identityEpoch || !alive)return
   if(!uploaded?.id)throw new Error('文件上传失败，请重试')
   const current=data.taskById(selected.taskId)
   if(!current)throw new Error('文件已上传，但任务已不存在，可在文件中查看')
   if(!current.files.some(item=>item.id===uploaded.id)) data.patchTask(current.id,{files:[...current.files,{id:uploaded.id,name:uploaded.name,size:uploaded.size,icon:uploaded.icon}]},`上传并关联了文件「${uploaded.name}」`)
   if(!current.files.some(item=>item.id===uploaded.id))throw new Error('文件已上传，但任务关联未能保存，可在文件中查看')
   await data.flushTask(current.id)
-  if(selected.member!==session.userId || selected.account!==session.account?.accountId)return
+  if(selected.member!==session.userId || selected.account!==session.account?.accountId || selected.epoch!==identityEpoch || !alive)return
   if(data.taskSaveState(current.id)==='error')throw new Error('文件已上传，关联保存在任务草稿中，请重试保存任务')
   toast('文件已上传并关联到任务','ri-check-line')
- }catch(e){if(selected.member===session.userId && selected.account===session.account?.accountId)toast(e instanceof Error?e.message:'文件上传失败，请重试','ri-error-warning-line')}
- finally{uploading.value=false}
+ }catch(e){if(selected.member===session.userId && selected.account===session.account?.accountId && selected.epoch===identityEpoch && alive)toast(e instanceof Error?e.message:'文件上传失败，请重试','ri-error-warning-line')}
+ finally{if(selected.epoch===identityEpoch && alive)uploading.value=false}
 }
 function outputTask(kind:'download'|'print') {
  try {
@@ -95,9 +98,10 @@ function outputTask(kind:'download'|'print') {
   else printTaskMarkdown(snapshot.title,snapshot.markdown)
  }catch(e){toast(e instanceof Error?e.message:'无法生成任务快照，请重试','ri-error-warning-line')}
 }
-async function run(change:()=>void|Promise<void>, dateChange=false) {
- const task=target.value, member=session.userId
- if(!task||saving.value)return
+async function run(change:(current:()=>boolean)=>void|Promise<void>, dateChange=false):Promise<boolean> {
+ const task=target.value, epoch=identityEpoch
+ const current=()=>alive && epoch===identityEpoch
+ if(!task||saving.value)return false
  const ref=actions.source(task.id)
  saving.value=true;error.value=''
  try {
@@ -105,17 +109,21 @@ async function run(change:()=>void|Promise<void>, dateChange=false) {
   if(!data.taskById(ref.taskId)||(ref.subId&&!data.subById(ref.taskId,ref.subId)))throw new Error('任务已不存在')
   if(data.taskSaveState(ref.taskId)==='error')throw new Error('请先在任务详情中处理已有的保存问题')
   if(dateChange)emit('dateChanging',task.id)
-  await change()
-  if(member!==session.userId)return
+  await change(current)
+  if(!current())return false
   await data.flushTask(ref.taskId)
+  if(!current())return false
   if(data.taskSaveState(ref.taskId)==='error')throw new Error(data.taskSaveError(ref.taskId)||'修改尚未保存，已保留草稿')
-  if(member===session.userId)mode.value=''
- }catch(e){if(member===session.userId){error.value=e instanceof Error?e.message:'操作失败，请重试';if(!mode.value)mode.value='error'}}
- finally{saving.value=false}
+  mode.value=''
+  return true
+ }catch(e){if(current()){error.value=e instanceof Error?e.message:'操作失败，请重试';if(!mode.value)mode.value='error'}return false}
+ finally{if(current())saving.value=false}
 }
-function setDate(value:string) {
- const ref={...source.value}
- return run(()=>{if(ref.subId)data.updateSub(ref.taskId,ref.subId,{due:value});else data.patchTask(ref.taskId,{due:value})},true)
+async function setDate(value:string) {
+ const ref={...source.value}, epoch=identityEpoch
+ const before=ref.subId?data.subById(ref.taskId,ref.subId)?.due:data.taskById(ref.taskId)?.due
+ const saved=await run(()=>{if(ref.subId)data.updateSub(ref.taskId,ref.subId,{due:value});else data.patchTask(ref.taskId,{due:value})},true)
+ if(saved && alive && epoch===identityEpoch)deadlineFeedback([{...ref,before,after:value}])
 }
 async function apply(){
  if(mode.value==='abandon'||mode.value==='note'){await menuAction(mode.value);return}
@@ -138,29 +146,33 @@ async function apply(){
 }
 async function remove(){
  if(saving.value||!target.value)return
- const ref={...source.value}, member=session.userId
+ const ref={...source.value}, epoch=identityEpoch
+ const current=()=>alive && epoch===identityEpoch
  saving.value=true;error.value=''
  try{
   if(data.movingTask||data.movingSubtasks||data.taskSaveState(ref.taskId)==='saving')throw new Error('任务正在保存或移动，请稍后重试')
   if(ref.subId){
    if(data.subById(ref.taskId,ref.subId))data.removeSub(ref.taskId,ref.subId)
    await data.flushTask(ref.taskId)
+   if(!current())return
    if(data.taskSaveState(ref.taskId)==='error')throw new Error(data.taskSaveError(ref.taskId)||'删除尚未保存，请重试')
   }else if(!await data.deleteTask(ref.taskId))throw new Error('删除失败，任务已保留，请重试')
-  if(member===session.userId)mode.value=''
- }catch(e){if(member===session.userId)error.value=e instanceof Error?e.message:'删除失败，请重试'}
- finally{saving.value=false}
+  if(current())mode.value=''
+ }catch(e){if(current())error.value=e instanceof Error?e.message:'删除失败，请重试'}
+ finally{if(current())saving.value=false}
 }
 async function menuAction(action:TaskMenuAction) {
  const ref={...source.value}
- await run(async()=>{
+ await run(async(current)=>{
    const selected=await data.taskMenuOperation(ref.taskId,ref.subId,action)
+   if(!current())return
    if(action!=='duplicate')emit('changed')
    toast(({abandon:'已移至已放弃',restore:'已重新开始',duplicate:'已创建副本',note:'已转换为笔记，保留在当前清单',task:'已转换为任务'})[action],'ri-check-line')
    if(action==='duplicate' && selected){emit('created',selected);if(props.inlineSelection)return;if(selected.startsWith('sub:')){const [,taskId,subId]=selected.split(':');ui.openTask(taskId!,subId)}else ui.openTask(selected)}
  })
 }
 function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[]) {
+ if(saving.value)return
  target.value=task;error.value=''
  const ref=actions.source(task.id), disabled=actions.busy(task.id)||saving.value
  source.value={taskId:ref.taskId,subId:ref.subId}
@@ -172,11 +184,11 @@ function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[
   {id:'week',label:'一周后',icon:'ri-calendar-event-line',quickGroup:'日期',disabled,run:()=>setDate(shiftDay(today,7))},
   {id:'date',label:'选择日期',icon:'ri-calendar-2-line',quickGroup:'日期',disabled,run:()=>dialog('date')},
   {id:'clear-date',label:'清除日期',icon:'ri-calendar-close-line',quickGroup:'日期',disabled:disabled||!task.due,run:()=>setDate('')},
-  ...(['P0','P1','P2','P3'] as Priority[]).map(pr=>({id:pr,label:`${pr} · ${PROJECT_PRIORITY_LABELS[pr]}`,icon:pr==='P3'?'ri-flag-line':'ri-flag-fill',color:PROJECT_PRIORITY_COLORS[pr],quickGroup:'优先级',checked:task.pr===pr,disabled,run:()=>run(()=>actions.priority(task.id,pr))})),
+  ...(['P0','P1','P2','P3'] as Priority[]).map(pr=>({id:pr,label:`${pr} · ${PROJECT_PRIORITY_LABELS[pr]}`,icon:pr==='P3'?'ri-flag-line':'ri-flag-fill',color:PROJECT_PRIORITY_COLORS[pr],quickGroup:'优先级',checked:task.pr===pr,disabled,run:async()=>{await run(()=>actions.priority(task.id,pr))}})),
   ...(extra.filter(item=>item.id==='add-child')),
   ...(!extra.some(item=>item.id==='add-child')?[{id:'add-child',label:'添加子任务',icon:'ri-node-tree',disabled,run:()=>{quick.value={...ref,mode:'child' as const}}}]:[]),
-  {id:'pin',label:pins.has(task.id)?'取消置顶':'置顶',icon:'ri-pushpin-line',disabled,run:()=>run(()=>pins.toggle(task.id))},
-  ...(pins.error?[{id:'retry-pin',label:'重试同步置顶',icon:'ri-refresh-line',run:()=>run(async()=>{await pins.retry();if(pins.error)throw new Error(pins.error)})}]:[]),
+  {id:'pin',label:pins.has(task.id)?'取消置顶':'置顶',icon:'ri-pushpin-line',disabled,run:async()=>{await run(()=>pins.toggle(task.id))}},
+  ...(pins.error?[{id:'retry-pin',label:'重试同步置顶',icon:'ri-refresh-line',run:async()=>{await run(async()=>{await pins.retry();if(pins.error)throw new Error(pins.error)})}}]:[]),
   {id:'abandon',label:abandoned?'重新开始':'放弃',icon:abandoned?'ri-restart-line':'ri-close-circle-line',disabled:disabled||note||task.status==='已完成',run:()=>abandoned?menuAction('restore'):dialog('abandon')},
   {id:'parent',label:task.parentTaskId?'调整主任务':'关联主任务',icon:'ri-links-line',disabled,run:()=>dialog('parent')},
   {id:'move',label:'移动到',icon:'ri-folder-transfer-line',disabled:disabled||!movable(task),run:()=>dialog('move')},
@@ -198,7 +210,13 @@ function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[
  for(const item of items) if(note && ['today','tomorrow','week','date','clear-date','P0','P1','P2','P3','add-child','focus'].includes(item.id))item.disabled=true
  return menu.value?.openAt(event,`任务：${task.title||'未命名任务'}`,items,event.type==='click'?event.currentTarget as HTMLElement:undefined)
 }
-defineExpose({openAt,close})
+function edit(task:Task,field:'date'|'priority'|'tags'|'move') {
+ if(saving.value||actions.busy(task.id))return
+ target.value=task;source.value=actions.source(task.id)
+ if(field==='priority'||field==='tags')quick.value={...source.value,mode:field}
+ else dialog(field)
+}
+defineExpose({openAt,close,edit})
 </script>
 <template>
  <ContextActionMenu ref="menu" />

@@ -43,6 +43,7 @@ try {
       Run "$nodeRoot/npm.cmd" @('run','type-check')
       Run "$nodeRoot/npm.cmd" @('run','test:stability')
       Run "$nodeRoot/npm.cmd" @('run','test:resources')
+      Run "$nodeRoot/npm.cmd" @('run','test:task-experience')
       Run "$nodeRoot/node.exe" @('node_modules/vite/bin/vite.js','build')
     }
   }

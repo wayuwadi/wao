@@ -38,11 +38,29 @@ it('计时各状态保留相同区域和按钮节点，只显示最近五条记�
  expect(wrapper.get('.dial-space').element).toBe(dial);expect(wrapper.get('.task-picker').element).toBe(picker);expect(wrapper.get('.focus-actions').element).toBe(actions);expect(wrapper.get('textarea').element).toBe(note)
  expect(wrapper.get('.end-action').classes()).toContain('action-placeholder');wrapper.unmount()
 })
-it('任务浮层直接选择且不再提供搜索，关闭后仍保留选择', async () => {
+it('任务浮层支持搜索且关闭后仍保留选择', async () => {
  const wrapper=mount(FocusView,{global:{stubs:{RouterLink:true}}});await flushPromises()
  await wrapper.get('[aria-label="选择关联任务"]').trigger('click')
- expect(wrapper.find('[aria-label="搜索关联任务"]').exists()).toBe(false)
+ expect(wrapper.find('[aria-label="搜索关联任务"]').exists()).toBe(true)
+ await wrapper.get('[aria-label="搜索关联任务"]').setValue('已授权')
  await wrapper.findAll('.task-options button').find(item=>item.text()==='已授权共享任务')!.trigger('click')
  expect(wrapper.find('.task-popover').exists()).toBe(false)
  expect(wrapper.get('[aria-label="选择关联任务"]').text()).toContain('已授权共享任务');wrapper.unmount()
+})
+
+it('大量任务渐进展示，搜索和历史来源不可用状态可见', async () => {
+ const data=seedDataStore(),base=data.tasks[0]!
+ data.tasks=Array.from({length:1000},(_,index)=>({...base,id:'many'+index,title:'任务'+index,status:'待办' as const,parts:[],subs:[]}))
+ const wrapper=mount(FocusView,{global:{stubs:{RouterLink:true}}});await flushPromises()
+ await wrapper.get('[aria-label="选择关联任务"]').trigger('click')
+ expect(wrapper.findAll('.task-options button')).toHaveLength(41)
+ await wrapper.get('[aria-label="搜索关联任务"]').setValue('任务999')
+ expect(wrapper.findAll('.task-options button')).toHaveLength(2)
+ expect(wrapper.get('.task-options').text()).toContain('任务999')
+ const focus=useFocusStore()
+ focus.history=[{id:'gone',mode:'pomodoro',status:'finished',revision:1,taskId:'removed',subId:'',taskTitle:'已删除任务',note:'保留笔记',noteId:null,startedAt:1,endedAt:2,runningSince:0,elapsedMs:60000,plannedMs:1500000}]
+ await flushPromises()
+ expect(wrapper.find('[aria-label="打开来源任务 已删除任务"]').exists()).toBe(false)
+ expect(wrapper.text()).toContain('来源任务已不可用，历史记录仍保留。')
+ expect(wrapper.find('.history-note').text()).toContain('保留笔记');wrapper.unmount()
 })

@@ -6,7 +6,7 @@
 
 `PATCH /api/files/{id}` 接收 `{displayName, expectedDisplayName?}`。浏览器改名提交编辑开始时的原始 `displayName`：显式 `null` 匹配未设置名称，字符串按精确字节比较。名字已被其他客户端修改时返回 409，草稿保留并可读取最新名称；重复保存相同目标名称幂等。省略 `expectedDisplayName` 保持已有接口行为，删除的文件返回 404。
 
-`PUT /api/hosted-pages/{id}` 和 `PUT /api/hosted-pages/{id}/content` 的 multipart 新增可选 `expectedRevision`，取编辑开始时读取的非负整数版本；SQL 在写入时原子比较版本，过时返回 HTTP 409 / `code: 40900`，已删除返回 404。省略字段兼容旧调用。新建和迁移前已有页面版本为 0，每次编辑、正文替换及 AI 报告写入均原子加 1；列表和写入响应携带当前版本。只替换正文保留最新标题、后缀、图标和归属；未上传 HTML/icon 的编辑也不会写回旧正文。时间字段不承担并发校验。V207 仅新增 `hosted_page.revision BIGINT NOT NULL DEFAULT 0`，保留已有页面和正文。
+`PUT /api/hosted-pages/{id}` 和 `PUT /api/hosted-pages/{id}/content` 的 multipart 新增可选 `expectedRevision`，取编辑开始时读取的非负整数版本；SQL 在写入时原子比较版本，过时返回 HTTP 409 / `code: 40900`，已删除返回 404。省略字段兼容旧调用。新建和迁移前已有页面版本为 0，每次编辑、正文替换及 AI 报告写入均原子加 1；列表和写入响应携带当前版本。只替换正文保留最新标题、后缀、图标和归属；未上传 HTML/icon 的编辑也不会写回旧正文。时间字段不承担并发校验。V208 仅新增 `hosted_page.revision BIGINT NOT NULL DEFAULT 0`，保留已有页面和正文。
 
 `GET /api/images/{id}/preview` 对 PNG/JPEG/BMP 按需生成最长边 768px 的派生图，保留透明和 EXIF 方向；原文件不改写。进程缓存最多 24MiB、256 项，单项不超过 1MiB；命中缓存前仍验证访问权限和记录存在。GIF/WebP/SVG 保持原格式；未知或损坏的历史图片沿用原始读取兜底。私有图片及预览响应保持 `private, no-store`，公开图片沿用一小时缓存。图片正文、公开小记图片别名和托管网页图标响应通过 CSP 沙箱禁止主动脚本和外部资源加载。
 
@@ -127,3 +127,10 @@ V200 为远端明细新增独立可空列。远端同步替换明细，包括清
 模板保留标题、描述和子任务层级，不携带原负责人、完成状态、日期、评论、标签或附件关联。`PUT /api/task-templates/creations/{taskId}` 接受 `{accountId,templateId,projectId}`，在同一事务中创建任务和内嵌子任务并保存操作回执。相同编号及参数的重试只读取当前任务，不覆盖之后的修改；任务已删除时不重新创建，参数或账号不匹配时拒绝。本机保存待确认的创建编号和参数。新增 V206，不向工作区 MCP 或 CLI 令牌增加能力。
 
 待办详情侧栏的评论随任务版本和写入回执一起保存，失败重试不会重复追加，侧栏不发送提及通知。既有评论接口仍供原任务抽屉使用：新增、修改和删除在事务内锁定任务并复核权限，只更新详情字段；旧新增接口没有请求级幂等编号，响应丢失时不能保证重复提交只创建一次。
+
+
+## 任务重复与站内提醒（2026-11-06）
+
+浏览器会话通过 `/api/task-time/{id}` GET/PUT 读取及 CAS 保存规则；`POST /skip` 使用 `{revision,editVersion}` 显式跳过；`POST /retry` 重试已保存规则；`POST /test/{uuid}` 由本人显式试发私人站内提醒。上述动作均重新检查任务可见性与当前负责人，非负责人 GET 不返回个人规则。响应含 `schedulerEnabled`，两项调度开关均关闭时明确拒绝启用自动提醒。
+
+独立 V207 存储避免旧客户端任务全文覆盖规则；下一次任务和回执同事务生成，提醒写入与按任务/成员/时间槽的去重回执同事务提交。MCP/CLI 不新增能力或扩大已有令牌授权。完整日期、重复、内嵌子项、取消与重试语义见 [任务时间规则](specs/task-time-rules-2026-11-06.md)。

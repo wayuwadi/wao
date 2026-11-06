@@ -44,7 +44,7 @@ class HostedPageRevisionTest {
         db.update("INSERT INTO hosted_page(id,slug,title,file_name,html_content,icon_content,icon_content_type,created_by,created_at,updated_at) "
                 + "VALUES ('page','stable','原始标题','old.html',?,?, 'image/png','member',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
                 "original".getBytes(StandardCharsets.UTF_8), new byte[]{1, 2});
-        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V207__hosted_page_revision.sql")).execute(source);
+        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V208__hosted_page_revision.sql")).execute(source);
         var configuration = new Configuration(new Environment("test", new JdbcTransactionFactory(), source));
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(HostedPageMapper.class);

@@ -11,12 +11,15 @@ import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 import { useSessionStore } from '@/stores/session'
+import { useDataStore } from '@/stores/data'
+import { useUiStore } from '@/stores/ui'
 import { publishNotificationSnapshot, notificationSnapshot } from '@/composables/notificationSnapshot'
 
 const props = defineProps<{ row?: boolean; returnFocus?: HTMLElement }>()
 const emit = defineEmits<{ 'unread-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
 const session = useSessionStore()
+const data = useDataStore(), ui = useUiStore()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
 const closeButton = ref<HTMLButtonElement>()
@@ -108,8 +111,15 @@ const notificationPolling = createVisibilityPoller(refresh, () => 60_000, docume
 
 async function navigate(path: string | null) {
   if (!path) return
+  const target = router.resolve(path)
+  const previousTask = route.query.task
+  const identity = `${session.account?.accountId}:${session.currentUser.id}`
   close(false)
   await router.push(path)
+  // A repeated task link does not change the query, so the layout's query watcher cannot reopen it.
+  const id = target.query.task
+  if (typeof id === 'string' && id === previousTask && route.fullPath === target.fullPath
+      && identity === `${session.account?.accountId}:${session.currentUser.id}` && data.taskById(id)) ui.openTask(id)
 }
 
 function timeText(value: string | null): string {

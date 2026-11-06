@@ -55,6 +55,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => stopDesktopToolbar?.())
 const route = useRoute()
+const compactTaskFooter = computed(() => ['todo', 'calendar', 'focus', 'projects'].includes(String(route.meta.module || '')))
 const mobileMenuOpen = ref(false)
 const mobileMenuButton = ref<HTMLButtonElement>()
 async function closeMobileMenu() {
@@ -365,7 +366,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <AiAssistantPanel v-model="ui.assistantOpen" />
           </div>
         </div>
-        <SiteFooter reserve-mobile-actions show-brand />
+        <SiteFooter reserve-mobile-actions show-brand :compact-mobile="compactTaskFooter" />
       </div>
     </main>
 

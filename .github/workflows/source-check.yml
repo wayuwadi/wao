@@ -30,6 +30,8 @@ jobs:
         working-directory: wao-web
       - run: npm run test:resources
         working-directory: wao-web
+      - run: npm run test:task-experience
+        working-directory: wao-web
   secrets:
     runs-on: ubuntu-latest
     steps:
