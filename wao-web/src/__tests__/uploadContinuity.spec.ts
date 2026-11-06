@@ -118,7 +118,7 @@ it('返回文件页保留图床页码，读取中不把已存页码错误压回�
   data.loadStates.images = 'loading'
   const second = mount(FilesView, options)
   await flushPromises()
-  expect(second.get('.seg-btn.on').text()).toBe('图床')
+  expect(second.get('.seg-btn.on').text()).toBe('图片')
   data.imgs = images
   data.loadStates.images = 'loaded'
   await flushPromises()

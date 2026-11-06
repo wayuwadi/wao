@@ -28,6 +28,8 @@ jobs:
         working-directory: wao-web
       - run: npm run test:stability
         working-directory: wao-web
+      - run: npm run test:resources
+        working-directory: wao-web
       - run: npm run test:task-experience
         working-directory: wao-web
   secrets:

@@ -40,6 +40,8 @@ public class NotePublicShareController {
     @GetMapping("/api/share/notes/{token}/images/{imageId}/raw")
     public ResponseEntity<byte[]> image(@PathVariable String token,@PathVariable String imageId) {
         var image=service.image(token,imageId);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.parseMediaType(image.getContentType())).body(image.getContent());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.parseMediaType(image.getContentType()))
+            .header("X-Content-Type-Options", "nosniff")
+            .header("Content-Security-Policy", ImageContentPolicy.SANDBOX).body(image.getContent());
     }
 }

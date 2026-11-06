@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useUploadStore } from '@/stores/uploads'
 import WaoButton from '@/components/ui/WaoButton.vue'
 const uploads = useUploadStore()
+const currentUpload = computed(() => uploads.uploadAttempts.find(item => item.state === 'uploading'))
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!uploads.uploading && !uploads.failedUploads.length) return
   event.preventDefault()
@@ -20,6 +21,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
         >，{{ uploads.failedUploads.length }} 项需重试或处理</span
       ></span
     >
+    <span v-if="currentUpload?.progress !== undefined" class="upload-transfer">
+      <progress :value="currentUpload.progress" max="100" :aria-label="`${currentUpload.file.name} 上传进度`"></progress>
+      {{ currentUpload.progress === 100 ? '正在保存…' : `${currentUpload.progress}%` }}
+    </span>
     <RouterLink :to="{ path: '/files', query: { uploads: '1' } }">查看上传</RouterLink>
     <WaoButton
       v-if="!uploads.uploading && !uploads.failedUploads.length"
@@ -48,4 +53,6 @@ a {
   display: inline-flex;
   align-items: center;
 }
+.upload-transfer { display: inline-flex; align-items: center; gap: var(--wao-space-1); }
+progress { width: 80px; accent-color: var(--wao-primary); }
 </style>

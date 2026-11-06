@@ -19,6 +19,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.HostedPageEntity;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.mapper.HostedPageMapper;
+import cn.wayuwa.wao.common.ConflictException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -43,19 +44,20 @@ public class HostedPageService {
 
     /** 按来源类型列出托管页元数据，避免读取 HTML 与图标正文。 */
     public List<HostedPageDto> list(String requestedSourceType) {
+        return mapper.listMeta(normalizeSourceType(requestedSourceType)).stream().map(this::dto).toList();
+    }
+
+    private static String normalizeSourceType(String requestedSourceType) {
         String sourceType = requestedSourceType == null
                 ? "ALL" : requestedSourceType.trim().toUpperCase(Locale.ROOT);
         if (!SOURCE_TYPES.contains(sourceType)) throw new BadRequestException("不支持的托管页来源类型");
-        return mapper.listMeta(sourceType).stream().map(this::dto).toList();
+        return sourceType;
     }
 
     /** 按来源与项目归属列出当前成员可见的托管页。 */
     public List<HostedPageDto> list(String requestedSourceType, Set<String> visibleProjectIds, String projectId) {
-        return list(requestedSourceType).stream()
-                .filter(page -> projectId != null
-                        ? projectId.equals(page.projectId())
-                        : page.projectId() == null || visibleProjectIds.contains(page.projectId()))
-                .toList();
+        return mapper.listVisibleMeta(normalizeSourceType(requestedSourceType), visibleProjectIds, projectId)
+                .stream().map(this::dto).toList();
     }
 
     /** 新建一个公开托管页。 */
@@ -91,7 +93,7 @@ public class HostedPageService {
     public HostedPageDto saveRunReport(String runId, MultipartFile html, String title, String memberId,
             String projectId) {
         String pageId = runReportPageId(runId);
-        HostedPageEntity entity = mapper.selectById(pageId);
+        HostedPageEntity entity = mapper.findMetaById(pageId);
         if (entity == null) {
             entity = new HostedPageEntity();
             entity.setId(pageId);
@@ -108,7 +110,8 @@ public class HostedPageService {
         } else {
             if (!StringUtils.hasText(entity.getProjectId())) entity.setProjectId(projectId);
             fill(entity, html, entity.getSlug(), entity.getTitle(), null, true);
-            mapper.updateById(entity);
+            requireWrite(mapper.replaceReportContent(entity), pageId);
+            entity = requiredMeta(pageId);
         }
         return dto(entity);
     }
@@ -125,7 +128,7 @@ public class HostedPageService {
         if (html.length > MAX_HTML_BYTES) throw new BadRequestException("HTML 文件超过 10MB");
         decode(html);
         String pageId = runReportPageId(runId);
-        HostedPageEntity entity = mapper.selectById(pageId);
+        HostedPageEntity entity = mapper.findMetaById(pageId);
         if (entity == null) {
             entity = new HostedPageEntity();
             entity.setId(pageId);
@@ -148,7 +151,8 @@ public class HostedPageService {
             entity.setHtmlContent(html);
             entity.setFileName("report.html");
             entity.setUpdatedAt(LocalDateTime.now());
-            mapper.updateById(entity);
+            requireWrite(mapper.replaceReportContent(entity), pageId);
+            entity = requiredMeta(pageId);
         }
         return dto(entity);
     }
@@ -165,22 +169,37 @@ public class HostedPageService {
 
     /** 更新标题、后缀、HTML 正文和可选图标；没有上传图标时保留原图标。 */
     public HostedPageDto update(String id, MultipartFile html, String slug, String title, MultipartFile icon) {
-        HostedPageEntity entity = required(id);
+        return update(id, html, slug, title, icon, null);
+    }
+
+    /** An omitted revision preserves legacy clients; supplied revisions are compared in the SQL write. */
+    public HostedPageDto update(String id, MultipartFile html, String slug, String title, MultipartFile icon,
+            Long expectedRevision) {
+        validateRevision(expectedRevision);
+        HostedPageEntity entity = requiredMeta(id);
         fill(entity, html, slug, title, icon, false);
-        try { mapper.updateById(entity); } catch (DuplicateKeyException ex) { throw new BadRequestException("链接后缀已被使用，请换一个"); }
-        return dto(entity);
+        try {
+            requireWrite(mapper.updateDetails(entity, html != null && !html.isEmpty(),
+                    icon != null && !icon.isEmpty(), expectedRevision), id);
+        } catch (DuplicateKeyException ex) { throw new BadRequestException("链接后缀已被使用，请换一个"); }
+        return dto(requiredMeta(id));
     }
 
     /** 只替换 HTML 文件，保留最新标题、分享后缀、图标和归属，避免旧表单覆盖元数据。 */
     public HostedPageDto replace(String id, MultipartFile html) {
-        HostedPageEntity entity = required(id);
+        return replace(id, html, null);
+    }
+
+    public HostedPageDto replace(String id, MultipartFile html, Long expectedRevision) {
+        validateRevision(expectedRevision);
+        HostedPageEntity entity = requiredMeta(id);
         fill(entity, html, entity.getSlug(), entity.getTitle(), null, true);
-        if (mapper.replaceContent(entity) == 0) throw new NotFoundException("托管页面不存在");
-        return dto(required(id));
+        requireWrite(mapper.replaceContent(entity, expectedRevision), id);
+        return dto(requiredMeta(id));
     }
 
     /** 返回管理操作所需的项目归属；不存在时与其它管理接口一致返回 404。 */
-    public String projectId(String id) { return required(id).getProjectId(); }
+    public String projectId(String id) { return requiredMeta(id).getProjectId(); }
 
     /** 按公开后缀读取页面。 */
     public HostedPageEntity publicPage(String slug) {
@@ -234,14 +253,25 @@ public class HostedPageService {
         entity.setUpdatedAt(LocalDateTime.now());
     }
 
-    private HostedPageEntity required(String id) {
-        HostedPageEntity entity = mapper.selectById(id);
+    private HostedPageEntity requiredMeta(String id) {
+        HostedPageEntity entity = mapper.findMetaById(id);
         if (entity == null) throw new NotFoundException("托管页面不存在");
         return entity;
     }
+
+    private void requireWrite(int changed, String id) {
+        if (changed != 0) return;
+        requiredMeta(id); // Distinguish deletion from a stale editor without exposing another project.
+        throw new ConflictException("托管页面已被修改，请读取最新版本后重试");
+    }
+
+    private static void validateRevision(Long expectedRevision) {
+        if (expectedRevision != null && expectedRevision < 0) throw new BadRequestException("页面版本不能为负数");
+    }
     private HostedPageDto dto(HostedPageEntity e) { return new HostedPageDto(e.getId(), e.getSlug(), e.getTitle(), e.getFileName(),
             sourceType(e), e.getIconContentType() != null,
-            e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug(), e.getProjectId()); }
+            e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug(), e.getProjectId(),
+            e.getUpdatedAt() == null ? null : e.getUpdatedAt().toString(), e.getRevision()); }
     private static String sourceType(HostedPageEntity entity) {
         if (StringUtils.hasText(entity.getSourceType())) return entity.getSourceType();
         return entity.getId() != null && entity.getId().startsWith(RUN_REPORT_ID_PREFIX)
