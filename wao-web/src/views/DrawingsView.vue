@@ -1014,6 +1014,7 @@ defineExpose({ flush: flushEmbedded })
             :disabled="transitioning || !!deletingId || restoringVersion !== null"
             @click="openFile(file.id)"
           >
+            <i class="ri-artboard-line file-icon" aria-hidden="true"></i>
             <span class="file-main"><strong>{{ file.title }}</strong></span>
           </button>
           <button type="button" class="file-menu" :aria-label="`${file.title}的操作`" @click="menuFromButton($event, file)"><i class="ri-more-line"></i></button>
@@ -1347,7 +1348,8 @@ defineExpose({ flush: flushEmbedded })
 }
 .file-row {
   box-sizing: border-box;
-  width: 100%;
+  width: calc(100% - 18px);
+  margin-left: 18px;
   display: flex;
   align-items: center;
   border: 1px solid transparent;
@@ -1378,6 +1380,7 @@ defineExpose({ flush: flushEmbedded })
   text-align: left;
   cursor: pointer;
 }
+.file-icon { flex: none; color: var(--wao-text-3); }
 .file-main {
   min-width: 0;
   flex: 1;
