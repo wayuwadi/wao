@@ -725,16 +725,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .page-stage:has(.home) { align-items: stretch; }
 @media (min-width: 821px) {
-  .content:has(.notes-page), .content.focus-content {
+  .content.focus-content {
     overflow: hidden;
   }
-  .page-stage:has(.notes-page), .focus-content .page-stage {
+  .focus-content .page-stage {
     flex: 1 1 0;
     min-height: 0;
     align-items: stretch;
     overflow: hidden;
   }
-  .page-body:has(.notes-page), .focus-content .page-body {
+  .focus-content .page-body {
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+@container app-main (min-width: 1101px) {
+  .content:has(.notes-page) {
+    overflow: hidden;
+  }
+  .page-stage:has(.notes-page) {
+    flex: 1 1 0;
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .page-body:has(.notes-page) {
     min-height: 0;
     overflow: hidden;
   }

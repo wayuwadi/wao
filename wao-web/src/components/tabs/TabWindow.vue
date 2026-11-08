@@ -100,9 +100,13 @@ function startDrag(event: PointerEvent) {
   box-shadow: var(--wao-shadow-modal);
 }
 .floating .window-content {
+  container: app-main / inline-size;
   flex: 1;
   overflow: auto;
   padding: 14px;
+}
+.floating .window-content:has(> .wao-page-frame, > .bounded-workspace) {
+  padding: 0;
 }
 .window-title {
   flex: 0 0 42px;

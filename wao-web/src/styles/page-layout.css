@@ -1,7 +1,7 @@
 /* One member-controlled outer frame. Inner workspaces retain their own height and scrolling. */
 :is(.shell, .tab-page-window.floating, .notes-reader)[data-page-layout] {
   --wao-page-frame-max: none;
-  --wao-page-gutter: clamp(16px, 3vw, 44px);
+  --wao-page-gutter: clamp(12px, calc(3.5cqi - 10px), 44px);
   --wao-reading-max: 840px;
   --wao-form-max: 760px;
   --wao-complex-form-max: 1000px;
@@ -29,7 +29,7 @@
 /* Keep page introductions aligned while inner reading areas retain their own width. */
 .shell[data-page-layout] .page-body .wao-page-frame:not(.todo-quadrant),
 .tab-page-window.floating[data-page-layout] .window-content .wao-page-frame:not(.todo-quadrant) {
-  padding-block-start: clamp(22px, 2vw, 30px);
+  padding-block-start: clamp(22px, 2.5cqi, 30px);
 }
 
 .shell[data-page-layout] .content,
@@ -51,21 +51,9 @@
 :is(.shell, .tab-page-window.floating)[data-page-layout] .scontent.content-wide,
 :is(.shell, .tab-page-window.floating)[data-page-layout] .scontent:has(.note-ai-settings-form) { max-width: var(--wao-complex-form-max); }
 
-/* Mobile layout is determined by available workspace width, including a narrowed or floating tab. */
-@container app-main (max-width: 760px) {
-  .shell[data-page-layout] .wao-page-frame { --wao-page-gutter: 16px; }
-}
-@container app-main (max-width: 360px) {
-  .shell[data-page-layout] .wao-page-frame { --wao-page-gutter: 12px; }
-}
-.tab-page-window.floating[data-page-layout] { --wao-page-gutter: 12px; }
 .tab-page-window.floating[data-page-layout] .window-content { scrollbar-gutter: stable; }
-@media (max-width: 760px) {
-  :is(.shell, .tab-page-window.floating)[data-page-layout] { --wao-page-gutter: 16px; }
+@container app-main (max-width: 760px) {
   :is(.shell, .tab-page-window.floating)[data-page-layout] .scontent { padding-inline: 12px; }
-}
-@media (max-width: 360px) {
-  :is(.shell, .tab-page-window.floating)[data-page-layout] { --wao-page-gutter: 12px; }
 }
 
 /* Split workspaces define their own directory and toolbar frame. */

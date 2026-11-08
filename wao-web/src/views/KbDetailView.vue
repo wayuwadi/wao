@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
-import { useIsMobile } from '@/composables/viewport'
+import { useNarrowWorkspace } from '@/composables/viewport'
 import { useInputComposition } from '@/composables/inputComposition'
 import { usePageVisibility } from '@/composables/pageVisibility'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
@@ -69,7 +69,8 @@ const currentIdentity = () => JSON.stringify([session.account?.accountId, sessio
 const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
-const isMobile = useIsMobile()
+const workspace = ref<HTMLElement | null>(null)
+const isMobile = useNarrowWorkspace(workspace)
 const pageVisible = usePageVisibility()
 const desktopTocOpen = ref(true)
 const mobileTocOpen = ref(false)
@@ -1482,7 +1483,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 <template>
   <ContextActionMenu ref="directoryContext" />
   <div v-if="!kb" class="missing">知识库不存在。</div>
-  <div v-else class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
+  <div v-else ref="workspace" class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
     <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryVisible ? '收起知识库目录' : '展开知识库目录'" :aria-label="directoryVisible ? '收起知识库目录' : '展开知识库目录'" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
     <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
     <!-- 左栏 -->
@@ -2815,11 +2816,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 }
 .spin { display: inline-block; animation: waoSpin .9s linear infinite; }
 
-@media (max-width: 760px) {
-  .kb-detail {
-    height: calc(100dvh - 48px - 64px - env(safe-area-inset-bottom));
-    flex-direction: column;
-  }
+@container kb-workspace (max-width: 760px) {
   .side {
     position:absolute;
     inset:0 auto 0 0;
@@ -2998,8 +2995,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 .knowledge-dialog-actions > span { flex: 1; }
 .dialog-error { margin: 0; color: var(--wao-danger-strong); overflow-wrap: anywhere; }
 .template-modal.template-shell-body { width: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: var(--wao-space-3); }
-@media (max-width: 760px) {
-  .kb-detail { flex-direction: row; }
+@container kb-workspace (max-width: 760px) {
   .side { position: absolute; z-index: 41; inset: 0 auto 0 0; width: min(320px, calc(100% - 32px)); max-height: none; border-right: 1px solid var(--wao-line); border-bottom: 0; box-shadow: var(--wao-shadow-pop); }
   .directory-toggle { z-index: 42; }
 }

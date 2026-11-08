@@ -8,11 +8,11 @@ withDefaults(defineProps<{ time: string; progress?: number; label?: string }>(),
   </div>
 </template>
 <style scoped>
-.focus-dial { width: min(100%, 340px); aspect-ratio: 1; position: relative; margin: var(--wao-space-3) auto; }
+.focus-dial { container-type: inline-size; width: min(100%, 340px); aspect-ratio: 1; position: relative; margin: var(--wao-space-3) auto; }
 svg { width: 100%; height: 100%; transform: rotate(-90deg); fill: none; stroke-width: 3; }
 .dial-track { stroke: var(--wao-line); }
 .dial-progress { stroke: var(--wao-primary); stroke-linecap: round; }
-.focus-dial>div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--wao-space-2); }
-small { color: var(--wao-text-3); font-size: var(--wao-font-body); }
-strong { color: var(--wao-text); font-size: clamp(36px, 7vw, 56px); font-weight: 500; font-variant-numeric: tabular-nums; }
+.focus-dial>div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: min(5cqi, var(--wao-space-2)); text-align: center; }
+small { color: var(--wao-text-3); font-size: var(--wao-font-body); line-height: 1.3; }
+strong { color: var(--wao-text); font-size: min(22cqi, calc(4 * var(--wao-font-body))); line-height: 1.1; font-weight: 500; font-variant-numeric: tabular-nums; }
 </style>

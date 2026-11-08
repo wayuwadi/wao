@@ -19,6 +19,7 @@ import KnowledgeDirectoryTree from '@/components/knowledge/KnowledgeDirectoryTre
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { usePageVisibility } from '@/composables/pageVisibility'
+import { useNarrowWorkspace } from '@/composables/viewport'
 
 const data = useDataStore(), route = useRoute(), router = useRouter(), session = useSessionStore()
 const now = useNow(60_000)
@@ -86,7 +87,9 @@ function toggleAll() {
 function visibleRows(kbId: string, rows: DirectoryNode[]) { return rows.slice(0, rowLimit.value[kbId] ?? 80) }
 function showMore(kbId: string) { rowLimit.value[kbId] = (rowLimit.value[kbId] ?? 80) + 100 }
 
-const narrow = ref(false), mobileLibrary = ref(false), mobileDirectory = ref(false)
+const workspace = ref<HTMLElement | null>(null)
+const narrow = useNarrowWorkspace(workspace, 900)
+const mobileLibrary = ref(false), mobileDirectory = ref(false)
 const pageVisible = usePageVisibility()
 const paneId = useId()
 let navigationTrigger: HTMLElement | null = null
@@ -145,18 +148,12 @@ function onShortcut(event: KeyboardEvent) {
     void nextTick(() => { searchInput.value?.focus(); searchInput.value?.select() })
   }
 }
-let viewport: MediaQueryList | undefined
-function updateViewport(event?: MediaQueryListEvent) { narrow.value = event?.matches ?? viewport?.matches ?? false; closeMobile() }
-if (typeof window.matchMedia === 'function') {
-  viewport = window.matchMedia('(max-width: 900px)')
-  updateViewport(); viewport.addEventListener('change', updateViewport)
-}
 onMounted(() => window.addEventListener('keydown', onShortcut))
 onBeforeUnmount(() => {
   createGeneration++
-  viewport?.removeEventListener('change', updateViewport)
   window.removeEventListener('keydown', onShortcut)
 })
+watch(narrow, () => closeMobile())
 watch(query, () => { rowLimit.value = {}; recentLimit.value = 30 })
 watch(pageVisible, () => closeMobile())
 watch(() => route.fullPath, () => closeMobile(true))
@@ -191,7 +188,7 @@ async function create() {
 </script>
 
 <template>
-  <div class="knowledge-workspace bounded-workspace" :class="{ 'document-focused': documentFocus }">
+  <div ref="workspace" class="knowledge-workspace bounded-workspace" :class="{ 'document-focused': documentFocus }">
     <div v-if="narrow && !documentFocus" class="mobile-workspace-bar mobile-toolbar" role="navigation" aria-label="知识库浏览">
       <button ref="mobileLibraryButton" type="button" aria-label="选择知识库" :aria-controls="`${paneId}-libraries`" :aria-expanded="mobileLibrary" @click="toggleLibraries"><i class="ri-book-2-line" aria-hidden="true" /><span>{{ selectedName }}</span><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
       <button v-if="!selected" ref="mobileDirectoryButton" type="button" aria-label="查看全部目录" :aria-controls="`${paneId}-directory`" :aria-expanded="mobileDirectory" @click="toggleDirectory"><i class="ri-list-check" aria-hidden="true" />目录</button>
@@ -295,7 +292,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .tree-library-title { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; min-height: 36px; padding: 6px var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; text-align: left; font-weight: var(--wao-weight-heading); }
 .tree-library-title:hover { background: var(--wao-bg-hover); }
 .tree-library-title span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-content { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.workspace-content { flex: 1; min-width: 0; min-height: 0; overflow: hidden; container: kb-workspace / inline-size; }
 .workspace-content :deep(.kb-detail) { height: 100%; }
 .knowledge-home { height: 100%; overflow: auto; padding: var(--wao-space-4) clamp(20px, 5vw, 72px) var(--wao-space-4); }
 .home-inner { max-width: 1080px; margin-inline: auto; }
@@ -344,8 +341,8 @@ time { color: var(--wao-text-3); font-size: var(--wao-font-caption); flex-shrink
 .create-form > [role='alert'] { color: var(--wao-danger-strong); margin: 0; font-size: var(--wao-font-help); }
 .mobile-workspace-bar { display: none; }
 .mobile-backdrop { position: absolute; inset: 44px 0 0; z-index: 5; padding: 0; border: 0; background: var(--wao-mask-bg); }
-@media (max-width: 1200px) { .knowledge-home { padding-inline: var(--wao-space-3); } .home-search kbd { display: none; } }
-@media (max-width: 900px) {
+@container app-main (max-width: 1200px) { .knowledge-home { padding-inline: var(--wao-space-3); } .home-search kbd { display: none; } }
+@container app-main (max-width: 900px) {
   .knowledge-workspace { flex-direction: column; }
   .mobile-workspace-bar { display: flex; justify-content: space-between; gap: var(--wao-space-1); flex: 0 0 44px; min-width: 0; border-bottom: 1px solid var(--wao-line); padding-inline: var(--wao-space-1); }
   .mobile-workspace-bar button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 0 var(--wao-space-1); border: 0; background: transparent; }
@@ -367,6 +364,6 @@ time { color: var(--wao-text-3); font-size: var(--wao-font-caption); flex-shrink
   .index-row time { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
   .library-count { font-size: var(--wao-font-caption); }
 }
-@media (max-width: 390px) { .recent-row button { flex-wrap: wrap; gap: var(--wao-space-1); } .recent-row time { margin-left: 24px; } }
+@container app-main (max-width: 390px) { .recent-row button { flex-wrap: wrap; gap: var(--wao-space-1); } .recent-row time { margin-left: 24px; } }
 @media (pointer: coarse) { .icon-button, .pane-toggle, .library-list > button, .home-views button, .tree-library-title, .library-title, .index-row button { min-height: 44px; } }
 </style>

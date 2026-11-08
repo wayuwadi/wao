@@ -289,9 +289,9 @@ button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary);
 .bounded-workspace :deep(.checklist-layout.is-compact) { display:flex; flex-direction:column; overflow:auto; }
 .bounded-workspace :deep(.is-compact .checklist-list-pane) { flex:0 0 auto; min-height:320px; height:50dvh; }
 .bounded-workspace :deep(.is-compact .checklist-detail) { flex:1 0 320px; }
-@media(max-width:760px) { .bounded-workspace :deep(.checklist-layout) {display:flex;flex-direction:column;overflow:auto;} .bounded-workspace :deep(.checklist-list-pane) {flex:0 0 auto;min-height:320px;height:50dvh;} .bounded-workspace :deep(.checklist-detail) {flex:1 0 320px;} }
-@media(max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
-@media(max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .bounded-workspace {display:flex;flex-direction:column;} .bounded-workspace .task-navigation {max-height:120px;flex-shrink:0;} .bounded-workspace .workspace-main {flex:1;}button {min-height:44px;} }
+@container app-main (max-width:760px) { .bounded-workspace :deep(.checklist-layout) {display:flex;flex-direction:column;overflow:auto;} .bounded-workspace :deep(.checklist-list-pane) {flex:0 0 auto;min-height:320px;height:50dvh;} .bounded-workspace :deep(.checklist-detail) {flex:1 0 320px;} }
+@container app-main (max-width:1000px) { .task-workspace { grid-template-columns:160px minmax(0,1fr); }.workspace-main {padding:var(--wao-space-2);} }
+@container app-main (max-width:600px) { .task-workspace {display:block;} .task-navigation {max-height:200px; border-right:0;border-bottom:1px solid var(--wao-line);} header {flex-wrap:wrap;} .workspace-tools {margin-left:0;flex:1;} .workspace-tools input {width:140px;} .workspace-tools button {display:none;} .layout-switch {margin-left:auto;} .bounded-workspace {display:flex;flex-direction:column;} .bounded-workspace .task-navigation {max-height:120px;flex-shrink:0;} .bounded-workspace .workspace-main {flex:1;}button {min-height:44px;} }
 .bounded-workspace :deep(.checklist-layout.popup-detail) { display:grid; overflow:hidden; }
 .bounded-workspace :deep(.popup-detail .checklist-list-pane) { height:auto; min-height:0; }
 </style>

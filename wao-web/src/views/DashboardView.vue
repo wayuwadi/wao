@@ -42,6 +42,7 @@ echarts.use([
 ])
 
 const router = useRouter()
+const dashboard = ref<HTMLElement | null>(null)
 const summary = ref<DashboardSummary | null>(null)
 const aiTrend = ref<AiRunTrendItem[]>([])
 const taskTrend = ref<TaskTrendItem[]>([])
@@ -530,10 +531,14 @@ async function load() {
 
 /** 主题切换时重绘图表（颜色跟随 CSS 变量）。 */
 const observer = new MutationObserver(() => renderAll())
+const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+  if (pageVisible.value) onResize()
+})
 
 onMounted(() => {
   if (pageVisible.value) poller.start()
-  window.addEventListener('resize', onResize)
+  if (sizeObserver && dashboard.value) sizeObserver.observe(dashboard.value)
+  else window.addEventListener('resize', onResize)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 })
 onBeforeUnmount(() => {
@@ -541,6 +546,7 @@ onBeforeUnmount(() => {
   disposed = true
   poller.stop()
   observer.disconnect()
+  sizeObserver?.disconnect()
   aiChart?.dispose()
   taskChart?.dispose()
   engineChart?.dispose()
@@ -554,7 +560,7 @@ function goHome() { router.push('/') }
 </script>
 
 <template>
-  <div class="dashboard wao-page-frame">
+  <div ref="dashboard" class="dashboard wao-page-frame">
     <header class="dash-head">
       <div>
         <div class="eyebrow">DATA INSIGHTS</div>
@@ -941,7 +947,7 @@ function goHome() { router.push('/') }
 
 .chart-row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 16px;
 }
@@ -955,6 +961,8 @@ function goHome() { router.push('/') }
 }
 .chart-head {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--wao-space-1);
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
@@ -988,7 +996,6 @@ function goHome() { router.push('/') }
   font-size: 11px;
   line-height: 1.6;
 }
-.quota-row .chart-card { min-width: 0; }
 .refresh-list {
   display: flex;
   flex-direction: column;
@@ -1146,13 +1153,13 @@ function goHome() { router.push('/') }
 .link-btn:hover { background: var(--wao-bg-hover-2); }
 .link-btn i { font-size: 15px; }
 
-@media (max-width: 900px) {
+@container app-main (max-width: 900px) {
   .kpi-grid { grid-template-columns: 1fr 1fr; }
-  .chart-row { grid-template-columns: 1fr; }
+  .chart-row { grid-template-columns: minmax(0, 1fr); }
   .outcome-metrics { grid-template-columns: 1fr 1fr; }
   .advice-grid { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 600px) {
+@container app-main (max-width: 600px) {
   .dashboard { padding: 16px; }
   .kpi-grid { grid-template-columns: 1fr; }
   .dash-head { flex-direction: column; }
