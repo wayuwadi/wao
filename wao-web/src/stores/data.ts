@@ -1164,7 +1164,7 @@ export const useDataStore = defineStore('data', () => {
    * @return 新建的文档 id；正文与标题都为空时返回 null
    */
   async function addNote(text: string, title = '', noteId?: string, rich?: RichDocContent, tags?: string[],
-    ai?: { autoTitle?: boolean; autoImage?: boolean; autoPolish?: boolean; sourceInputIds?: string[]; identitySelection?: IdentitySelection }): Promise<string | null> {
+    ai?: { autoTitle?: boolean; autoImage?: boolean; autoPolish?: boolean; autoPolishDisabled?: boolean; sourceInputIds?: string[]; identitySelection?: IdentitySelection }): Promise<string | null> {
     const content = rich ?? { version: 1 as const, document: null, markdown: text }
     const blocks = legacyProjection(content)
     if (!blocks.length && !content.document?.content?.length && !title.trim()) return null

@@ -108,6 +108,7 @@ export const saveCompanionDraft = (input: {
   messageId: string
   docId: string
   existing: boolean
+  autoPolishDisabled?: boolean
   expectedRev: number
   title: string
   content: RichDocContent

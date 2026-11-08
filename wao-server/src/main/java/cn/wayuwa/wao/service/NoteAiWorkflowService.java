@@ -128,7 +128,7 @@ public class NoteAiWorkflowService {
     }
 
     /** 推进独立并行阶段；工作流行锁防止重复入队和条件写回冲突。 */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void advance(String docId) {
         if (managed != null) { managed.advance(docId); return; }
         Workflow workflow = workflows.lock(docId);

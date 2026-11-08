@@ -26,7 +26,15 @@ public record DocDto(
         boolean bodyLoaded,
         boolean systemGenerated,
         String pageType,
-        String drawingId) {
+        String drawingId,
+        boolean autoPolishDisabled) {
+    public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
+            List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev, List<String> tags,
+            boolean bodyLoaded, boolean systemGenerated, String pageType, String drawingId) {
+        this(id, title, author, created, updated, auto, links, blocks, content, backlinks, kbId, folderId,
+                rev, tags, bodyLoaded, systemGenerated, pageType, drawingId, false);
+    }
     public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
             List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
             List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev, List<String> tags, boolean bodyLoaded, boolean systemGenerated) {

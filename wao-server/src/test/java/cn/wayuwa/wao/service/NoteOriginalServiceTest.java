@@ -118,7 +118,7 @@ class NoteOriginalServiceTest extends NoteAiManagedServiceTest {
   tx.executeWithoutResult(t->originals.freeze("m",new NoteOriginalService.Input(request,stable,null,null,"polish",source,"完整用户记录",null)));
   var output=new NoteOriginalService.Content("标题","AI 正文",null,List.of(),List.of());
   tx.executeWithoutResult(t->originals.result("m",request,request,output,null,"DRAFT_RESULT"));
-  db.update("INSERT INTO doc VALUES(?,'m','kb-notes',NULL,NULL)",stable);
+  db.update("INSERT INTO doc(id,author_id,kb_id) VALUES(?,'m','kb-notes')",stable);
   var saved=new DocDto(stable,"标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,"AI 正文"),List.of(),"kb-notes",null,1);
   when(knowledge.getDoc(stable)).thenReturn(saved);
   tx.executeWithoutResult(t->{originals.saved(saved,"m",true,"标题");originals.appliedInputs("m",saved,List.of(request));});

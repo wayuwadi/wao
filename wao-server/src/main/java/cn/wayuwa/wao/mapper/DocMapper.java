@@ -19,6 +19,9 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     @Select("SELECT * FROM doc WHERE id=#{id} FOR UPDATE")
     DocEntity selectByIdForUpdate(@Param("id") String id);
 
+    @Update("UPDATE doc SET auto_polish_disabled=#{disabled} WHERE id=#{id}")
+    void updateNoteAutoPolish(@Param("id") String id, @Param("disabled") boolean disabled);
+
     /** 按主键只读有效文档的版本；不存在或已删除时返回 null，历史空版本视为 1。 */
     @Select("SELECT COALESCE(rev, 1) FROM doc WHERE id = #{id} AND deleted_at IS NULL")
     Integer selectAliveRevision(@Param("id") String id);

@@ -75,7 +75,16 @@ public class TodoOperationService {
     public record NoteRequest(String docId, Integer expectedDocRev, String expectedTaskEditVersion,
             LocalDate businessDate, String taskId, String title, List<DocBlockDto> blocks,
             RichDocContentDto content, List<String> tags, Boolean autoTitle, Boolean autoImage,
-            Boolean autoPolish, List<String> sourceInputIds, cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identitySelection) {
+            Boolean autoPolish, List<String> sourceInputIds, cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identitySelection,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            Boolean autoPolishDisabled) {
+        public NoteRequest(String docId, Integer expectedDocRev, String expectedTaskEditVersion, LocalDate businessDate,
+                String taskId, String title, List<DocBlockDto> blocks, RichDocContentDto content, List<String> tags,
+                Boolean autoTitle, Boolean autoImage, Boolean autoPolish, List<String> sourceInputIds,
+                cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identitySelection) {
+            this(docId, expectedDocRev, expectedTaskEditVersion, businessDate, taskId, title, blocks, content, tags,
+                    autoTitle, autoImage, autoPolish, sourceInputIds, identitySelection, null);
+        }
         public NoteRequest(String docId,Integer expectedDocRev,String expectedTaskEditVersion,LocalDate businessDate,String taskId,String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish,List<String> sourceInputIds){this(docId,expectedDocRev,expectedTaskEditVersion,businessDate,taskId,title,blocks,content,tags,autoTitle,autoImage,autoPolish,sourceInputIds,null);}
         public NoteRequest(String docId,Integer expectedDocRev,String expectedTaskEditVersion,LocalDate businessDate,String taskId,String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish){this(docId,expectedDocRev,expectedTaskEditVersion,businessDate,taskId,title,blocks,content,tags,autoTitle,autoImage,autoPolish,null);}
     }
@@ -176,10 +185,12 @@ public class TodoOperationService {
         if (!contexts.isEmpty() && !contexts.get(0).equals(request.businessDate()))
             throw new ConflictException("小记已归属另一日期，请刷新后重试");
         CreateNoteRequest noteRequest = new CreateNoteRequest(request.title(), request.blocks(), request.content(),
-                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish(), request.sourceInputIds(), null, null, request.identitySelection());
+                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish(), request.sourceInputIds(),
+                null, null, request.identitySelection(), request.autoPolishDisabled());
         DocDto doc = existing == null ? knowledge.createNote(request.docId(), noteRequest, memberId)
                 : knowledge.updateDoc(request.docId(), new PatchDocRequest(request.title(), request.blocks(),
-                        request.content(), null, null, request.expectedDocRev(), request.tags(), request.sourceInputIds()));
+                        request.content(), null, null, request.expectedDocRev(), request.tags(), request.sourceInputIds(),
+                        null, request.autoPolishDisabled()));
         TaskDto task = null;
         if (linkedTask != null) {
             ObjectNode detail = detail(linkedTask);

@@ -961,13 +961,15 @@ function hasPendingNoteDraft(note: Doc) {
   try {
     const raw = readNoteDraft(key)
     if (raw === null) return false
-    const draft = JSON.parse(raw) as { id?: string; text?: string; content?: Doc['content']; tags?: string[]; generatedTitle?: string }
+    const draft = JSON.parse(raw) as { id?: string; text?: string; content?: Doc['content']; tags?: string[]; generatedTitle?: string; autoPolishDisabled?: boolean; polishOnly?: boolean }
     const saved = resolvedRichContent(note)
     // 旧浏览器留下的草稿若与服务端完全一致，不应永久挡住失败任务重试。
-    if (draft.id === note.id && draft.text === saved.markdown
+    const sameBody = draft.text === saved.markdown
         && JSON.stringify(draft.content?.document ?? null) === JSON.stringify(saved.document ?? null)
         && JSON.stringify(draft.tags ?? []) === JSON.stringify(note.tags ?? [])
-        && (draft.generatedTitle || note.title) === note.title) {
+        && (draft.generatedTitle || note.title) === note.title
+    if (draft.id === note.id && (draft.polishOnly || sameBody)
+        && (draft.autoPolishDisabled === undefined || draft.autoPolishDisabled === !!note.autoPolishDisabled)) {
       removeNoteDraft(key, raw)
       return false
     }
@@ -1252,7 +1254,7 @@ watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
     if (editingIds.value.includes(note.id)) continue
     try {
       const draft = JSON.parse(readNoteDraft(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
-      if (draft?.id === note.id && typeof draft.text === 'string') {
+      if (draft?.id === note.id && typeof draft.text === 'string' && !draft.polishOnly) {
         noteDrafts.value[note.id] = {
           content: draft.content?.markdown === draft.text ? draft.content : { version: 1, document: null, markdown: draft.text },
           title: typeof draft.generatedTitle === 'string' && draft.generatedTitle !== draft.baseNote?.title ? draft.generatedTitle : undefined,

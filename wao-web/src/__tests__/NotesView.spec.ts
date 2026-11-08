@@ -217,8 +217,8 @@ describe('小记集中记录空间', () => {
     wrapper = await view(document.body); await flushPromises()
     expect(wrapper.find('[data-note-id="system"]').exists()).toBe(false)
     await openFilters(wrapper)
-    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
-    await wrapper.get('[role="switch"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="显示系统文章"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('[aria-label="显示系统文章"]').trigger('click'); await flushPromises()
     expect(wrapper.get('[data-note-id="system"] .author').text()).toBe('系统')
     await wrapper.get('[aria-label="按作者筛选"]').setValue('__system__')
     expect(wrapper.findAll('.note-card')).toHaveLength(1)
@@ -936,7 +936,7 @@ describe('小记集中记录空间', () => {
     expect(copyText).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('新建页面不显示逐篇 AI 选项，保存后按成员默认能力自动整理', async () => {
+  it('新建默认开启正文润色，保存后按成员默认能力自动整理', async () => {
     const data = useDataStore()
     const preferences = usePreferenceStore()
     const add = vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => {
@@ -944,7 +944,7 @@ describe('小记集中记录空间', () => {
       return id!
     })
     const first = composer()
-    expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
+    expect(first.get<HTMLInputElement>('[role="switch"][aria-label="自动润色正文"]').element.checked).toBe(true)
     expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 0 })
     await first.find('textarea').setValue('按默认 AI 能力整理')
     await first.get('.save-note').trigger('click')
@@ -959,6 +959,47 @@ describe('小记集中记录空间', () => {
     expect(savedDraft).not.toHaveProperty('autoPolish')
     expect(savedDraft).not.toHaveProperty('autoImage')
     first.unmount()
+  })
+  it('关闭新小记的润色随失败草稿恢复，成功后下一篇默认开启', async () => {
+    const data = useDataStore()
+    const add = vi.spyOn(data, 'addNote').mockRejectedValueOnce(new Error('网络失败')).mockResolvedValueOnce('original')
+    const first = composer()
+    await first.get('textarea').setValue('留住当时写的这句话。')
+    await first.get('[role="switch"][aria-label="自动润色正文"]').setValue(false)
+    await first.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(first.text()).toContain('保存时保留原文')
+    expect(first.text()).toContain('网络失败')
+    first.unmount()
+
+    const restored = composer()
+    expect(restored.get<HTMLInputElement>('[role="switch"][aria-label="自动润色正文"]').element.checked).toBe(false)
+    expect(restored.get<HTMLTextAreaElement>('textarea').element.value).toBe('留住当时写的这句话。')
+    await restored.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(add.mock.calls[1]![5]).toEqual({ autoPolishDisabled: true })
+    expect(add.mock.calls[1]![2]).toBe(add.mock.calls[0]![2])
+    expect(restored.get<HTMLInputElement>('[role="switch"][aria-label="自动润色正文"]').element.checked).toBe(true)
+  })
+  it('只关闭单篇开关时提交设置和版本，恢复草稿不会带回旧正文', async () => {
+    const note = doc('original', '原始正文')
+    const latest = { ...note, blocks: [{ p: '另一设备保存的新正文' }], rev: 4 }
+    const saved = { ...latest, rev: 5, autoPolishDisabled: true }
+    vi.mocked(fetchDoc).mockResolvedValue(latest)
+    vi.mocked(apiPatchDoc).mockResolvedValue(saved)
+    const first = composer(note)
+    await first.get('[role="switch"][aria-label="自动润色正文"]').setValue(false)
+    first.unmount()
+
+    const restored = composer(latest)
+    expect(restored.get<HTMLInputElement>('[role="switch"][aria-label="自动润色正文"]').element.checked).toBe(false)
+    expect(restored.get<HTMLTextAreaElement>('textarea').element.value).toBe('另一设备保存的新正文')
+    await restored.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledExactlyOnceWith('original', { expectedRev: 4, autoPolishDisabled: true })
+    expect(restored.get<HTMLInputElement>('[role="switch"][aria-label="自动润色正文"]').element.checked).toBe(false)
+    expect(restored.get<HTMLTextAreaElement>('textarea').element.value).toBe('另一设备保存的新正文')
+    expect(readNoteDraft('wao-note-edit-v1:wg:original')).toBeNull()
   })
   it('复制图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
     const data = useDataStore()

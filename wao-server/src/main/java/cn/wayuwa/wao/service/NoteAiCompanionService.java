@@ -166,14 +166,29 @@ public class NoteAiCompanionService {
     public void cancel(String member,String doc,Integer rev){settings.lockMember(member);DocDto current=owned(member,doc);if(!Objects.equals(rev,current.rev()))throw new ConflictException("小记已更新，请重新读取");
         db.update("UPDATE note_ai_stage_attempt SET cancel_requested=1,message=CASE WHEN state='PENDING' THEN '已取消排队' ELSE '正在停止；迟到结果不会采用' END,state=CASE WHEN state='PENDING' THEN 'SKIPPED' ELSE state END,reason_code='CANCEL_REQUESTED' WHERE member_id=? AND doc_id=? AND state IN ('PENDING','RUNNING')",member,doc);}
     public record ChatInput(String message,Integer expectedRev,String requestId,List<String> selectedSourceIds){}
-    public record TransferInput(String messageId,String docId,boolean existing,Integer expectedRev,String title,RichDocContentDto content,List<DocBlockDto> blocks,List<String> tags){}
+    public record TransferInput(String messageId,String docId,boolean existing,Integer expectedRev,String title,
+            RichDocContentDto content,List<DocBlockDto> blocks,List<String> tags,Boolean autoPolishDisabled) {
+        public TransferInput(String messageId,String docId,boolean existing,Integer expectedRev,String title,
+                RichDocContentDto content,List<DocBlockDto> blocks,List<String> tags) {
+            this(messageId,docId,existing,expectedRev,title,content,blocks,tags,null);
+        }
+    }
     /** 用户确认的回答草稿以可信派生来源保存，不能借消息编号写入他人内容。 */
     @Transactional
     public DocDto transfer(String member,TransferInput input){settings.lockMember(member);if(input==null||input.messageId()==null||input.docId()==null||!input.docId().matches("[a-zA-Z0-9_-]{1,32}")||input.content()==null)throw new BadRequestException("回答草稿输入无效");
         var origin=one("SELECT b.doc_id FROM ai_assistant_message m JOIN ai_assistant_conversation c ON c.id=m.conversation_id JOIN note_ai_conversation b ON b.conversation_id=c.id AND b.member_id=c.member_id WHERE m.id=? AND m.role='assistant' AND c.member_id=?",input.messageId(),member);if(origin==null)throw new NotFoundException("回答不存在或不可访问");owned(member,str(origin,"doc_id"));
         for(var request:db.queryForList("SELECT sources_json FROM note_ai_chat_request WHERE member_id=? AND doc_id=? ORDER BY created_at DESC LIMIT 200",member,str(origin,"doc_id")))validateSources(member,str(request,"sources_json"));
-        var target=one("SELECT id FROM doc WHERE id=?",input.docId());if(input.existing()||target!=null){DocDto current=owned(member,input.docId());if(!Objects.equals(input.expectedRev(),current.rev()))throw new ConflictException("目标小记已更新，草稿仍保留；请重新读取后保存");return NoteAiManagedService.derivedWrite(()->NoteAiManagedService.withoutAuto(member,()->knowledge.getObject().updateDerivedNote(input.docId(),new PatchDocRequest(input.title(),input.blocks(),input.content(),null,null,current.rev(),input.tags()))));}
-        return NoteAiManagedService.derivedWrite(()->NoteAiManagedService.withoutAuto(member,()->knowledge.getObject().createNote(input.docId(),new CreateNoteRequest(input.title(),input.blocks(),input.content(),input.tags(),false,false,false),member)));
+        var target=one("SELECT id FROM doc WHERE id=?",input.docId());
+        if(input.existing()||target!=null){
+            DocDto current=owned(member,input.docId());
+            if(!Objects.equals(input.expectedRev(),current.rev()))throw new ConflictException("目标小记已更新，草稿仍保留；请重新读取后保存");
+            var patch = new PatchDocRequest(input.title(),input.blocks(),input.content(),null,null,current.rev(),
+                    input.tags(),null,null,input.autoPolishDisabled());
+            return NoteAiManagedService.withoutAuto(member,()->knowledge.getObject().updateDerivedNote(input.docId(),patch));
+        }
+        var create = new CreateNoteRequest(input.title(),input.blocks(),input.content(),input.tags(),
+                false,false,false,null,null,null,null,input.autoPolishDisabled());
+        return NoteAiManagedService.derivedWrite(()->NoteAiManagedService.withoutAuto(member,()->knowledge.getObject().createNote(input.docId(),create,member)));
     }
     /** 私人会话读取逐一重验来源，撤权时不能通过回答泄露历史正文。 */
     public Map<String,Object> conversation(String member,String doc){owned(member,doc);var bound=one("SELECT * FROM note_ai_conversation WHERE member_id=? AND doc_id=?",member,doc);if(bound==null)return Map.of("messages",List.of(),"runs",List.of(),"sources",List.of());
