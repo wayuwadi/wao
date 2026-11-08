@@ -8,6 +8,7 @@ import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
 import { emptyCapture, capturePayload, type CaptureFields } from '@/utils/taskCapture'
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import { useTodoTaskMove } from '@/composables/todoTaskMove'
+import { useTodoSidebarDrop } from '@/composables/todoSidebarDrop'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
 import { useTodoViewPreferences } from '@/composables/todoViewPreferences'
@@ -98,6 +99,8 @@ const projection = computed(() => {
  return { ...result, items: order.sort(orderScope.value, result.items, task => task.id) }
 })
 const moving = useTodoTaskMove(() => projection.value, () => orderScope.value)
+const { hovered: sidebarTarget, clear: clearSidebarDrag, start: startSidebarDrag, over: overSidebar, leave: leaveSidebar, drop: dropOnSidebar } = useTodoSidebarDrop(() => projection.value.refs)
+watch([selection, layout, navigationCollapsed, batchMode], clearSidebarDrag, { flush: 'sync' })
 async function move(source:string,target:string|null,side:'before'|'inside'|'after') {
  await moving.move(source,target,side)
  if (!moving.error.value && target) collapsed.value=collapsed.value.filter(id=>id!==target)
@@ -171,11 +174,11 @@ async function add() {
 function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collapsed.value.filter(x=>x!==id):[...collapsed.value,id] }
 </script>
 <template>
- <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'bounded-workspace':selection!=='review','matrix-workspace':layout==='quadrant' && selection!=='review'}">
-  <nav v-show="!navigationCollapsed" id="todo-navigation" class="task-navigation" aria-label="任务导航">
-   <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon" aria-hidden="true"></i>{{ item.name }}</button>
-   <TodoFolderNavigation :projects="data.projects" :selection="selection" @select="selection=$event" @menu="openListMenu" @create="editList()" />
-   <p>标签</p><button v-for="tag in visibleTags" :key="tag" :class="{active:selection==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line" aria-hidden="true"></i>{{ tag }}</button>
+ <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'bounded-workspace':selection!=='review','matrix-workspace':layout==='quadrant' && selection!=='review'}" @dragend="clearSidebarDrag">
+  <nav v-show="!navigationCollapsed" id="todo-navigation" class="task-navigation" aria-label="任务导航" @dragover="overSidebar" @dragleave="leaveSidebar" @drop="dropOnSidebar">
+   <button v-for="item in nav" :key="item.id" :data-todo-drop="item.id==='inbox' ? item.id : undefined" :class="{active:selection===item.id,'task-drop-target':item.id===sidebarTarget}" @click="selection=item.id"><i :class="item.icon" aria-hidden="true"></i>{{ item.name }}</button>
+   <TodoFolderNavigation :projects="data.projects" :selection="selection" :drop-target="sidebarTarget" @select="selection=$event" @menu="openListMenu" @create="editList()" />
+   <p>标签</p><button v-for="tag in visibleTags" :key="tag" :data-todo-drop="'tag:'+tag" :class="{active:selection==='tag:'+tag,'task-drop-target':sidebarTarget==='tag:'+tag}" @click="selection='tag:'+tag"><i class="ri-price-tag-3-line" aria-hidden="true"></i>{{ tag }}</button>
    <small v-if="labels.error" role="alert">{{ labels.error }}<button @click="labels.load()">重试</button></small>
    <div class="nav-footer"><button :class="{active:selection==='abandoned'}" @click="selection='abandoned'"><i class="ri-close-circle-line"></i>已放弃</button><button :class="{active:selection==='completed'}" @click="selection='completed'"><i class="ri-checkbox-circle-line"></i>已完成</button><button :class="{active:selection==='review'}" @click="selection='review'"><i class="ri-history-line"></i>每日回顾</button></div>
   </nav>
@@ -191,11 +194,11 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
     <p v-if="isSmartList && !listVisibility.ready" role="status">正在读取智能清单显示设置…</p>
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
-    <ProjectChecklistView :selection-mode="batchMode" :selected-ids="batchSelected" @select="toggleBatch" :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="contextItems" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
+    <ProjectChecklistView :allow-sidebar-drop="!navigationCollapsed" @sidebar-drag="startSidebarDrag" :selection-mode="batchMode" :selected-ids="batchSelected" @select="toggleBatch" :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="contextItems" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
      <template #list-header><TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:fields="quickFields" v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #filters><TodoOrganization compact v-model="taskFilter" :projects="data.projects" :tags="visibleTags" /></template></TodoListHeader></template>
      <template #section-action="{section}"><button v-if="selection==='today' && section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
-    <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="batchSelected" :selection-mode="batchMode" @select="toggleBatch" v-else-if="layout==='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="contextItems" :item-refs="projection.refs" :show-done="showDone" />
+    <TaskQuadrantView :allow-sidebar-drop="!navigationCollapsed" @sidebar-drag="startSidebarDrag" :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="batchSelected" :selection-mode="batchMode" @select="toggleBatch" v-else-if="layout==='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="contextItems" :item-refs="projection.refs" :show-done="showDone" />
    </template>
   </main>
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
@@ -225,6 +228,9 @@ button { font:inherit; color:inherit; border:0; border-radius:var(--wao-radius-c
 .task-navigation p { color:var(--wao-text-3); font-size:var(--wao-font-caption); margin:var(--wao-space-3) var(--wao-space-1) var(--wao-space-1); }
 button:hover { background:var(--wao-bg-hover); }
 .active,button[aria-pressed=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
+.task-navigation > .task-drop-target,.task-navigation :deep(.task-drop-target > button:first-child) {
+  outline:1px solid var(--wao-primary); outline-offset:-1px; background:var(--wao-primary-soft); color:var(--wao-primary-text);
+}
 .nav-footer { border-top:1px solid var(--wao-line); margin-top:var(--wao-space-2); padding-top:var(--wao-space-2); }
 .workspace-main { min-width:0; padding:var(--wao-space-3); }
 .batch-toolbar { display:flex; gap:var(--wao-space-1); align-items:center; flex-wrap:wrap; margin-bottom:var(--wao-space-1); flex-shrink:0; }

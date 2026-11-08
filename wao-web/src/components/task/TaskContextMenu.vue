@@ -53,7 +53,6 @@ const parents=computed(()=>{
  const task=data.taskById(source.value.taskId), excluded=descendants(source.value.taskId)
  return data.tasks.filter(t=>t.workItemType!=='note' && t.status!=='已放弃' && t.project===task?.project && (source.value.subId || !excluded.has(t.id)))
 })
-function movable(task:Task){return !actions.isSub(task.id)&&!task.parentTaskId&&!data.tasks.some(t=>t.parentTaskId===task.id)}
 function close(){menu.value?.close()}
 watch([()=>session.userId,()=>session.account?.accountId],()=>{identityEpoch++;date.value='';destination.value='';close();mode.value='';quick.value=undefined;templateTarget.value=null;target.value=undefined;source.value={taskId:''};saving.value=false;uploading.value=false;attachmentTarget.value=null;error.value=''},{flush:'sync'})
 function dialog(value:'date'|'move'|'parent'|'delete'|'abandon'|'note'|'activity') {
@@ -133,7 +132,7 @@ async function apply(){
  if(!task)return
  if(mode.value==='move')await run(()=>{
   const current=data.taskById(ref.taskId)
-  if(!current||!movable(current))throw new Error('请先解除父子任务关系；内嵌子项随主任务移动')
+  if(!current||!actions.canMoveToList(task.id))throw new Error('请先解除父子任务关系；内嵌子项随主任务移动')
   if(dest&&!data.projects.some(p=>p.id===dest))throw new Error('目标清单已不存在')
   if(!dest&&current.owner!==session.userId)throw new Error('只能将自己负责的任务移入收集箱')
   data.patchTask(ref.taskId,{project:dest,groupId:''})
@@ -191,7 +190,7 @@ function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[
   ...(pins.error?[{id:'retry-pin',label:'重试同步置顶',icon:'ri-refresh-line',run:async()=>{await run(async()=>{await pins.retry();if(pins.error)throw new Error(pins.error)})}}]:[]),
   {id:'abandon',label:abandoned?'重新开始':'放弃',icon:abandoned?'ri-restart-line':'ri-close-circle-line',disabled:disabled||note||task.status==='已完成',run:()=>abandoned?menuAction('restore'):dialog('abandon')},
   {id:'parent',label:task.parentTaskId?'调整主任务':'关联主任务',icon:'ri-links-line',disabled,run:()=>dialog('parent')},
-  {id:'move',label:'移动到',icon:'ri-folder-transfer-line',disabled:disabled||!movable(task),run:()=>dialog('move')},
+  {id:'move',label:'移动到',icon:'ri-folder-transfer-line',disabled:disabled||!actions.canMoveToList(task.id),run:()=>dialog('move')},
   {id:'tags',label:'标签',icon:'ri-price-tag-3-line',run:()=>{quick.value={...ref,mode:'tags'}}},
   ...(!ref.subId?[{id:'attachment',label:'上传附件',icon:'ri-attachment-line',disabled:disabled||uploading.value,run:chooseAttachment}]:[]),
   {id:'focus',label:'开始专注',icon:'ri-timer-line',separatorBefore:true,run:async()=>{await router.push({path:'/focus',query:{focusTask:ref.taskId,focusSub:ref.subId}})}},

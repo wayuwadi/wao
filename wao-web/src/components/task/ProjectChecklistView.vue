@@ -64,8 +64,8 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; keepScopeOnChildAdd?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
-const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after'] }>()
+const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; keepScopeOnChildAdd?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; allowSidebarDrop?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after']; 'sidebar-drag': [id: string, event: DragEvent] }>()
 const data = useDataStore()
 const pins=useTaskPinsStore()
 const deadlineDefaults = useTaskDeadlineDefaults()
@@ -322,14 +322,20 @@ function toggleSection(id:string) {
 const displayDate = (task:Task) => props.todoView ? todoTaskDate(task) : task.due
 const relativeDate = (task:Task) => todoDateLabel(displayDate(task), today.value, props.todoDisplay?.date ?? 'time')
 const canDragStatus = (task: Task) => boardStatusDrag.value && task.workItemType !== 'note' && !actions.busy(task.id) && !pendingCompletion.value.has(task.id)
+const matchedIds = computed(() => new Set(matches.value.map(task => task.id)))
+const canDragSidebar = (id: string) => props.allowSidebarDrop && !props.selectionMode
+  && matchedIds.value.has(id) && !actions.busy(id) && !pendingCompletion.value.has(id)
 
 const dragging = ref<string | null>(null)
 const over = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
-function startDrag(id: string, event: DragEvent) {
-  if (props.busy || !hierarchyDrag.value && !boardStatusDrag.value) { event.preventDefault(); return }
-  dragging.value = id
-  event.dataTransfer?.setData('text/plain', id)
+function startDrag(task: Task, event: DragEvent) {
+  const local = hierarchyDrag.value || canDragStatus(task)
+  const sidebar = canDragSidebar(task.id)
+  if (props.busy || (!local && !sidebar)) { event.preventDefault(); return }
+  dragging.value = local ? task.id : null
+  event.dataTransfer?.setData('text/plain', task.id)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  if (sidebar) emit('sidebar-drag', task.id, event)
 }
 function drop(target: string | null, event: DragEvent) {
   if (dragging.value && !props.busy && hierarchyDrag.value) emit('move', dragging.value, target, target ? taskHierarchyDrop(event) : 'inside')
@@ -660,7 +666,7 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <div v-show="!section.collapsed">
       <slot name="group-add" :section="section" />
       <div v-for="{ task, depth } in section.rows" :key="task.id" :class="{ 'timeline-line':timeline }">
-      <div class="checklist-row" :tabindex="selectedId===task.id?0:-1" :aria-label="task.title" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="rowKey($event, task.id)" :draggable="!busy && (hierarchyDrag || canDragStatus(task))" @dragstart="startDrag(task.id, $event)" @dragend="dragging = null; over = null; boardDrop = undefined" @dragover="hierarchyDrag && dragging && ($event.preventDefault(), over = { id: task.id, side: taskHierarchyDrop($event) })" @drop="hierarchyDrag && ($event.preventDefault(), $event.stopPropagation(), drop(task.id, $event))" :class="{ selected: selectedId === task.id && !popupDetail, 'timeline-task-cell':timeline, 'row-detailed':todoView?.showDetails || board, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
+      <div class="checklist-row" :tabindex="selectedId===task.id?0:-1" :aria-label="task.title" :data-task-id="task.id" @contextmenu.capture="openChecklistMenu($event, task.id)" @keydown="rowKey($event, task.id)" :draggable="!busy && (hierarchyDrag || canDragStatus(task) || canDragSidebar(task.id))" @dragstart="startDrag(task, $event)" @dragend="dragging = null; over = null; boardDrop = undefined" @dragover="hierarchyDrag && dragging && ($event.preventDefault(), over = { id: task.id, side: taskHierarchyDrop($event) })" @drop="hierarchyDrag && ($event.preventDefault(), $event.stopPropagation(), drop(task.id, $event))" :class="{ selected: selectedId === task.id && !popupDetail, 'timeline-task-cell':timeline, 'row-detailed':todoView?.showDetails || board, 'drop-inside': dragging && over?.id === task.id && over.side === 'inside', 'drop-before': dragging && over?.id === task.id && over.side === 'before', 'drop-after': dragging && over?.id === task.id && over.side === 'after' }" :style="{ paddingInlineStart: `${Math.min(depth, 6) * 16 + 8}px` }">
         <button v-if="section.expandable.has(task.id)" class="tree-toggle" :aria-label="`${collapsed.includes(task.id) ? '展开' : '收起'} ${task.title}`" :aria-expanded="!collapsed.includes(task.id)" @click="$emit('toggle', task.id)"><i :class="collapsed.includes(task.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
         <span v-else-if="!board && !timeline" class="tree-spacer"></span>
         <input v-if="selectionMode" type="checkbox" :checked="selectedIds?.includes(task.id)" :disabled="!matches.some(item=>item.id===task.id)" :aria-label="`选择任务 ${task.title}`" @change="emit('select', task.id)" />

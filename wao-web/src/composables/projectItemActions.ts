@@ -11,6 +11,10 @@ export function useProjectItemActions(refs: () => ProjectItemRefs | undefined) {
   const source = (id: string) => refs()?.[id] ?? { taskId: id }
   const sourceId = (id: string) => source(id).taskId
   const isSub = (id: string) => !!source(id).subId
+  function canMoveToList(id: string) {
+    const ref = source(id), task = data.taskById(ref.taskId)
+    return !!task && !ref.subId && !task.parentTaskId && !data.tasks.some(child => child.parentTaskId === task.id)
+  }
   const open = (id: string) => { const ref = source(id); ui.openTask(ref.taskId, ref.subId) }
   const busy = (id: string) => data.taskSaveState(sourceId(id)) === 'saving' || !!data.movingSubtasks || !!data.movingTask
   async function save(id: string, change?: () => void) {
@@ -41,5 +45,5 @@ export function useProjectItemActions(refs: () => ProjectItemRefs | undefined) {
     const done = ref.subId ? data.subById(ref.taskId, ref.subId)?.done : data.taskById(ref.taskId)?.status === '已完成'
     await status(id, done ? '待办' : '已完成')
   }
-  return { source, sourceId, isSub, open, busy, save, priority, status, toggle }
+  return { source, sourceId, isSub, canMoveToList, open, busy, save, priority, status, toggle }
 }
