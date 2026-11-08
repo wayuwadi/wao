@@ -26,7 +26,22 @@ it('筛选插槽位于标题工具栏内，搜索、批量与视图菜单仍可�
   await wrapper.get('[aria-label="搜索任务"]').setValue('名称')
   expect(wrapper.emitted('update:query')?.[0]).toEqual(['名称'])
   await wrapper.get('[aria-label="批量选择"]').trigger('click');expect(wrapper.emitted('batch')).toHaveLength(1)
+  await wrapper.setProps({batchMode:true})
+  expect(wrapper.get('[aria-label="批量选择"]').attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('.batch-label').text()).toBe('批量选择')
   expect(wrapper.find('header [aria-label="更多视图选项"]').exists()).toBe(true)
+})
+
+it('任务搜索在中文组字结束后才响应 Escape，清空时保留焦点',async()=>{
+  const wrapper=mount(TodoListHeader,{attachTo:document.body,props:{heading:'所有',count:3,selection:'all',navigationCollapsed:false,creating:false,error:'',view:defaultTodoView(),display:decodeTodoDisplay(null),syncError:'',destination:'收集箱',quick:'',query:'名称'}})
+  const input=wrapper.get('input[type="search"]')
+  await input.trigger('compositionstart')
+  await input.trigger('keydown',{key:'Escape'})
+  expect(wrapper.emitted('update:query')).toBeUndefined()
+  await input.trigger('compositionend')
+  await input.trigger('keydown',{key:'Escape'})
+  expect(wrapper.emitted('update:query')).toEqual([['']])
+  expect(document.activeElement).toBe(input.element)
 })
 
 it('手机首次打开收起导航，明确展开后重新打开保留选择',async()=>{

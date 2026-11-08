@@ -5,6 +5,7 @@ import TodoFolderNavigation from '@/components/todo/TodoFolderNavigation.vue'
 import { emptyTaskOrganizationFilter, matchesOrganizedTask } from '@/utils/taskOrganization'
 const taskFilter=ref(emptyTaskOrganizationFilter())
 import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import { emptyCapture, capturePayload, type CaptureFields } from '@/utils/taskCapture'
 import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import { useTodoTaskMove } from '@/composables/todoTaskMove'
@@ -33,6 +34,8 @@ import OverdueRescheduleDialog from '@/components/todo/OverdueRescheduleDialog.v
 import { toast } from '@/composables/toast'
 import { TODO_VIEWS, type TodoLayout, type TodoViewSettings } from '@/utils/todoViewSettings'
 const batchMode=ref(false), batchSelected=ref<string[]>([])
+const batchToolsOpen=ref(false)
+watch(batchMode,()=>{batchToolsOpen.value=false})
 function toggleBatch(id:string){batchSelected.value=batchSelected.value.includes(id)?batchSelected.value.filter(v=>v!==id):[...batchSelected.value,id]}
 const reschedule = ref(false)
 const templatePicker = ref(false)
@@ -183,7 +186,6 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <div v-if="batchMode" class="batch-toolbar"><span>已选择 {{batchSelected.length}} 项</span><button @click="batchSelected=searched.map(t=>t.id)">全选当前结果</button><button @click="batchSelected=[]">取消选择</button><TaskBatchActions v-model:selected-ids="batchSelected" :items="projection.items" :item-refs="projection.refs" /></div>
     <TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:fields="quickFields" v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #filters><TodoOrganization compact v-model="taskFilter" :projects="data.projects" :tags="visibleTags" /></template></TodoListHeader>
     <p v-if="preferenceError" class="move-error" role="status">{{preferenceError}} <button @click="retryPreferences()">重试同步视图</button></p>
     <p v-if="isSmartList && listVisibility.error" class="move-error" role="status">{{listVisibility.error}} <button @click="listVisibility.retry()">重新读取</button></p>
@@ -198,6 +200,21 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
     <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="batchSelected" :selection-mode="batchMode" @select="toggleBatch" v-else-if="layout==='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="contextItems" :item-refs="projection.refs" :show-done="showDone" />
    </template>
   </main>
+  <Teleport to="body">
+   <section v-if="batchMode" id="todo-batch-toolbar" class="batch-toolbar" aria-label="批量操作">
+    <span class="batch-count" role="status">已选择 {{batchSelected.length}} 项</span>
+    <WaoButton class="batch-expand" variant="ghost" :aria-expanded="batchToolsOpen" aria-controls="todo-batch-tools" @click="batchToolsOpen=!batchToolsOpen">
+     批量操作 <i :class="batchToolsOpen?'ri-arrow-down-s-line':'ri-arrow-up-s-line'" aria-hidden="true" />
+    </WaoButton>
+    <div id="todo-batch-tools" class="batch-tools" :class="{'is-open':batchToolsOpen}">
+     <div class="batch-selection">
+      <WaoButton variant="ghost" :disabled="!searched.length" @click="batchSelected=searched.map(t=>t.id)">全选当前结果</WaoButton>
+      <WaoButton variant="ghost" :disabled="!batchSelected.length" @click="batchSelected=[]">取消选择</WaoButton>
+     </div>
+     <TaskBatchActions v-model:selected-ids="batchSelected" :items="projection.items" :item-refs="projection.refs" />
+    </div>
+   </section>
+  </Teleport>
   <OverdueRescheduleDialog v-if="reschedule" :items="searched" :item-refs="projection.refs" @close="reschedule=false" @saved="reschedule=false;toast(`已处理 ${$event} 项逾期任务`,'ri-check-line')" />
   <TaskTemplatePicker v-if="templatePicker" :project-id="destinationProject?.id ?? ''" :destination="destinationName" :invalid-destination="selection.startsWith('project:') && !destinationProject" @close="templatePicker=false" />
   <ContextActionMenu ref="listMenu" />
@@ -227,7 +244,28 @@ button:hover { background:var(--wao-bg-hover); }
 .active,button[aria-pressed=true] { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 .nav-footer { border-top:1px solid var(--wao-line); margin-top:var(--wao-space-2); padding-top:var(--wao-space-2); }
 .workspace-main { min-width:0; padding:var(--wao-space-3); }
-.batch-toolbar { display:flex; gap:var(--wao-space-1); align-items:center; flex-wrap:wrap; margin-bottom:var(--wao-space-1); flex-shrink:0; }
+.batch-toolbar {
+ position:fixed; z-index:90; left:50%; bottom:calc(var(--wao-space-1) + env(safe-area-inset-bottom)); transform:translateX(-50%);
+ width:max-content; max-width:calc(100% - var(--wao-space-2)); padding:var(--wao-space-1);
+ border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-card); background:var(--wao-bg-card); box-shadow:var(--wao-shadow-pop);
+ color:var(--wao-text); font:400 var(--wao-font-body)/1.5 var(--wao-font);
+}
+.batch-toolbar,.batch-tools,.batch-selection { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:var(--wao-space-1); }
+.batch-count { white-space:nowrap; }
+.batch-toolbar .batch-expand { display:none; }
+.batch-toolbar :deep(.wao-button) { padding-inline:var(--wao-space-1); white-space:nowrap; }
+.batch-toolbar :deep(.wao-button:disabled) { opacity:.5; cursor:default; }
+.batch-toolbar :deep(.batch-actions) { justify-content:center; }
+@media (max-width:760px) {
+ .batch-toolbar { bottom:calc(54px + var(--wao-space-1) + env(safe-area-inset-bottom)); width:calc(100% - var(--wao-space-2)); justify-content:space-between; padding-block:0; }
+ .batch-toolbar .batch-expand { display:inline-flex; }
+ .batch-tools {
+  display:none; position:absolute; inset-inline:0; bottom:calc(100% + var(--wao-space-1)); max-height:40dvh; overflow:auto;
+  padding:var(--wao-space-1); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-card);
+  background:var(--wao-bg-card); box-shadow:var(--wao-shadow-pop);
+ }
+ .batch-tools.is-open { display:flex; }
+}
 header { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-bottom:var(--wao-space-2); }
 h1 { margin:0; font-size: var(--wao-font-title);  font-weight: var(--wao-weight-heading); line-height: var(--wao-line-heading);}
 .count { color:var(--wao-text-3); }
