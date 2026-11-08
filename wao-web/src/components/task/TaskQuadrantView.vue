@@ -189,7 +189,6 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
               <span v-if="itemRefs?.[task.id]?.priorityUnset && itemRefs?.[task.id]?.parentKey" class="save-hint" title="未单独设置优先级，跟随父任务">继承</span>
               <span v-if="task.contextOnly" class="save-hint" title="仅展示父子关系，不计入本象限数量">父任务</span>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
-              <span v-if="task.executionLabel" class="quadrant-execution" :title="task.executionLabel">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
@@ -290,7 +289,7 @@ h2 { margin: 0; font-size: var(--wao-font-body); font-weight: 600; color: var(--
 .quadrant-title:hover { color: var(--wao-primary-text); }
 .done .quadrant-title { text-decoration: line-through; color: var(--wao-text-weak); }
 .quadrant-meta { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 40%; font-size: var(--wao-font-caption); line-height: 18px; color: var(--wao-text-3); }
-.quadrant-execution, .quadrant-task-body > .save-hint { max-width: 20%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--wao-font-help); color: var(--wao-primary-text); }
+.quadrant-task-body > .save-hint { max-width: 20%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--wao-font-help); color: var(--wao-primary-text); }
 .quadrant-due, .quadrant-status { flex-shrink: 0; }
 .quadrant-project { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-project i { margin-right: 3px; }
@@ -316,7 +315,7 @@ h2 { margin: 0; font-size: var(--wao-font-body); font-weight: 600; color: var(--
   .quadrant-task { gap: 2px; }
   .quadrant-complete, .quadrant-select { flex-basis: 24px; min-height: 32px; }
   .quadrant-title { font-size: var(--wao-font-body); line-height: 24px; }
-  .quadrant-meta, .quadrant-execution, .quadrant-task-body > .save-hint { display:none; }
+  .quadrant-meta, .quadrant-task-body > .save-hint { display:none; }
   .quadrants.expanded .quadrant-meta, .quadrants.expanded .quadrant-task-body > .save-hint { display:flex; }
   .quadrant-project { margin-left: 0; }
   .quadrant-due, .quadrant-status { display: none; }

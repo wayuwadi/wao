@@ -14,8 +14,16 @@ const quick=defineModel<string>('quick',{required:true})
 const emit=defineEmits<{ batch:[]; navigation:[]; add:[]; templates:[]; protect:[]; view:[Partial<TodoViewSettings>]; display:[Partial<TodoDisplaySettings>]; retry:[] }>()
 const composition=useInputComposition(),quickInput=ref<HTMLInputElement>(),quickForm=ref<HTMLFormElement>()
 const searchInput=ref<HTMLInputElement>()
+const searchComposition=useInputComposition()
 function clearSearch(){query.value='';void nextTick(()=>searchInput.value?.focus({preventScroll:true}))}
-watch(()=>props.selection,composition.end)
+function onSearchEscape(event: KeyboardEvent) {
+  if (searchComposition.active(event)) { event.stopPropagation(); return }
+  if (!query.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  clearSearch()
+}
+watch(()=>props.selection,()=>{ composition.end(); searchComposition.end() })
 let restoreInput=false
 function submit(){if(!composition.active()&&!props.creating&&quick.value.trim())emit('add')}
 watch(()=>props.creating,async (creating,wasCreating)=>{
@@ -39,9 +47,13 @@ watch(()=>props.creating,async (creating,wasCreating)=>{
     <button v-if="!['completed','abandoned'].includes(selection)" type="button" aria-label="使用任务模板" title="使用任务模板" @click="$emit('templates')"><i class="ri-file-copy-line" aria-hidden="true" /></button>
    </div>
    <div class="toolbar-line">
-    <label class="task-search"><i class="ri-search-line" aria-hidden="true" /><input ref="searchInput" v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务" /><button v-if="query" aria-label="清空搜索" @click="clearSearch" type="button"><i class="ri-close-line" aria-hidden="true" /></button></label>
+    <div class="task-search" role="search" aria-label="待办任务">
+     <i class="ri-search-line" aria-hidden="true" />
+     <input ref="searchInput" v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务" @compositionstart="searchComposition.start" @compositionend="searchComposition.end" @keydown.esc="onSearchEscape" />
+     <button v-if="query" aria-label="清空搜索" title="清空搜索" @click="clearSearch" type="button"><i class="ri-close-line" aria-hidden="true" /></button>
+    </div>
     <div v-if="$slots.filters" class="toolbar-filters"><slot name="filters" /></div>
-    <button class="batch-toggle" type="button" :aria-label="batchMode?'退出批量选择':'批量选择'" :title="batchMode?'退出批量选择':'批量选择'" :aria-pressed="!!batchMode" @click="$emit('batch')"><i class="ri-checkbox-multiple-line" aria-hidden="true" /><span class="batch-label">{{batchMode?'退出批量':'批量选择'}}</span></button>
+    <button class="batch-toggle" type="button" aria-label="批量选择" :title="batchMode?'退出批量选择':'批量选择'" :aria-pressed="!!batchMode" :aria-controls="batchMode?'todo-batch-toolbar':undefined" @click="$emit('batch')"><i class="ri-checkbox-multiple-line" aria-hidden="true" /><span class="batch-label">批量选择</span></button>
     <div class="view-options"><TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" /></div>
    </div>
   </header>
@@ -53,10 +65,19 @@ watch(()=>props.creating,async (creating,wasCreating)=>{
 </template>
 <style scoped>
 .completed-toggle { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
-.task-search { display:flex; align-items:center; gap:var(--wao-space-1); flex:1 1 180px; min-width:0; color:var(--wao-text-3); }
-.task-search input { width:100%; }
+.task-search {
+ display:flex; align-items:center; gap:calc(var(--wao-space-1) / 2); flex:0 1 240px; min-width:0;
+ min-height:var(--wao-control-height); margin-inline-end:auto; padding-inline:var(--wao-space-1);
+ color:var(--wao-text-3); background:var(--wao-bg-sub); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control);
+}
+.task-search:focus-within { border-color:var(--wao-primary); outline:1px solid var(--wao-primary); }
+.task-search input { min-height:0; padding-block:calc(var(--wao-space-1) / 2); appearance:none; }
+.task-search input:focus-visible { outline:none; }
+.task-search input::placeholder { color:var(--wao-text-3); }
+.task-search input::-webkit-search-cancel-button { display:none; }
+.task-search button { flex-shrink:0; padding:0; min-width:28px; min-height:28px; }
 
-.todo-list-header { flex-shrink:0; min-width:0; padding-bottom:var(--wao-space-2); font:400 var(--wao-font-body)/1.5 var(--wao-font); }
+.todo-list-header { container-type:inline-size; flex-shrink:0; min-width:0; padding-bottom:var(--wao-space-2); font:400 var(--wao-font-body)/1.5 var(--wao-font); }
 header { display:flex; align-items:center; gap:var(--wao-space-1); min-height:44px; margin-bottom:var(--wao-space-2); flex-wrap:wrap; }
 .heading-line,.toolbar-line { display:flex; align-items:center; gap:var(--wao-space-1); min-width:0; }
 .heading-line { flex:0 1 auto; }.toolbar-line { flex:1 1 380px; }
@@ -73,6 +94,7 @@ input { flex:1; width:0; min-width:0; padding:var(--wao-space-1) 0; min-height:2
 .quick-add button { color:var(--wao-primary-text); }.navigation-toggle { flex-shrink:0; }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 p { margin:var(--wao-space-1) 0 0; color:var(--wao-danger-strong); }
-@media(max-width:600px) { .heading-line,.toolbar-line { flex-basis:100%; }.heading-line h1 { flex:1; }.toolbar-line { gap:4px; flex-wrap:wrap; }.batch-label { display:none; }.batch-toggle { justify-content:center; min-width:36px; }.task-search { flex-basis:0; min-width:44px; min-height:44px; }.task-search:focus-within { flex:1 0 100%; }.heading-line>button { flex-shrink:0; } }
-@media(pointer:coarse) { button { min-height:44px; } }
+@container(max-width:520px) { .heading-line,.toolbar-line { flex-basis:100%; }.heading-line h1 { flex:1; }.toolbar-line { gap:4px; flex-wrap:wrap; }.batch-label { display:none; }.batch-toggle { justify-content:center; min-width:36px; }.task-search { flex:1 1 100px; }.heading-line>button { flex-shrink:0; } }
+@container(max-width:340px) { .task-search { flex-basis:100%; } }
+@media(pointer:coarse) { button,.task-search button { min-height:44px; } .task-search { min-height:46px; } .task-search button { min-width:44px; } }
 </style>
