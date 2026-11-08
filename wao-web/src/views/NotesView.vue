@@ -1743,7 +1743,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .card-quick-actions button, .card-quick-actions .full-doc-icon { width: 36px; height: 36px; }
   .note-count { margin-left: auto; }
 }
-@container app-main (max-width:600px){.notes-settings-toggle{padding:8px;min-width:40px}.notes-settings-toggle span{display:none}}
+@container app-main (max-width:600px){.notes-settings-toggle{padding:8px;min-width:40px}.notes-settings-toggle span,.notes-trash-toggle span{display:none}}
 </style>
 
 <style scoped>
