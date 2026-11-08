@@ -8,6 +8,8 @@ import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.*;
@@ -26,7 +28,10 @@ class NoteAiManagedServiceTest {
   db.execute("CREATE TABLE member(id VARCHAR(32) PRIMARY KEY)");db.update("INSERT INTO member VALUES('m')");
   db.execute("CREATE TABLE doc(id VARCHAR(32) PRIMARY KEY,author_id VARCHAR(32),kb_id VARCHAR(32),deleted_at TIMESTAMP,archived_at TIMESTAMP)");db.update("INSERT INTO doc VALUES('n','m','kb-notes',NULL,NULL)");
   db.execute("CREATE TABLE note_ai_workflow(doc_id VARCHAR(32) PRIMARY KEY,member_id VARCHAR(32),base_rev INT,original_title VARCHAR(256),source_markdown_hash CHAR(64),title_status VARCHAR(16),image_status VARCHAR(16),polish_status VARCHAR(16),last_error VARCHAR(500),updated_at TIMESTAMP)");
-  try(var connection=ds.getConnection()){ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/V176__note_save_ai_settings.sql"));}
+  try(var connection=ds.getConnection()){
+   ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/V176__note_save_ai_settings.sql"));
+   ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/V209__note_auto_polish_disabled.sql"));
+  }
   values=new LinkedHashMap<>();values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false}");var prefs=mock(MemberPreferenceMapper.class);
   when(prefs.find(anyString(),anyString())).thenAnswer(c->values.get(c.getArgument(1)));
   doAnswer(c->{values.put(c.getArgument(1),c.getArgument(2));return null;}).when(prefs).upsert(anyString(),anyString(),anyString());
@@ -39,6 +44,52 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"noteTags",noteTags);
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
+ @ParameterizedTest
+ @ValueSource(booleans = {false, true})
+ void disablingOnlyTheSwitchInvalidatesQueuedAndRunningPolish(boolean running) {
+  companion("AUTO");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"thinking\":false}");
+  var original=doc("保留正文的原始措辞。","标题",1);
+  when(knowledge.getDoc("n")).thenReturn(original);
+  tx.executeWithoutResult(t->managed.saved(original,"m","标题",null));
+  assertThat(managed.status("n","m").polish()).isEqualTo("PENDING");
+  if(running){
+   tx.executeWithoutResult(t->managed.advance("n"));
+   assertThat(managed.status("n","m").polish()).isEqualTo("RUNNING");
+   db.execute("CREATE TABLE IF NOT EXISTS text_polish_job(id VARCHAR(32))");
+   db.execute("ALTER TABLE text_polish_job ADD COLUMN IF NOT EXISTS ai_run_id VARCHAR(32)");
+   db.update("INSERT INTO text_polish_job(id,ai_run_id) VALUES('job','run')");
+   assertThat(Boolean.TRUE.equals(tx.execute(t->managed.mayStart("run")))).isTrue();
+  }
+  String cycle=db.queryForObject("SELECT cycle_id FROM note_ai_save_signal",String.class);
+  var off=new DocDto("n",original.title(),"m",null,null,false,List.of(),List.of(),original.content(),
+      List.of(),"kb-notes",null,2,List.of(),true,false,"document",null,true);
+  when(knowledge.getDoc("n")).thenReturn(off);
+  tx.executeWithoutResult(t->{
+   settings.lockMember("m");
+   db.update("UPDATE doc SET auto_polish_disabled=TRUE WHERE id='n'");
+   managed.disableAutoPolish("n","m");
+   managed.saved(off,"m",null,null);
+  });
+  assertThat(db.queryForObject("SELECT cycle_id FROM note_ai_save_signal",String.class)).isEqualTo(cycle);
+  if(running){
+   assertThat(Boolean.TRUE.equals(tx.execute(t->managed.mayStart("run")))).isFalse();
+   when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","迟到的改写",null,null));
+  }
+  // Re-enabling with the same body must not revive the cancelled attempt.
+  var on=doc(original.content().markdown(),"标题",3);
+  when(knowledge.getDoc("n")).thenReturn(on);
+  tx.executeWithoutResult(t->{
+   settings.lockMember("m");
+   db.update("UPDATE doc SET auto_polish_disabled=FALSE WHERE id='n'");
+   managed.saved(on,"m",null,null);
+  });
+  tx.executeWithoutResult(t->managed.advance("n"));
+  tx.executeWithoutResult(t->managed.retry("m","n"));
+  assertThat(managed.status("n","m").polish()).isEqualTo("SKIPPED");
+  verify(text,times(running?1:0)).submit(any(),any(),any(),any(),any(),any(),any());
+  verify(knowledge,never()).updateDerivedNote(any(),any());
+ }
  @Test void automaticCoverKeepsLegacyBodyAndDoesNotInvalidateOtherStages(){
   values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":true,\"polish\":true}");
   String body="早起下楼的真实记录。".repeat(12)+"\n\n第二段保留原样。";
@@ -142,7 +193,7 @@ class NoteAiManagedServiceTest {
   when(knowledge.getDoc(anyString())).thenAnswer(c->notes.get(c.getArgument(0)));
   for(int i=0;i<20;i++){
    String id="parallel-note-"+i;
-   db.update("INSERT INTO doc VALUES(?, 'm', 'kb-notes', NULL, NULL)",id);
+   db.update("INSERT INTO doc(id,author_id,kb_id) VALUES(?, 'm', 'kb-notes')",id);
    var note=new DocDto(id,"合成标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,"并行验收合成正文".repeat(20)),List.of(),"kb-notes",null,1);
    notes.put(id,note);tx.executeWithoutResult(t->managed.saved(note,"m","",null));
    tx.executeWithoutResult(t->managed.advance(id));
@@ -389,7 +440,7 @@ class NoteAiManagedServiceTest {
   assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_workflow WHERE title_status IN ('PENDING','RUNNING') OR image_status IN ('PENDING','RUNNING') OR polish_status IN ('PENDING','RUNNING')",Integer.class)).isZero();
  }
  @Test void advancingOneNoteCannotExpireAnotherCurrentNoteForTheSameMember(){
-  db.update("INSERT INTO doc VALUES('other','m','kb-notes',NULL,NULL)");
+  db.update("INSERT INTO doc(id,author_id,kb_id) VALUES('other','m','kb-notes')");
   var first=doc("第一篇记录","手动标题",1);
   var second=new DocDto("other","手动标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,"第二篇记录"),List.of(),"kb-notes",null,1);
   when(knowledge.getDoc("n")).thenReturn(first);when(knowledge.getDoc("other")).thenReturn(second);

@@ -9,6 +9,7 @@ import java.util.*;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -129,6 +130,17 @@ public class NoteAiManagedService {
         if(adopted!=null&&adopted.polish())db.update("UPDATE note_ai_stage_attempt SET reason_code='MANUAL_APPLIED',message='本次已采用手动润色，不重复自动润色' WHERE doc_id=? AND cycle_id=? AND stage='polish'",doc.id(),cycle);
         projectCurrent(doc);
     }
+    /** 与正文保存共用成员锁；重新开启也不会恢复被本次关闭作废的任务。 */
+    void disableAutoPolish(String docId, String member) {
+        db.update("""
+            UPDATE note_ai_stage_attempt SET cancel_requested=TRUE,
+              state=CASE WHEN state='RUNNING' THEN state ELSE 'SKIPPED' END,
+              reason_code='NOTE_DISABLED', message='本篇已关闭自动润色，结果不会采用'
+            WHERE doc_id=? AND member_id=? AND stage='polish' AND manual_stage=FALSE
+              AND (state IN ('PENDING','RUNNING','FAILED') OR (state='DONE' AND reason_code IN ('READY','REVIEW_REQUIRED')))
+            """, docId, member);
+    }
+
     private void create(DocDto doc,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){create(doc,doc.author(),cycle,stage,s,manual,attempt,origin,cover);}
     private void create(DocDto doc,String member,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){
         cover=presentCover(doc,cover);
@@ -136,7 +148,10 @@ public class NoteAiManagedService {
         if ("polish".equals(stage)) body=BookExcerptProtection.thoughts(body);
         String effective=body.strip();
         String letters=effective.replaceAll("!\\[[^]]*]\\([^)]*\\)","").replaceAll("\\[[^]]*]\\([^)]*\\)"," ").strip();
-        if(!manual&&!s.enabled(stage)){code="DISABLED";message="已关闭保存后"+label(stage);}
+        if(!manual && "polish".equals(stage) && doc.autoPolishDisabled()) {
+            code="NOTE_DISABLED";message="本篇已关闭自动润色";
+        }
+        else if(!manual&&!s.enabled(stage)){code="DISABLED";message="已关闭保存后"+label(stage);}
         else if("title".equals(stage)&&!manual&&"MANUAL".equals(origin)){code="MANUAL_TITLE";message="保留手动标题";}
         else if("image".equals(stage)&&!manual&&!cover.isBlank()){code="EXISTING_IMAGE";message="已有自动配图，本次不重复生成";}
         else if(letters.isBlank()){code="NOT_APPLICABLE";message="暂无可整理文字";}
@@ -165,7 +180,7 @@ public class NoteAiManagedService {
         project(doc,state.getOrDefault("title","SKIPPED"),state.getOrDefault("image","SKIPPED"),state.getOrDefault("polish","SKIPPED"),String.join("；",messages));
     }
     /** 服务端按当前代次接续；浏览器无需保持打开。 */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public boolean advance(String docId){
         var signal=one("SELECT * FROM note_ai_save_signal WHERE doc_id=?",docId);
         if(signal==null){
@@ -193,7 +208,8 @@ public class NoteAiManagedService {
                 continue;
             }
             boolean manual=Boolean.TRUE.equals(a.get("manual_stage"))||"1".equals(str(a,"manual_stage"));
-            if(!manual&&(!current.enabled(stage)||current.epoch(stage)!=num(a,"cancel_epoch"))){
+            boolean noteDisabled = "polish".equals(stage) && doc.autoPolishDisabled();
+            if(!manual&&(noteDisabled||!current.enabled(stage)||current.epoch(stage)!=num(a,"cancel_epoch"))){
                 if(state.equals("PENDING")||terminal(a)){retain(a);if(companion!=null)companion.getObject().invalidate(str(a,"id"),"CANCELLED");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='DISABLED',message='设置已关闭，结果不会采用' WHERE id=?",str(a,"id"));}
                 else db.update("UPDATE note_ai_stage_attempt SET reason_code='CANCEL_PENDING',message='设置已关闭，等待调用收尾；结果不会采用' WHERE id=?",str(a,"id"));
                 continue;
@@ -379,18 +395,24 @@ public class NoteAiManagedService {
         return db.queryForList("SELECT DISTINCT a.doc_id FROM note_ai_stage_attempt a JOIN doc d ON d.id=a.doc_id WHERE a.member_id=? AND d.author_id<>? AND d.deleted_at IS NULL LIMIT 200",member,member).stream().map(a->status(str(a,"doc_id"),member)).filter(Objects::nonNull).toList();
     }
     /** 已排队但未启动的自动任务在关闭或来源更新后不能消费模型。 */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public boolean mayStart(String runId) {
         var a=one("SELECT a.* FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id WHERE a.job_id=? OR t.ai_run_id=?",runId,runId);
         if(a==null){
             return one("SELECT doc_id FROM note_ai_workflow WHERE image_run_id=? OR title_job_id IN (SELECT id FROM text_polish_job WHERE ai_run_id=?) OR polish_job_id IN (SELECT id FROM text_polish_job WHERE ai_run_id=?)",runId,runId,runId)==null;
         }
         String member=str(a,"member_id");settings.lockMember(member);
+        // 首次查询只定位成员，锁后重新读取关闭或取消事务提交的状态。
+        a=one("SELECT * FROM note_ai_stage_attempt WHERE id=?",str(a,"id"));
+        if(a==null||!str(a,"state").equals("RUNNING"))return false;
         var signal=one("SELECT cycle_id,title_origin FROM note_ai_save_signal WHERE doc_id=?",str(a,"doc_id"));
-        if(one("SELECT id FROM doc WHERE id=? AND deleted_at IS NULL AND archived_at IS NULL",str(a,"doc_id"))==null)return false;
+        var doc=one("SELECT auto_polish_disabled FROM doc WHERE id=? AND deleted_at IS NULL AND archived_at IS NULL",str(a,"doc_id"));
+        if(doc==null)return false;
         Integer latest=db.queryForObject("SELECT MAX(attempt_no) FROM note_ai_stage_attempt WHERE cycle_id=? AND stage=?",Integer.class,str(a,"cycle_id"),str(a,"stage"));
         if(latest==null||latest!=num(a,"attempt_no"))return false;
         boolean manual=Boolean.TRUE.equals(a.get("manual_stage"))||"1".equals(str(a,"manual_stage"));
+        if(!manual && "polish".equals(str(a,"stage")) && (Boolean.TRUE.equals(doc.get("auto_polish_disabled"))
+                || "1".equals(str(doc,"auto_polish_disabled")))) return false;
         var s=settings.get(member).settings();
         return !cancelled(a)&&signal!=null&&(manual||!"title".equals(str(a,"stage"))||!"MANUAL".equals(str(signal,"title_origin")))&&str(signal,"cycle_id").equals(str(a,"cycle_id"))&&(manual||s.enabled(str(a,"stage"))&&s.epoch(str(a,"stage"))==num(a,"cancel_epoch"));
     }

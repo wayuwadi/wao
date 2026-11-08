@@ -40,6 +40,8 @@
 
 `PUT /api/docs/notes/{id}` 仅创建，不再凭同作者、同 ID 覆盖已有小记。首次请求与正文同事务保存不可变请求摘要；相同请求重放返回当前正文、图片和版本，不回退 AI 结果，也不重复发送创建通知。不同请求复用 ID 返回既有的 400「小记文档 id 已被占用」；浏览器保留完整草稿、换新 ID 后最多自动重试一次。网络失败仍沿用原 ID。
 
+小记创建及小记更新支持可选布尔字段 `autoPolishDisabled`。小记响应返回该字段，默认 `false` 表示沿用账号自动润色设置，`true` 跳过本篇自动正文润色。作者可用 `PATCH /api/docs/{id}` 仅提交 `expectedRev` 和此字段；更新时省略字段会保留已保存值。关闭与保存同事务作废未写回的自动正文润色，手动润色是独立操作。待办记小记和伴读草稿保存也支持该字段。
+
 升级前没有摘要的记录只接受与当前正文一致的重试；历史 `createOnly` 调用仍只返回已有记录。修改已有正文继续使用 `PATCH /api/docs/{id}` 和 `expectedRev`。MCP/CLI 的创建入口沿用相同保护，不增加权限。此修复不会自动恢复已被覆盖的数据，恢复应依据原稿或历史版本逐篇确认。
 
 业务接口位于 `wao-server/src/main/java/cn/wayuwa/wao/controller/`，响应统一为 `ApiResponse<T>`。开发环境 Swagger UI 为 `http://127.0.0.1:8080/swagger-ui.html`，OpenAPI 为 `/v3/api-docs`；生产默认关闭。

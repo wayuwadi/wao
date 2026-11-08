@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.dto;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * 新建小记请求：不指定知识库，一律落到小记知识库。
@@ -10,7 +11,14 @@ import java.util.List;
  */
 public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
         List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish, List<String> sourceInputIds,
-        Boolean createOnly, Boolean systemGenerated, DigitalMemberDtos.IdentitySelection identitySelection) {
+        Boolean createOnly, Boolean systemGenerated, DigitalMemberDtos.IdentitySelection identitySelection,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Boolean autoPolishDisabled) {
+    public CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish, List<String> sourceInputIds,
+            Boolean createOnly, Boolean systemGenerated, DigitalMemberDtos.IdentitySelection identitySelection) {
+        this(title, blocks, content, tags, autoTitle, autoImage, autoPolish, sourceInputIds,
+                createOnly, systemGenerated, identitySelection, null);
+    }
     /** 旧客户端与服务调用继续使用默认本人。 */
     public CreateNoteRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish,List<String> sourceInputIds,Boolean createOnly,Boolean systemGenerated){this(title,blocks,content,tags,autoTitle,autoImage,autoPolish,sourceInputIds,createOnly,systemGenerated,null);}
     /** 兼容普通创建和幂等创建；省略来源时仍是个人记录。 */

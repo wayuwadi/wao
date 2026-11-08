@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.ConflictException;
+import cn.wayuwa.wao.common.ForbiddenException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.DocTemplateEntity;
@@ -934,7 +935,8 @@ public class KnowledgeService {
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
         RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
-                author, blocks, content, List.of(), tags, Boolean.TRUE.equals(req.systemGenerated()));
+                author, blocks, content, List.of(), tags, Boolean.TRUE.equals(req.systemGenerated()),
+                Boolean.TRUE.equals(req.autoPolishDisabled()));
         if (noteOriginal != null) noteOriginal.recordCreation(resolvedAuthor,id,req);
         announceNote(kb.getId(), doc, author);
         return noteSaved(doc,author,req.title(),req,true);
@@ -1270,12 +1272,12 @@ public class KnowledgeService {
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links, List<String> tags) {
-        return insertDoc(id, kbId, folderId, title, author, blocks, content, links, tags, false);
+        return insertDoc(id, kbId, folderId, title, author, blocks, content, links, tags, false, false);
     }
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links, List<String> tags,
-            boolean systemGenerated) {
+            boolean systemGenerated, boolean autoPolishDisabled) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
@@ -1287,6 +1289,7 @@ public class KnowledgeService {
         e.setAuthorId(blankOr(author, "wg"));
         e.setAuto(false);
         e.setSystemGenerated(systemGenerated);
+        e.setAutoPolishDisabled(autoPolishDisabled);
         e.setCreatedAt(now);
         e.setUpdatedAt(now);
         e.setRev(1);
@@ -1417,6 +1420,12 @@ public class KnowledgeService {
         if(noteAiManaged!=null&&actor!=null&&!NoteAiManagedService.derived())noteAiManaged.lockActor(actor);
         docMapper.selectByIdForUpdate(id);
         DocEntity e = requireDoc(id);
+        if (req.autoPolishDisabled() != null) {
+            if (!NOTES_KB_ID.equals(e.getKbId())) throw new BadRequestException("只有小记支持单篇润色设置");
+            if (actor == null || !Objects.equals(actor, e.getAuthorId()))
+                throw new ForbiddenException("只能修改本人小记的润色设置");
+            if (req.expectedRev() == null) throw new BadRequestException("修改小记润色设置需要 expectedRev");
+        }
         if ("spreadsheet".equals(e.getPageType())) {
             if (req.blocks() != null && req.content() == null) throw new BadRequestException("请使用表格编辑器保存表格正文");
             if (req.content() != null) {
@@ -1484,7 +1493,9 @@ public class KnowledgeService {
             requireFolder(e.getKbId(), req.folderId());
             e.setFolderId(req.folderId());
         }
-        if (contentChanged) {
+        boolean polishChanged = req.autoPolishDisabled() != null
+                && req.autoPolishDisabled() != Boolean.TRUE.equals(e.getAutoPolishDisabled());
+        if (contentChanged || polishChanged) {
             e.setRev(currentRev + 1);
             e.setUpdatedAt(LocalDateTime.now());
         }
@@ -1494,6 +1505,11 @@ public class KnowledgeService {
             }
         } else {
             docMapper.updateContentSnapshot(e);
+        }
+        if (polishChanged) {
+            docMapper.updateNoteAutoPolish(id, req.autoPolishDisabled());
+            e.setAutoPolishDisabled(req.autoPolishDisabled());
+            if (req.autoPolishDisabled() && noteAiManaged != null) noteAiManaged.disableAutoPolish(id, actor);
         }
         discoverySaved(e, origin);
         DocDto saved=toDto(e);
@@ -2003,7 +2019,8 @@ public class KnowledgeService {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
                 e.getAuto(), withoutProjectLinks(links), blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
-                readList(e.getTagsJson(), new TypeReference<List<String>>() {}), true, Boolean.TRUE.equals(e.getSystemGenerated()), e.getPageType() == null ? "document" : e.getPageType(), e.getDrawingId());
+                readList(e.getTagsJson(), new TypeReference<List<String>>() {}), true, Boolean.TRUE.equals(e.getSystemGenerated()),
+                e.getPageType() == null ? "document" : e.getPageType(), e.getDrawingId(), Boolean.TRUE.equals(e.getAutoPolishDisabled()));
     }
 
     private static List<DocLinkDto> withoutProjectLinks(List<DocLinkDto> links) {

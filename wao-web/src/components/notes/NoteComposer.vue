@@ -3,7 +3,7 @@ import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { coalescedDraftWriter } from '@/utils/coalescedDraftWriter'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
 import type { IdentitySelection } from '@/api/digitalMembers'
-import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
@@ -53,13 +53,18 @@ const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
-type Draft = { identitySelection?: IdentitySelection; companionMessageId?: string; sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
+type Draft = { identitySelection?: IdentitySelection; companionMessageId?: string; sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string; autoPolishDisabled?: boolean; polishOnly?: boolean }
 let restored = false
 function readDraft(): Draft {
   try {
     const saved = JSON.parse(readNoteDraft(draftKey) || 'null') as Draft | null
     if (saved && /^[A-Za-z0-9_-]{1,32}$/.test(saved.id) && typeof saved.text === 'string') {
       restored = true
+      if (props.note && saved.polishOnly) {
+        const rich = latestNoteContent(props.note)
+        return { id: props.note.id, text: rich.markdown, content: rich, baseRev: props.note.rev,
+          tags: props.note.tags ?? [], generatedTitle: props.note.title, autoPolishDisabled: saved.autoPolishDisabled }
+      }
       return saved
     }
   } catch { /* 无可恢复的草稿。 */ }
@@ -67,6 +72,8 @@ function readDraft(): Draft {
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
+const draftPolishDisabled = ref(typeof initial.autoPolishDisabled === 'boolean' ? initial.autoPolishDisabled : undefined)
+const polishHintId = `note-polish-hint-${useId()}`
 const identitySelection = ref<IdentitySelection>(initial.identitySelection && ['default','explicit','none'].includes(initial.identitySelection.mode) ? initial.identitySelection : { mode: 'default' })
 const companionMessageId = ref(initial.companionMessageId || '')
 const savedContent = props.note ? latestNoteContent(props.note) : { version: 1 as const, document: null, markdown: '' }
@@ -75,7 +82,17 @@ const savedSnapshot = ref({
   document: savedContent.document,
   tags: [...(props.note?.tags ?? [])],
   title: props.note?.title ?? '',
+  autoPolishDisabled: !!props.note?.autoPolishDisabled,
 })
+const ownNote = computed(() => !props.note || props.note.author === session.currentUser.id)
+const notePolishDisabled = computed(() => draftPolishDisabled.value ?? savedSnapshot.value.autoPolishDisabled)
+const polishChanged = computed(() => ownNote.value && notePolishDisabled.value !== savedSnapshot.value.autoPolishDisabled)
+const accountPolishEnabled = computed(() => preferences.noteAiDefaults.polish)
+const polishEnabled = computed(() => accountPolishEnabled.value && !notePolishDisabled.value)
+function changePolish(event: Event) {
+  const disabled = !(event.target as HTMLInputElement).checked
+  draftPolishDisabled.value = disabled === savedSnapshot.value.autoPolishDisabled ? undefined : disabled
+}
 const tags = ref<string[]>(initial.tags ?? props.note?.tags ?? [])
 const tagCreateOpen = ref(false)
 const newTag = ref('')
@@ -313,10 +330,11 @@ const error = ref('')
 const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
-const dirty = computed(() => text.value !== savedSnapshot.value.text
+const contentDirty = computed(() => text.value !== savedSnapshot.value.text
   || JSON.stringify(content.value?.document ?? null) !== JSON.stringify(savedSnapshot.value.document ?? null)
   || JSON.stringify(tags.value) !== JSON.stringify(savedSnapshot.value.tags)
   || generatedTitle.value !== savedSnapshot.value.title)
+const dirty = computed(() => contentDirty.value || polishChanged.value)
 useNoteTagChanges(change => {
   // 标签管理只改元信息，不能重置用户尚未保存的正文或标题。
   savedSnapshot.value.tags = replaceTagNames(savedSnapshot.value.tags, change)
@@ -333,7 +351,8 @@ useNoteTagChanges(change => {
     try { localStorage.setItem(tagUsageKey, JSON.stringify(usage)) } catch { /* 不阻断输入。 */ }
   }
 })
-const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !tagManaging.value && !props.loading)
+const canSave = computed(() => (!!text.value.trim() || !!props.note && polishChanged.value && !contentDirty.value)
+  && !saving.value && !creatingTag.value && !tagManaging.value && !props.loading)
 const exitOpen = ref(false)
 const exitSaveButton = ref<HTMLButtonElement>()
 const exitDiscardButton = ref<HTMLButtonElement>()
@@ -385,7 +404,9 @@ async function discardAndExit() {
   appliedAiInputs.value = []
   companionMessageId.value = ''
   if (!persisted) id.value = crypto.randomUUID().replace(/-/g, '')
-  savedSnapshot.value = { text: text.value, document: rich?.document ?? null, tags: [...tags.value], title: generatedTitle.value }
+  draftPolishDisabled.value = undefined
+  savedSnapshot.value = { text: text.value, document: rich?.document ?? null, tags: [...tags.value], title: generatedTitle.value,
+    autoPolishDisabled: !!persisted?.autoPolishDisabled }
   resetting = false
   error.value = ''
   emit('draft-change', null)
@@ -417,21 +438,22 @@ function persistCurrentDraft() {
   try {
     writeNoteDraft(draftKey, JSON.stringify({ identitySelection: identitySelection.value, id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
-      tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value, companionMessageId: companionMessageId.value } satisfies Draft))
+      tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value, companionMessageId: companionMessageId.value,
+      autoPolishDisabled: draftPolishDisabled.value, ...(props.note && polishChanged.value && !contentDirty.value ? { polishOnly: true } : {}) } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
     draftError.value = true
     status.value = '浏览器草稿保存失败，请保持页面打开并重试保存'
   }
-  if (props.note) emit('draft-change', dirty.value ? {
+  if (props.note) emit('draft-change', contentDirty.value ? {
     content: content.value?.markdown === text.value ? content.value : { version: 1, document: null, markdown: text.value },
     title: baseNote?.title === generatedTitle.value ? undefined : generatedTitle.value,
     tags: JSON.stringify(baseNote?.tags) === JSON.stringify(tags.value) ? undefined : [...tags.value],
   } : null)
 }
 const draftWriter = coalescedDraftWriter(persistCurrentDraft)
-watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId, identitySelection], () => {
+watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId, identitySelection, draftPolishDisabled], () => {
   if (!resetting) draftWriter.schedule()
 }, { flush: 'sync' })
 onBeforeUnmount(() => draftWriter.flush())
@@ -446,7 +468,9 @@ watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note)
   content.value = latest.rich
   tags.value = [...(latest.note.tags ?? [])]
   generatedTitle.value = latest.note.title
-  savedSnapshot.value = { text: text.value, document: latest.rich.document, tags: [...tags.value], title: generatedTitle.value }
+  draftPolishDisabled.value = undefined
+  savedSnapshot.value = { text: text.value, document: latest.rich.document, tags: [...tags.value], title: generatedTitle.value,
+    autoPolishDisabled: !!latest.note.autoPolishDisabled }
   baseRev = latest.note.rev ?? baseRev
   baseNote = { ...latest.note, tags: [...(latest.note.tags ?? [])], content: latest.rich }
   resetting = false
@@ -466,7 +490,8 @@ async function createWithAvailableId<T>(request: (docId: string) => Promise<T>):
 }
 
 async function save(explicit = false) {
-  const current = noteEditor.value?.currentContent?.()
+  const polishOnly = !!props.note && polishChanged.value && !contentDirty.value
+  const current = polishOnly ? undefined : noteEditor.value?.currentContent?.()
   if (current) { content.value = current; text.value = current.markdown }
   draftWriter.flush()
   if (!canSave.value) return
@@ -481,13 +506,17 @@ async function save(explicit = false) {
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
     const submitted = { identitySelection: { ...identitySelection.value }, text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value], companionMessageId: companionMessageId.value }
+    const submittedPolishDraft = draftPolishDisabled.value
+    const polishOption = polishChanged.value ? { autoPolishDisabled: notePolishDisabled.value } : {}
+    const savedAsOriginal = !polishEnabled.value
     let savedId: string | null
     if (props.submitNote && !submitted.companionMessageId) {
       const aiDefaults = preferences.noteAiDefaults
       const submitNote = props.submitNote
       const saved = await createWithAvailableId(docId => submitNote({ docId, title: submitted.title, content: rich, tags: submitted.tags,
         ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}),
-        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish, ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) }))
+        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish,
+        ...polishOption, ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) }))
       data.applyRemoteDoc(saved)
       savedId = saved.id
     } else if (props.note) {
@@ -496,13 +525,17 @@ async function save(explicit = false) {
       for (let attempt = 0; attempt < 3; attempt++) {
         const latest = await fetchDoc(props.note.id)
         const latestRev = latest.rev ?? 1
-        const merged = rebaseNoteDraft(baseNote, { ...latest, content: latestNoteContent(latest) },
-          { title: submitted.title, tags: submitted.tags, content: rich })
         try {
-          saved = submitted.companionMessageId ? await saveCompanionDraft({ messageId: submitted.companionMessageId, docId: props.note.id, existing: true, expectedRev: latestRev, title: (merged.title || latest.title || '未命名小记').slice(0,80), content: merged.content, blocks: legacyProjection(merged.content), tags: merged.tags }) : await apiPatchDoc(props.note.id, {
-            title: merged.title.slice(0, 80),
-            sourceInputIds: submitted.sourceInputIds, content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
-          })
+          if (polishOnly) {
+            saved = await apiPatchDoc(props.note.id, { expectedRev: latestRev, ...polishOption })
+          } else {
+            const merged = rebaseNoteDraft(baseNote, { ...latest, content: latestNoteContent(latest) },
+              { title: submitted.title, tags: submitted.tags, content: rich })
+            saved = submitted.companionMessageId ? await saveCompanionDraft({ messageId: submitted.companionMessageId, docId: props.note.id, existing: true, expectedRev: latestRev, title: (merged.title || latest.title || '未命名小记').slice(0,80), content: merged.content, blocks: legacyProjection(merged.content), tags: merged.tags, ...polishOption }) : await apiPatchDoc(props.note.id, {
+              title: merged.title.slice(0, 80),
+              sourceInputIds: submitted.sourceInputIds, content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags, ...polishOption,
+            })
+          }
           break
         } catch (cause) {
           if (!(cause instanceof Error) || !/其他窗口更新|版本冲突/.test(cause.message)) throw cause
@@ -515,8 +548,13 @@ async function save(explicit = false) {
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
-      if(submitted.companionMessageId){const saved=await createWithAvailableId(docId => saveCompanionDraft({ messageId: submitted.companionMessageId, docId, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags }));data.applyRemoteDoc(saved);savedId=saved.id}
-      else savedId = await createWithAvailableId(docId => data.addNote(submitted.text, submitted.title, docId, rich, submitted.tags, submitted.sourceInputIds.length || submitted.identitySelection.mode !== 'default' ? { ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}), ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) } : undefined))
+      if(submitted.companionMessageId){const saved=await createWithAvailableId(docId => saveCompanionDraft({ messageId: submitted.companionMessageId, docId, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags, ...polishOption }));data.applyRemoteDoc(saved);savedId=saved.id}
+      else {
+        const options = { ...polishOption, ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}),
+          ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) }
+        savedId = await createWithAvailableId(docId => data.addNote(submitted.text, submitted.title, docId, rich, submitted.tags,
+          Object.keys(options).length ? options : undefined))
+      }
 
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
@@ -525,19 +563,24 @@ async function save(explicit = false) {
       const raw = readNoteDraft(draftKey)
       const latest = JSON.parse(raw || 'null') as Draft | null
       // 页面切走又回来时，新组件可能已经继续输入，旧请求不能清掉较新的草稿。
-      if (!latest || (latest.id === id.value && latest.text === submitted.text
+      const matchingPolishDraft = latest && latest.id === id.value && latest.autoPolishDisabled === submittedPolishDraft
+      const matchingContent = latest && latest.text === submitted.text
         && JSON.stringify(latest.content) === JSON.stringify(submitted.content)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(submitted.tags)
-        && (latest.generatedTitle ?? '') === submitted.title && JSON.stringify(latest.identitySelection ?? { mode: 'default' }) === JSON.stringify(submitted.identitySelection))) removeNoteDraft(draftKey, raw)
+        && (latest.generatedTitle ?? '') === submitted.title
+        && JSON.stringify(latest.identitySelection ?? { mode: 'default' }) === JSON.stringify(submitted.identitySelection)
+      if (!latest || matchingPolishDraft && (polishOnly ? latest.polishOnly : matchingContent)) removeNoteDraft(draftKey, raw)
     } catch { /* 服务端保存已成功。 */ }
     if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
-        || generatedTitle.value !== submitted.title || JSON.stringify(identitySelection.value) !== JSON.stringify(submitted.identitySelection)) {
+        || generatedTitle.value !== submitted.title || draftPolishDisabled.value !== submittedPolishDraft
+        || JSON.stringify(identitySelection.value) !== JSON.stringify(submitted.identitySelection)) {
       status.value = '已保存提交内容 · 最新输入已保留，待保存'
       return
     }
     draftWriter.cancel()
     if (!props.note) {
       resetting = true
+      draftPolishDisabled.value = undefined
       companionMessageId.value = ''
       identitySelection.value = { mode: 'default' }
       text.value = ''
@@ -547,11 +590,12 @@ async function save(explicit = false) {
       generatedTitle.value = ''
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
-      savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
+      savedSnapshot.value = { text: '', document: null, tags: [], title: '', autoPolishDisabled: false }
     } else {
       const saved = data.docById(savedId) ?? props.note
       const savedRich = resolvedRichContent(saved)
       resetting = true
+      draftPolishDisabled.value = undefined
       companionMessageId.value = ''
       text.value = savedRich.markdown
       content.value = savedRich
@@ -563,9 +607,10 @@ async function save(explicit = false) {
         document: savedRich.document,
         tags: [...tags.value],
         title: saved.title,
+        autoPolishDisabled: !!saved.autoPolishDisabled,
       }
     }
-    status.value = '已保存到服务器，清单已更新'
+    status.value = savedAsOriginal && ownNote.value ? '已保存 · 已保留原文' : '已保存到服务器，清单已更新'
     if (props.note) emit('draft-change', null)
     fullscreenReminderVisible.value = false
     clearFullscreenReminderTimer()
@@ -675,7 +720,18 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <DigitalIdentitySettings v-if="!note && !companionMessageId" v-model="identitySelection" execution="save" :disabled="loading || saving" />
       <button type="button" class="import-excerpt" aria-label="粘贴为书摘" title="粘贴为书摘" :disabled="loading || saving" @click="excerptDialog?.openDialog()"><i class="ri-double-quotes-l" aria-hidden="true"></i><span>书摘</span></button>
       <button v-if="!note" type="button" class="copy-draft" aria-label="复制给 Codex" title="复制给 Codex" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span> 复制给 Codex</span></button>
-      <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
+      <div class="note-save-options">
+        <label v-if="ownNote" class="note-polish">
+          <span class="note-polish-control">
+            <input type="checkbox" role="switch" aria-label="自动润色正文" :checked="polishEnabled" :disabled="loading || saving || !accountPolishEnabled"
+              :aria-describedby="polishHintId" @change="changePolish">
+            <span class="note-polish-track" aria-hidden="true"></span>
+            <span>自动润色正文</span>
+          </span>
+          <small :id="polishHintId" class="note-polish-hint" aria-live="polite">{{ !accountPolishEnabled ? '账号已关闭自动润色' : !polishEnabled ? '仅此篇 · 保存时保留原文' : companionMessageId ? '用于之后修改正文时' : '仅此篇 · 保存后由 AI 润色' }}</small>
+        </label>
+        <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
+      </div>
     </div>
     <BookExcerptDialog ref="excerptDialog" :draft-key="`${draftKey}:excerpt`" :insert-excerpt="insertExcerpt" @open-change="excerptOpen = $event" />
     <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>
@@ -690,7 +746,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
   .composer-footer > .import-excerpt, .composer-footer > .copy-draft { min-width:44px; padding:8px; }
   .composer-footer > .copy-draft span { display:none; }
   .composer-footer > span[role="status"] { flex:1 1 100%; }
-  .composer-footer > .save-note { margin-left:auto; }
+  .note-save-options { margin-inline-start:auto; }
 }
 .note-exit-mask { position:fixed; inset:0; z-index:2500; display:grid; place-items:center; background:rgb(24 28 46 / .28); padding:20px; }
 .note-exit-dialog { width:min(380px,100%); box-sizing:border-box; padding:26px; border-radius:16px; background:var(--wao-bg-card); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
@@ -756,17 +812,30 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-footer > span { flex: 1; min-width: 140px; line-height: 1.6; overflow-wrap: anywhere; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
 .save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
+.note-save-options { display: flex; align-items: center; gap: var(--wao-space-1); margin-inline-start: auto; max-width: 100%; }
+.note-save-options .save-note { min-height: 36px; font-size: var(--wao-font-body); white-space: nowrap; }
+.note-polish { min-width: 0; }
+.note-polish-control { display: flex; align-items: center; gap: var(--wao-space-1); position: relative; font-size: var(--wao-font-body); min-height: 36px; }
+.note-polish-control input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.note-polish-control input:disabled { cursor: default; }
+.note-polish-track { display: flex; align-items: center; width: 32px; height: 18px; padding: 2px; flex: none; border-radius: var(--wao-radius-pill); background: var(--wao-text-weak); }
+.note-polish-track::after { content: ''; width: 14px; height: 14px; border-radius: var(--wao-radius-pill); background: var(--wao-bg-card); }
+.note-polish-control input:checked + .note-polish-track { justify-content: flex-end; background: var(--wao-primary); }
+.note-polish-control input:focus-visible + .note-polish-track { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.note-polish-hint { display: block; font-size: var(--wao-font-caption); color: var(--wao-text-3); }
 button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: var(--wao-font-help); overflow-wrap: anywhere; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:var(--wao-font-body); } .fullscreen-reminder-copy span { font-size:var(--wao-font-body); } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:var(--wao-font-body); } }
-@media (prefers-reduced-motion: reduce) { .auto-switch,.auto-switch::after { transition:none; } }
 .composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: var(--wao-font-body); border-radius: 7px; }
 
 button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @media (max-width: 600px) {
   .composer-footer > span { flex-basis: 100%; }
   .composer-footer > button { min-height: 44px; }
-  .composer-footer .save-note { margin-left: auto; }
+  .note-save-options .save-note, .note-polish-control { min-height: 44px; }
+}
+@media (pointer: coarse) {
+  .note-save-options .save-note, .note-polish-control { min-height: 44px; }
 }
 </style>
 

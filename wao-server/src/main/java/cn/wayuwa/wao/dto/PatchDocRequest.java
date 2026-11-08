@@ -12,7 +12,13 @@ public record PatchDocRequest(
         Integer expectedRev,
         List<String> tags,
         List<String> sourceInputIds,
-        Boolean systemGenerated) {
+        Boolean systemGenerated,
+        Boolean autoPolishDisabled) {
+    public PatchDocRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<DocLinkDto> links, String folderId, Integer expectedRev, List<String> tags,
+            List<String> sourceInputIds, Boolean systemGenerated) {
+        this(title, blocks, content, links, folderId, expectedRev, tags, sourceInputIds, systemGenerated, null);
+    }
     public PatchDocRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<DocLinkDto> links,String folderId,Integer expectedRev,List<String> tags,List<String> sourceInputIds){this(title,blocks,content,links,folderId,expectedRev,tags,sourceInputIds,null);}
     public PatchDocRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<DocLinkDto> links,String folderId,Integer expectedRev,List<String> tags){this(title,blocks,content,links,folderId,expectedRev,tags,null);}
     public PatchDocRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,

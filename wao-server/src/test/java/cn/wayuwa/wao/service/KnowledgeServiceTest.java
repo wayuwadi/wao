@@ -103,6 +103,32 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void savingOnlyThePolishSettingPreservesBodyAndCancelsWorkInTheSavePath() {
+        DocEntity note = doc("story", "kb-notes", "f");
+        note.setAuthorId("wg");
+        note.setRev(3);
+        when(docMapper.selectById("story")).thenReturn(note);
+        when(docMapper.updateIfRevision(any(), eq(3))).thenReturn(1);
+        var managed = mock(NoteAiManagedService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "noteAiManaged", managed);
+        String original = note.getBlocksJson();
+        var patch = new PatchDocRequest(null, null, null, null, null, 3, null, null, null, true);
+
+        assertThatThrownBy(() -> NoteAiManagedService.withoutAuto("other", () -> service.updateDoc("story", patch)))
+                .hasMessageContaining("本人");
+        DocDto saved = NoteAiManagedService.withoutAuto("wg", () -> service.updateDoc("story", patch));
+
+        assertThat(saved.autoPolishDisabled()).isTrue();
+        assertThat(saved.rev()).isEqualTo(4);
+        assertThat(note.getBlocksJson()).isEqualTo(original);
+        var order = org.mockito.Mockito.inOrder(managed, docMapper);
+        order.verify(managed).lockActor("wg");
+        order.verify(docMapper).updateIfRevision(note, 3);
+        order.verify(docMapper).updateNoteAutoPolish("story", true);
+        order.verify(managed).disableAutoPolish("story", "wg");
+    }
+
+    @Test
     void catalogOmitsOrdinaryBodiesButKeepsCompleteNotesWithoutPerDocumentQueries() {
         KbEntity notesKb = kb("notes");
         notesKb.setNotes(true);
