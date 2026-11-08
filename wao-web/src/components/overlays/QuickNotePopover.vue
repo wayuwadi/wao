@@ -55,6 +55,5 @@ header span { display:flex; align-items:center; gap:8px; } header span i { color
 :deep(.note-composer:not(.fullscreen) .composer-heading) { margin-bottom:4px; }
 :deep(.note-composer:not(.fullscreen) .composer-heading b), :deep(.note-composer:not(.fullscreen) .composer-heading > i) { display:none; }
 :deep(.note-composer:not(.fullscreen) .editor-space) { min-height:200px; max-height: min(360px, 45dvh); overflow:auto; }
-:deep(.composer-footer) { flex-wrap:wrap; gap:8px; }
 @media(max-width:760px) { .quick-note-popover { top:12px; right:12px; max-height:calc(100dvh - 24px); } .close-note { width:44px; height:44px; } }
 </style>

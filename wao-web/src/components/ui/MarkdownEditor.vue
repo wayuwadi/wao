@@ -2,7 +2,6 @@
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges, type EditorSearchRange } from '@/utils/contentSearch'
 import { replaceEditorSearchRanges } from '@/utils/editorSearchReplace'
-import { bookExcerptContent } from '@/utils/bookExcerpt'
 import { indentEditorSelection } from '@/utils/editorIndent'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
@@ -1232,11 +1231,6 @@ function appendPlainText(value: string) {
     type: 'paragraph', ...(text ? { content: [{ type: 'text', text }] } : {}),
   }))
   return instance.chain().focus().insertContentAt(instance.state.doc.content.size, paragraphs).run()
-}
-function appendBookExcerpt(text: string, source: string, reflection: string) {
-  const instance = editor.value
-  if (!instance || instance.isDestroyed || props.readonly || !text.trim()) return false
-  return instance.chain().focus().insertContentAt(instance.state.doc.content.size, bookExcerptContent(text, source, reflection)).run()
 }
 let preparingTask = false
 async function addSelectionTask() {
@@ -2765,7 +2759,7 @@ function currentContent(): RichDocContent | null {
   const e = editor.value
   return e && editorReady.value ? { version: 1, document: e.getJSON(), markdown: e.getMarkdown() } : null
 }
-defineExpose({ currentContent, hasPendingUploads, dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, openSearch, positionAtPoint, focusImageReference, renameImageAt })
+defineExpose({ currentContent, hasPendingUploads, dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, openSearch, positionAtPoint, focusImageReference, renameImageAt })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

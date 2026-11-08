@@ -2,6 +2,7 @@
 import { DOCUMENT_EDITOR_FEATURES } from '@/config/documentEditor'
 import { coalescedDraftWriter } from '@/utils/coalescedDraftWriter'
 import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import type { IdentitySelection } from '@/api/digitalMembers'
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
@@ -18,11 +19,9 @@ import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import NoteReadingImages from './NoteReadingImages.vue'
 import { useNoteImageMode } from '@/composables/noteImageMode'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import NoteMediaCopyDialog from './NoteMediaCopyDialog.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import NoteTagContextMenu from './NoteTagContextMenu.vue'
 import NoteComposerTags from './NoteComposerTags.vue'
-import BookExcerptDialog from './BookExcerptDialog.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
@@ -31,24 +30,18 @@ import { captureCompanionTicket, respondWithCompanion } from '@/composables/quie
 import type { Doc, FileItem, RichDocContent } from '@/types'
 import type { NoteSubmission } from '@/api/dayWorkspace'
 
-const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; focusRequest?: number; expanded?: boolean; initialFullscreen?: boolean; initialPosition?: number; initialViewportTop?: number; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; contained?: boolean; active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; focusRequest?: number; expanded?: boolean; initialFullscreen?: boolean; initialPosition?: number; initialViewportTop?: number; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; contained?: boolean; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean]; 'exit-cancelled': []; 'image-reference': [index: number] }>()
 const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ currentContent?: () => RichDocContent | null; focusImageReference?: (index: number) => boolean; renameImageAt?: (index: number, event: MouseEvent) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
-const excerptDialog = ref<InstanceType<typeof BookExcerptDialog>>()
-const excerptOpen = ref(false)
-function insertExcerpt(text: string, source: string, reflection: string) {
-  if (saving.value || props.loading) return false
-  return noteEditor.value?.appendBookExcerpt?.(text, source, reflection) ?? false
-}
+const noteEditor = ref<{ currentContent?: () => RichDocContent | null; focusImageReference?: (index: number) => boolean; renameImageAt?: (index: number, event: MouseEvent) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const writingWidth = useNoteWritingWidth()
 const preferences = usePreferenceStore()
-const { fullscreenStyle, isMobile } = useMobileVisualViewport()
+const { fullscreenStyle } = useMobileVisualViewport()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
@@ -89,6 +82,11 @@ const notePolishDisabled = computed(() => draftPolishDisabled.value ?? savedSnap
 const polishChanged = computed(() => ownNote.value && notePolishDisabled.value !== savedSnapshot.value.autoPolishDisabled)
 const accountPolishEnabled = computed(() => preferences.noteAiDefaults.polish)
 const polishEnabled = computed(() => accountPolishEnabled.value && !notePolishDisabled.value)
+const polishHint = computed(() => {
+  if (!accountPolishEnabled.value) return '账号已关闭自动润色'
+  if (!polishEnabled.value) return '仅此篇，保存时保留原文'
+  return companionMessageId.value ? '下次修改正文并保存时自动润色' : '仅此篇，保存后自动润色正文'
+})
 function changePolish(event: Event) {
   const disabled = !(event.target as HTMLInputElement).checked
   draftPolishDisabled.value = disabled === savedSnapshot.value.autoPolishDisabled ? undefined : disabled
@@ -319,22 +317,24 @@ let baseNote = props.note && (!restored || initial.baseRev != null && initial.ba
 } : restored && initial.baseRev != null && validRestoredBase ? {
   ...restoredBase, blocks: legacyProjection(restoredBase.content),
 } : null
-const copyDraftContent = ref<RichDocContent | null>(null)
-function copyDraft() {
-  copyDraftContent.value = JSON.parse(JSON.stringify(content.value?.markdown === text.value
-    ? content.value : { version: 1, document: null, markdown: text.value })) as RichDocContent
-}
 const saving = ref(false)
 watch(saving, value => emit('saving-change', value), { flush: 'sync' })
 const error = ref('')
 const draftError = ref(false)
-const status = ref(restored ? '已恢复草稿，可继续记录' : '')
+const status = ref(restored ? '已恢复草稿' : '')
 let resetting = false
 const contentDirty = computed(() => text.value !== savedSnapshot.value.text
   || JSON.stringify(content.value?.document ?? null) !== JSON.stringify(savedSnapshot.value.document ?? null)
   || JSON.stringify(tags.value) !== JSON.stringify(savedSnapshot.value.tags)
   || generatedTitle.value !== savedSnapshot.value.title)
 const dirty = computed(() => contentDirty.value || polishChanged.value)
+const footerStatus = computed(() => {
+  if (props.loading) return '正在加载…'
+  if (saving.value) return '保存中…'
+  if (error.value || draftError.value) return ''
+  if (dirty.value) return '草稿待保存'
+  return status.value || (props.note ? '已保存' : '')
+})
 useNoteTagChanges(change => {
   // 标签管理只改元信息，不能重置用户尚未保存的正文或标题。
   savedSnapshot.value.tags = replaceTagNames(savedSnapshot.value.tags, change)
@@ -430,7 +430,7 @@ function persistCurrentDraft() {
   error.value = ''
   if (props.note && !dirty.value) {
     try { removeNoteDraft(draftKey) } catch { /* 服务器中已有相同内容。 */ }
-    status.value = '已保存，可继续编辑'
+    status.value = '已保存'
     draftError.value = false
     emit('draft-change', null)
     return
@@ -441,7 +441,7 @@ function persistCurrentDraft() {
       tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value, companionMessageId: companionMessageId.value,
       autoPolishDisabled: draftPolishDisabled.value, ...(props.note && polishChanged.value && !contentDirty.value ? { polishOnly: true } : {}) } satisfies Draft))
     draftError.value = false
-    status.value = '草稿已保存在此浏览器'
+    status.value = '草稿待保存'
   } catch {
     draftError.value = true
     status.value = '浏览器草稿保存失败，请保持页面打开并重试保存'
@@ -574,7 +574,7 @@ async function save(explicit = false) {
     if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
         || generatedTitle.value !== submitted.title || draftPolishDisabled.value !== submittedPolishDraft
         || JSON.stringify(identitySelection.value) !== JSON.stringify(submitted.identitySelection)) {
-      status.value = '已保存提交内容 · 最新输入已保留，待保存'
+      status.value = '草稿待保存'
       return
     }
     draftWriter.cancel()
@@ -610,7 +610,8 @@ async function save(explicit = false) {
         autoPolishDisabled: !!saved.autoPolishDisabled,
       }
     }
-    status.value = savedAsOriginal && ownNote.value ? '已保存 · 已保留原文' : '已保存到服务器，清单已更新'
+    draftError.value = false
+    status.value = savedAsOriginal && ownNote.value ? '已保存原文' : '已保存'
     if (props.note) emit('draft-change', null)
     fullscreenReminderVisible.value = false
     clearFullscreenReminderTimer()
@@ -667,7 +668,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview || copyDraftContent || excerptOpen ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><input v-model="generatedTitle" class="composer-title-input" aria-label="小记标题（可选）" :placeholder="note ? '小记标题' : '此刻，想记点什么？'" maxlength="80" :disabled="saving" /><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button v-if="!contained" class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -689,7 +690,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false" :article-image-upload="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
-        :hide-character-count="inline" @character-count="characterCount = $event" :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
+        hide-character-count @character-count="characterCount = $event" :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" :placeholder="focusRequest ? '先写一句，就很好。想法、点子、提示词、想建设的功能……' : '想法、灵感、工作备忘…随手记在这里，也可以粘贴图片'"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
@@ -699,7 +700,6 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <NoteComposerTags v-if="!inline" add-button v-model="newTag" :choices="quickChoices" :selected="tags" :saving="saving" :creating="creatingTag" :create-open="tagCreateOpen" :error="tagError" @toggle="toggleTag" @create="createTag" @toggle-create="toggleTagCreate" @close-create="tagCreateOpen = false" @menu="(event, tag) => tagMenu?.open(event, tag)" />
     </div>
     <Teleport to="body"><div v-if="imagePreview" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="imagePreview.alt || '小记图片预览'" @click.self="closeDraftImage" @keydown="imagePreviewKeys"><button ref="imageClose" type="button" aria-label="关闭图片预览" @click="closeDraftImage"><i class="ri-close-line" aria-hidden="true"></i></button><img :src="imagePreview.src" :alt="imagePreview.alt" /><NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" /></div></Teleport>
-    <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
     <Teleport to="body">
       <div v-if="exitOpen" class="note-exit-mask" @keydown="exitKeys">
         <section class="note-exit-dialog" role="dialog" aria-modal="true" aria-label="保存修改并退出？">
@@ -710,44 +710,40 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         </section>
       </div>
     </Teleport>
-    <NoteMediaCopyDialog v-if="copyDraftContent" :content="copyDraftContent" :title="generatedTitle" @close="copyDraftContent = null" />
-    <div class="composer-footer">
+    <footer class="composer-footer">
       <NoteComposerTags v-if="inline" v-model="newTag" :choices="quickChoices" :selected="tags" :saving="saving" :creating="creatingTag" :create-open="tagCreateOpen" :error="tagError" @toggle="toggleTag" @create="createTag" @toggle-create="toggleTagCreate" @close-create="tagCreateOpen = false" @menu="(event, tag) => tagMenu?.open(event, tag)" />
-      <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
-      <span v-if="inline" class="composer-word-count" aria-label="当前正文字数" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）">{{ characterCount.toLocaleString('zh-CN') }} 字</span>
-      <button v-if="note" type="button" :disabled="saving" @click="contained ? requestExit() : emit('close')">{{ contained ? '退出编辑' : '收起编辑' }}</button>
-      <span v-if="!note && companionMessageId" class="derived-image-hint">对话草稿不自动配图，保存后可手动生成。</span>
-      <DigitalIdentitySettings v-if="!note && !companionMessageId" v-model="identitySelection" execution="save" :disabled="loading || saving" />
-      <button type="button" class="import-excerpt" aria-label="粘贴为书摘" title="粘贴为书摘" :disabled="loading || saving" @click="excerptDialog?.openDialog()"><i class="ri-double-quotes-l" aria-hidden="true"></i><span>书摘</span></button>
-      <button v-if="!note" type="button" class="copy-draft" aria-label="复制给 Codex" title="复制给 Codex" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span> 复制给 Codex</span></button>
-      <div class="note-save-options">
-        <label v-if="ownNote" class="note-polish">
-          <span class="note-polish-control">
+      <p v-if="error" class="composer-footer-notice error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
+      <p v-else-if="draftError && !saving" class="composer-footer-notice error" role="alert">{{ status }}</p>
+      <p v-else-if="!note && companionMessageId" class="composer-footer-notice">对话草稿保存后可手动配图。</p>
+      <div class="composer-footer-row">
+        <div class="composer-feedback">
+          <span class="composer-word-count" aria-label="当前正文字数" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）">{{ characterCount.toLocaleString('zh-CN') }} 字</span>
+          <span class="composer-status" role="status" aria-live="polite" aria-atomic="true">{{ footerStatus }}</span>
+        </div>
+        <WaoButton v-if="note" class="composer-close" variant="ghost" :disabled="saving" @click="contained ? requestExit() : emit('close')">
+          {{ contained ? '退出编辑' : '收起编辑' }}
+        </WaoButton>
+        <DigitalIdentitySettings v-else-if="!companionMessageId" v-model="identitySelection" execution="save" :disabled="loading || saving" />
+        <div class="note-save-options">
+          <label v-if="ownNote" class="note-polish" :title="polishHint">
             <input type="checkbox" role="switch" aria-label="自动润色正文" :checked="polishEnabled" :disabled="loading || saving || !accountPolishEnabled"
               :aria-describedby="polishHintId" @change="changePolish">
             <span class="note-polish-track" aria-hidden="true"></span>
             <span>自动润色正文</span>
-          </span>
-          <small :id="polishHintId" class="note-polish-hint" aria-live="polite">{{ !accountPolishEnabled ? '账号已关闭自动润色' : !polishEnabled ? '仅此篇 · 保存时保留原文' : companionMessageId ? '用于之后修改正文时' : '仅此篇 · 保存后由 AI 润色' }}</small>
-        </label>
-        <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
+            <span :id="polishHintId" hidden>{{ polishHint }}</span>
+          </label>
+          <WaoButton class="save-note" variant="primary" title="Ctrl / ⌘ + Enter 保存" aria-keyshortcuts="Control+Enter Meta+Enter"
+            :aria-busy="saving || undefined" :disabled="!canSave" @click="save(true)">
+            {{ error ? '重试保存' : note ? '保存修改' : '记下来了' }}
+          </WaoButton>
+        </div>
       </div>
-    </div>
-    <BookExcerptDialog ref="excerptDialog" :draft-key="`${draftKey}:excerpt`" :insert-excerpt="insertExcerpt" @open-change="excerptOpen = $event" />
+    </footer>
     <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>
   </section>
 </template>
 
 <style scoped>
-.composer-footer :deep(.identity-trigger) { min-width:36px; height:36px; }
-@media(max-width:650px) { .composer-footer :deep(.identity-trigger) { min-width:44px; height:44px; } }
-.import-excerpt { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
-@media(max-width:760px) {
-  .composer-footer > .import-excerpt, .composer-footer > .copy-draft { min-width:44px; padding:8px; }
-  .composer-footer > .copy-draft span { display:none; }
-  .composer-footer > span[role="status"] { flex:1 1 100%; }
-  .note-save-options { margin-inline-start:auto; }
-}
 .note-exit-mask { position:fixed; inset:0; z-index:2500; display:grid; place-items:center; background:rgb(24 28 46 / .28); padding:20px; }
 .note-exit-dialog { width:min(380px,100%); box-sizing:border-box; padding:26px; border-radius:16px; background:var(--wao-bg-card); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
 .note-exit-dialog > i { color:var(--wao-primary); font-size:22px; }
@@ -765,8 +761,6 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline.expanded:not(.fullscreen) .editor-space :deep(.md-body) { overflow: visible; flex-basis: auto; }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
-.note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
-:deep(.article-footer) { max-height: 72px; transition: max-height .18s ease, padding .18s ease, opacity .16s ease, visibility .16s; }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .fullscreen-reminder { position:absolute; z-index:10; top:55px; right:12px; display:grid; grid-template-columns:28px minmax(0,1fr); gap:8px 10px; width:min(420px, calc(100% - 24px)); box-sizing:border-box; margin:0; padding:13px 14px; border:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-radius:13px; background:var(--wao-bg-card); color:var(--wao-text-2); box-shadow:0 14px 34px color-mix(in srgb, var(--wao-text-1) 14%, transparent); transform-origin:top right; animation:fullscreen-guide-enter .28s cubic-bezier(.2,.8,.2,1) both; }
 .fullscreen-reminder::before { content:""; position:absolute; top:-6px; right:17px; width:10px; height:10px; border-top:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-left:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); background:var(--wao-bg-card); transform:rotate(45deg); }
@@ -807,36 +801,80 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-main :deep(img.md-img) { max-height: min(38vh, 320px); object-fit: contain; }
 .composer-editor-main :deep(.note-image-node img.md-img) { max-height: none; }
-.composer-footer > span { color: var(--wao-text-3); font-size: var(--wao-font-caption); }
-.composer-footer { border-top: 1px solid var(--wao-line); padding-top: 12px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-.composer-footer > span { flex: 1; min-width: 140px; line-height: 1.6; overflow-wrap: anywhere; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
-.save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
-.note-save-options { display: flex; align-items: center; gap: var(--wao-space-1); margin-inline-start: auto; max-width: 100%; }
-.note-save-options .save-note { min-height: 36px; font-size: var(--wao-font-body); white-space: nowrap; }
-.note-polish { min-width: 0; }
-.note-polish-control { display: flex; align-items: center; gap: var(--wao-space-1); position: relative; font-size: var(--wao-font-body); min-height: 36px; }
-.note-polish-control input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.note-polish-control input:disabled { cursor: default; }
+.composer-footer {
+  container: note-footer / inline-size;
+  display: grid;
+  flex-shrink: 0;
+  gap: var(--wao-space-1);
+  margin-block-start: var(--wao-space-1);
+  padding-block-start: var(--wao-space-1);
+  border-top: 1px solid var(--wao-line);
+}
+.composer-footer > .composer-tags { margin: 0; }
+.composer-footer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--wao-space-1);
+}
+.composer-feedback {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--wao-space-1);
+}
+.composer-feedback, .composer-footer-notice {
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
+}
+.composer-footer-notice { margin: 0; }
+.composer-status { min-width: 0; overflow-wrap: anywhere; }
+.composer-word-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.composer-footer-row :deep(.identity-trigger) {
+  min-width: var(--wao-control-height);
+  min-height: var(--wao-control-height);
+}
+.composer-close, .save-note { white-space: nowrap; }
+.save-note { font-weight: 600; }
+.note-save-options {
+  grid-column: -2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wao-space-1);
+}
+.note-polish {
+  display: flex;
+  align-items: center;
+  gap: var(--wao-space-1);
+  min-width: 0;
+  min-height: var(--wao-control-height);
+  position: relative;
+  font-size: var(--wao-font-body);
+}
+.note-polish input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.note-polish input:disabled { cursor: default; }
 .note-polish-track { display: flex; align-items: center; width: 32px; height: 18px; padding: 2px; flex: none; border-radius: var(--wao-radius-pill); background: var(--wao-text-weak); }
 .note-polish-track::after { content: ''; width: 14px; height: 14px; border-radius: var(--wao-radius-pill); background: var(--wao-bg-card); }
-.note-polish-control input:checked + .note-polish-track { justify-content: flex-end; background: var(--wao-primary); }
-.note-polish-control input:focus-visible + .note-polish-track { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
-.note-polish-hint { display: block; font-size: var(--wao-font-caption); color: var(--wao-text-3); }
+.note-polish input:checked + .note-polish-track { justify-content: flex-end; background: var(--wao-primary); }
+.note-polish input:focus-visible + .note-polish-track { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@container note-footer (max-width: 390px) {
+  .composer-footer-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .note-save-options { grid-column: 1 / -1; }
+}
+@container note-footer (max-width: 260px) {
+  .note-save-options, .note-polish { gap: calc(var(--wao-space-1) / 2); }
+  .save-note { padding-inline: var(--wao-space-1); }
+}
+@media (max-width: 760px), (pointer: coarse) {
+  .composer-footer-row :deep(.identity-trigger) { min-width: 44px; min-height: 44px; }
+  .composer-close, .save-note, .note-polish { min-height: 44px; }
+}
 button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: var(--wao-font-help); overflow-wrap: anywhere; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:var(--wao-font-body); } .fullscreen-reminder-copy span { font-size:var(--wao-font-body); } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:var(--wao-font-body); } }
-.composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: var(--wao-font-body); border-radius: 7px; }
-
 button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
-@media (max-width: 600px) {
-  .composer-footer > span { flex-basis: 100%; }
-  .composer-footer > button { min-height: 44px; }
-  .note-save-options .save-note, .note-polish-control { min-height: 44px; }
-}
-@media (pointer: coarse) {
-  .note-save-options .save-note, .note-polish-control { min-height: 44px; }
-}
 </style>
 
 <style scoped>
@@ -854,7 +892,6 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 .editor-space :deep(.md-editor-wrap) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-space :deep(.md-body) { flex: 1 1 0; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; cursor: text; }
 .editor-space :deep(.tiptap) { flex: 1 0 auto; min-height: 100%; box-sizing: border-box; cursor: text; }
-.note-composer:not(.inline) .editor-space :deep(.article-footer button) { min-height: 34px; padding: 6px 10px; font-size: var(--wao-font-body); }
 .new-tag-form { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
 .new-tag-form input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); }
 .new-tag-form .error { width: 100%; }
@@ -894,10 +931,6 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
   .composer-heading > b { flex: 1; }
   .composer-heading > .note-image-mode-switch { order: 4; margin: 0; }
   .composer-heading > .note-width-switch { order: 5; }
-  .composer-footer { gap: 8px; padding-top: 8px; margin-top: 8px; }
-  .composer-footer > span { flex: 1 1 120px; min-width: 0; }
-  .composer-footer > button { min-height: 44px; }
-  .fullscreen .composer-footer > span { flex: 1 1 120px; }
   .fullscreen-quick-tags { gap: 6px; margin-bottom: 8px; }
   .fullscreen-quick-tags { flex-wrap: nowrap; overflow-x: auto; flex-shrink: 0; }
   .fullscreen-quick-tags button { min-height: 44px; flex-shrink: 0; }
@@ -906,9 +939,6 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 
 <style scoped>
 .note-composer.contained { min-height: 60dvh; }
-.note-composer.inline .composer-footer > .composer-tags { flex: 0 0 100%; margin: 0; padding-bottom: 2px; }
-.note-composer .composer-footer > .composer-word-count { flex: 0 0 auto; min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.note-composer.inline .composer-footer { margin-top: 10px; gap: 8px 10px; }
 .note-composer:not(.inline) .composer-tags { order: -1; }
 .note-composer.inline .inline-heading .add-tag { flex: none; min-width: 30px; min-height: 30px; padding: 4px 7px; border: 0; color: var(--wao-text-3); }
 @media (max-width: 600px) { .inline-heading:has(.note-width-switch) { flex-wrap: wrap; } .inline-heading .note-width-switch { flex-basis: 100%; justify-content: flex-end; } }

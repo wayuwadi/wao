@@ -7,32 +7,24 @@ vi.mock('@/utils/clipboard', () => ({ copyToClipboard: vi.fn().mockResolvedValue
 vi.mock('@/utils/noteMediaClipboard', async original => ({ ...await original<object>(), copyOriginalImage: vi.fn() }))
 afterEach(() => { vi.clearAllMocks(); document.body.innerHTML = '' })
 describe('分步复制图文', () => {
-  it('交给 Codex 复制私有全文快照和逐张原图，不生成公网链接', async () => {
+  it('直接复制正文和图号，再复制原图', async () => {
     const content = { version: 1 as const, markdown: '完整开始\n\n![甲](/api/images/one/raw)\n\n完整结束' }
-    const wrapper = mount(NoteMediaCopyDialog, { props: { content, noteId: 'source-id', title: '手写标题' }, attachTo: document.body })
+    const wrapper = mount(NoteMediaCopyDialog, { props: { content }, attachTo: document.body })
     const dialog = new DOMWrapper(document.body)
-    expect(dialog.get('.copy-target button:first-child').attributes('aria-current')).toBe('true')
+    expect(dialog.get('.copy-primary').text()).toBe('复制正文')
     await dialog.get('.copy-primary').trigger('click'); await flushPromises()
-    const copied = vi.mocked(copyToClipboard).mock.calls[vi.mocked(copyToClipboard).mock.calls.length - 1]![0]
-    expect(copied).not.toContain('/api/share/docs/')
-    expect(copied).toContain('本次复制不会开启公网分享')
-    expect(copied).toContain(content.markdown)
-    expect(copied).toContain(`${window.location.origin}/api/images/one/raw`)
-    expect(copied).toContain('手写标题')
-    expect(dialog.text()).toContain('已复制完整内容')
+    expect(copyToClipboard).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^完整开始\s+\[图 1：甲\]\s+完整结束$/))
+    expect(dialog.text()).toContain('正文已复制')
+    expect(dialog.find('[aria-label="复制用途"]').exists()).toBe(false)
     await dialog.get('footer button:last-child').trigger('click')
     await dialog.get('.copy-primary').trigger('click'); await flushPromises()
     expect(copyOriginalImage).toHaveBeenLastCalledWith('/api/images/one/raw')
-    await dialog.get('.copy-target button:last-child').trigger('click')
-    await dialog.get('[aria-label="图文复制步骤"] button:first-child').trigger('click')
-    expect(dialog.get('.copy-primary').text()).toBe('复制正文')
     wrapper.unmount()
   })
   it('正文到原图保持顺序，失败不推进，重试后可继续', async () => {
     const wrapper = mount(NoteMediaCopyDialog, { props: { content: { version: 1, document: null, markdown: '正文\n\n![第一张](/api/images/one/raw)\n\n![第二张](/api/images/two/raw)' } } })
     await flushPromises()
     const dialog = new DOMWrapper(document.body).get('.note-media-copy-dialog')
-    await dialog.get('.copy-target button:last-child').trigger('click')
     expect(dialog.get('.copy-primary').text()).toBe('复制正文')
     expect(dialog.get('footer button:last-child').attributes('disabled')).toBeDefined()
     await dialog.get('.copy-primary').trigger('click'); await flushPromises()
