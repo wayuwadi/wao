@@ -27,13 +27,13 @@ export const fetchDrawings = () =>
   data(http.get<ApiResponse<DrawingFileSummary[]>>('/api/drawings'))
 
 export const fetchDrawing = (id: string) =>
-  data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`))
+  data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000 }))
 
 export const createDrawing = (title?: string, groupId?: string) =>
   data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId }))
 
 export const saveDrawing = (id: string, sceneJson: string, revision: number) =>
-  data(http.put<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { sceneJson, revision }))
+  data(http.put<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { sceneJson, revision }, { timeout: 120_000 }))
 
 export const fetchDrawingVersions = (id: string) =>
   data(http.get<ApiResponse<DrawingFileVersion[]>>(`/api/drawings/${id}/versions`))

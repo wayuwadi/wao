@@ -26,6 +26,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class DrawingFileServiceTest {
+    @Test
+    void retriesReadTheCommittedSceneAfterAnOverlappingSave() throws Exception {
+        // MySQL's repeatable-read snapshot would hide the first request's commit
+        // after saveScene waits for it and returns zero for the old revision.
+        var attributes = new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource();
+        for (String method : List.of("save", "restore")) {
+            var signature = method.equals("save")
+                    ? DrawingFileService.class.getMethod(method, String.class, SaveDrawingFileRequest.class, String.class)
+                    : DrawingFileService.class.getMethod(method, String.class, int.class, int.class, String.class);
+            assertThat(attributes.getTransactionAttribute(signature, DrawingFileService.class).getIsolationLevel())
+                    .isEqualTo(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
+        }
+    }
+
     @Test void linkedDrawingUsesLibraryPermissionEvenForOriginalCreator() {
         var access = mock(KnowledgeAccessService.class);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "knowledgeAccess", access);

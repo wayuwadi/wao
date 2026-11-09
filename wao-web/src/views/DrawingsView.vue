@@ -54,7 +54,8 @@ const DrawingCanvas = defineAsyncComponent({
       ]),
   },
 })
-import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils/drawingDrafts'
+import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft, type DrawingDraft } from '@/utils/drawingDrafts'
+import { sameDrawingContent } from '@/utils/drawingScene'
 
 type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
@@ -72,6 +73,7 @@ const draftScene = ref('')
 const transitioning = ref(false)
 const deletingId = ref('')
 const conflict = ref(false)
+let pendingSave: DrawingDraft['pendingSave']
 const reloadingCloud = ref(false)
 let disposed = false
 let draftQueue: Promise<unknown> = Promise.resolve()
@@ -391,8 +393,12 @@ async function openFile(id: string) {
     if (!props.embedded) rememberDrawing(id)
     titleDraft.value = remote.title
     sceneJson.value = draft?.sceneJson ?? remote.sceneJson
-    dirty.value = !!draft && draft.sceneJson !== remote.sceneJson
-    revision.value = dirty.value ? draft!.revision : remote.revision
+    dirty.value = !!draft && !sameDrawingContent(draft.sceneJson, remote.sceneJson)
+    pendingSave = dirty.value ? draft?.pendingSave : undefined
+    // A timed-out request may already have committed while newer edits stayed local.
+    const pendingConfirmed = !!pendingSave && sameDrawingContent(pendingSave.sceneJson, remote.sceneJson)
+    revision.value = dirty.value && !pendingConfirmed ? draft!.revision : remote.revision
+    if (pendingConfirmed) pendingSave = undefined
     draftScene.value = draft?.sceneJson ?? ''
     if (draft && !dirty.value) await clearDraft(id)
     if (token !== loadToken || !sameOwner()) return
@@ -400,13 +406,14 @@ async function openFile(id: string) {
     updateSummary(remote)
     void loadVersions(id)
 
-    conflict.value = dirty.value && draft?.revision !== remote.revision
+    conflict.value = dirty.value && revision.value !== remote.revision
     if (conflict.value) {
       syncState.value = 'conflict'
       error.value = '本机草稿基于旧版本，云端已有更新。当前先展示本机草稿，不会覆盖云端。'
     } else {
       syncState.value = dirty.value ? 'dirty' : 'saved'
     }
+    if (pendingConfirmed) await persistDraft()
     sidebarOpen.value = window.innerWidth > 760 && sidebarOpen.value
   } catch (cause) {
     if (token !== loadToken || !sameOwner()) return
@@ -441,6 +448,7 @@ function persistDraft() {
   const id = current.value.id
   const capturedScene = sceneJson.value
   const capturedRevision = revision.value
+  const capturedPending = pendingSave
   const operation = draftQueue
     .then(() =>
       writeDrawingDraft({
@@ -448,6 +456,7 @@ function persistDraft() {
         memberId: owner,
         sceneJson: capturedScene,
         revision: capturedRevision,
+        ...(capturedPending ? { pendingSave: capturedPending } : {}),
         updatedAt: Date.now(),
       }),
     )
@@ -521,14 +530,18 @@ async function saveNow() {
   const id = current.value.id
   savePromise = (async () => {
     while (sameOwner() && current.value?.id === id && dirty.value && !conflict.value) {
-      const capturedScene = sceneJson.value
-      const capturedRevision = revision.value
+      // Retry the exact unconfirmed snapshot first. Sending newer edits with its
+      // old revision would conflict with our own successful but timed-out save.
+      const capturedScene = pendingSave?.sceneJson ?? sceneJson.value
+      const capturedRevision = pendingSave?.revision ?? revision.value
+      pendingSave = { sceneJson: capturedScene, revision: capturedRevision }
       const capturedTitle = current.value.title
       syncState.value = 'saving'
       error.value = ''
       try {
         const saved = await saveDrawing(id, capturedScene, capturedRevision)
         if (!sameOwner() || activeId.value !== id || !current.value) return
+        pendingSave = undefined
         // A rename may finish while the scene response is in flight.
         if (current.value.title !== capturedTitle) saved.title = current.value.title
         updateSummary(saved)
@@ -551,6 +564,8 @@ async function saveNow() {
         dirty.value = true
         error.value = message(cause, '草图保存失败')
         const status = cause as { response?: { status?: number }; status?: number }
+        const code = status?.response?.status ?? status?.status
+        if (code && code < 500) pendingSave = undefined
         conflict.value =
           status?.response?.status === 409 ||
           status?.status === 409 ||
@@ -734,6 +749,7 @@ async function removeFile(file: DrawingFileSummary) {
       syncState.value = 'saved'
       dirty.value = false
       conflict.value = false
+      pendingSave = undefined
       error.value = ''
       draftError.value = ''
     }
@@ -781,6 +797,7 @@ async function useCloudVersion() {
     await clearDraft(id)
     dirty.value = false
     conflict.value = false
+    pendingSave = undefined
     current.value = remote
     sceneJson.value = remote.sceneJson
     revision.value = remote.revision
@@ -829,6 +846,7 @@ watch(
     if (dirty.value) void persistDraft()
     ++loadToken
     current.value = null
+    pendingSave = undefined
     files.value = []
     groups.value = []
     assignments.value = {}
@@ -841,15 +859,28 @@ watch(
 let backgroundRequest = 0
 async function refreshOnReturn() {
   if (props.embedded || !current.value || loadingFile.value || transitioning.value || !sameOwner()) return
+  if (pendingSave && dirty.value && !conflict.value) {
+    await saveNow()
+    return
+  }
   const id = current.value.id, seenRevision = revision.value, request = ++backgroundRequest
   try {
     const remote = await fetchDrawing(id)
     if (!sameOwner() || request !== backgroundRequest || !pageVisible.value || current.value?.id !== id || revision.value !== seenRevision || transitioning.value || renaming.value || editingTitle.value || savePromise) return
     if (remote.revision !== seenRevision) {
-      if (dirty.value) {
+      if (dirty.value && !sameDrawingContent(sceneJson.value, remote.sceneJson)) {
         conflict.value = true; syncState.value = 'conflict'
         error.value = '云端草图已更新，本机修改已保留，请处理版本冲突。'
         await persistDraft()
+        return
+      }
+      if (dirty.value) {
+        current.value = remote; revision.value = remote.revision; updateSummary(remote)
+        conflict.value = false
+        dirty.value = false; syncState.value = 'saved'; error.value = ''
+        await clearDraft(id)
+        if (!sameOwner() || current.value?.id !== id) return
+        if (dirty.value) await persistDraft()
         return
       }
       current.value = remote; revision.value = remote.revision; sceneJson.value = remote.sceneJson

@@ -3,6 +3,7 @@ export interface DrawingDraft {
   memberId: string
   revision: number
   sceneJson: string
+  pendingSave?: { sceneJson: string; revision: number }
   updatedAt: number
 }
 
