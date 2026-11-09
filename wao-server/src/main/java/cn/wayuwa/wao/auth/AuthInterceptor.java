@@ -11,6 +11,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 @ConditionalOnProperty(name = "wao.auth.protection-enabled", havingValue = "true", matchIfMissing = true)
 public class AuthInterceptor implements HandlerInterceptor {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private cn.wayuwa.wao.service.TaskCommentImageService taskCommentImages;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private CurrentMember currentMember;
     private final AuthProperties properties;
     private final AuthSessionManager sessions;
     private final cn.wayuwa.wao.service.NoteAssetPrivacyService noteAssets;
@@ -46,6 +51,8 @@ public class AuthInterceptor implements HandlerInterceptor {
             response.setHeader("Cache-Control","private, no-store");
             response.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
             if(sessions.currentAccountId(request)==null) throw new cn.wayuwa.wao.common.NotFoundException("资源不存在或无权访问");
+            if ("images".equals(asset.group(1)) && taskCommentImages != null)
+                taskCommentImages.requireAccessIfCommentImage(assetId, currentMember == null ? null : currentMember.id(request));
             noteAssets.requireRead(asset.group(1), assetId);
         }
         if (!properties.protectionEnabled() || isPublic(request)) return true;

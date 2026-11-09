@@ -48,8 +48,8 @@ const expandedId = ref<string | null>(null)
 const mutatingId = ref('')
 const weekdays = ['一', '二', '三', '四', '五', '六', '日']
 const orderedItems = computed(() => [
-  ...items.value.filter((item) => item.active),
-  ...items.value.filter((item) => !item.active),
+  ...items.value.filter((item) => item.active && item.kind !== 'TIANREN'),
+  ...items.value.filter((item) => !item.active && item.kind !== 'TIANREN'),
 ])
 
 function payload(item: RhythmChecklistItem): SaveRhythmChecklistItem {
@@ -281,18 +281,6 @@ onMounted(load)
           ><input v-model="form.followAlternateWeek" type="checkbox" /><span
             ><b>自动跟随大小周</b><small>周一至周五及大周周日执行；当天仍可手动覆盖</small></span
           ></label
-        >
-        <label class="switch-row"
-          ><input v-model="form.tianrenEnabled" type="checkbox" /><span
-            ><b>展示每日卦象</b><small>只展示入口，不会打开页面就自动起卦</small></span
-          ></label
-        >
-        <label class="switch-row"
-          ><input
-            v-model="form.tianrenRequired"
-            type="checkbox"
-            :disabled="!form.tianrenEnabled"
-          /><span><b>卦象纳入每日必做</b><small>起卦成功后自动完成对应清单项</small></span></label
         >
       </div>
 
