@@ -111,12 +111,40 @@ describe('知识库详情目录体验', () => {
     return wrapper
   }
 
+  it('读取知识库失败时展示恢复状态，成功确认后才判断不存在', async () => {
+    const data = useDataStore(pinia)
+    data.kbs = []
+    data.loadStates.knowledge = 'loading'
+    const wrapper = await mountView('/kb/missing')
+    expect(wrapper.text()).toContain('正在读取知识库')
+    expect(wrapper.text()).not.toContain('知识库不存在')
+    data.loadStates.knowledge = 'error'
+    data.recoveringDomains.add('knowledge')
+    await flushPromises()
+    expect(wrapper.text()).toContain('自动重新读取知识库')
+    expect(wrapper.text()).not.toContain('知识库不存在')
+    data.loadStates.knowledge = 'loaded'
+    await flushPromises()
+    expect(wrapper.text()).toContain('知识库不存在')
+  })
+
   it('所有者可在设置中管理共享范围', async () => {
     useDataStore().kbs.find(kb => kb.id === 'k3')!.ownerId = 'm1'
     const wrapper = await mountView('/kb/k3', true)
     await wrapper.get('.library-star').trigger('click')
     expect(wrapper.get('select option[value="仅自己"]').text()).toContain('只有我')
     expect(wrapper.get('select option[value="成员可编辑"]').text()).toContain('组织内成员')
+  })
+
+  it('目录自动恢复期间不要求手动重试', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const data = useDataStore(pinia)
+    data.loadStates.docs = 'error'
+    data.loadErrors.docs = 'timeout of 10000ms exceeded'
+    data.recoveringDomains.add('docs')
+    await flushPromises()
+    expect(wrapper.get('.home-load-error').text()).toContain('自动重新读取目录')
+    expect(wrapper.find('.home-load-error button').exists()).toBe(false)
   })
 
   it('切换知识库关闭原库设置草稿，原保存回执不能解锁新库表单', async () => {

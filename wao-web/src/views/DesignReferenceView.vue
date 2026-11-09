@@ -36,6 +36,7 @@ import type { DataDomain, DataLoadState } from '@/stores/data'
 import { DATA_DOMAIN_LABELS } from '@/utils/pageDataDomains'
 const demoConfirmation = ref<ConfirmAction | null>(null)
 const demoDomainStates = ref(Object.fromEntries(Object.keys(DATA_DOMAIN_LABELS).map(domain => [domain, domain === 'docs' || domain === 'files' ? 'error' : 'loaded'])) as Record<DataDomain, DataLoadState>)
+const demoRecoveringDomains = new Set<DataDomain>(['docs'])
 function showConfirmExample() {
   let attempt = 0
   demoConfirmation.value = { title: '删除示例文件', description: '这是合成演示，不会删除任何真实文件。第一次操作演示网络失败，重试后完成。', run: async () => {
@@ -624,7 +625,7 @@ const detailLabels = ref('')
             <h2>公共反馈组件 · 合成演示</h2>
             <WaoButton @click="demoDomainStates.docs = demoDomainStates.docs === 'loading' ? 'loaded' : 'loading'">切换读取状态（正文位置保持不变）</WaoButton>
             <SaveHint :saving="stateId === 'saving'" :draft="stateId === 'draft'" :failed="stateId === 'error'" :saved-at="stateId === 'saved' ? '2026-10-29T09:00:00+08:00' : null" />
-            <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
+            <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :recovering="demoRecoveringDomains" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
             <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
             <WaoButton @click="showConfirmExample">演示删除确认与失败重试</WaoButton>
             <p>分页在窄屏显示当前页、上一页和下一页，保留页码跳转；触屏操作区至少 44px。</p>
