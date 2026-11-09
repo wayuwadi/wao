@@ -52,7 +52,7 @@ function cancel() { if (saving.value) return; try { localStorage.removeItem(key.
 </script>
 <template>
  <div class="task-labels" :class="{inline, compact}">
-  <div v-if="current.tags.length" class="label-chips" aria-label="当前标签"><span v-for="tag in current.tags" :key="tag" class="label-chip" :title="tag"># {{ tag }}</span></div>
+  <div v-if="current.tags.length" class="label-chips" aria-label="当前标签"><span v-for="tag in current.tags" :key="tag" class="label-chip" :title="tag"><template v-if="!compact"># </template>{{ tag }}</span></div>
   <button v-if="!autoOpen || !editing" ref="trigger" type="button" :disabled="!labels.ready" :aria-label="compact ? '编辑任务标签' : undefined" :title="compact ? '编辑任务标签' : undefined" aria-haspopup="dialog" :aria-expanded="editing" @click="editing ? dismiss() : begin()"><i :class="compact ? 'ri-add-line' : 'ri-price-tag-3-line'" aria-hidden="true"></i><template v-if="!compact"> 标签</template></button>
   <component :is="autoOpen ? 'div' : CellMenu" v-if="editing" v-bind="autoOpen ? {} : { anchor: trigger, minWidth: 300, customContent: true }" class="label-popover" @close="dismiss" @ready="focusInput">
   <form role="dialog" aria-label="编辑任务标签" @submit.prevent="save" @keydown.esc.stop.prevent="autoOpen ? cancel() : dismiss()">

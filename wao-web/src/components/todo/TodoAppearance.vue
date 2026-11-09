@@ -38,6 +38,7 @@ h3 { margin:0 0 var(--wao-space-2); font-size:var(--wao-font-section); font-weig
 .palette-grid button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:4px; }
 .palette-swatch { display:grid; place-items:center; width:100%; max-width:56px; aspect-ratio:1; border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-card); background:linear-gradient(160deg,var(--wao-todo-gradient-start),var(--wao-todo-gradient-end)); color:var(--wao-on-primary); }
 .palette-swatch i { background:var(--wao-primary); border-radius:var(--wao-radius-pill); padding:2px; }
+.palette-swatch[data-todo-palette='default'] { background:var(--wao-bg-card); }
 .palette-preview { display:grid; grid-template-columns:1fr 1.5fr 1.5fr; margin-top:var(--wao-space-3); overflow:hidden; border:1px solid var(--wao-line); border-radius:var(--wao-radius-control); color:var(--wao-text); }
 .palette-preview div { min-height:100px; display:grid; place-items:center; padding:var(--wao-space-1); background:var(--wao-todo-list-bg); }
 .palette-preview div:first-child { background:var(--wao-todo-nav-bg); }
