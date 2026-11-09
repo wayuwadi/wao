@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import TodoOrganization from '@/components/todo/TodoOrganization.vue'
+import TodoAppearance from '@/components/todo/TodoAppearance.vue'
+import { useMemberPreference } from '@/composables/memberPreference'
+import { decodeTodoPalette } from '@/utils/todoAppearance'
+import '@/styles/todo-palettes.css'
+const appearance = useMemberPreference('todo-palette-v1', decodeTodoPalette, value => value)
+const palette = computed({ get: () => appearance.value.value, set: value => { void appearance.set(value) } })
 import TodoFolderNavigation from '@/components/todo/TodoFolderNavigation.vue'
-import { emptyTaskOrganizationFilter, matchesOrganizedTask } from '@/utils/taskOrganization'
-const taskFilter=ref(emptyTaskOrganizationFilter())
 import TaskBatchActions from '@/components/task/TaskBatchActions.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { emptyCapture, capturePayload, type CaptureFields } from '@/utils/taskCapture'
@@ -120,13 +123,12 @@ const tagsFor = (id:string) => { const ref=projection.value.refs[id]; return lab
 watch(selection,()=>{batchSelected.value=[];batchMode.value=false})
 watch(()=>labels.identity,()=>{batchSelected.value=[];batchMode.value=false})
 const filtered = computed(() => scope.value.filter(task => {
- if(!matchesOrganizedTask(task,tagsFor(task.id),taskFilter.value,data.today)) return false
  if(selection.value==='abandoned') return task.status==='已放弃'
  if(task.status==='已放弃') return false
  if(task.workItemType==='note' && (['timeline','quadrant'].includes(layout.value)||['today','tomorrow','week','completed'].includes(selection.value)))return false
  if(showingCompleted.value && !isTaskFinished(task)) return false
  const sourceId=projection.value.refs[task.id]?.taskId??task.id
- if(!showingCompleted.value && !view.value.showDone && taskFilter.value.status!=='completed' && !query.value.trim() && isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
+ if(!showingCompleted.value && !view.value.showDone && !query.value.trim() && isTaskFinished(task) && !['saving','error'].includes(data.taskSaveState(sourceId))) return false
  if(selection.value==='inbox' && task.project) return false
  if(selection.value.startsWith('project:') && task.project!==selection.value.slice(8)) return false
  if(selection.value.startsWith('tag:') && !tagsFor(task.id).includes(selection.value.slice(4))) return false
@@ -137,7 +139,7 @@ const searched = computed(()=>query.value.trim() ? searchProjectTasks(filtered.v
 const heading = computed(() => nav.find(x=>x.id===selection.value)?.name ?? (selection.value.startsWith('project:') ? data.projects.find(p=>p.id===selection.value.slice(8))?.name : selection.value.startsWith('tag:') ? '# '+selection.value.slice(4) : ({completed:'已完成',abandoned:'已放弃',review:'每日回顾',legacy:'所有'} as Record<string,string>)[selection.value]) ?? '任务')
 const destinationProject = computed(() => selection.value.startsWith('project:') ? data.projectById(selection.value.slice(8)) : undefined)
 const destinationName = computed(() => destinationProject.value?.name ?? (selection.value.startsWith('project:') ? '当前清单' : '收集箱'))
-const showDone = computed(() => taskFilter.value.status==='completed' || showingCompleted.value || view.value.showDone || !!query.value.trim())
+const showDone = computed(() => showingCompleted.value || view.value.showDone || !!query.value.trim())
 const quickFields = ref<CaptureFields>(emptyCapture())
 watch(destinationProject, p => { if (!quick.value.trim()) quickFields.value.project=p?.id??'' })
 const quickSaved=ref(false)
@@ -174,7 +176,7 @@ async function add() {
 function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collapsed.value.filter(x=>x!==id):[...collapsed.value,id] }
 </script>
 <template>
- <div class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'bounded-workspace':selection!=='review','matrix-workspace':layout==='quadrant' && selection!=='review'}">
+ <div :data-todo-palette="palette" class="task-workspace" :class="{'navigation-collapsed':navigationCollapsed,'bounded-workspace':selection!=='review','matrix-workspace':layout==='quadrant' && selection!=='review'}">
   <nav v-show="!navigationCollapsed" id="todo-navigation" class="task-navigation" aria-label="任务导航">
    <button v-for="item in nav" :key="item.id" :class="{active:selection===item.id}" @click="selection=item.id"><i :class="item.icon" aria-hidden="true"></i>{{ item.name }}</button>
    <TodoFolderNavigation :projects="data.projects" :selection="selection" @select="selection=$event" @menu="openListMenu" @create="editList()" />
@@ -186,7 +188,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
    <button v-if="selection==='review'" :aria-expanded="!navigationCollapsed" aria-controls="todo-navigation" @click="navigationCollapsed=!navigationCollapsed">{{navigationCollapsed ? '展开待办导航' : '收起待办导航'}}</button>
    <TodoDayView v-if="selection==='review'" v-model:date="selectedDay" @all="selection='all'" />
    <template v-else>
-    <TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:fields="quickFields" v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #filters><TodoOrganization compact v-model="taskFilter" :projects="data.projects" :tags="visibleTags" /></template></TodoListHeader>
+    <TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:query="query" v-model:completed="completedOnly" v-if="layout==='quadrant' || data.taskLoadState==='error'" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #appearance><TodoAppearance v-model="palette" :ready="appearance.loaded.value" :error="appearance.error.value" @retry="appearance.retry()" /></template></TodoListHeader>
     <p v-if="preferenceError" class="move-error" role="status">{{preferenceError}} <button @click="retryPreferences()">重试同步视图</button></p>
     <p v-if="isSmartList && listVisibility.error" class="move-error" role="status">{{listVisibility.error}} <button @click="listVisibility.retry()">重新读取</button></p>
     <p v-if="isSmartList && hiddenPendingProjects.length" class="move-error" role="status">已隐藏的清单中有任务正在保存或保存失败：<button v-for="project in hiddenPendingProjects" :key="project.id" @click="selection='project:'+project.id">打开{{project.name}}</button></p>
@@ -194,7 +196,7 @@ function toggle(id:string) { collapsed.value=collapsed.value.includes(id)?collap
     <p v-if="moving.error.value || order.state(orderScope).error || order.state(orderScope).dirty" class="move-error" role="alert">{{moving.error.value || order.state(orderScope).error || '顺序尚未保存'}}<button v-if="order.state(orderScope).error || order.state(orderScope).dirty" @click="order.retry(orderScope)">重试保存顺序</button></p>
     <p v-if="data.taskLoadState==='error'" role="alert">任务读取失败<button @click="data.hydrate()">重试</button></p>
     <ProjectChecklistView :selection-mode="batchMode" :selected-ids="batchSelected" @select="toggleBatch" :hide-list-name="!!destinationProject" hide-groups keep-scope-on-child-add :group-overdue="selection==='today'" v-else-if="layout!=='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:list`" :busy="moving.busy.value" @move="move" :items="filtered" :show-abandoned="selection==='abandoned'" :context-items="contextItems" :item-refs="projection.refs" :show-done="showDone" :collapsed="collapsed" :todo-view="activeView" :todo-display="display" :todo-tags="tagsFor" :query="query" @toggle="toggle" @reveal="selection='all'">
-     <template #list-header><TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:fields="quickFields" v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #filters><TodoOrganization compact v-model="taskFilter" :projects="data.projects" :tags="visibleTags" /></template></TodoListHeader></template>
+     <template #list-header><TodoListHeader :saved="quickSaved" :batch-mode="batchMode" @batch="batchMode=!batchMode;batchSelected=[]" v-model:query="query" v-model:completed="completedOnly" v-model:quick="quick" :view="activeView" :display="display" :sync-error="preferenceError" :preferences-ready="preferencesReady" :destination="destinationName" :heading="heading" :count="searched.length" :selection="selection" :navigation-collapsed="navigationCollapsed" :creating="creating" :error="quickError" @view="updateView" @display="changeDisplay" @retry="retryPreferences" @navigation="navigationCollapsed=!navigationCollapsed" @add="add" @templates="templatePicker=true" @protect="protect"><template #appearance><TodoAppearance v-model="palette" :ready="appearance.loaded.value" :error="appearance.error.value" @retry="appearance.retry()" /></template></TodoListHeader></template>
      <template #section-action="{section}"><button v-if="selection==='today' && section.id==='overdue'" class="reschedule-button" @click="reschedule=true">顺延</button></template>
     </ProjectChecklistView>
     <TaskQuadrantView :add-project-id="destinationProject?.id ?? ''" :hide-list-name="!!destinationProject" :selected-ids="batchSelected" :selection-mode="batchMode" @select="toggleBatch" v-else-if="layout==='quadrant' && (!isSmartList || listVisibility.ready)" :key="selection" :state-key="`todo:${selection}:quadrant`" :tasks="searched" :tag-options="[...new Set(scope.flatMap(task=>tagsFor(task.id)))]" :context-tasks="contextItems" :item-refs="projection.refs" :show-done="showDone" />

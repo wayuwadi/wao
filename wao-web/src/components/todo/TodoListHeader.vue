@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { useInputComposition } from '@/composables/inputComposition'
-import TaskCaptureFields from '@/components/task/TaskCaptureFields.vue'
-import { emptyCapture, type CaptureFields } from '@/utils/taskCapture'
 import TodayDates from '@/components/routines/TodayDates.vue'
 import TodoViewControls from './TodoViewControls.vue'
 import type { TodoViewSettings, TodoDisplaySettings } from '@/utils/todoViewSettings'
 const props=withDefaults(defineProps<{ saved?:boolean; batchMode?:boolean; heading:string; count:number; selection:string; navigationCollapsed:boolean; creating:boolean; error:string; view:TodoViewSettings; display:TodoDisplaySettings; syncError:string; destination:string; preferencesReady?:boolean }>(),{preferencesReady:true})
-const fields=defineModel<CaptureFields>('fields',{default:()=>emptyCapture()})
 const query=defineModel<string>('query',{default:''})
 const completed=defineModel<boolean>('completed',{default:false})
 const quick=defineModel<string>('quick',{required:true})
@@ -52,14 +49,13 @@ watch(()=>props.creating,async (creating,wasCreating)=>{
      <input ref="searchInput" v-model="query" type="search" aria-label="搜索任务" placeholder="搜索任务" @compositionstart="searchComposition.start" @compositionend="searchComposition.end" @keydown.esc="onSearchEscape" />
      <button v-if="query" aria-label="清空搜索" title="清空搜索" @click="clearSearch" type="button"><i class="ri-close-line" aria-hidden="true" /></button>
     </div>
-    <div v-if="$slots.filters" class="toolbar-filters"><slot name="filters" /></div>
+    <slot name="appearance" />
     <button class="batch-toggle" type="button" aria-label="批量选择" :title="batchMode?'退出批量选择':'批量选择'" :aria-pressed="!!batchMode" :aria-controls="batchMode?'todo-batch-toolbar':undefined" @click="$emit('batch')"><i class="ri-checkbox-multiple-line" aria-hidden="true" /><span class="batch-label">批量选择</span></button>
     <div class="view-options"><TodoViewControls :ready="preferencesReady" :selection="selection" :view="view" :display="display" :sync-error="syncError" @view="$emit('view',$event)" @display="$emit('display',$event)" @retry="$emit('retry')" /></div>
    </div>
   </header>
   <TodayDates v-if="selection==='today'" />
   <form v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" ref="quickForm" class="quick-add" @submit.prevent="submit"><i class="ri-add-line" aria-hidden="true" /><input ref="quickInput" v-model="quick" aria-label="添加任务" :placeholder="`添加任务到「${destination}」`" :disabled="creating || saved" @input="$emit('protect')" @compositionstart="composition.start" @compositionend="composition.end" @keydown="composition.guard" /><button :disabled="creating||!quick.trim()">{{creating?'保存中…':saved?'重试标签':'添加'}}</button></form>
-  <TaskCaptureFields v-if="view.layout!=='quadrant' && !completed && !['completed','abandoned'].includes(selection)" v-model="fields" :title="quick" :saved="saved" :disabled="creating" @title="quick=$event;$emit('protect')" />
   <p v-if="error" role="alert">{{error}}</p>
  </div>
 </template>
@@ -81,8 +77,8 @@ watch(()=>props.creating,async (creating,wasCreating)=>{
 header { display:flex; align-items:center; gap:var(--wao-space-1); min-height:44px; margin-bottom:var(--wao-space-2); flex-wrap:wrap; }
 .heading-line,.toolbar-line { display:flex; align-items:center; gap:var(--wao-space-1); min-width:0; }
 .heading-line { flex:0 1 auto; }.toolbar-line { flex:1 1 380px; }
-.toolbar-filters,.batch-toggle,.view-options { flex-shrink:0; }.toolbar-filters { min-width:0; }
-.toolbar-filters :deep(.todo-organization) { margin:0; }.view-options :deep(.view-controls) { margin:0; }
+.batch-toggle,.view-options { flex-shrink:0; }
+.view-options :deep(.view-controls) { margin:0; }
 .batch-toggle { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
 h1 { margin:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--wao-font-title); font-weight:var(--wao-weight-heading); line-height:var(--wao-line-heading); }
 .count { color:var(--wao-text-3); }

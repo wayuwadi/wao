@@ -7,7 +7,7 @@ import { PERIOD_LABELS, sameSchedule } from '@/utils/taskSchedule'
 import { PreviousTodoWriteRecovered, saveTodoWithReceipt, writeSchedule, type DailySchedule, type ScheduleWrite } from '@/api/dayWorkspace'
 import type { Task } from '@/types'
 
-const props = defineProps<{ task: Task; day: string }>()
+const props = defineProps<{ task: Task; day: string; compactLabel?: string }>()
 const emit = defineEmits<{ saved: [] }>()
 const data = useDataStore(), session = useSessionStore()
 const open = ref(false), exact = ref(false), saving = ref(false), error = ref('')
@@ -96,7 +96,7 @@ function saveExact() {
 
 <template>
   <span class="schedule-control">
-    <button ref="anchor" type="button" class="time-chip" :disabled="saving" :aria-expanded="open" aria-haspopup="dialog" @click="show"><i class="ri-time-line"></i>{{ saving ? '正在保存…' : label }}</button>
+    <button ref="anchor" type="button" class="time-chip" :disabled="saving" :aria-label="compactLabel ? `修改 ${task.title} 的执行日期` : undefined" :aria-expanded="open" aria-haspopup="dialog" @click.stop="show" @pointerdown.stop @dragstart.prevent.stop><i v-if="!compactLabel" class="ri-time-line"></i>{{ saving ? '正在保存…' : compactLabel || label }}</button>
     <span v-if="receipt && !open" class="schedule-feedback" role="status">已保存 <button type="button" :disabled="!canUndo || saving" :title="canUndo ? '恢复原安排' : '已有后续修改，无法撤销'" @click="save(receipt.previousSchedule, true)">撤销</button></span>
     <span v-if="error && !open" class="schedule-error" role="alert">{{ error }} <button type="button" @click="show">重试</button></span>
   </span>

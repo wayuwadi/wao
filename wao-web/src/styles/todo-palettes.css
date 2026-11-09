@@ -1,0 +1,34 @@
+[data-todo-palette] {
+  --wao-todo-nav-bg: linear-gradient(180deg,color-mix(in srgb,var(--wao-todo-gradient-start) 19%,var(--wao-bg-card)),color-mix(in srgb,var(--wao-todo-gradient-end) 13%,var(--wao-bg-card)));
+  --wao-todo-list-bg: color-mix(in srgb,var(--wao-todo-gradient-start) 2%,var(--wao-bg-card));
+  --wao-todo-detail-bg: color-mix(in srgb,var(--wao-todo-gradient-end) 1%,var(--wao-bg-card));
+}
+.task-workspace[data-todo-palette] {
+  --wao-primary-soft: color-mix(in srgb,var(--wao-todo-gradient-start) 14%,var(--wao-bg-card));
+  --wao-bg-hover: color-mix(in srgb,var(--wao-todo-gradient-start) 8%,var(--wao-bg-card));
+  --wao-bg-sub: color-mix(in srgb,var(--wao-todo-gradient-start) 5%,var(--wao-bg-card));
+  background:var(--wao-todo-list-bg);
+}
+.task-workspace[data-todo-palette] .task-navigation { background:var(--wao-todo-nav-bg); }
+.task-workspace[data-todo-palette] .checklist-tasks { background:transparent; }
+.task-workspace[data-todo-palette] .checklist-detail { background:var(--wao-todo-detail-bg); }
+.task-workspace[data-todo-palette] .workspace-main { padding:0; }
+.task-workspace[data-todo-palette] .checklist-list-pane { padding:var(--wao-space-2) var(--wao-space-2) 0; }
+.task-workspace[data-todo-palette] .checklist-detail { padding:var(--wao-space-2) var(--wao-space-3); }
+.task-workspace[data-todo-palette] .checklist-layout.is-compact .checklist-detail { padding:var(--wao-space-2); }
+.task-workspace[data-todo-palette] .checklist-tasks { padding-right:0; }
+.task-workspace[data-todo-palette].matrix-workspace .workspace-main { padding:var(--wao-space-2); }
+.task-workspace[data-todo-palette] .checklist-layout { gap:0; }
+.task-workspace[data-todo-palette] .task-select { gap:4px; }
+.task-workspace[data-todo-palette] .row-more { width:20px; padding:0; }
+.task-workspace[data-todo-palette] .checklist-row.selected { background:var(--wao-primary-soft); }
+.task-workspace[data-todo-palette] .child-composer { margin-top:var(--wao-space-1); }
+.task-workspace[data-todo-palette] .detail-secondary-actions { margin-bottom:var(--wao-space-2); }
+.task-workspace[data-todo-palette='midnight'] {
+  --wao-todo-nav-bg:linear-gradient(180deg,var(--wao-todo-gradient-start),var(--wao-todo-gradient-end));
+  --wao-todo-list-bg:var(--wao-bg-page);
+  --wao-todo-detail-bg:var(--wao-bg-card);
+  --wao-primary-soft:color-mix(in srgb,var(--wao-primary) 14%,var(--wao-bg-card));
+}
+@media(pointer:coarse) { .task-workspace[data-todo-palette] .row-more { min-width:44px; } }
+@media(max-width:600px) { .task-workspace[data-todo-palette] .checklist-detail { padding:var(--wao-space-2); } }

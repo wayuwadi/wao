@@ -4,7 +4,7 @@ import CellMenu from './CellMenu.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { deadlineInfo, shiftDay } from '@/utils/taskDeadline'
 
-const props = defineProps<{ due?: string | null; today:string; completed?:boolean; disabled?:boolean; missingCount?:number; bulkBusy?:boolean }>()
+const props = defineProps<{ due?: string | null; today:string; completed?:boolean; disabled?:boolean; missingCount?:number; bulkBusy?:boolean; compact?:boolean; label?:string; accessibleLabel?:string }>()
 const emit = defineEmits<{ change:[date:string]; fillMissing:[] }>()
 const anchor = ref<HTMLElement | null>(null), calendar = ref<HTMLElement | null>(null)
 const open = ref(false), draft = ref(''), month = ref('')
@@ -43,8 +43,8 @@ function clear() { emit('change', ''); close() }
 </script>
 
 <template>
-  <button ref="anchor" class="due-trigger" :class="{ overdue:info.overdue > 0 }" aria-label="选择截止日期" aria-haspopup="dialog" :aria-expanded="open" :disabled="disabled" @click="show">
-    <i class="ri-calendar-line" aria-hidden="true"></i><span>{{ info.label }}</span><span v-if="info.overdue" class="overdue-days">已延期 {{ info.overdue }} 天</span>
+  <button ref="anchor" class="due-trigger" :class="{ overdue:info.overdue > 0, compact }" :aria-label="accessibleLabel || '选择截止日期'" :title="info.overdue ? `已延期 ${info.overdue} 天` : due || '设置截止日期'" aria-haspopup="dialog" :aria-expanded="open" :disabled="disabled" @click.stop="show" @pointerdown.stop @dragstart.prevent.stop>
+    <i v-if="!compact" class="ri-calendar-line" aria-hidden="true"></i><span>{{ label || info.label }}</span><span v-if="info.overdue && !compact" class="overdue-days">已延期 {{ info.overdue }} 天</span>
   </button>
   <CellMenu v-if="open" :anchor="anchor" :min-width="280" custom-content style="max-height:calc(100dvh - 32px)" @close="close" @ready="focusDay">
     <section ref="calendar" class="deadline-calendar" role="dialog" aria-label="选择截止日期">
@@ -63,6 +63,7 @@ function clear() { emit('change', ''); close() }
 .due-trigger { display:inline-flex; align-items:center; flex-wrap:wrap; gap:var(--wao-space-1); padding:var(--wao-space-1) 0; border:0; background:transparent; color:var(--wao-primary-text); font:inherit; cursor:pointer; text-align:left; }
 .due-trigger:hover { text-decoration:underline; }
 .due-trigger.overdue { color:var(--wao-danger-strong); }
+.due-trigger.compact { flex-shrink:0; flex-wrap:nowrap; padding:4px; white-space:nowrap; font-size:var(--wao-font-caption); }
 .overdue-days { font-size:var(--wao-font-caption); }
 .deadline-calendar { width:280px; max-width:calc(100vw - 32px); padding:var(--wao-space-1); box-sizing:border-box; color:var(--wao-text); font-size:var(--wao-font-body); }
 .date-shortcuts,.month-nav,.date-footer { display:flex; align-items:center; gap:var(--wao-space-1); }
@@ -81,5 +82,5 @@ function clear() { emit('change', ''); close() }
 .fill-defaults { width:100%; margin-top:var(--wao-space-1); white-space:normal; font-size:var(--wao-font-caption); }
 .date-footer { margin-top:var(--wao-space-2); }
 button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:1px; }
-@media (pointer:coarse) { .calendar-grid button { min-height:44px; } }
+@media (pointer:coarse) { .calendar-grid button,.due-trigger { min-height:44px; } }
 </style>
