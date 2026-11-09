@@ -142,3 +142,10 @@ V200 为远端明细新增独立可空列。远端同步替换明细，包括清
 浏览器会话通过 `/api/task-time/{id}` GET/PUT 读取及 CAS 保存规则；`POST /skip` 使用 `{revision,editVersion}` 显式跳过；`POST /retry` 重试已保存规则；`POST /test/{uuid}` 由本人显式试发私人站内提醒。上述动作均重新检查任务可见性与当前负责人，非负责人 GET 不返回个人规则。响应含 `schedulerEnabled`，两项调度开关均关闭时明确拒绝启用自动提醒。
 
 独立 V207 存储避免旧客户端任务全文覆盖规则；下一次任务和回执同事务生成，提醒写入与按任务/成员/时间槽的去重回执同事务提交。MCP/CLI 不新增能力或扩大已有令牌授权。完整日期、重复、内嵌子项、取消与重试语义见 [任务时间规则](specs/task-time-rules-2026-11-06.md)。
+
+
+### 日历日期、评论图片与共享卦象
+
+- `GET /api/routines/calendar-dates?from=YYYY-MM-DD&to=YYYY-MM-DD` 返回本人日期记录在最多 366 天内的实例。
+- `POST /api/tasks/{id}/comments/images` 以 multipart `file` 上传任务评论图片；图片与任务绑定，原图和缩略图读取时校验当前任务访问权限。
+- `GET /api/tianren/readings/shared-today` 返回共享的当日卦象或 null；服务按上海时间 8 点后生成并保存，同日多实例只保存一份。全局调度关闭时不会生成，恢复调度后当日补生成。原成员私有历史仍保留。

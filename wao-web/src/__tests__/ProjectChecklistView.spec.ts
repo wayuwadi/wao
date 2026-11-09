@@ -266,13 +266,10 @@ describe('项目清单详情', () => {
     expect(data.tasks[0]!.status).toBe('待办')
   })
 
-  it('专注入口使用独立关联参数，避免触发全局任务抽屉', async () => {
+  it('任务详情不再显示番茄专注入口', async () => {
     const { wrapper } = setup()
     await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')
-    const link = wrapper.findComponent({ name: 'RouterLink' })
-    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: undefined } })
-    await wrapper.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
-    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: 'child' } })
+    expect(wrapper.text()).not.toContain('开始专注')
   })
   it('右键父任务添加子任务，键盘及详情子项可继续添加下级并展开父级', async () => {
     const { data, wrapper } = setup()

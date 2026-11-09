@@ -169,8 +169,8 @@ const router = createRouter({
           component: () => import('@/views/TodoView.vue'),
           meta: { module: 'todo', tabKind: 'module' },
         },
-        { path: 'focus', name: 'focus', component: () => import('@/views/FocusView.vue'), meta: { module: 'focus', tabKind: 'module' } },
-        { path: 'countdowns', name: 'countdowns', component: () => import('@/views/CountdownsView.vue'), meta: { module: 'countdowns', tabKind: 'module' } },
+        { path: 'focus', redirect: '/todo' },
+        { path: 'countdowns', redirect: { path: '/calendar', query: { dates: '1' } } },
         { path: 'habits', name: 'habits', component: () => import('@/views/HabitsView.vue'), meta: { module: 'habits', tabKind: 'module' } },
         {
           path: 'chat',

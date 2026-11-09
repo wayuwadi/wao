@@ -114,3 +114,6 @@ export async function* streamTianrenInterpretation(focus: string, signal?: Abort
 
 /** 下线节奏仪表盘后，卦象仍沿用既有成员通知偏好。 */
 export { fetchPreference as fetchTianrenPreference, savePreference as saveTianrenPreference } from './favorites'
+
+export const fetchSharedTodayTianrenReading = () =>
+  data<TianrenReading | null>(http.get('/api/tianren/readings/shared-today'))

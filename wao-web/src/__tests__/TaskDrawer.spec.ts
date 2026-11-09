@@ -486,6 +486,25 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('上传图片后将引用保留在评论草稿，发送失败仍可重试', async () => {
+    vi.spyOn(await import('@/api/board'), 'apiUploadTaskCommentImage').mockResolvedValue({ id: 'test-image', name: 'test.png', url: '/api/images/test-image/raw', size: '1 B', time: '', from: '', c1: '', c2: '' })
+    const send = vi.spyOn(data, 'addTaskComment').mockResolvedValue(false)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+    const input = w.get('.comment-input input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
+    await input.trigger('change')
+    await flushPromises()
+    const editor = w.get('.comment-input textarea')
+    expect((editor.element as HTMLTextAreaElement).value).toContain('![图片](/api/images/test-image/raw)')
+    await w.get('.comment-input .send').trigger('click')
+    await flushPromises()
+    expect(send).toHaveBeenCalledWith(taskId, '![图片](/api/images/test-image/raw)')
+    expect((editor.element as HTMLTextAreaElement).value).toContain('/api/images/test-image/raw')
+    w.unmount()
+  })
+
   it('评论发送中会锁定提交，避免重复新增评论', async () => {
     let resolveComment!: (value: boolean) => void
     const addComment = vi.spyOn(data, 'addTaskComment').mockImplementation(() =>

@@ -40,7 +40,7 @@ public class ImageService {
     private List<ImageBlobEntity> visibleMetadata(List<ImageBlobEntity> metadata) {
         if (metadata.isEmpty()) return List.of();
         var hidden = knowledgeAssets == null ? java.util.Set.<String>of() : knowledgeAssets.hiddenAssets("images");
-        return metadata.stream().filter(item -> !hidden.contains(item.getId())).toList();
+        return metadata.stream().filter(item -> !hidden.contains(item.getId()) && !"任务评论".equals(item.getSource())).toList();
     }
 
     /** 单张图片基础设施硬上限 10MB；用户主动上传可在设置中进一步调低。 */

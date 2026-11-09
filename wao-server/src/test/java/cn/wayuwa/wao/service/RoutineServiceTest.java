@@ -27,6 +27,12 @@ class RoutineServiceTest {
     RoutineService.Item item(String kind){var i=new RoutineService.Item();i.id=id;i.kind=kind;i.name="测试";i.date="2026-10-23";return i;}
     RoutineService.Item save(RoutineService.Item i){return tx.execute(s->service.save("me",id,i));}
     RoutineService.Log check(String date,long rev,int amount,String note){return tx.execute(s->service.checkin("me",id,date,new RoutineService.Checkin(rev,amount,note)));}
+    @Test void calendarDatesShowAllOccurrencesAndKeepMembersIsolated(){
+        var i=item("countdown"); i.repeat="weekly"; save(i);
+        assertThat(service.calendarDates("me",LocalDate.parse("2026-10-24"),LocalDate.parse("2026-11-08")))
+            .extracting(RoutineService.DateEvent::date).containsExactly("2026-10-30","2026-11-06");
+        assertThat(service.calendarDates("other",LocalDate.parse("2026-10-24"),LocalDate.parse("2026-11-08"))).isEmpty();
+    }
     @Test void memberIsolationAndOptimisticConflictProtectExistingRecord(){
         var original=item("countdown");save(original);
         assertThat(service.state("other",null).items()).isEmpty();
