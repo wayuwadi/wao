@@ -1,6 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DrawingsView from '@/views/DrawingsView.vue'
+import { ref } from 'vue'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 import {
   deleteDrawing,
   fetchDrawing,
@@ -278,5 +280,88 @@ describe('草图保存与文件管理回归', () => {
     await flushPromises()
     expect(w.get('.title-trigger').text()).toContain('新名称')
     expect(w.findAll('.file-main strong').some(node => node.text() === '新名称')).toBe(true)
+  })
+
+  it('超时后继续编辑，先确认上次保存再用新版本保存最后一笔', async () => {
+    vi.mocked(saveDrawing).mockRejectedValueOnce(new Error('timeout of 10000ms exceeded'))
+    const w = await open()
+    change(w, scene('first'))
+    await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    expect(writeDrawingDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      pendingSave: { sceneJson: scene('first'), revision: 1 },
+    }))
+    change(w, scene('last'))
+    await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(saveDrawing).mock.calls).toEqual([
+      ['a', scene('first'), 1], ['a', scene('first'), 1], ['a', scene('last'), 2],
+    ])
+    expect(w.get('.sync-pill').text()).toContain('已保存到账号')
+  })
+
+  it('重开草稿时识别超时但已成功的快照，保留后续编辑', async () => {
+    vi.mocked(fetchDrawing).mockResolvedValue(file('a', { sceneJson: scene('first'), revision: 2 }))
+    vi.mocked(readDrawingDraft).mockResolvedValue({
+      id: 'a', memberId: 'member-a', sceneJson: scene('last'), revision: 1, updatedAt: 1,
+      pendingSave: { sceneJson: scene('first'), revision: 1 },
+    })
+    const w = await open()
+    expect(w.find('.sync-pill.conflict').exists()).toBe(false)
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    expect(saveDrawing).toHaveBeenCalledWith('a', scene('last'), 2)
+  })
+
+  it('重开未提交的超时草稿仍先重试原快照', async () => {
+    vi.mocked(readDrawingDraft).mockResolvedValue({
+      id: 'a', memberId: 'member-a', sceneJson: scene('last'), revision: 1, updatedAt: 1,
+      pendingSave: { sceneJson: scene('first'), revision: 1 },
+    })
+    const w = await open()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(saveDrawing).mock.calls).toEqual([
+      ['a', scene('first'), 1], ['a', scene('last'), 2],
+    ])
+  })
+
+  it('超时后返回页签先确认保存，不误报自己的版本变化', async () => {
+    const visible = ref(true)
+    const w = mount(DrawingsView, { global: { provide: { [pageVisibleKey as symbol]: visible } } })
+    wrappers.push(w)
+    await flushPromises()
+    vi.mocked(saveDrawing).mockRejectedValueOnce(new Error('连接中断'))
+    change(w, scene('first'))
+    await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    change(w, scene('last'))
+    visible.value = false
+    await w.vm.$nextTick()
+    visible.value = true
+    await flushPromises()
+    expect(w.find('.sync-pill.conflict').exists()).toBe(false)
+    expect(saveDrawing).toHaveBeenLastCalledWith('a', scene('last'), 2)
+  })
+
+  it('重试原快照遇到真实并发修改仍保留本机草稿并停止自动保存', async () => {
+    vi.mocked(saveDrawing)
+      .mockRejectedValueOnce(new Error('连接中断'))
+      .mockRejectedValueOnce(Object.assign(new Error('草图已在其它页面被修改'), { status: 409 }))
+    const w = await open()
+    change(w, scene('first'))
+    await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    change(w, scene('last'))
+    await w.vm.$nextTick()
+    await w.get('.save-button').trigger('click')
+    await flushPromises()
+    expect(w.find('.sync-pill.conflict').exists()).toBe(true)
+    expect(w.findComponent({ name: 'DrawingCanvas' }).props('sceneJson')).toBe(scene('last'))
+    expect(saveDrawing).toHaveBeenCalledTimes(2)
   })
 })
