@@ -81,7 +81,7 @@ function copyConfig() {
   }
 }
 function updateFlag(
-  flag: 'enabled' | 'notifyEnergy' | 'notifyFocus' | 'notifyTianren' | 'autoTianrenAtNine',
+  flag: 'enabled' | 'notifyEnergy' | 'notifyFocus' | 'notifyTianren',
   event: Event | boolean,
 ) {
   emit('update:modelValue', {
@@ -149,7 +149,7 @@ onMounted(refresh)
       <div class="section-heading">
         <div>
           <h3>飞书通知</h3>
-          <p>选择通知群，安排每天的卦象解读。</p>
+          <p>选择通知群，发送已保存的个人卦象解读。</p>
         </div>
       </div>
       <fieldset :disabled="disabled">
@@ -169,20 +169,8 @@ onMounted(refresh)
           control-label="卦象解读发送通知"
           @update:model-value="updateFlag('notifyTianren', $event)"
         />
-        <AiSettingsToggleRow
-          :model-value="!!modelValue.autoTianrenAtNine"
-          title="每天 9:00 自动起卦并解读"
-          description="北京时间，周末照常；需启用通知并选择目标群。"
-          icon="ri-time-line"
-          control-label="每天 9:00 自动起卦并解读"
-          @update:model-value="updateFlag('autoTianrenAtNine', $event)"
-        />
       </fieldset>
       <p v-if="!modelValue.enabled" class="muted">当前暂停全部行动通知，已选的群会保留。</p>
-      <div v-if="modelValue.autoTianrenAtNine" class="behavior-note">
-        <i class="ri-information-line" aria-hidden="true"></i
-        ><span>无需打开页面；当天已起卦会沿用。AI 暂不可用时稍后继续，失败最多自动尝试三次。</span>
-      </div>
       <label class="target-field"
         ><span>目标群</span>
         <select
@@ -262,20 +250,6 @@ onMounted(refresh)
           >
         </div>
         <p>{{ route.description }}</p>
-        <label v-if="route.kind === 'tianren'" class="daily-cast-setting">
-          <input
-            type="checkbox"
-            aria-label="每天 9:00 自动起卦并解读"
-            :checked="!!modelValue.autoTianrenAtNine"
-            :disabled="disabled"
-            @change="updateFlag('autoTianrenAtNine', $event)"
-          />
-          每天 9:00 自动起卦并解读（北京时间）
-        </label>
-        <p v-if="route.kind === 'tianren' && modelValue.autoTianrenAtNine" class="muted">
-          每天执行，周末照常；无需打开页面。需同时启用行动通知和卦象通知并选群，解读完成后发群。
-          当天已起卦会沿用；AI 暂不可用时稍后继续，失败最多自动尝试三次。
-        </p>
         <label class="target-field"
           ><span>目标群</span>
           <select

@@ -8,6 +8,7 @@ const errors = reactive(new Map<string, string>())
 const taskSaveErrors = reactive(new Set<string>())
 const submittedDrafts = reactive(new Map<string, string>())
 const cleanupWarnings = reactive(new Map<string, string>())
+const imageUploads = reactive(new Set<string>())
 </script>
 
 <script setup lang="ts">
@@ -21,6 +22,7 @@ import type { Comment } from '@/types'
 import type { ConfirmAction } from '@/composables/confirmAction'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import { apiUploadTaskCommentImage } from '@/api/board'
 
 const props = defineProps<{ taskId: string; subId?: string }>()
 const data = useDataStore()
@@ -52,7 +54,49 @@ const comments = computed<Comment[]>(() => props.subId
   ? data.subById(props.taskId, props.subId)?.comments ?? []
   : data.taskById(props.taskId)?.comments ?? [])
 const busy = computed(() => requests.has(key))
+const imageUploading = computed(() => imageUploads.has(key))
 const awaitingTaskSave = computed(() => submittedDrafts.has(key))
+function commentParts(text: string) {
+  const pattern = /!\[[^\]\n]*\]\((\/api\/images\/[A-Za-z0-9_-]+\/raw)\)/g
+  const parts: { text?: string; image?: string }[] = []
+  let start = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > start) parts.push({ text: text.slice(start, index) })
+    parts.push({ image: match[1] })
+    start = index + match[0].length
+  }
+  if (start < text.length) parts.push({ text: text.slice(start) })
+  return parts
+}
+const imageInput = ref<HTMLInputElement | null>(null)
+async function uploadImage(file: File) {
+  if (imageUploading.value || busy.value || awaitingTaskSave.value || !sourceAvailable()) return
+  if (!file.type.startsWith('image/') || !file.size || file.size > 10 * 1024 * 1024) {
+    errors.set(key, '请选择不超过 10MB 的图片')
+    return
+  }
+  imageUploads.add(key)
+  errors.delete(key)
+  try {
+    const uploaded = await apiUploadTaskCommentImage(props.taskId, file)
+    if (!sourceAvailable()) return
+    if (!/^\/api\/images\/[A-Za-z0-9_-]+\/raw$/.test(uploaded.url)) throw new Error('图片地址无效，请重试上传')
+    draft.value += `${draft.value ? '\n' : ''}![图片](${uploaded.url})`
+  } catch (cause) {
+    if (sourceAvailable()) errors.set(key, cause instanceof Error ? cause.message : '图片上传失败，请重试')
+  } finally { imageUploads.delete(key) }
+}
+function chooseImage(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) void uploadImage(file)
+}
+function pasteImage(event: ClipboardEvent) {
+  const file = Array.from(event.clipboardData?.files ?? []).find(item => item.type.startsWith('image/'))
+  if (file) { event.preventDefault(); void uploadImage(file) }
+}
 function clearSentDraft(value: string) {
   // A reopened composer may already contain newer input.
   if (drafts.get(key) !== value) return
@@ -71,7 +115,7 @@ function setComments(next: Comment[], activity: string) {
 async function send() {
   const original = draft.value
   const text = original.trim()
-  if (!text || busy.value || awaitingTaskSave.value || !sourceAvailable()) return
+  if (!text || busy.value || imageUploading.value || awaitingTaskSave.value || !sourceAvailable()) return
   if (data.movingTask || data.movingSubtasks) {
     errors.set(key, '任务正在移动，请稍后重试。')
     return
@@ -217,7 +261,7 @@ function requestDelete(comment: Comment) {
           <textarea v-model="editingText" aria-label="修改评论内容" rows="2" :disabled="busy" />
           <div class="comment-edit-actions"><WaoButton variant="ghost" :disabled="busy" @click="editing = null">取消</WaoButton><WaoButton variant="primary" :disabled="!editingText.trim() || busy" @click="saveEdit">保存</WaoButton></div>
         </template>
-        <p v-else>{{ comment.text }}</p>
+        <p v-else class="comment-body"><template v-for="(part, partIndex) in commentParts(comment.text)" :key="partIndex"><img v-if="part.image" :src="part.image" alt="评论图片" loading="lazy" /><span v-else>{{ part.text }}</span></template></p>
       </article>
     </div>
     <div v-if="editingMissing" class="missing-comment-edit" role="status">
@@ -226,9 +270,12 @@ function requestDelete(comment: Comment) {
       <WaoButton variant="ghost" @click="editing = null">关闭编辑</WaoButton>
     </div>
     <div class="comment-compose">
-      <textarea v-model="draft" rows="1" aria-label="评论内容" placeholder="写下评论…" :disabled="busy || awaitingTaskSave" @keydown="onKey" />
-      <WaoButton variant="primary" :loading="busy" :disabled="!draft.trim() || awaitingTaskSave" @click="send">{{ busy ? '处理中' : '发送' }}</WaoButton>
+      <textarea v-model="draft" rows="1" aria-label="评论内容" placeholder="写下评论…" :disabled="busy || imageUploading || awaitingTaskSave" @keydown="onKey" @paste="pasteImage" />
+      <input ref="imageInput" type="file" accept="image/*" hidden @change="chooseImage" />
+      <button type="button" class="comment-image-button" aria-label="添加评论图片" :disabled="busy || imageUploading || awaitingTaskSave" @click="imageInput?.click()"><i :class="imageUploading ? 'ri-loader-4-line spin' : 'ri-image-add-line'" aria-hidden="true"></i></button>
+      <WaoButton variant="primary" :loading="busy" :disabled="!draft.trim() || imageUploading || awaitingTaskSave" @click="send">{{ busy ? '处理中' : '发送' }}</WaoButton>
     </div>
+    <div v-if="draft && commentParts(draft).some(part => part.image)" class="comment-draft-preview" aria-label="评论图片预览"><img v-for="(part, index) in commentParts(draft).filter(part => part.image)" :key="index" :src="part.image" alt="待发送图片" /></div>
     <p v-if="draft" class="comment-help">Enter 发送 · Shift + Enter 换行</p>
     <p v-if="errors.get(key) || storageWarning || cleanupWarnings.get(key)" class="comment-error" role="alert">{{ data.taskConflicts[taskId] ? (data.taskDraftErrors[taskId] ? '任务已在别处更新，修改仅保存在当前页面，请保持页面打开并查看保存问题。' : '任务已在别处更新，请查看保存问题；本机修改仍保留。') : errors.get(key) || storageWarning || cleanupWarnings.get(key) }}</p>
     <WaoButton v-if="taskSaveErrors.has(key)" variant="ghost" :disabled="busy" @click="data.taskConflicts[taskId] ? ui.openTask(taskId, subId) : retryTask()">{{ data.taskConflicts[taskId] ? '查看保存问题' : '重试保存任务' }}</WaoButton>
@@ -244,6 +291,10 @@ h3 span, time, .comment-help { color: var(--wao-text-3); font-size: var(--wao-fo
 .comment-heading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wao-space-1); }
 .comment-heading button { border: 0; background: transparent; color: var(--wao-primary-text); font: inherit; cursor: pointer; }
 .comment p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.comment-body img, .comment-draft-preview img { display: block; max-width: min(100%, 360px); max-height: 360px; object-fit: contain; }
+.comment-draft-preview { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin-top: var(--wao-space-1); }
+.comment-image-button { flex: none; min-width: 42px; min-height: 42px; border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-primary-text); cursor: pointer; font-size: var(--wao-font-section); }
+.comment-image-button:disabled { opacity: .5; cursor: not-allowed; }
 .comment-compose { position: relative; display: flex; align-items: flex-end; gap: var(--wao-space-1); margin-top: var(--wao-space-1); }
 .comment-compose > .wao-button { flex-shrink: 0; white-space: nowrap; }
 textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 42px; padding: var(--wao-space-1); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: 400 var(--wao-font-body)/1.7 var(--wao-font); }
