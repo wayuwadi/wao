@@ -8,6 +8,7 @@ const props = defineProps<{
   states: Record<DataDomain, DataLoadState>
   errors: Partial<Record<DataDomain, string>>
   activeDomains: DataDomain[]
+  recovering?: Set<DataDomain>
 }>()
 const emit = defineEmits<{ retry: [domain: DataDomain] }>()
 const domains = Object.keys(DATA_DOMAIN_LABELS) as DataDomain[]
@@ -24,14 +25,14 @@ const loading = computed(() => props.activeDomains.filter(domain => props.states
   <div v-if="currentErrors.length || otherErrors.length" class="data-load-status">
     <div v-for="domain in currentErrors" :key="domain" class="domain-error" role="alert">
       <i class="ri-error-warning-line" aria-hidden="true"></i>
-      <span><strong>{{ DATA_DOMAIN_LABELS[domain] }}读取失败</strong><span class="domain-reason">{{ errors[domain] || '请检查连接后重试。' }}</span></span>
-      <WaoButton variant="ghost" :aria-label="`重新读取${DATA_DOMAIN_LABELS[domain]}`" @click="emit('retry', domain)">重试</WaoButton>
+      <span><strong>{{ DATA_DOMAIN_LABELS[domain] }}读取失败</strong><span class="domain-reason">{{ recovering?.has(domain) ? '连接暂时不稳定，正在自动重新读取…' : errors[domain] || '请检查连接后重试。' }}</span></span>
+      <WaoButton v-if="!recovering?.has(domain)" variant="ghost" :aria-label="`重新读取${DATA_DOMAIN_LABELS[domain]}`" @click="emit('retry', domain)">重试</WaoButton>
     </div>
     <details v-if="otherErrors.length" class="other-errors">
       <summary>其他模块有 {{ otherErrors.length }} 项数据未读取成功</summary>
       <div v-for="domain in otherErrors" :key="domain" class="domain-error">
-        <span><strong>{{ DATA_DOMAIN_LABELS[domain] }}</strong><span class="domain-reason">{{ errors[domain] || '读取失败，请重试。' }}</span></span>
-        <WaoButton variant="ghost" :aria-label="`重新读取${DATA_DOMAIN_LABELS[domain]}`" @click="emit('retry', domain)">重试</WaoButton>
+        <span><strong>{{ DATA_DOMAIN_LABELS[domain] }}</strong><span class="domain-reason">{{ recovering?.has(domain) ? '连接暂时不稳定，正在自动重新读取…' : errors[domain] || '读取失败，请重试。' }}</span></span>
+        <WaoButton v-if="!recovering?.has(domain)" variant="ghost" :aria-label="`重新读取${DATA_DOMAIN_LABELS[domain]}`" @click="emit('retry', domain)">重试</WaoButton>
       </div>
     </details>
   </div>
