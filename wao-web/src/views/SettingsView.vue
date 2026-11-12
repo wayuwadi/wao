@@ -1484,12 +1484,12 @@ async function bindFeishu() {
   color: var(--wao-text-faint);
 }
 
-@media (max-width: 900px) {
+@container app-main (max-width: 900px) {
   .builtin-menu-row { grid-template-columns: 72px 1fr 1fr; }
   .registry-layout { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 760px) {
+@container app-main (max-width: 760px) {
   .settings { display: block; height: auto; min-height: 100%; }
   .snav { width: 100%; height: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--wao-line); overflow-x: auto; overflow-y: hidden; }
   .snav-title, .snav-divider, .snav-group, .snav-foot { display: none; }

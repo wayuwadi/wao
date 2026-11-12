@@ -1123,7 +1123,7 @@ onBeforeUnmount(() => {
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
 }
-@media (max-width: 900px) {
+@container app-main (max-width: 900px) {
   .cap-center {
     padding: 22px 18px;
   }
@@ -1139,7 +1139,7 @@ onBeforeUnmount(() => {
     width: auto;
   }
 }
-@media (max-width: 650px) {
+@container app-main (max-width: 650px) {
   .cap-center {
     padding: 18px 12px;
   }

@@ -522,6 +522,7 @@ onMounted(() => {
   display: grid;
   place-items: center;
   isolation: isolate;
+  overflow: clip;
 }
 .stage-orbit {
   position: absolute;

@@ -957,7 +957,7 @@ button {
     opacity: 0.65;
   }
 }
-@media (max-width: 760px) {
+@container app-main (max-width: 760px) {
   .polish-page {
     padding: 20px 14px 70px;
   }
