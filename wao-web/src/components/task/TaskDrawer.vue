@@ -37,7 +37,7 @@ import { activitySentence } from '@/utils/activity'
 import { fileDisplayName } from '@/utils/files'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
-import { apiGetTask, notifyTaskManually } from '@/api/board'
+import { apiGetTask, apiUploadTaskCommentImage, notifyTaskManually } from '@/api/board'
 import CellMenu from '@/components/task/CellMenu.vue'
 import { subtaskRows, subtaskState, SUBTASK_STATE_COLOR, SUBTASK_STATES } from '@/utils/subtaskTree'
 import type { AiEngine, AiRun, Comment, Priority, SubtaskState, TaskStatus, TaskStep } from '@/types'
@@ -96,6 +96,47 @@ function setWorkItemType(kind: 'task' | 'requirement' | 'bug') {
   menu.value = null
 }
 const commentText = ref('')
+const commentImageInput = ref<HTMLInputElement | null>(null)
+const commentImageUploading = ref(false)
+function commentParts(text: string) {
+  const pattern = /!\[[^\]\n]*\]\((\/api\/images\/[A-Za-z0-9_-]+\/raw)\)/g
+  const parts: { text?: string; image?: string }[] = []
+  let start = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > start) parts.push({ text: text.slice(start, index) })
+    parts.push({ image: match[1] })
+    start = index + match[0].length
+  }
+  if (start < text.length) parts.push({ text: text.slice(start) })
+  return parts
+}
+async function uploadCommentImage(file: File) {
+  if (commentImageUploading.value || !task.value) return
+  const taskId = task.value.id, subId = openSubId.value
+  commentImageUploading.value = true
+  try {
+    if (!file.type.startsWith('image/') || !file.size || file.size > 10 * 1024 * 1024) throw new Error('请选择不超过 10MB 的图片')
+    const uploaded = await apiUploadTaskCommentImage(taskId, file)
+    if (!uploaded) throw new Error('图片上传失败')
+    if (task.value?.id !== taskId || openSubId.value !== subId) {
+      toast('图片已上传，请回到原任务评论中添加', 'ri-error-warning-line')
+      return
+    }
+    commentText.value += `${commentText.value ? '\n' : ''}![图片](${uploaded.url})`
+  } catch (error) { toast(error instanceof Error ? error.message : '图片上传失败，请重试', 'ri-error-warning-line') }
+  finally { commentImageUploading.value = false }
+}
+function chooseCommentImage(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) void uploadCommentImage(file)
+}
+function pasteCommentImage(event: ClipboardEvent) {
+  const file = Array.from(event.clipboardData?.files ?? []).find(item => item.type.startsWith('image/'))
+  if (file) { event.preventDefault(); void uploadCommentImage(file) }
+}
 const mentionOpen = ref(false)
 const sendingComment = ref(false)
 const aiStarting = ref(false)
@@ -719,7 +760,7 @@ const aiLauncherScope = computed(() => {
   return `子任务「${sub?.text ?? ''}」（带主任务与已完成子任务历史）`
 })
 async function sendComment() {
-  if (sendingComment.value) return
+  if (sendingComment.value || commentImageUploading.value) return
   const t = task.value
   const v = commentText.value.trim()
   if (!t || !v) return
@@ -1265,19 +1306,21 @@ async function uploadAttachment(event: Event) {
                       <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
                     </div>
                   </div>
-                  <div v-else class="c-text">{{ cm.text }}</div>
+                  <div v-else class="c-text"><template v-for="(part, partIndex) in commentParts(cm.text)" :key="partIndex"><img v-if="part.image" :src="part.image" alt="评论图片" loading="lazy" /><span v-else>{{ part.text }}</span></template></div>
                 </div>
               </div>
             </div>
             <div class="comment-input">
               <div class="ci-wrap">
-                <textarea v-model="commentText" rows="1" aria-label="评论内容" :disabled="sendingComment" placeholder="写下评论…" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey"></textarea>
+                <textarea v-model="commentText" rows="1" aria-label="评论内容" :disabled="sendingComment" placeholder="写下评论…" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" @paste="pasteCommentImage"></textarea>
                 <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
                   <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
                     <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
                   </button>
                 </div>
-                <button type="button" class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
+                <input ref="commentImageInput" type="file" accept="image/*" hidden @change="chooseCommentImage" />
+                <button type="button" class="text-btn" aria-label="添加评论图片" :disabled="sendingComment || commentImageUploading" @click="commentImageInput?.click()"><i :class="commentImageUploading ? 'ri-loader-4-line spin' : 'ri-image-add-line'"></i></button>
+                <button type="button" class="send" :disabled="!commentText.trim() || sendingComment || commentImageUploading" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
               </div>
             </div>
             <p class="comment-help">Enter 发送 · Shift + Enter 换行<span v-if="!openSub"> · @成员名 通知对方</span></p>
@@ -2822,6 +2865,7 @@ async function uploadAttachment(event: Event) {
 .task-comments .c-head { flex-wrap: wrap; align-items: center; }
 .task-comments .c-head b { font-size: var(--wao-font-body); }
 .task-comments .c-time { font-size: var(--wao-font-help, 13px); color: var(--wao-text-3); }
+.task-comments .c-text img { display: block; max-width: min(100%, 360px); max-height: 360px; object-fit: contain; }
 .task-comments .c-text { font-size: var(--wao-font-body); line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-comments .c-av { width: 32px; height: 32px; font-size: var(--wao-font-help, 13px); }
 .task-comments .ci-wrap { min-width: 0; align-items: flex-end; }

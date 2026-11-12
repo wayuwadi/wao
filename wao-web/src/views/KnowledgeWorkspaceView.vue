@@ -233,7 +233,7 @@ async function create() {
             <p v-if="keyword" class="search-summary" role="status">找到 {{ index.length }} 个知识库中的 {{ resultCount }} 篇文档<button type="button" @click="clearSearch">清除搜索</button></p>
           </header>
           <WaoEmptyState v-if="(data.loadStates.knowledge === 'loading' || data.loadStates.knowledge === 'idle') && !libraries.length" title="正在读取知识库…" icon="ri-loader-4-line" role="status" />
-          <WaoEmptyState v-else-if="data.loadStates.knowledge === 'error'" title="知识库读取失败" :description="libraries.length ? '以下为上次读取的目录，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert"><template #actions><WaoButton @click="data.retryDomain('knowledge')">重新读取知识库</WaoButton></template></WaoEmptyState>
+          <WaoEmptyState v-else-if="data.loadStates.knowledge === 'error'" title="知识库读取失败" :description="data.recoveringDomains?.has('knowledge') ? '连接暂时不稳定，正在自动重新读取…' : libraries.length ? '以下为上次读取的目录，请重试获取最新内容。' : '请检查连接后重试。'" icon="ri-error-warning-line" role="alert"><template v-if="!data.recoveringDomains?.has('knowledge')" #actions><WaoButton @click="data.retryDomain('knowledge')">重新读取知识库</WaoButton></template></WaoEmptyState>
           <WaoEmptyState v-else-if="!index.length" :title="keyword ? '没有匹配的内容' : '还没有知识库'" :description="keyword ? '换个关键词，或清除搜索查看全部内容。' : '创建一个知识库，开始整理文档。'"><template #actions><WaoButton v-if="keyword" @click="clearSearch">清除搜索</WaoButton><WaoButton v-else @click="startCreate">新增知识库</WaoButton></template></WaoEmptyState>
           <template v-if="view === 'directory'">
             <section v-for="item in index" :key="item.kb.id" class="index-library">

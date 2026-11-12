@@ -19,3 +19,6 @@ export function habitScheduled(item:RoutineItem,day:string) {
  return item.frequency==='weekly' || (item.frequency==='interval'?offset%item.intervalDays===0:item.weekdays.includes(new Date(day+'T12:00:00Z').getUTCDay()||7))
 }
 export const routineColors:Record<string,string>={primary:'var(--wao-primary)',green:'var(--wao-area-health)',orange:'var(--wao-area-family)',pink:'var(--wao-area-growth)',purple:'var(--wao-area-finance)'}
+
+export interface RoutineDateEvent { id: string; name: string; emoji: string; date: string }
+export const fetchRoutineDateEvents = async (from: string, to: string) => (await http.get<ApiResponse<RoutineDateEvent[]>>('/api/routines/calendar-dates', { params: { from, to } })).data.data

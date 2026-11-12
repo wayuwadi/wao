@@ -131,6 +131,15 @@ it('保存重试覆盖旧错误，草稿不误报为已同步', async () => {
   expect(wrapper.text()).toBe('本机草稿 · 尚未同步')
 })
 
+it('临时读取故障展示自动重试状态，无需逐项点击重试', () => {
+  const states = Object.fromEntries(Object.keys(DATA_DOMAIN_LABELS).map(domain => [domain, 'loaded'])) as Record<DataDomain, DataLoadState>
+  states.knowledge = 'error'; states.files = 'error'
+  const wrapper = mount(DataLoadStatus, { props: { states, errors: { knowledge: 'timeout of 10000ms exceeded' }, activeDomains: ['knowledge'], recovering: new Set<DataDomain>(['knowledge', 'files']) } })
+  expect(wrapper.text()).toContain('正在自动重新读取')
+  expect(wrapper.text()).not.toContain('timeout of 10000ms exceeded')
+  expect(wrapper.findAll('button')).toHaveLength(0)
+})
+
 it('设置搜索只发出导航意图，导航未完成时保留搜索结果', async () => {
   const wrapper = mount(SettingsSearch, { props: { currentTab: 'common' } })
   await wrapper.get('input').setValue('密码')

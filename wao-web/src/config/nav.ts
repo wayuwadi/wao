@@ -19,7 +19,7 @@ export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
 /** 已全站下线的独立功能；旧个人布局和历史页签不得使入口重新出现。 */
 export const RETIRED_MODULE_IDS = new Set<ModuleId>([
-  'projects', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
+  'focus', 'countdowns', 'projects', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections',

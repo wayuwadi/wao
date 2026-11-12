@@ -357,7 +357,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
       <div ref="contentRef" class="content" :class="{ 'focus-content': route.path === '/focus' }">
         <UploadQueueStatus />
-        <DataLoadStatus :states="data.loadStates" :errors="data.loadErrors" :active-domains="visibleDataDomains" @retry="data.retryDomain" />
+        <DataLoadStatus :states="data.loadStates" :errors="data.loadErrors" :recovering="data.recoveringDomains" :active-domains="visibleDataDomains" @retry="data.retryDomain" />
         <!-- 页面主体撑满剩余高度；复杂页面可用本页锚点，首页留给主要内容。 -->
         <div class="page-stage">
           <PageSectionNav v-if="route.path !== '/'" :root="pageBodyRef" :scroll-container="contentRef" />

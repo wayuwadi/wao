@@ -103,6 +103,7 @@ public class WorkdayRhythmDashboardService {
                             && !dueAt(value).isBefore(now))
                     .forEach(result::add);
         }
+        result.removeIf(value -> "TIANREN".equals(value.getKind()));
         result.forEach(value -> refreshCountdown(value, now));
         result.sort(Comparator.comparing((WorkdayRhythmChecklistOccurrenceEntity value) ->
                 value.getCompletedAt() != null).thenComparing(this::dueAt));
@@ -456,7 +457,7 @@ public class WorkdayRhythmDashboardService {
     }
 
     private boolean applies(WorkdayRhythmChecklistItemEntity item, LocalDate date, boolean workday) {
-        if (!Boolean.TRUE.equals(item.getActive()) || item.getDeletedAt() != null) return false;
+        if ("TIANREN".equals(item.getKind()) || !Boolean.TRUE.equals(item.getActive()) || item.getDeletedAt() != null) return false;
         if ("DAILY".equals(item.getScheduleType())) return true;
         if ("WORKDAY".equals(item.getScheduleType())) return workday;
         return weekdays(item.getWeekdaysJson()).contains(date.getDayOfWeek().getValue());

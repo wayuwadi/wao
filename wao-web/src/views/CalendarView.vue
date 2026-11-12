@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nowIso } from '@/utils/time'
 import CalendarTaskPlanner from '@/components/calendar/CalendarTaskPlanner.vue'
+import CountdownsView from '@/views/CountdownsView.vue'
+import { fetchRoutineDateEvents, type RoutineDateEvent } from '@/api/personalRoutines'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import { scheduleAtTime, timeLanes, validateSchedule } from '@/utils/calendarPlanning'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -227,6 +229,22 @@ const holidayEvents = ref<HolidayEvent[]>([])
 const holidayYears = ref<HolidayYearSource[]>([])
 const holidayState = ref<'loading' | 'ready' | 'error'>('loading')
 let holidayRequestSequence = 0
+const legacyDateManager = ref(route.query.dates === '1')
+watch(() => route.query.dates, value => { if (value === '1') legacyDateManager.value = true })
+watch(() => session.currentUser.id, () => { routineDateEvents.value = []; legacyDateManager.value = false; void loadRoutineDates() })
+const routineDateEvents = ref<RoutineDateEvent[]>([])
+const routineDateError = ref('')
+let routineDateSequence = 0
+async function loadRoutineDates() {
+  const sequence = ++routineDateSequence
+  const { from, to } = visibleRange()
+  try {
+    const events = await fetchRoutineDateEvents(iso(from), iso(to))
+    if (sequence === routineDateSequence) { routineDateEvents.value = events; routineDateError.value = '' }
+  } catch {
+    if (sequence === routineDateSequence) { routineDateEvents.value = []; routineDateError.value = '日期记录读取失败' }
+  }
+}
 const importantDateItems = ref<FamilyImportantDate[]>([])
 const importantDateEvents = ref<FamilyImportantDateEvent[]>([])
 const importantDateState = ref<'loading' | 'ready' | 'error'>('loading')
@@ -333,6 +351,7 @@ async function loadImportantDates() {
 function loadCalendarSources() {
   loadHolidays()
   loadImportantDates()
+  loadRoutineDates()
   loadCalendarReadings()
 }
 
@@ -435,6 +454,9 @@ const events = computed<CalEvt[]>(() => {
       sourceLabel: holiday.sourceName,
       go: () => openHolidayDetail(holiday),
     })
+  })
+  if (calendarMemberId.value === session.currentUser.id) routineDateEvents.value.forEach((item) => {
+    evs.push({ date: item.date, title: `${item.emoji} ${item.name}`, color: '#D0527F', kind: '重要日期', go: () => { legacyDateManager.value = true } })
   })
   importantDateEvents.value.forEach((importantDate) => {
     evs.push({
@@ -1312,6 +1334,7 @@ useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
           <button v-if="calendarMemberId === session.userId" class="mobile-day-records" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })"><i class="ri-calendar-check-line"></i><span><b>查看当天记录</b><small>{{ selectedDate }}</small></span></button>
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
+          <button type="button" @click="legacyDateManager = true"><i class="ri-calendar-event-line"></i><span><b>日期记录</b><small>查看和管理已有日期</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
           <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
         </div></details>
@@ -1547,6 +1570,10 @@ useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
       </div>
     </template>
 
+    <div v-if="routineDateError" role="alert">{{ routineDateError }} <button type="button" @click="loadRoutineDates">重试</button></div>
+    <SettingsDialogShell v-if="legacyDateManager" title="日期记录" @close="legacyDateManager = false; loadRoutineDates()">
+      <CountdownsView />
+    </SettingsDialogShell>
     <!-- 日历提醒事项维护浮层 -->
     <template v-if="showImportantDates">
       <div class="cd-mask" @click="closeImportantDateManager"></div>

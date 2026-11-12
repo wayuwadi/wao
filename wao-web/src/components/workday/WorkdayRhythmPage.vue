@@ -137,7 +137,6 @@ const historyError = ref('')
 const history = ref<WorkdayRhythmHistory | null>(null)
 const dailyPanelKey = ref(0)
 const tomorrowOpen = ref(false)
-const tianrenEnabled = ref(true)
 const growthCoachOpen = ref(false)
 const growthCoach = ref<DailyGuidance | null>(readCachedGrowthCoach())
 const growthCoachLoading = ref(false)
@@ -305,7 +304,6 @@ function guidanceTime(value?: string | null) {
 
 function handleDailyPanelLoaded(dashboard: RhythmDashboard) {
   day.value.workdayActive = dashboard.workday
-  tianrenEnabled.value = dashboard.settings.tianrenEnabled
 }
 
 function shiftDate(value: string, days: number) {
@@ -915,7 +913,7 @@ onBeforeUnmount(() => {
     <template v-else>
       <section
         class="hero"
-        :class="{ resting: !day.workdayActive, 'without-hexagram': !tianrenEnabled }"
+        :class="{ resting: !day.workdayActive }"
       >
         <div class="hero-copy">
           <div class="date-line">
@@ -966,7 +964,7 @@ onBeforeUnmount(() => {
             </li>
           </ol>
         </div>
-        <WorkdayRhythmHexagramSummary v-if="tianrenEnabled" :date="clock.date" />
+        <WorkdayRhythmHexagramSummary :date="clock.date" />
       </section>
 
       <div v-if="dayState === 'error'" class="save-banner error" role="alert">

@@ -97,6 +97,8 @@ import { nowIso, todayIso } from '@/utils/time'
 import { mergeSubtasks } from '@/utils/subtaskMerge'
 import { mergeServerList } from '@/utils/mergeServerList'
 import { createResourceListLoader } from '@/utils/resourceListLoader'
+import { createReadRecovery } from '@/utils/readRecovery'
+import { isSessionPaused } from '@/utils/sessionRecovery'
 import { subtaskState } from '@/utils/subtaskTree'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
@@ -247,6 +249,31 @@ export const useDataStore = defineStore('data', () => {
     ])) as Record<DataDomain, DataLoadState>,
   )
   const loadErrors = reactive<Partial<Record<DataDomain, string>>>({})
+  const recoveringDomains = reactive(new Set<DataDomain>())
+  let dataLoadGeneration = 0
+  const loadRecovery = createReadRecovery<DataDomain>({
+    pending: recoveringDomains,
+    identity: () => {
+      const session = useSessionStore()
+      return session.userId ? `${session.account?.accountId ?? ''}:${session.userId}` : ''
+    },
+    available: () => !document.hidden && navigator.onLine && !isSessionPaused(),
+    failed: domain => loadStates[domain] === 'error',
+    retry: retryDomain,
+  })
+  window.addEventListener('online', loadRecovery.resume)
+  document.addEventListener('visibilitychange', loadRecovery.resume)
+  onScopeDispose(() => {
+    dataLoadGeneration++
+    loadRecovery.dispose()
+    window.removeEventListener('online', loadRecovery.resume)
+    document.removeEventListener('visibilitychange', loadRecovery.resume)
+  })
+  watch(() => DATA_DOMAINS.map(domain => loadStates[domain]), () => {
+    for (const domain of recoveringDomains) {
+      if (loadStates[domain] === 'loaded') loadRecovery.succeeded(domain)
+    }
+  })
   const filesLoader = createResourceListLoader<FileItem>({
     read: () => fetchFiles(), current: () => files.value, replace: value => { files.value = value }, key: item => item.id ?? item.link,
     loading: () => { fileLoadState.value = loadStates.files = 'loading'; fileLoadError.value = ''; delete loadErrors.files },
@@ -254,13 +281,14 @@ export const useDataStore = defineStore('data', () => {
     failed: cause => {
       fileLoadState.value = loadStates.files = 'error'
       fileLoadError.value = loadErrors.files = cause instanceof Error && cause.message ? cause.message : '暂时无法读取文件，请稍后重试'
+      loadRecovery.queue('files', cause)
     },
   })
   const imagesLoader = createResourceListLoader<ImageItem>({
     read: () => fetchImages(), current: () => imgs.value, replace: value => { imgs.value = value }, key: item => item.id ?? item.url,
     loading: () => { loadStates.images = 'loading'; delete loadErrors.images },
     loaded: () => { loadStates.images = 'loaded'; delete loadErrors.images; apiLive.value = true },
-    failed: cause => { loadStates.images = 'error'; loadErrors.images = cause instanceof Error && cause.message ? cause.message : DOMAIN_ERROR_MESSAGES.images },
+    failed: cause => { loadStates.images = 'error'; loadErrors.images = cause instanceof Error && cause.message ? cause.message : DOMAIN_ERROR_MESSAGES.images; loadRecovery.queue('images', cause) },
   })
   const pagesLoader = createResourceListLoader<HostedPage>({
     read: () => fetchHostedPages(), current: () => hostedPages.value, replace: value => { hostedPages.value = value }, key: item => item.id,
@@ -270,6 +298,9 @@ export const useDataStore = defineStore('data', () => {
   })
   const resourceSession = useSessionStore()
   watch(() => `${resourceSession.account?.accountId ?? ''}:${resourceSession.userId}`, () => {
+    dataLoadGeneration++
+    loadRecovery.reset()
+    automationRequest = null
     // Clear immediately, including logout and an account change with the same member id.
     filesLoader.reset(); imagesLoader.reset(); pagesLoader.reset()
     files.value = []; imgs.value = []; hostedPages.value = []
@@ -277,6 +308,7 @@ export const useDataStore = defineStore('data', () => {
     loadStates.images = hostedPageLoadState.value = 'idle'; hostedPageLoadError.value = ''
     delete loadErrors.files; delete loadErrors.images
   }, { flush: 'sync' })
+  watch(() => resourceSession.recoveryRequired, required => { if (!required) loadRecovery.resume() })
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
   const vaultError = ref(false)
 
@@ -290,6 +322,8 @@ export const useDataStore = defineStore('data', () => {
   async function hydrate(domains?: DataDomain[]) {
     const requested = new Set(domains ?? EAGER_DATA_DOMAINS)
     const requestMember = useSessionStore().userId
+    const requestGeneration = dataLoadGeneration
+    const requestCurrent = () => requestGeneration === dataLoadGeneration && requestMember === useSessionStore().userId
     if (taskDataMember !== requestMember) {
       for (const domain of DATA_DOMAINS) {
         loadStates[domain] = EAGER_DATA_DOMAINS.includes(domain) ? 'loading' : 'idle'
@@ -321,18 +355,19 @@ export const useDataStore = defineStore('data', () => {
       if (!requested.has(domain)) return null
       try {
         const result = await load()
-        if (requestMember !== useSessionStore().userId) return null
+        if (!requestCurrent()) return null
         apply(result)
         loadStates[domain] = 'loaded'
         delete loadErrors[domain]
         apiLive.value = true
         return result
       } catch (cause: unknown) {
-        if (requestMember !== useSessionStore().userId) return null
+        if (!requestCurrent()) return null
         loadStates[domain] = 'error'
         loadErrors[domain] = cause instanceof Error && cause.message
           ? cause.message
           : DOMAIN_ERROR_MESSAGES[domain]
+        loadRecovery.queue(domain, cause)
         return null
       }
     }
@@ -350,7 +385,7 @@ export const useDataStore = defineStore('data', () => {
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
     const taskRequest = requested.has('tasks') ? fetchTasks()
       .then((loadedTasks) => {
-        if (requestMember !== useSessionStore().userId) return loadedTasks
+        if (!requestCurrent()) return loadedTasks
         loadedTasks = loadedTasks.filter(task => !taskDeletionBlocked(task.id))
         const protectedIds = taskProtectedIds()
         mergeList(tasks.value, loadedTasks, protectedIds)
@@ -395,7 +430,7 @@ export const useDataStore = defineStore('data', () => {
         return loadedTasks
       })
       .catch((cause: unknown) => {
-        if (requestMember !== useSessionStore().userId) return null
+        if (!requestCurrent()) return null
         // 失败不能清掉本机真实输入；错误状态由页面明确展示。
         taskLoadState.value = 'error'
         taskLoadError.value = cause instanceof Error && cause.message
@@ -403,6 +438,7 @@ export const useDataStore = defineStore('data', () => {
           : '暂时无法读取任务，请稍后重试'
         loadStates.tasks = 'error'
         loadErrors.tasks = taskLoadError.value
+        loadRecovery.queue('tasks', cause)
         return null
       }) : Promise.resolve(null)
     const fileRequest = requested.has('files')
@@ -423,12 +459,12 @@ export const useDataStore = defineStore('data', () => {
       settle('suggestions', fetchSuggestions, value => { suggestions.value = value }),
       settle('goals', fetchGoals, value => { goals.value = value }),
     ])
-    if (requestMember !== useSessionStore().userId) return
+    if (!requestCurrent()) return
     // 任一已鉴权读路径成功即可证明会话和后端可达；单个慢域不能拖死小记等独立写路径。
     apiLive.value = apiLive.value || [a, p, t, knowledge, fl, va, sc, sg, gl].some(result => result !== null)
     if (requested.has('vault')) vaultError.value = va === null
     if (apiLive.value) {
-      // 项目/任务都拿到真实快照后才启动合并轮询；其一失败时保留当前数据，等待手工重试。
+      // 项目/任务都拿到真实快照后才启动合并轮询；读取失败由自动恢复队列继续处理。
       if (loadStates.projects === 'loaded' && loadStates.tasks === 'loaded') {
         lastServerSyncFingerprint = serverSyncFingerprint(p ?? projects.value, t ?? tasks.value)
         startSync()
@@ -1545,6 +1581,7 @@ export const useDataStore = defineStore('data', () => {
         loadErrors.docs = cause instanceof Error && cause.message
           ? cause.message
           : DOMAIN_ERROR_MESSAGES.docs
+        loadRecovery.queue('docs', cause)
         return false
       })
       .finally(() => {
@@ -1608,6 +1645,7 @@ export const useDataStore = defineStore('data', () => {
       if (generation === docMemberGeneration) {
         loadStates.knowledge = 'error'
         loadErrors.knowledge = cause instanceof Error && cause.message ? cause.message : DOMAIN_ERROR_MESSAGES.knowledge
+        loadRecovery.queue('knowledge', cause)
       }
       return false
     }).finally(() => {
@@ -2761,25 +2799,30 @@ export const useDataStore = defineStore('data', () => {
 
   function loadAutomation(): Promise<boolean> {
     if (automationRequest) return automationRequest
+    const generation = dataLoadGeneration
     loadStates.automation = 'loading'
     delete loadErrors.automation
-    automationRequest = fetchJobs()
+    const request = fetchJobs()
       .then((jobs) => {
+        if (generation !== dataLoadGeneration) return false
         autos.value = jobs
         loadStates.automation = 'loaded'
         return true
       })
       .catch((cause: unknown) => {
+        if (generation !== dataLoadGeneration) return false
         loadStates.automation = 'error'
         loadErrors.automation = cause instanceof Error && cause.message
           ? cause.message
           : DOMAIN_ERROR_MESSAGES.automation
+        loadRecovery.queue('automation', cause)
         return false
       })
       .finally(() => {
-        automationRequest = null
+        if (automationRequest === request) automationRequest = null
       })
-    return automationRequest
+    automationRequest = request
+    return request
   }
 
   const jobById = (id: string) => autos.value.find((j) => j.id === id)
@@ -2853,21 +2896,23 @@ export const useDataStore = defineStore('data', () => {
    */
   async function reloadVault(): Promise<boolean> {
     const member = useSessionStore().userId
+    const generation = dataLoadGeneration
     loadStates.vault = 'loading'
     delete loadErrors.vault
     try {
       const loaded = await fetchVault()
-      if (member !== useSessionStore().userId) return false
+      if (generation !== dataLoadGeneration || member !== useSessionStore().userId) return false
       vault.value = loaded
       vaultError.value = false
       loadStates.vault = 'loaded'
       apiLive.value = true
       return true
     } catch (cause) {
-      if (member !== useSessionStore().userId) return false
+      if (generation !== dataLoadGeneration || member !== useSessionStore().userId) return false
       vaultError.value = true
       loadStates.vault = 'error'
       loadErrors.vault = cause instanceof Error ? cause.message : DOMAIN_ERROR_MESSAGES.vault
+      loadRecovery.queue('vault', cause)
       return false
     }
   }
@@ -2982,7 +3027,7 @@ export const useDataStore = defineStore('data', () => {
   return {
     today, areas, projects, tasks, kbs, docs, archivedDocIds, autos, files, imgs, vault,
     schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError,
-    fileLoadState, fileLoadError, loadStates, loadErrors, hydrate, retryDomain,
+    fileLoadState, fileLoadError, loadStates, loadErrors, recoveringDomains, hydrate, retryDomain,
     areaById, projectById, taskById, tasksByProject, kbById, docById,
     isDocArchived, archivedDocsOf, areaColor,
     docEdits, docConflicts, docDraftErrors, setDocEdit, persistDocNow, restoreDocumentDraft, docOf, docPending, saveState, markSaving, markSaved,

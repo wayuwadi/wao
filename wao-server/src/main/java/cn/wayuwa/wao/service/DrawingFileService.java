@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 按成员归属管理 Excalidraw 草图文件。 */
@@ -86,7 +87,7 @@ public class DrawingFileService {
      *
      * @return 保存后的新版本快照
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public DrawingFileDto save(String id, SaveDrawingFileRequest request, String memberId) {
         DrawingFileEntity before = required(id, memberId);
         validateScene(request.sceneJson());
@@ -117,7 +118,7 @@ public class DrawingFileService {
      *
      * @return 恢复后新生成的当前版本
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public DrawingFileDto restore(String id, int historicalRevision, int expectedRevision, String memberId) {
         DrawingFileEntity file = required(id, memberId);
         DrawingFileVersionEntity historical = mapper.findVersion(id, historicalRevision, file.getOwnerMemberId());

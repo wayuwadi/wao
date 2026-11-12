@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -30,6 +30,41 @@ function setup(error = false, realEditor = false, attach = false) {
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('直接点击子任务日期打开日历，保存到该子项且保持当前详情', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs[0]!.due = '2026-11-01'
+    const originalDue = data.tasks[0]!.due
+    const projection = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items: projection.items, contextItems: projection.items, itemRefs: projection.refs })
+    const update = vi.spyOn(data, 'updateSub')
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const row = wrapper.get('[data-task-id="sub:parent:child"]')
+    await row.get('[aria-label="修改 子任务 的截止日期"]').trigger('click')
+    await row.get('[aria-label="2026-11-13"]').trigger('click')
+    await row.findAll('button').find(button => button.text() === '确定')!.trigger('click')
+    await flushPromises()
+    expect(update).toHaveBeenCalledWith('parent', 'child', { due: '2026-11-13' })
+    expect(data.tasks[0]!.due).toBe(originalDue)
+    expect(wrapper.get<HTMLInputElement>('[aria-label="任务标题"]').element.value).toBe('父任务')
+  })
+  it('详情子任务日期支持清除，取消日历保留原日期', async () => {
+    const { data, wrapper } = setup()
+    data.tasks[0]!.subs[0]!.due = '2026-11-01'
+    const projection = projectWorkItems(data.tasks)
+    await wrapper.setProps({ items: projection.items, contextItems: projection.items, itemRefs: projection.refs })
+    const update = vi.spyOn(data, 'updateSub')
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    const child = wrapper.get('.detail-subtask')
+    await child.get('.due-trigger').trigger('click')
+    await child.findAll('button').find(button => button.text() === '取消')!.trigger('click')
+    expect(update).not.toHaveBeenCalled()
+    await child.get('.due-trigger').trigger('click')
+    await child.findAll('button').find(button => button.text() === '清除')!.trigger('click')
+    await flushPromises()
+    expect(update).toHaveBeenCalledWith('parent', 'child', { due: '' })
+  })
   it('标题输入法确认保持编辑焦点，普通回车才结束编辑', async () => {
     const { wrapper } = setup()
     const input = wrapper.get<HTMLInputElement>('[aria-label="任务标题"]')
@@ -43,17 +78,20 @@ describe('项目清单详情', () => {
     await input.trigger('keydown', { key: 'Enter' })
     expect(blur).toHaveBeenCalledTimes(1)
   })
-  it('行内修改子任务状态不切换详情且保存到真实子项', async () => {
+  it('单个更多菜单保留子任务状态操作并保存到真实子项', async () => {
     const { data, wrapper } = setup()
     const update = vi.spyOn(data, 'setSubState')
     const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
-    await wrapper.get('[data-task-id="sub:parent:child"] .row-status').trigger('click')
-    const options = wrapper.findAll('[role="menuitemradio"]')
-    expect(options.map(o => o.text())).toEqual(['未开始', '进行中', '待验证', '已完成'])
-    await options.find(o => o.text() === '进行中')!.trigger('click')
+    expect(wrapper.find('.row-quick-fields').exists()).toBe(false)
+    expect(wrapper.find('.row-status').exists()).toBe(false)
+    await wrapper.get('[data-task-id="sub:parent:child"] .row-more').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.querySelectorAll('button[role=menuitem]')).find(button => button.textContent?.trim() === '状态 · 进行中')!
+    await new DOMWrapper(option).trigger('click')
+    await flushPromises()
     expect(update).toHaveBeenCalledWith('parent', 'child', '进行中')
     expect(flush).toHaveBeenCalledWith('parent')
-    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
+    expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
   })
   it('行内完成沿用可撤销等待，保存失败原位重试', async () => {
     vi.useFakeTimers()
@@ -61,8 +99,7 @@ describe('项目清单详情', () => {
     const patch = vi.spyOn(data, 'patchTask')
     const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
     try {
-      await wrapper.get('[data-task-id="parent"] .row-status').trigger('click')
-      await wrapper.findAll('[role="menuitemradio"]').find(o => o.text() === '已完成')!.trigger('click')
+      await wrapper.get('[data-task-id="parent"] input[type=checkbox]').setValue(true)
       expect(patch).not.toHaveBeenCalled()
       expect(wrapper.get('[data-task-id="parent"] input[type=checkbox]').element).toHaveProperty('checked', true)
       await wrapper.get('[data-task-id="parent"] input[type=checkbox]').setValue(false)
@@ -266,13 +303,10 @@ describe('项目清单详情', () => {
     expect(data.tasks[0]!.status).toBe('待办')
   })
 
-  it('专注入口使用独立关联参数，避免触发全局任务抽屉', async () => {
+  it('任务详情不再显示番茄专注入口', async () => {
     const { wrapper } = setup()
     await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')
-    const link = wrapper.findComponent({ name: 'RouterLink' })
-    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: undefined } })
-    await wrapper.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
-    expect(link.props('to')).toEqual({ path: '/focus', query: { focusTask: 'parent', focusSub: 'child' } })
+    expect(wrapper.text()).not.toContain('开始专注')
   })
   it('右键父任务添加子任务，键盘及详情子项可继续添加下级并展开父级', async () => {
     const { data, wrapper } = setup()
@@ -530,14 +564,14 @@ describe('项目清单详情', () => {
     expect(wrapper.emitted('toggle')).toContainEqual(['parent'])
     await wrapper.setProps({ collapsed:[] })
     expect(wrapper.get('.checklist-row.selected').text()).toContain('子任务')
-    expect(wrapper.get('.parent-task-link').text()).toContain('父任务')
+    expect(wrapper.find('.parent-task-link').exists()).toBe(false)
     expect(wrapper.find('[aria-label="直属子任务"]').exists()).toBe(false)
     await wrapper.get('[aria-label="任务优先级"]').trigger('click')
     await wrapper.findAll('[role=menuitemradio]').find(b => b.text().includes('P1'))!.trigger('click')
     expect(update).toHaveBeenCalledWith('parent', 'child', { pr: 'P1' })
     await wrapper.setProps({ collapsed: ['parent'], items: [...wrapper.props('items')] })
     expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('子任务')
-    await wrapper.get('.parent-task-link').trigger('click')
+    await wrapper.get('[data-task-id="parent"] .task-select').trigger('click')
     expect((wrapper.get('[aria-label="任务标题"]').element as HTMLInputElement).value).toBe('父任务')
   })
   it('顶部切换分组和状态，子事项沿用父分组且只提供支持的状态', async () => {

@@ -574,3 +574,10 @@ export const apiMoveTask = (task: Task, parentTaskId: string | null) =>
 /** 以当前父级作为并发前置条件，移动整个目录子树。 */
 export const apiMoveKnowledgeNode = (kbId: string, node: string, parent: string, expectedParent: string, beforeSibling?: string | null) =>
   put<KnowledgeBase>(`/api/kbs/${kbId}/directory-parent`, { node, parent, expectedParent, beforeSibling })
+
+/** Upload a private comment image bound to the task's access rules. */
+export async function apiUploadTaskCommentImage(taskId: string, file: File): Promise<ImageItem> {
+  const form = new FormData()
+  form.append('file', file)
+  return (await http.post<ApiResponse<ImageItem>>(`/api/tasks/${encodeURIComponent(taskId)}/comments/images`, form, { timeout: 60_000 })).data.data
+}

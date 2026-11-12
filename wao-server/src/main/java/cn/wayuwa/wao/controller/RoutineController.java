@@ -11,6 +11,7 @@ public class RoutineController {
     private final RoutineService routines;private final CurrentMember current;
     public RoutineController(RoutineService routines,CurrentMember current){this.routines=routines;this.current=current;}
     @GetMapping public ApiResponse<RoutineService.State> state(@RequestParam(required=false) String month,HttpServletRequest http){return ApiResponse.ok(routines.state(current.id(http),month));}
+    @GetMapping("/calendar-dates") public ApiResponse<java.util.List<RoutineService.DateEvent>> calendarDates(@RequestParam java.time.LocalDate from,@RequestParam java.time.LocalDate to,HttpServletRequest http){return ApiResponse.ok(routines.calendarDates(current.id(http),from,to));}
     @PutMapping("/{id}") public ApiResponse<RoutineService.Item> save(@PathVariable String id,@RequestBody RoutineService.Item body,HttpServletRequest http){return ApiResponse.ok(routines.save(current.id(http),id,body));}
     @PutMapping("/{id}/checkins/{date}") public ApiResponse<RoutineService.Log> checkin(@PathVariable String id,@PathVariable String date,@RequestBody RoutineService.Checkin body,HttpServletRequest http){return ApiResponse.ok(routines.checkin(current.id(http),id,date,body));}
 }

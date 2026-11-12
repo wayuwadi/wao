@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { labelFeedback } from '@/composables/taskChangeFeedback'
 import { useTaskLabelsStore } from '@/stores/taskLabels'
 import CellMenu from './CellMenu.vue'
-const props = defineProps<{ taskId: string; subId?: string; autoOpen?: boolean; inline?: boolean }>()
+const props = defineProps<{ taskId: string; subId?: string; autoOpen?: boolean; inline?: boolean; compact?: boolean }>()
 const emit=defineEmits<{done:[]}>()
 const labels = useTaskLabelsStore()
 const editing = ref(false), draft = ref(''), revision = ref(0), saving = ref(false), error = ref('')
@@ -51,9 +51,9 @@ function dismiss() { if (saving.value || !protect()) return; editing.value = fal
 function cancel() { if (saving.value) return; try { localStorage.removeItem(key.value); editing.value = false; error.value = ''; trigger.value?.focus(); emit('done') } catch { error.value = '无法清除草稿，请重试' } }
 </script>
 <template>
- <div class="task-labels" :class="{inline}">
-  <div v-if="current.tags.length" class="label-chips" aria-label="当前标签"><span v-for="tag in current.tags" :key="tag" class="label-chip" :title="tag"># {{ tag }}</span></div>
-  <button v-if="!autoOpen || !editing" ref="trigger" type="button" :disabled="!labels.ready" aria-haspopup="dialog" :aria-expanded="editing" @click="editing ? dismiss() : begin()"><i class="ri-price-tag-3-line"></i> 标签</button>
+ <div class="task-labels" :class="{inline, compact}">
+  <div v-if="current.tags.length" class="label-chips" aria-label="当前标签"><span v-for="tag in current.tags" :key="tag" class="label-chip" :title="tag"><template v-if="!compact"># </template>{{ tag }}</span></div>
+  <button v-if="!autoOpen || !editing" ref="trigger" type="button" :disabled="!labels.ready" :aria-label="compact ? '编辑任务标签' : undefined" :title="compact ? '编辑任务标签' : undefined" aria-haspopup="dialog" :aria-expanded="editing" @click="editing ? dismiss() : begin()"><i :class="compact ? 'ri-add-line' : 'ri-price-tag-3-line'" aria-hidden="true"></i><template v-if="!compact"> 标签</template></button>
   <component :is="autoOpen ? 'div' : CellMenu" v-if="editing" v-bind="autoOpen ? {} : { anchor: trigger, minWidth: 300, customContent: true }" class="label-popover" @close="dismiss" @ready="focusInput">
   <form role="dialog" aria-label="编辑任务标签" @submit.prevent="save" @keydown.esc.stop.prevent="autoOpen ? cancel() : dismiss()">
    <strong>标签</strong>
@@ -69,6 +69,8 @@ function cancel() { if (saving.value) return; try { localStorage.removeItem(key.
 <style scoped>
 .task-labels { position:relative; min-width:0; min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-block:var(--wao-space-1); font-family:var(--wao-font); font-size:var(--wao-font-body); line-height:1.5; font-weight:400; }
 .label-chips { display:flex; flex:1; min-width:0; gap:var(--wao-space-1); overflow-x:auto; }
+.compact .label-chips { flex:0 1 auto; flex-wrap:wrap; overflow:visible; }
+.compact > button { display:inline-flex; align-items:center; justify-content:center; min-width:24px; min-height:24px; padding:0; border:1px solid var(--wao-primary-line); border-radius:var(--wao-radius-pill); color:var(--wao-primary-text); }
 .label-chips > .label-chip { flex-shrink:0; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .task-labels > button { flex-shrink:0; }
 .label-popover { box-sizing:border-box; width:300px; max-width:calc(100vw - 16px); }
@@ -85,5 +87,5 @@ footer { display:flex; justify-content:flex-end; gap:var(--wao-space-1); border-
 .save-labels { background:var(--wao-primary-soft); border-radius:var(--wao-radius-control); padding-inline:var(--wao-space-2); }
 .label-error { color:var(--wao-danger-strong); width:100%; }
 button:focus-visible,input:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
-@media(pointer:coarse) { button { min-height:44px; } }
+@media(pointer:coarse) { button { min-height:44px; } .compact > button { min-width:44px; min-height:44px; } }
 </style>

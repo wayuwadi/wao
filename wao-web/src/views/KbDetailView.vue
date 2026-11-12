@@ -1482,7 +1482,12 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 
 <template>
   <ContextActionMenu ref="directoryContext" />
-  <div v-if="!kb" class="missing">知识库不存在。</div>
+  <div v-if="!kb" class="missing" role="status">
+    <template v-if="data.loadStates.knowledge === 'loaded'">知识库不存在。</template>
+    <template v-else-if="data.recoveringDomains?.has('knowledge')">连接暂时不稳定，正在自动重新读取知识库…</template>
+    <template v-else-if="data.loadStates.knowledge === 'error'">知识库暂时未能读取，{{ data.loadErrors.knowledge || '请稍后重试。' }}</template>
+    <template v-else>正在读取知识库…</template>
+  </div>
   <div v-else ref="workspace" class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
     <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryVisible ? '收起知识库目录' : '展开知识库目录'" :aria-label="directoryVisible ? '收起知识库目录' : '展开知识库目录'" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
     <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
@@ -1665,7 +1670,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
               <select v-model="homeOrder" aria-label="首页文档排序"><option value="directory">按目录</option><option value="updated">最近更新</option><option value="title">按名称</option></select>
               <button class="library-star" :disabled="creatingDoc" @click="createAction('doc')"><i class="ri-add-line" aria-hidden="true"></i>新建文档</button>
             </div>
-            <div v-if="data.loadStates.docs === 'error'" class="home-load-error" role="alert"><span>目录加载失败：{{ data.loadErrors.docs || '请检查网络后重试' }}</span><button class="library-star" @click="data.refreshDocs()">重试</button></div>
+            <div v-if="data.loadStates.docs === 'error'" class="home-load-error" role="alert"><span>{{ data.recoveringDomains?.has('docs') ? '连接暂时不稳定，正在自动重新读取目录…' : `目录加载失败：${data.loadErrors.docs || '请检查网络后重试'}` }}</span><button v-if="!data.recoveringDomains?.has('docs')" class="library-star" @click="data.refreshDocs()">重试</button></div>
             <div v-else-if="data.loadStates.docs !== 'loaded'" class="doc-empty" role="status">正在加载目录…</div>
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。</div>
             <div v-if="docTotal" class="home-list-heading"><span class="home-result-count" role="status">{{ homeSearch ? `找到 ${homeResultCount} 篇文档` : `${docTotal} 篇文档` }}</span><button v-if="!homeSearch && homeGroups.length" class="home-collapse" :aria-expanded="allHomeGroupsOpen" @click="toggleHomeGroups">{{ allHomeGroupsOpen ? '折叠全部分组' : '展开全部分组' }}</button><button v-if="homeSearch" class="home-clear-search" @click="treeQuery = ''">清空搜索</button></div>
