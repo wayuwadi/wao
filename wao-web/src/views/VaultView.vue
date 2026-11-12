@@ -7,7 +7,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
-import { useIsMobile } from '@/composables/viewport'
+import { useNarrowWorkspace } from '@/composables/viewport'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import WaoEmptyState from '@/components/ui/WaoEmptyState.vue'
@@ -15,7 +15,8 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
-const isMobile = useIsMobile()
+const workspace = ref<HTMLElement | null>(null)
+const isMobile = useNarrowWorkspace(workspace)
 const groupId = ref('all')
 const selId = ref<string | null>(null)
 const newGroupOpen = ref(false)
@@ -259,7 +260,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 
 <template>
   <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
-  <div class="vault wao-page-frame">
+  <div ref="workspace" class="vault wao-page-frame">
     <div class="vault-workspace">
     <div class="group-col" :class="{ managing: managingGroups }">
         <div class="vault-heading"><div class="vtitle">密码库</div><button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups"><i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}</button></div>
@@ -434,7 +435,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 .group-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .group-choices button { border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); padding: 7px 12px; cursor: pointer; }
 .group-choices button.on { color: var(--wao-primary-text); border-color: var(--wao-primary); background: var(--wao-primary-soft); }
-@media (max-width: 760px) { .vtop { flex-wrap: wrap; } .vault-search { max-width: none; flex: 1; min-width: 140px; } }
+@container app-main (max-width: 760px) { .vtop { flex-wrap: wrap; } .vault-search { max-width: none; flex: 1; min-width: 140px; } }
 .vault {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
@@ -928,6 +929,11 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   padding: 0 16px calc(24px + env(safe-area-inset-bottom));
   animation: waoVaultPage 0.16s ease;
 }
+.tab-page-window.floating .vault { position: relative; }
+.tab-page-window.floating .detail-page {
+  position: absolute;
+  padding-bottom: var(--wao-space-2);
+}
 @keyframes waoVaultPage {
   from {
     transform: translateX(14px);
@@ -970,9 +976,10 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 }
 
 @media (max-width: 760px) {
-  .vault { padding: 16px 12px 28px; }
   .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
-
+}
+@container app-main (max-width: 760px) {
+  .vault { padding: 16px 12px 28px; }
   /* 三栏并排在手机上放不下：分组变成横向胶囊，条目占满整宽，详情走盖屏页 */
   .vault-workspace { flex-direction:column; }
   .vault-heading { min-height:44px; }
@@ -1026,7 +1033,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   .f-icon { width: 40px; height: 40px; }
   .f-icon i { font-size: 16px; }
 }
-@media (max-width: 760px) { .vault .group-col { flex: 0 0 auto; max-height: 25%; } .vault .item-col { flex: 1; min-height: 0; } }
+@container app-main (max-width: 760px) { .vault .group-col { flex: 0 0 auto; max-height: 25%; } .vault .item-col { flex: 1; min-height: 0; } }
 @media (max-width: 760px), (hover: none), (pointer: coarse) {
   .group-action, .f-icon, .f-btn, .dp-back, .icon-btn, .group-manage, .btn-primary, .retry {
     min-width: 44px;

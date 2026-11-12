@@ -215,4 +215,4 @@
 .cap-center .market-hero{padding-top:0}
 .cap-center .market-card,.cap-center .hub-card{box-shadow:none;border-radius:12px}
 .cap-center .hub-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
-@media(max-width:650px){.cap-center .cap-form-grid{grid-template-columns:1fr;gap:0}.cap-center .cap-field input,.cap-center .cap-field select{font-size:16px}.cap-center .cap-button,.cap-center .cap-group-picker button,.cap-center .cap-subtabs button,.cap-center .cap-view-modes button{min-height:40px}.cap-center .market-title{font-size:21px}.cap-center .hub-card{padding:16px}.cap-center .cap-facts{grid-template-columns:70px minmax(0,1fr)}}
+@container app-main (max-width:650px){.cap-center .cap-form-grid{grid-template-columns:1fr;gap:0}.cap-center .cap-field input,.cap-center .cap-field select{font-size:16px}.cap-center .cap-button,.cap-center .cap-group-picker button,.cap-center .cap-subtabs button,.cap-center .cap-view-modes button{min-height:40px}.cap-center .market-title{font-size:21px}.cap-center .hub-card{padding:16px}.cap-center .cap-facts{grid-template-columns:70px minmax(0,1fr)}}

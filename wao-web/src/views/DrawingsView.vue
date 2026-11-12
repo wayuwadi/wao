@@ -360,7 +360,7 @@ async function openFile(id: string) {
   )
     return
   if (activeId.value === id && current.value && !loadingFile.value) {
-    sidebarOpen.value = window.innerWidth > 760
+    sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760
     return
   }
   transitioning.value = true
@@ -414,7 +414,7 @@ async function openFile(id: string) {
       syncState.value = dirty.value ? 'dirty' : 'saved'
     }
     if (pendingConfirmed) await persistDraft()
-    sidebarOpen.value = window.innerWidth > 760 && sidebarOpen.value
+    sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760 && sidebarOpen.value
   } catch (cause) {
     if (token !== loadToken || !sameOwner()) return
     current.value = null
@@ -614,7 +614,7 @@ async function newFile(groupId?: string) {
     updateSummary(created)
     if (groupId) { assignments.value[created.id] = groupId; groupCollapsed.value[groupId] = false }
     await openFile(created.id)
-    sidebarOpen.value = window.innerWidth > 760
+    sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760
   } catch (cause) {
     error.value = message(cause, '新建结果未确认，请先刷新列表检查是否已创建草图')
   } finally {
@@ -1282,7 +1282,7 @@ defineExpose({ flush: flushEmbedded })
   position: relative;
   box-sizing: border-box;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   width: 280px;
   flex: 0 0 280px;
   display: flex;
@@ -1774,7 +1774,7 @@ summary:focus-visible {
     transform: rotate(360deg);
   }
 }
-@media (max-width: 760px) {
+@container app-main (max-width: 760px) {
   .file-sidebar {
     position: absolute;
     inset: 0 auto 0 0;

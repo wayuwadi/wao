@@ -618,7 +618,7 @@ td code {
     transform: rotate(360deg);
   }
 }
-@media (max-width: 900px) {
+@container app-main (max-width: 900px) {
   .metric-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -626,7 +626,7 @@ td code {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 640px) {
+@container app-main (max-width: 640px) {
   .monitor-page {
     padding: 16px 14px 46px;
   }

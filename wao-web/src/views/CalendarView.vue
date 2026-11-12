@@ -2535,24 +2535,26 @@ button.holiday-status { cursor: pointer; }
 .date-conversion { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: var(--wao-font-caption); }
 .date-conversion.error { background: var(--wao-danger-bg); color: var(--wao-danger); }
 .field-error { color: var(--wao-danger) !important; }.field-error button { padding: 0; border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; }
-@media (max-width: 640px) {
+@container app-main (max-width: 640px) {
   .cal { padding-inline: 12px; }
   .holiday-source-warning { flex-wrap: wrap; }
   .holiday-source-warning a { margin-left: 22px; }
-  .holiday-modal-body { padding-inline: 14px; }
-  .holiday-facts div { grid-template-columns: 58px 1fr; }
-  .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
-  .important-date-body { padding-inline: 14px; }
   .calendar-visibility { flex-basis: 100%; }
   .cal-heading-row { position: relative; }
   .calendar-menu { position: static; }
   .calendar-menu-popover { top: calc(100% + 6px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: 60dvh; overflow-y: auto; }
+  .calendar-search { width: 100%; }
+}
+@media (max-width: 640px) {
+  .holiday-modal-body { padding-inline: 14px; }
+  .holiday-facts div { grid-template-columns: 58px 1fr; }
+  .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
+  .important-date-body { padding-inline: 14px; }
   .important-date-reminder-fields { grid-template-columns: 1fr; }
   .important-date-list-head { align-items: flex-start; }
   .important-date-list-head span { max-width: 190px; }
   .create-choice-grid { grid-template-columns: 1fr; }
   .lunar-date-fields { grid-template-columns: 1fr 1fr; }
-  .calendar-search { width: 100%; }
 }
 /* 月视图均分剩余高度；时间轴只由 cal-card 滚动。 */
 .cal-month .cal-card { display: flex; flex-direction: column; overflow: hidden; }
@@ -2589,14 +2591,14 @@ button.holiday-status { cursor: pointer; }
 @media (max-width: 1100px) {
   .cal-head .legend { display: none; }
 }
-@media (max-width: 900px) {
+@container app-main (max-width: 900px) {
   .cal-body { position: relative; }
   .attendance-sidebar { position: absolute; z-index: 10; right: 0; top: 0; bottom: 0; width: min(340px, 100%); box-shadow: var(--wao-shadow-modal); }
   .attendance-sidebar.folded { width: 38px; bottom: auto; box-shadow: none; }
   .cal-month .day { padding: 3px; }
   .cal-head { padding-right: 42px; }
 }
-@media (max-width: 640px) {
+@container app-main (max-width: 640px) {
   .calendar-search { position: static; }
   .calendar-search > input { top: calc(100% + 6px); right: 0; }
   .calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: 100%; padding-right: 10px; }
@@ -2655,7 +2657,7 @@ button.holiday-status { cursor: pointer; }
   .timeline-locate { gap:0; }
 }
 .calendar-menu-popover .mobile-day-records { display: none; }
-@media (max-width: 640px) {
+@container app-main (max-width: 640px) {
   /* 三行保留主要操作；次要入口收进原有菜单，给日历内容留出高度。 */
   .cal-top { gap: var(--wao-space-1); padding: var(--wao-space-1); }
   .cal-heading-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 44px 44px; gap: calc(var(--wao-space-1) / 2); }

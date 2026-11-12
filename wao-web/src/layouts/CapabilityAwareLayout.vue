@@ -23,6 +23,7 @@ const publicCenter = computed(() => route.meta.module === 'capabilities' && !ses
 </template>
 <style scoped>
 .cap-public-shell {
+  container: app-main / inline-size;
   min-height: 100vh;
   background: var(--wao-bg);
   color: var(--wao-text);
