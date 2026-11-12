@@ -3,7 +3,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
-import BaguaIcon from '@/components/ui/BaguaIcon.vue'
 import { useIsMobile } from '@/composables/viewport'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
@@ -68,8 +67,7 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
           :class="{ active: activeItem === id, center: isCollapsed }"
           :aria-current="route.path === nav.itemMeta(id)?.path ? 'page' : undefined"
           :aria-label="nav.itemMeta(id)?.label" :title="nav.itemMeta(id)?.label" @click="go(id)">
-          <BaguaIcon v-if="id === 'tianren'" class="bagua-icon" />
-          <i v-else :class="nav.itemMeta(id)?.icon" aria-hidden="true"></i>
+          <i :class="nav.itemMeta(id)?.icon" aria-hidden="true"></i>
           <span :class="isCollapsed ? 'compact-label' : 'item-label'">{{ nav.itemMeta(id)?.label }}</span>
         </button>
         </template>
@@ -359,7 +357,6 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
   color: var(--wao-text-weak);
   flex-shrink: 0;
 }
-.bagua-icon { width: 20px; height: 20px; flex-shrink: 0; }
 .item-label {
   flex: 1;
   text-align: left;

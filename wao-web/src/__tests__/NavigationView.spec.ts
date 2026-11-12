@@ -9,7 +9,8 @@ import {
   type ExternalAppRegistry,
 } from '@/config/nav'
 import { NAVIGATION_CATALOG } from '@/config/navigationCatalog'
-import { MODULES } from '@/config/nav'
+import { MODULES, RETIRED_MODULE_IDS } from '@/config/nav'
+import type { ModuleId } from '@/types'
 import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { useNavStore } from '@/stores/nav'
 import { useUiStore } from '@/stores/ui'
@@ -145,7 +146,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world', 'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections'].includes(id),
+      id => !RETIRED_MODULE_IDS.has(id as ModuleId) && !['navigation', 'chat', 'chat-reviews'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
@@ -259,7 +260,7 @@ describe('全量导航页', () => {
       generatedAt: '2026-08-31T10:00:00',
       recentOpens: 15,
       functions: [
-        { ...item, featureId: 'projects', recentOpens: 5 },
+        { ...item, featureId: 'todo', recentOpens: 5 },
         { ...item, featureId: 'calendar', recentOpens: 10 },
       ],
     })
@@ -268,15 +269,15 @@ describe('全量导航页', () => {
     await flushPromises()
 
     const readOrder = () => wrapper.findAll('tbody tr').map((row) => row.attributes('data-feature-id'))
-    expect(readOrder()).toEqual(['calendar', 'projects'])
+    expect(readOrder()).toEqual(['calendar', 'todo'])
     const sort = wrapper.get('.sort-trigger')
     expect(sort.attributes('aria-label')).toContain('倒序')
     await sort.trigger('click')
     expect(wrapper.get('th[aria-sort="ascending"]')).toBeDefined()
-    expect(readOrder()).toEqual(['projects', 'calendar'])
+    expect(readOrder()).toEqual(['todo', 'calendar'])
     await sort.trigger('click')
     expect(wrapper.get('th[aria-sort="descending"]')).toBeDefined()
-    expect(readOrder()).toEqual(['calendar', 'projects'])
+    expect(readOrder()).toEqual(['calendar', 'todo'])
     wrapper.unmount()
   })
 

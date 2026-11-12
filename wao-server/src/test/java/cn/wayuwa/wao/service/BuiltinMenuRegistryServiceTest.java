@@ -94,15 +94,16 @@ class BuiltinMenuRegistryServiceTest {
                 .hasMessageContaining("数量");
     }
 
-    @Test
-    void retiredPetWorldCannotReturnThroughOldRegistry() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"pet-world", "focus", "countdowns", "tianren"})
+    void retiredMenusCannotReturnThroughOldRegistry(String retiredId) throws Exception {
         var stored = new ArrayList<>(service.getRegistry().menus());
-        stored.add(new BuiltinMenuConfigDto("pet-world", "我的庭院", "ri-landscape-line", "TOOLS", 9, true, "TAB", "TOP"));
+        stored.add(new BuiltinMenuConfigDto(retiredId, "旧菜单", "ri-landscape-line", "TOOLS", 9, true, "TAB", "TOP"));
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
                 new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(43, stored)));
-        assertThat(service.getRegistry().menus()).noneMatch(menu -> "pet-world".equals(menu.id()));
+        assertThat(service.getRegistry().menus()).noneMatch(menu -> retiredId.equals(menu.id()));
         assertThat(service.saveRegistry(new SaveBuiltinMenuRegistryRequest(stored)).menus())
-                .noneMatch(menu -> "pet-world".equals(menu.id()));
+                .noneMatch(menu -> retiredId.equals(menu.id()));
     }
 
     @Test

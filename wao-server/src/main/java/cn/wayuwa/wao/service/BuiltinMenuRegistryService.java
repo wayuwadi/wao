@@ -17,14 +17,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 50;
+    private static final int VERSION = 51;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
     /** 导航中心上线后，旧版默认可见但非每日使用的入口收进全量目录；用户改名、换组或调序的定制不覆盖。 */
     private static final Set<String> COMPACT_ON_UPGRADE = Set.of(
-            "skills", "skill-connections", "life-review", "drawings", "vault", "tianren",
+            "skills", "skill-connections", "life-review", "drawings", "vault",
             "dashboard", "automation", "files", "request-monitoring");
     /** 已融合进其它模块的旧入口；读取旧注册表时忽略，不能因此丢掉用户的其它菜单定制。 */
     private static final Set<String> RETIRED_IDS = Set.of(
@@ -32,7 +32,7 @@ public class BuiltinMenuRegistryService {
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
-            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world", "focus", "countdowns");
+            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world", "focus", "countdowns", "tianren");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("notes", "小记", "ri-sticky-note-line", "ROOT", 15, true, "TAB"),
@@ -45,7 +45,6 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),
             new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, false, "TAB"),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, false, "TAB"),
-            new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, false, "TAB"),
             new BuiltinMenuConfigDto("text-polish", "润色", "ri-magic-line", "TOOLS", 4, true, "TAB"),
             new BuiltinMenuConfigDto("dashboard", "使用统计", "ri-bar-chart-box-line", "TOOLS", 5, false, "TAB"),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, false, "TAB"),
