@@ -36,6 +36,7 @@ import type { DataDomain, DataLoadState } from '@/stores/data'
 import { DATA_DOMAIN_LABELS } from '@/utils/pageDataDomains'
 const demoConfirmation = ref<ConfirmAction | null>(null)
 const demoDomainStates = ref(Object.fromEntries(Object.keys(DATA_DOMAIN_LABELS).map(domain => [domain, domain === 'docs' || domain === 'files' ? 'error' : 'loaded'])) as Record<DataDomain, DataLoadState>)
+const demoRecoveringDomains = new Set<DataDomain>(['docs'])
 function showConfirmExample() {
   let attempt = 0
   demoConfirmation.value = { title: '删除示例文件', description: '这是合成演示，不会删除任何真实文件。第一次操作演示网络失败，重试后完成。', run: async () => {
@@ -49,6 +50,9 @@ import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import CellMenu from '@/components/task/CellMenu.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
 import TaskCaptureFields from '@/components/task/TaskCaptureFields.vue'
+import TodoAppearance from '@/components/todo/TodoAppearance.vue'
+import type { TodoPalette } from '@/utils/todoAppearance'
+const todoPaletteExample = ref<TodoPalette>('turquoise')
 import { emptyCapture } from '@/utils/taskCapture'
 const captureExampleTitle = ref('明天下午三点整理阅读笔记')
 const captureExample = ref(emptyCapture())
@@ -561,6 +565,7 @@ const detailLabels = ref('')
           <p class="demonstration-note">今天按「已过期／今天」分组，顺延先确认当前筛选范围，失败可重试。列表标题、搜索和新增留在左栏，详情日期与正文从右栏顶部开始；打开菜单不挤动内容。</p>
           <div class="density-examples"><WaoButton variant="ghost" @click="detailDemoDescription = ''">空描述示例</WaoButton><WaoButton variant="ghost" @click="detailDemoDescription = '先说明背景、目标与边界，再把具体执行拆成子任务。\n\n' + '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16)">长描述示例</WaoButton></div>
           <div class="task-detail-demo">
+            <div class="palette-preview" :data-todo-palette="todoPaletteExample"><TodoAppearance v-model="todoPaletteExample" /><span>待办分层背景 · 示例</span></div>
             <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
               <template #heading><h2 class="detail-demo-title">把一个想法拆成可执行的行动</h2></template>
               <template #tools><button ref="detailLabelAnchor" class="detail-demo-label-trigger" type="button" aria-haspopup="dialog" :aria-expanded="detailLabelsOpen" @click="detailLabelsOpen = !detailLabelsOpen"><i class="ri-price-tag-3-line" aria-hidden="true"></i>标签</button><CellMenu v-if="detailLabelsOpen" :anchor="detailLabelAnchor" :min-width="300" custom-content @close="detailLabelsOpen = false" @ready="detailLabelInput?.focus({ preventScroll: true })"><form class="detail-demo-labels" role="dialog" aria-label="标签演示" @submit.prevent="detailLabelsOpen = false"><strong>标签</strong><input ref="detailLabelInput" v-model="detailLabels" aria-label="演示标签" placeholder="输入标签，用逗号分隔" /><footer><WaoButton variant="ghost" @click="detailLabelsOpen = false">取消</WaoButton><WaoButton type="submit">保存</WaoButton></footer></form></CellMenu></template>
@@ -624,7 +629,7 @@ const detailLabels = ref('')
             <h2>公共反馈组件 · 合成演示</h2>
             <WaoButton @click="demoDomainStates.docs = demoDomainStates.docs === 'loading' ? 'loaded' : 'loading'">切换读取状态（正文位置保持不变）</WaoButton>
             <SaveHint :saving="stateId === 'saving'" :draft="stateId === 'draft'" :failed="stateId === 'error'" :saved-at="stateId === 'saved' ? '2026-10-29T09:00:00+08:00' : null" />
-            <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
+            <DataLoadStatus :states="demoDomainStates" :errors="{ docs: '演示：文档请求超时，上次内容仍保留。', files: '演示：文件请求超时。' }" :recovering="demoRecoveringDomains" :active-domains="['docs']" @retry="demoDomainStates[$event] = 'loaded'" />
             <WaoEmptyState title="还没有项目" description="合成演示：空页面直接提供下一步。" icon="ri-stack-line"><template #actions><WaoButton variant="primary" @click="feedback = '演示创建入口，没有创建真实项目。'">创建第一个项目</WaoButton></template></WaoEmptyState>
             <WaoButton @click="showConfirmExample">演示删除确认与失败重试</WaoButton>
             <p>分页在窄屏显示当前页、上一页和下一页，保留页码跳转；触屏操作区至少 44px。</p>

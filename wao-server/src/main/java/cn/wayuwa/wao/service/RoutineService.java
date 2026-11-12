@@ -61,6 +61,26 @@ public class RoutineService {
                 || !RoutineCalendar.date(l.date()).isBefore(recent)).toList();
         return new State(today().toString(),window.toString(),items,summaries,visible);
     }
+    public record DateEvent(String id, String name, String emoji, String date) {}
+    public List<DateEvent> calendarDates(String member, LocalDate from, LocalDate to) {
+        requireMember(member);
+        if (from == null || to == null || to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > 365)
+            throw new BadRequestException("日期范围应为 1–366 天");
+        List<Item> items = jdbc.query("SELECT body_json FROM personal_routine WHERE member_id = ?", (rs,n)->read(rs.getString(1)), member);
+        List<DateEvent> events = new ArrayList<>();
+        for (Item item : items) {
+            if (!"countdown".equals(item.kind) || !"active".equals(item.status)) continue;
+            LocalDate cursor = from;
+            while (!cursor.isAfter(to)) {
+                LocalDate occurrence = RoutineCalendar.next(item, cursor);
+                if (occurrence == null || occurrence.isBefore(cursor) || occurrence.isAfter(to)) break;
+                events.add(new DateEvent(item.id, item.name, item.emoji, occurrence.toString()));
+                cursor = occurrence.plusDays(1);
+                if ("none".equals(item.repeat)) break;
+            }
+        }
+        return events;
+    }
     @Transactional public Item save(String member,String id,Item request) {
         lockMember(member); checkId(id);
         if(request==null) throw new BadRequestException("请填写内容");

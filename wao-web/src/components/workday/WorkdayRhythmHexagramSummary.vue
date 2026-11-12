@@ -1,133 +1,41 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { fetchAssistantConversation } from '@/api/assistant'
-import {
-  createTodayTianrenReading,
-  fetchTodayTianrenReading,
-  type TianrenReading,
-} from '@/api/tianren'
-import { toast } from '@/composables/toast'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { fetchSharedTodayTianrenReading, type TianrenReading } from '@/api/tianren'
 
 const props = defineProps<{ date: string }>()
 const reading = ref<TianrenReading | null>(null)
 const loading = ref(true)
 const loadError = ref('')
-const casting = ref(false)
-const readingSummary = ref('')
-const summaryLoading = ref(false)
-const summaryError = ref('')
-
 const factualPreview = computed(() => {
   if (!reading.value) return ''
   const current = `${reading.value.primary.name}卦（上${reading.value.primary.upper.nature}下${reading.value.primary.lower.nature}）`
-  if (!reading.value.relating) return `本卦为${current}，今日没有变爻。`
-  return `本卦为${current}，变化后为${reading.value.relating.name}卦，共 ${reading.value.changingLines.length} 个变爻。`
+  return reading.value.relating
+    ? `本卦为${current}，变化后为${reading.value.relating.name}卦，共 ${reading.value.changingLines.length} 个变爻。`
+    : `本卦为${current}，今日没有变爻。`
 })
-
-function compactSummary(value: string) {
-  const plain = value
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[#>*_`~[\]]/g, '')
-    .replace(/\([^)]*\)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return plain.length > 180 ? `${plain.slice(0, 180).trim()}…` : plain
-}
-
-async function loadReadingSummary(current: TianrenReading | null) {
-  readingSummary.value = ''
-  summaryError.value = ''
-  if (!current?.conversationId) return
-  const readingId = current.id
-  summaryLoading.value = true
-  try {
-    const detail = await fetchAssistantConversation(current.conversationId)
-    if (reading.value?.id !== readingId) return
-    const latest = [...detail.messages]
-      .reverse()
-      .find((message) => message.role === 'assistant')?.content
-    readingSummary.value = latest ? compactSummary(latest) : ''
-  } catch (cause) {
-    if (reading.value?.id !== readingId) return
-    summaryError.value = cause instanceof Error ? cause.message : '今日启示暂时无法读取'
-  } finally {
-    if (reading.value?.id === readingId) summaryLoading.value = false
-  }
-}
-
 async function load() {
   loading.value = true
   loadError.value = ''
-  try {
-    reading.value = await fetchTodayTianrenReading()
-    void loadReadingSummary(reading.value)
-  } catch (cause) {
-    loadError.value = cause instanceof Error ? cause.message : '今日卦象暂时无法读取'
-  } finally {
-    loading.value = false
-  }
+  try { reading.value = await fetchSharedTodayTianrenReading() }
+  catch (cause) { loadError.value = cause instanceof Error ? cause.message : '今日卦象暂时无法读取' }
+  finally { loading.value = false }
 }
-
-async function cast() {
-  if (casting.value) return
-  casting.value = true
-  try {
-    reading.value = await createTodayTianrenReading()
-    await loadReadingSummary(reading.value)
-    toast('今日卦象已保存', 'ri-sparkling-line')
-  } catch (cause) {
-    toast(cause instanceof Error ? cause.message : '今日卦象生成失败', 'ri-error-warning-line')
-  } finally {
-    casting.value = false
-  }
-}
-
-watch(
-  () => props.date,
-  () => void load(),
-)
-onMounted(load)
+watch(() => props.date, () => void load())
+let timer: ReturnType<typeof setInterval>
+onMounted(() => { void load(); timer = setInterval(() => void load(), 60_000) })
+onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <template>
-  <aside class="hero-hexagram" aria-label="今日卦象与启示">
-    <div class="hexagram-head">
-      <small>天人一卦 · 今日启示</small>
-      <RouterLink to="/tianren" aria-label="进入天人一卦详情">
-        详情<i class="ri-arrow-right-up-line"></i>
-      </RouterLink>
-    </div>
-    <div v-if="loading" class="hexagram-state">
-      <i class="ri-loader-4-line spin"></i>正在读取今日卦象…
-    </div>
-    <div v-else-if="loadError" class="hexagram-state error" role="alert">
-      <span>{{ loadError }}</span
-      ><button type="button" @click="load">重试</button>
-    </div>
+  <aside class="hero-hexagram" aria-label="今日卦象">
+    <div class="hexagram-head"><small>天人一卦 · 今日卦象</small></div>
+    <div v-if="loading" class="hexagram-state"><i class="ri-loader-4-line spin"></i>正在读取今日卦象…</div>
+    <div v-else-if="loadError" class="hexagram-state error" role="alert"><span>{{ loadError }}</span><button type="button" @click="load">重试</button></div>
     <template v-else-if="reading">
-      <RouterLink class="hexagram-result" to="/tianren">
-        <strong>{{ reading.primary.symbol }}</strong>
-        <span>
-          <b>{{ reading.primary.name }}卦</b>
-          <small v-if="reading.relating">变化后 · {{ reading.relating.name }}卦</small>
-          <small v-else>今日无变爻</small>
-        </span>
-      </RouterLink>
-      <p v-if="summaryLoading">{{ factualPreview }} 正在读取已保存的 AI 自照摘要…</p>
-      <p v-else-if="readingSummary">{{ readingSummary }}</p>
-      <p v-else-if="summaryError" class="error">
-        {{ factualPreview }} {{ summaryError }}
-        <button type="button" @click="loadReadingSummary(reading)">重试</button>
-      </p>
-      <p v-else>{{ factualPreview }} 进入详情可生成结合当日状态的 AI 自照。</p>
+      <div class="hexagram-result"><strong>{{ reading.primary.symbol }}</strong><span><b>{{ reading.primary.name }}卦</b><small v-if="reading.relating">变化后 · {{ reading.relating.name }}卦</small><small v-else>今日无变爻</small></span></div>
+      <p>{{ factualPreview }}</p>
     </template>
-    <template v-else>
-      <p>今天还没有起卦；由你主动开始，不会因打开页面自动生成。</p>
-      <button class="cast-button" type="button" :disabled="casting" @click="cast">
-        <i :class="casting ? 'ri-loader-4-line spin' : 'ri-sparkling-line'"></i>
-        {{ casting ? '正在起卦…' : '起出今日一卦' }}
-      </button>
-    </template>
+    <p v-else>今日卦象将在每天早上 8 点生成。</p>
   </aside>
 </template>
 

@@ -23,6 +23,20 @@ class NotePrivacyAuthTest {
             assertThat(request.getAttribute("wao.private-note-asset")).isEqualTo(true);
         }
     }
+    @Test void privateTaskCommentImageChecksTaskPermissionForRawAndPreview() {
+        var sessions=mock(AuthSessionManager.class); var assets=mock(NoteAssetPrivacyService.class);
+        var taskImages=mock(cn.wayuwa.wao.service.TaskCommentImageService.class); var member=mock(CurrentMember.class);
+        var guard=new AuthInterceptor(new AuthProperties(true,false),sessions,assets);
+        org.springframework.test.util.ReflectionTestUtils.setField(guard,"taskCommentImages",taskImages);
+        org.springframework.test.util.ReflectionTestUtils.setField(guard,"currentMember",member);
+        when(assets.isPrivate("images","img")).thenReturn(true);
+        for(String suffix:new String[]{"raw","preview"}) {
+            var request=new MockHttpServletRequest("GET","/api/images/img/"+suffix);
+            when(sessions.currentAccountId(request)).thenReturn("account"); when(member.id(request)).thenReturn("other");
+            doThrow(new NotFoundException("无权访问")).when(taskImages).requireAccessIfCommentImage("img","other");
+            assertThatThrownBy(()->guard.preHandle(request,new MockHttpServletResponse(),null)).isInstanceOf(NotFoundException.class);
+        }
+    }
     @Test void publicShareReadsHaveNoCacheAndMutationsAreNeverPublic() {
         var guard=new AuthInterceptor(new AuthProperties(true,false),mock(AuthSessionManager.class),mock(NoteAssetPrivacyService.class));
         var response=new MockHttpServletResponse();

@@ -447,7 +447,7 @@ describe('WorkdayRhythmView', () => {
     await wrapper.get('.notification-settings-button').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-editor-section="notification"]').classes()).toContain('active')
-    await wrapper.get('[aria-label="每天 9:00 自动起卦并解读"]').setValue(true)
+    expect(wrapper.find('[aria-label="每天 9:00 自动起卦并解读"]').exists()).toBe(false)
     await wrapper.get('[aria-label="精力补给目标群"]').setValue('WEBHOOK:fw_daily')
     expect(wrapper.get('[aria-label="今日重点目标群"]').element).toHaveProperty('value', 'CHAT:oc_daily')
     expect(wrapper.get('[aria-label="卦象解读目标群"]').element).toHaveProperty('value', 'CHAT:oc_daily')
@@ -458,7 +458,6 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     expect(saveWorkdayRhythm).toHaveBeenLastCalledWith(expect.objectContaining({ energyNotification: expect.objectContaining({
       webhookId: 'fw_daily',
-      autoTianrenAtNine: true,
       focusTarget: expect.objectContaining({ channel: 'CHAT', chatId: 'oc_daily' }),
       tianrenTarget: expect.objectContaining({ channel: 'CHAT', chatId: 'oc_daily' }),
     }) }))
@@ -470,7 +469,6 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.get('[aria-label="卦象解读目标群"]').element).toHaveProperty('value', 'CHAT:oc_daily')
     expect(sendEnergyNotification).not.toHaveBeenCalled()
     expect(sendFocusNotification).not.toHaveBeenCalled()
-    expect(wrapper.get('[aria-label="每天 9:00 自动起卦并解读"]').element).toHaveProperty('checked', true)
     wrapper.unmount()
   })
 

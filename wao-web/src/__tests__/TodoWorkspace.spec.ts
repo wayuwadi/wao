@@ -20,7 +20,7 @@ vi.mock('vue-router',()=>({useRoute:()=>testRoute,useRouter:()=>({push:vi.fn(),r
 vi.mock('@/api/taskLabels',()=>({fetchTaskLabels:vi.fn(async()=>[{taskId:'parent',subId:'child',revision:1,tags:['联调']}]),saveTaskLabels:vi.fn(async(v)=>({...v,revision:v.revision+1}))}))
 vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/api/favorites')>(),fetchPreference:vi.fn(async()=>''),savePreference:vi.fn(async()=>{})}))
 vi.mock('@/api/smartListVisibility',()=>({fetchSmartListVisibility:vi.fn(async()=>({})),saveSmartListVisibility:vi.fn(async()=>{})}))
-const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true,TaskDueDate:true}}}
+const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true}}}
 const buttonText = (w:VueWrapper, selector:string, text:string) => w.findAll(selector).find(button => button.text().trim()===text)!
 function taskTransfer() {
  const values = new Map<string, string>()

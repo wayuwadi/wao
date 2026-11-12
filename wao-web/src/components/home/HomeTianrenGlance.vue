@@ -2,8 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { Popover } from 'ant-design-vue'
-import { fetchTodayTianrenReading, type TianrenReading } from '@/api/tianren'
-import { fetchAssistantConversation } from '@/api/assistant'
+import { fetchSharedTodayTianrenReading, type TianrenReading } from '@/api/tianren'
 
 defineProps<{ integrated?: boolean }>()
 const emit = defineEmits<{ preview: [] }>()
@@ -11,32 +10,21 @@ const open = ref(false)
 const trigger = ref<HTMLButtonElement>()
 const closeButton = ref<HTMLButtonElement>()
 watch(closeButton, element => { if (open.value) element?.focus() }, { flush: 'post' })
-const summary = ref('')
-const summaryLoading = ref(false)
-const summaryError = ref('')
 let disposed = false
 const lines = computed(() => [...(reading.value?.lines ?? [])].reverse())
-async function loadSummary() {
-  if (!reading.value?.conversationId || summaryLoading.value) return
-  summaryLoading.value = true
-  summaryError.value = ''
-  try {
-    const detail = await fetchAssistantConversation(reading.value.conversationId)
-    if (disposed) return
-    const latest = [...detail.messages].reverse().find(message => message.role === 'assistant')?.content ?? ''
-    summary.value = latest.replace(/```[\s\S]*?```/g, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[#>*_`~]/g, '').replace(/\s+/g, ' ').trim().slice(0, 220)
-  } catch (cause) {
-    if (!disposed) summaryError.value = cause instanceof Error ? cause.message : '解读摘要读取失败'
-  } finally {
-    summaryLoading.value = false
-  }
-}
+const summary = computed(() => {
+  const value = reading.value
+  if (!value) return ''
+  const primary = `${value.primary.name}卦（上${value.primary.upper.nature}下${value.primary.lower.nature}）`
+  return value.relating
+    ? `本卦为${primary}，变化后为${value.relating.name}卦，共 ${value.changingLines.length} 个变爻。`
+    : `本卦为${primary}，今日没有变爻。`
+})
 async function onOpen(value: boolean) {
   if (!value && !isTopmost()) return
   open.value = value
   if (!value) return
   emit('preview')
-  if (!summary.value) void loadSummary()
   await nextTick()
   closeButton.value?.focus()
 }
@@ -50,22 +38,27 @@ defineExpose({ close })
 const reading = ref<TianrenReading | null>(null)
 const loading = ref(true)
 const error = ref('')
+let timer: ReturnType<typeof setInterval> | undefined
+let request = 0
 
 async function load() {
-  loading.value = true
+  const current = ++request
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+  if (reading.value?.date !== today) reading.value = null
+  if (!reading.value) loading.value = true
   error.value = ''
   try {
-    reading.value = await fetchTodayTianrenReading()
-    if (open.value) void loadSummary()
+    const result = await fetchSharedTodayTianrenReading()
+    if (!disposed && current === request) reading.value = result
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '今日卦象暂时无法读取'
+    if (!disposed && current === request) error.value = cause instanceof Error ? cause.message : '今日卦象暂时无法读取'
   } finally {
-    loading.value = false
+    if (!disposed && current === request) loading.value = false
   }
 }
 
-onMounted(() => { void load() })
-onBeforeUnmount(() => { disposed = true })
+onMounted(() => { void load(); timer = setInterval(() => void load(), 60_000) })
+onBeforeUnmount(() => { disposed = true; clearInterval(timer) })
 </script>
 
 <template>
@@ -78,8 +71,8 @@ onBeforeUnmount(() => { disposed = true })
         <strong v-if="loading">读取中…</strong>
         <strong v-else-if="reading">{{ reading.primary.name }}卦</strong>
         <strong v-else-if="error">暂不可用</strong>
-        <strong v-else>尚未起卦</strong>
-        <span v-if="integrated" class="tianren-hint">预览详情<i class="ri-arrow-down-s-line" aria-hidden="true"></i></span>
+        <strong v-else>每天 8 点生成</strong>
+        <span v-if="integrated" class="tianren-hint">{{ reading?.relating ? `之 ${reading.relating.name}卦 · 查看卦象` : '查看卦象' }}<i class="ri-arrow-down-s-line" aria-hidden="true"></i></span>
       </span>
       <span v-if="!integrated" class="tianren-symbol" aria-hidden="true">{{ reading?.primary.symbol || '☰' }}</span>
     </button>
@@ -91,11 +84,11 @@ onBeforeUnmount(() => { disposed = true })
         <template v-else-if="reading">
           <div class="preview-title"><span class="preview-symbol" aria-hidden="true">{{ reading.primary.symbol }}</span><div><h2>{{ reading.primary.name }}卦</h2><p>第 {{ reading.primary.number }} 卦 · 上{{ reading.primary.upper.name }}下{{ reading.primary.lower.name }} · {{ reading.changingLines.length ? `${reading.changingLines.length} 个变爻` : '无变爻' }}</p></div></div>
           <p v-if="reading.relating">之卦 · {{ reading.relating.name }}（第 {{ reading.relating.number }} 卦）</p>
-          <div class="preview-summary" aria-live="polite"><small>已保存的 AI 解读摘要</small><p v-if="summaryLoading">正在读取解读…</p><p v-else-if="summaryError" role="alert">{{ summaryError }} <button type="button" @click="loadSummary">重试</button></p><p v-else>{{ summary || '今日还没有保存 AI 解读，可进入完整页面继续。' }}</p></div>
+          <div class="preview-summary" aria-live="polite"><small>今日共享卦象</small><p>{{ summary }}</p></div>
           <details><summary>展开卦象结构</summary><div class="preview-lines" aria-label="六爻，从上爻到初爻"><div v-for="(line, index) in lines" :key="index"><small>{{ ['上', '五', '四', '三', '二', '初'][index] }}</small><span :class="{ yin: line % 2 === 0 }"><i></i><i v-if="line % 2 === 0"></i></span><small>{{ line }}{{ line === 6 || line === 9 ? ' · 变' : '' }}</small></div></div></details>
         </template>
-        <p v-else>今天还没有起卦。进入「天人一卦」后，可以由你主动开始。</p>
-        <footer><button type="button" @click="close(true)">留在首页</button><RouterLink to="/tianren" @click="close()">{{ reading ? '查看完整解读' : '进入天人一卦' }}<i class="ri-arrow-right-up-line" aria-hidden="true"></i></RouterLink></footer>
+        <p v-else>今日共享卦象将在早上 8 点生成，生成后自动显示在首页。</p>
+        <footer><button type="button" @click="close(true)">关闭</button></footer>
       </section>
     </template>
     </Popover>
@@ -111,7 +104,6 @@ onBeforeUnmount(() => { disposed = true })
 .preview-content header, .preview-content small { color: var(--wao-text-3); font-size: 12px; }
 .preview-content button { border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; font: inherit; padding: 6px; }
 .preview-content footer { border-top: 1px solid var(--wao-line); margin-top: 18px; padding-top: 14px; }
-.preview-content footer a { border-radius: 8px; padding: 8px 12px; background: var(--wao-primary); color: white; text-decoration: none; }
 .preview-content summary { color: var(--wao-primary-text); cursor: pointer; }
 .preview-title { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
 .preview-title h2 { font-size: 20px; margin: 0; }

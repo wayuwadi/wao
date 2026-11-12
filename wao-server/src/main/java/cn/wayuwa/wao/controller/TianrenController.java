@@ -33,6 +33,9 @@ public class TianrenController {
 
     private static final String FALLBACK_MEMBER = "wg";
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.TianrenSharedDailyService sharedDaily;
+
     private final TianrenReadingService readings;
     private final TianrenDailyAutomationService automation;
     private final CurrentMember currentMember;
@@ -50,6 +53,13 @@ public class TianrenController {
     @GetMapping("/today")
     public ApiResponse<TianrenReadingDto> today(HttpServletRequest http) {
         return ApiResponse.ok(readings.today(member(http)));
+    }
+
+    /** All members see the same scheduled result; this endpoint never exposes private conversations. */
+    @GetMapping("/shared-today")
+    public ApiResponse<TianrenReadingDto> sharedToday(HttpServletRequest http) {
+        if (currentMember.id(http) == null) throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
+        return ApiResponse.ok(sharedDaily.today());
     }
 
     /** 本机 Codex 与本人今日解读状态，不使用旧 Runner 在线状态。 */

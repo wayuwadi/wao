@@ -31,6 +31,7 @@ import SaveHint from '@/components/ui/SaveHint.vue'
 import TaskDocuments from '@/components/task/TaskDocuments.vue'
 import TaskComments from '@/components/task/TaskComments.vue'
 import TaskDueDate from '@/components/task/TaskDueDate.vue'
+import TaskSchedulePopover from '@/components/todo/TaskSchedulePopover.vue'
 import { deadlineInfo, shiftDay } from '@/utils/taskDeadline'
 import { todayIso } from '@/utils/time'
 import { useTaskDeadlineDefaults } from '@/composables/taskDeadlineDefaults'
@@ -121,15 +122,8 @@ function toggleCompletion(id: string) {
   completionTimers.set(id, setTimeout(() => { void commitCompletion(id) }, 3000))
 }
 const isComplete = (task: Task) => task.status === '已完成' || pendingCompletion.value.has(task.id)
-const rowStatusMenu = ref<{ id: string; anchor: HTMLElement } | null>(null)
-const rowStatusTask = computed(() => props.contextItems.find(task => task.id === rowStatusMenu.value?.id))
 function rowStatuses(task?: Task): TaskStatus[] {
   return task && actions.isSub(task.id) ? ['待办', '进行中', '待验证', '已完成'] : selectableTaskStatuses(task?.status)
-}
-const rowStatusOptions = computed(() => rowStatuses(rowStatusTask.value))
-function openRowStatus(event: MouseEvent, id: string) {
-  propertyMenu.value = null
-  rowStatusMenu.value = rowStatusMenu.value?.id === id ? null : { id, anchor: event.currentTarget as HTMLElement }
 }
 async function setTaskStatus(id: string | undefined, status: TaskStatus) {
   if (!id || actions.busy(id) || props.contextItems.find(task => task.id === id)?.status === status) return
@@ -137,14 +131,6 @@ async function setTaskStatus(id: string | undefined, status: TaskStatus) {
   if (status === '已完成') { toggleCompletion(id); return }
   await actions.status(id, status)
 }
-function changeRowStatus(status: TaskStatus) {
-  const id = rowStatusMenu.value?.id
-  rowStatusMenu.value = null
-  void setTaskStatus(id, status)
-}
-watch(() => useSessionStore().userId, () => { rowStatusMenu.value = null })
-watch(rowStatusTask, task => { if (!task) rowStatusMenu.value = null })
-
 watch(() => useSessionStore().userId, () => {
   retainedCompletion.value.clear()
   for (const id of [...pendingCompletion.value]) cancelCompletion(id)
@@ -384,7 +370,6 @@ const priorityAnchor = ref<HTMLElement | null>(null)
 const priorities: Priority[] = ['P0', 'P1', 'P2', 'P3']
 const priorityColor = (task: Task) => props.itemRefs[task.id]?.priorityUnset ? PROJECT_PRIORITY_COLORS.P3 : PROJECT_PRIORITY_COLORS[task.pr]
 const directChildren = computed(() => props.contextItems.filter(task => task.parentTaskId === selectedId.value))
-const parentTask = computed(() => props.contextItems.find(task => task.id === selected.value?.parentTaskId))
 async function selectChild(id: string) {
   detailOnlySelection.value = true; selectedId.value = id
   emit('reveal', id)
@@ -445,10 +430,9 @@ const description = computed({
     else data.patchTask(taskId, { desc })
   },
 })
-async function changeDue(due:string) {
-  if (!selected.value || actions.busy(selected.value.id)) return
-  const id = selected.value.id
-  const { taskId, subId } = source.value
+async function changeDue(due:string, id = selectedId.value) {
+  if (!id || actions.busy(id)) return
+  const { taskId, subId } = actions.source(id)
   const before=subId?data.subById(taskId,subId)?.due:data.taskById(taskId)?.due
   pendingDateChanges.value.add(id)
   try {
@@ -595,7 +579,6 @@ function childKey(event: KeyboardEvent) {
     void addChild()
   }
 }
-function editRow(task:Task,mode:'date'|'priority'|'tags'|'move'){contextMenu.value?.edit(task,mode)}
 function rowKey(event: KeyboardEvent, id:string) {
   const target=event.target as HTMLElement
   if(event.isComposing || target.closest('input,textarea,select,[contenteditable="true"]'))return
@@ -625,6 +608,7 @@ function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   detailOnlySelection.value = !displayedRows.value.some(row => row.task.id === id)
   selectedId.value = id
   void contextMenu.value?.openAt(event, task, [
+    ...(task.workItemType !== 'note' && task.status !== '已放弃' ? rowStatuses(task).map(status => ({ id:'status-'+status, label:'状态 · '+projectStatusLabel(status), icon:status === task.status ? 'ri-check-line' : 'ri-checkbox-blank-circle-line', disabled:actions.busy(id), run:()=>setTaskStatus(id,status) })) : []),
     ...(!popupDetail.value ? [{ id:'add-child', label:'添加子任务', icon:'ri-node-tree', disabled:childBlocked.value, run:()=>startChild(id) }] : []),
     { id:'delete', label:actions.isSub(id)?'删除子任务':'删除任务', icon:'ri-delete-bin-line', danger:true, separatorBefore:true,
       disabled:deleting.value || props.busy || actions.busy(id), run:()=>requestDelete(id,task.title||'未命名任务') },
@@ -674,21 +658,14 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
         <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(task) }" :checked="isComplete(task)" :disabled="!pendingCompletion.has(task.id) && actions.busy(task.id)" :aria-label="`完成 ${task.title}`" @change="toggleCompletion(task.id)" />
         <button class="task-select" :aria-pressed="popupDetail ? undefined : selectedId === task.id" :aria-haspopup="popupDetail ? 'dialog' : undefined" @click="openRow(task.id)">
           <i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span class="task-title" :title="task.title" :class="{ finished: isComplete(task) }">{{ task.title || '未命名任务' }}</span>
-          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc && !todoView?.showDetails" class="ri-file-text-line task-meta" aria-label="含描述" /><span v-if="displayDate(task)" class="task-meta" :class="{ overdue:overdue(task) > 0 }" :title="overdue(task) ? `已延期 ${overdue(task)} 天` : displayDate(task)">{{ relativeDate(task) }}</span>
+          <span v-if="hideGroups && !hideListName" class="task-meta task-list-name" :title="listName(task)">{{ listName(task) }}</span><i v-if="task.desc && !todoView?.showDetails" class="ri-file-text-line task-meta" aria-label="含描述" />
           <span v-if="todoView?.showDetails && (task.start || task.startAt)" class="row-execution task-meta">{{ taskExecutionLabel(task,today) }}<template v-if="task.startAt && task.endAt"> → {{ task.endAt.replace('T',' ').slice(0,16) }}</template></span>
           <span v-if="todoView?.showDetails && todoTags?.(task.id).length" class="row-preview">{{ todoTags(task.id).map(tag=>'#'+tag).join(' · ') }}</span>
           <span v-if="todoView?.showDetails && task.desc" class="row-preview">{{ task.desc.trim().slice(0, 200) }}</span>
         </button>
+        <TaskDueDate v-if="task.due && task.workItemType!=='note'" compact :due="task.due" :today="today" :label="relativeDate(task)" :completed="isComplete(task)" :accessible-label="`修改 ${task.title} 的截止日期`" :disabled="actions.busy(task.id)" @change="changeDue($event,task.id)" />
+        <TaskSchedulePopover v-else-if="displayDate(task) && task.workItemType!=='note' && !actions.isSub(task.id)" :task="task" :day="today" :compact-label="relativeDate(task)" />
         <div class="row-actions">
-          <div class="row-quick-fields" @pointerdown.stop @dragstart.prevent.stop>
-            <button v-if="task.workItemType!=='note'" :aria-label="'修改 '+task.title+' 的截止日期'" title="截止日期" :disabled="actions.busy(task.id)" @click.stop="editRow(task,'date')"><i class="ri-calendar-line" /></button>
-            <button :aria-label="'修改 '+task.title+' 的优先级'" title="优先级" :style="{color:priorityColor(task)}" :disabled="actions.busy(task.id)" @click.stop="editRow(task,'priority')"><i class="ri-flag-line" /></button>
-            <button :aria-label="'修改 '+task.title+' 的标签'" title="标签" @click.stop="editRow(task,'tags')"><i class="ri-price-tag-3-line" /></button>
-            <button v-if="!actions.isSub(task.id) && !task.parentTaskId" :aria-label="'移动 '+task.title+' 到清单'" title="移动清单" :disabled="actions.busy(task.id)" @click.stop="editRow(task,'move')"><i class="ri-folder-transfer-line" /></button>
-          </div>
-          <button v-if="task.workItemType!=='note' && task.status!=='已放弃'" class="row-status" :data-status="task.status" :aria-label="`修改 ${task.title} 的状态：${projectStatusLabel(task.status)}`" aria-haspopup="menu" :aria-expanded="rowStatusMenu?.id === task.id" :disabled="actions.busy(task.id) || pendingCompletion.has(task.id)" @click.stop="openRowStatus($event, task.id)" @pointerdown.stop @dragstart.prevent.stop>
-            <span class="row-status-dot" aria-hidden="true"></span>{{ projectStatusLabel(task.status) }}<i class="ri-arrow-down-s-line" aria-hidden="true"></i>
-          </button>
           <button v-if="data.taskSaveState(actions.sourceId(task.id)) === 'error'" class="row-status-retry" :title="data.taskSaveError(actions.sourceId(task.id))" :aria-label="`重试保存 ${task.title}`" @click.stop="data.flushTask(actions.sourceId(task.id))">未保存 · 重试</button>
           <button class="row-more" :aria-label="`任务操作 ${task.title}`" @click="openChecklistMenu($event,task.id)"><i class="ri-more-line" /></button>
         </div>
@@ -717,28 +694,10 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
             <button class="priority-flag" aria-label="任务优先级" :title="props.itemRefs[selected.id]?.priorityUnset ? '设置优先级' : selected.pr + ' · ' + PROJECT_PRIORITY_LABELS[selected.pr]" aria-haspopup="menu" :aria-expanded="propertyMenu === 'priority'" :style="{ color: priorityColor(selected) }" :disabled="actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'priority' ? null : 'priority'"><i :class="props.itemRefs[selected.id]?.priorityUnset ? 'ri-flag-line' : 'ri-flag-fill'"></i></button>
             <CellMenu v-if="propertyMenu === 'priority'" :anchor="priorityAnchor" @close="propertyMenu = null"><button v-if="props.itemRefs[selected.id]?.subId" role="menuitemradio" :aria-checked="!!props.itemRefs[selected.id]?.priorityUnset" @click="changePriority(undefined)">跟随父任务</button><button v-for="priority in priorities" :key="priority" class="priority-option" role="menuitemradio" :aria-checked="!props.itemRefs[selected.id]?.priorityUnset && selected.pr === priority" @click="changePriority(priority)"><i class="ri-flag-fill" :style="{ color: PROJECT_PRIORITY_COLORS[priority] }"></i><span class="priority-code">{{ priority }}</span><span class="priority-label">{{ PROJECT_PRIORITY_LABELS[priority] }}</span></button></CellMenu>
           </span><WaoButton class="more-actions" variant="ghost" aria-label="更多操作" title="更多操作" @click="openChecklistMenu($event,selected.id)"><i class="ri-more-line"></i></WaoButton></div>
-        <TaskTimeSettings v-if="!source.subId && selected.workItemType!=='note'" :key="source.taskId" :task-id="source.taskId" />
         <h2><input class="detail-title-input" aria-label="任务标题" :value="titleDraft" placeholder="任务标题" @input="editTitle" @blur="finishTitle" @compositionstart="titleComposition.start" @compositionend="titleComposition.end" @keydown="titleKey" /></h2>
         <div ref="descriptionHost" :key="selected.id" class="checklist-description">
           <MarkdownEditor markdown-layout v-bind="DOCUMENT_EDITOR_FEATURES" hide-toolbar v-model="description" bare allow-h1 slash-commands :polishable="false" :min-height="hideGroups ? 120 : directChildren.length ? 180 : 360" placeholder="记录任务详情，输入 / 插入标题、列表等…" @upload-image="uploadImage" @upload-file="uploadEditorFile" />
         </div>
-        <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
-          <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu.capture="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
-            <i v-if="child.workItemType==='note' || child.status==='已放弃'" :class="child.workItemType==='note'?'ri-sticky-note-line':'ri-close-circle-line'" :aria-label="child.workItemType==='note'?'笔记':'已放弃'"></i>
-            <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
-            <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
-            <span v-if="child.due" class="task-meta" :class="{ overdue:overdue(child) > 0 }">{{ child.due }}</span>
-          </div>
-        </section>
-        <form v-if="addingChild && canAddChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
-          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="添加子任务，回车创建" :disabled="childBlocked" @input="storeChildDraft" @compositionstart="childComposition.start" @compositionend="childComposition.end" @keydown="childKey" />
-          <WaoButton type="submit" variant="primary" :disabled="!childDraft.trim() || childBlocked">添加</WaoButton>
-          <WaoButton type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
-          <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
-          <WaoButton v-if="saveState === 'error'" type="button" variant="ghost" @click="data.flushTask(source.taskId)">重试保存任务</WaoButton>
-        </form>
-        <WaoButton v-else-if="canAddChild" class="add-child-button" variant="ghost" :disabled="childBlocked" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
-        <WaoButton v-if="parentTask" variant="ghost" class="parent-task-link" @click="selectChild(parentTask.id)"><i class="ri-arrow-go-back-line" aria-hidden="true"></i><span>父任务：{{ parentTask.title }}</span></WaoButton>
         <div class="detail-secondary-actions">
         <div v-if="outline.length" class="description-outline-anchor" @mouseleave="outlineOpen = false" @keydown.esc.stop.prevent="outlineOpen = false">
           <button v-if="outline.length" class="outline-trigger" aria-label="任务描述目录" :aria-expanded="outlineOpen" @mouseenter="outlineOpen = true" @click="outlineOpen = !outlineOpen"><i class="ri-list-unordered" aria-hidden="true"></i><span>大纲</span></button>
@@ -747,9 +706,27 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
           </nav>
         </div>
 
-        <RouterLink v-if="selected.workItemType!=='note' && selected.status!=='已放弃'" :to="{ path: '/focus', query: { focusTask: props.itemRefs[selected.id]?.taskId ?? selected.id, focusSub: props.itemRefs[selected.id]?.subId } }"><i class="ri-timer-line"></i> 开始专注</RouterLink>
-        <TaskLabelEditor :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
+        <TaskLabelEditor compact :key="selected.id" :task-id="props.itemRefs[selected.id]?.taskId ?? selected.id" :sub-id="props.itemRefs[selected.id]?.subId" />
+        <TaskTimeSettings v-if="!source.subId && selected.workItemType!=='note'" :key="source.taskId" :task-id="source.taskId" />
         </div>
+        <section v-if="directChildren.length" class="detail-subtasks" aria-label="直属子任务">
+          <div v-for="child in directChildren" :key="child.id" class="detail-subtask" @contextmenu.capture="openChecklistMenu($event, child.id)" @keydown="openChecklistMenu($event, child.id)">
+            <i v-if="child.workItemType==='note' || child.status==='已放弃'" :class="child.workItemType==='note'?'ri-sticky-note-line':'ri-close-circle-line'" :aria-label="child.workItemType==='note'?'笔记':'已放弃'"></i>
+            <input v-else type="checkbox" :style="{ '--task-priority-color': priorityColor(child) }" :checked="isComplete(child)" :disabled="!pendingCompletion.has(child.id) && actions.busy(child.id)" :aria-label="`完成子任务 ${child.title}`" @change="toggleCompletion(child.id)" />
+            <button class="child-title" :class="{ finished: isComplete(child) }" @click="selectChild(child.id)">{{ child.title || '未命名任务' }}</button>
+            <TaskDueDate v-if="child.due && child.workItemType!=='note'" compact :due="child.due" :today="today" :label="relativeDate(child)" :completed="isComplete(child)" :accessible-label="`修改 ${child.title} 的截止日期`" :disabled="actions.busy(child.id)" @change="changeDue($event,child.id)" />
+            <button class="child-more" :aria-label="`子任务操作 ${child.title}`" @click="openChecklistMenu($event,child.id)"><i class="ri-more-line" aria-hidden="true" /></button>
+          </div>
+        </section>
+        <form v-if="addingChild && canAddChild" class="child-composer" @submit.prevent="addChild" @keydown.esc.stop.prevent="addingChild = false">
+          <i class="ri-add-line" aria-hidden="true" />
+          <input ref="childInput" :value="childDraft" aria-label="子任务名称" placeholder="添加子任务" :disabled="childBlocked" @input="storeChildDraft" @compositionstart="childComposition.start" @compositionend="childComposition.end" @keydown="childKey" />
+          <WaoButton v-if="childDraft || childDraftError" type="submit" variant="ghost" :disabled="!childDraft.trim() || childBlocked">添加</WaoButton>
+          <WaoButton v-if="childDraft || childDraftError" type="button" variant="ghost" @click="addingChild = false">收起</WaoButton>
+          <p v-if="childDraftError" class="child-draft-error" role="alert">{{ childDraftError }}</p>
+          <WaoButton v-if="saveState === 'error'" type="button" variant="ghost" @click="data.flushTask(source.taskId)">重试保存任务</WaoButton>
+        </form>
+        <WaoButton v-else-if="canAddChild" class="add-child-button" variant="ghost" :disabled="childBlocked" @click="startChild(selected.id)"><i class="ri-add-line" aria-hidden="true"></i>添加子任务</WaoButton>
         <TaskDocuments :key="`${useSessionStore().userId}:${selected.id}`" :task-id="source.taskId" :sub-id="source.subId" :title="taskTitle" :description="description" />
         <TaskComments :key="`${useSessionStore().account?.accountId ?? ''}:${useSessionStore().userId}:${source.taskId}:${source.subId ?? ''}`" :task-id="source.taskId" :sub-id="source.subId" />
         <div class="save-status" aria-live="polite">
@@ -763,9 +740,6 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
     </WaoCard>
   </div>
   <TaskContextMenu ref="contextMenu" :inline-selection="!popupDetail" @changed="detailOnlySelection=false" @created="selectedId=$event;detailOnlySelection=!popupDetail" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
-  <CellMenu v-if="rowStatusMenu && rowStatusTask" :anchor="rowStatusMenu.anchor" :min-width="140" @close="rowStatusMenu = null">
-    <button v-for="status in rowStatusOptions" :key="status" role="menuitemradio" :aria-checked="status === rowStatusTask.status" @click="changeRowStatus(status)">{{ projectStatusLabel(status) }}<i v-if="status === rowStatusTask.status" class="ri-check-line" aria-hidden="true"></i></button>
-  </CellMenu>
   <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" icon="ri-delete-bin-line" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
     <div class="delete-content">
       <p class="delete-description">确定删除「{{ deleteTarget.title }}」？</p>
@@ -784,32 +758,19 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 
 <style scoped>
 .checklist-list-pane {container-type:inline-size;}
-@container(max-width:520px) { .row-quick-fields {display:none !important;} }
 .row-actions { display:contents; }
-.row-quick-fields { display:flex; align-items:center; flex-shrink:0; opacity:0; }
-.checklist-row:hover .row-quick-fields,.checklist-row:focus-within .row-quick-fields { opacity:1; }
-.row-quick-fields button { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; color:var(--wao-text-3); border:0; border-radius:var(--wao-radius-control); background:transparent; font:inherit; cursor:pointer; }
-.row-quick-fields button:hover { background:var(--wao-bg-hover); }
-.checklist-row:focus-visible,.row-quick-fields button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:-2px; }
-@media(pointer:coarse),(max-width:760px) { .row-quick-fields {opacity:1;} .row-quick-fields button {min-width:36px;min-height:44px;} .row-quick-fields {flex-wrap:wrap;} }
-@media(max-width:600px) { .row-quick-fields {display:none;} }
-
-.row-status { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; min-height:28px; padding:0 6px; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text-3); font:inherit; font-size:var(--wao-font-caption); white-space:nowrap; cursor:pointer; }
-.row-status:hover, .row-status[aria-expanded="true"] { background:var(--wao-bg-hover); color:var(--wao-text); }
-.row-status:disabled { cursor:wait; opacity:.65; }
-.row-status-dot { width:6px; height:6px; border-radius:var(--wao-radius-pill); background:var(--wao-text-3); }
-.row-status[data-status="进行中"] .row-status-dot { background:var(--wao-primary); }
-.row-status[data-status="待验证"] .row-status-dot, .row-status[data-status="收集中"] .row-status-dot { background:var(--wao-warning-strong); }
-.row-status[data-status="已完成"] .row-status-dot { background:var(--wao-success-strong); }
+.child-more:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 .row-status-retry { flex-shrink:0; border:0; background:transparent; color:var(--wao-danger-strong); font:inherit; font-size:var(--wao-font-caption); cursor:pointer; }
-@media (pointer:coarse) { .row-status { min-height:44px; } }
+.child-more { width:24px; min-height:32px; padding:0; border:0; background:transparent; color:var(--wao-text-3); cursor:pointer; opacity:0; }
+.detail-subtask:hover .child-more,.detail-subtask:focus-within .child-more { opacity:1; }
+@media (pointer:coarse) { .child-more { opacity:1; min-width:44px; } }
 
 .delete-content { display: flex; flex-direction: column; gap: var(--wao-space-1); padding: var(--wao-space-3); overflow-wrap: anywhere; }
 .delete-description { margin: 0; color: var(--wao-text); font-size: var(--wao-font-body); }
 .delete-consequence { margin: 0; color: var(--wao-text-3); font-size: var(--wao-font-help); }
 .delete-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--wao-space-1); }
 @media (max-width: 650px) { .delete-content { padding: var(--wao-space-2); } }
-.detail-secondary-actions { margin-top:var(--wao-space-2); display: flex; align-items: center; gap: var(--wao-space-2); min-width: 0; }
+.detail-secondary-actions { margin-top:var(--wao-space-2); display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-2); min-width:0; }
 .detail-secondary-actions > a { flex-shrink: 0; white-space: nowrap; }
 .description-outline-anchor { position: relative; order: 1; margin-left: auto; z-index: 3; }
 .outline-trigger { display: inline-flex; align-items: center; gap: var(--wao-space-1); min-height: 32px; padding: 0 var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-3); font: inherit; cursor: pointer; }
@@ -858,15 +819,17 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 .priority-anchor { margin-left:auto; display:inline-flex; }
 .priority-flag { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:0; background:transparent; border-radius:var(--wao-radius-control); font-size:18px; cursor:pointer; }
 .priority-flag:hover { background:var(--wao-bg-sub); }
-.detail-subtasks { margin-top:var(--wao-space-3); border-top:1px solid var(--wao-line); }
+.detail-subtasks { margin-top:var(--wao-space-2); border-top:1px solid var(--wao-line); }
 .detail-subtask { display:flex; align-items:center; gap:var(--wao-space-1); min-height:40px; border-bottom:1px solid var(--wao-line); }
 .child-title { flex:1; min-width:0; padding:var(--wao-space-1) 0; border:0; background:transparent; font:inherit; font-weight:400; color:var(--wao-text-2); text-align:left; overflow-wrap:anywhere; cursor:pointer; }
 .child-composer { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wao-space-1); margin-top:var(--wao-space-2); }
-.child-composer input { flex:1; min-width:120px; min-height:var(--wao-control-height); border:1px solid var(--wao-line-control); border-radius:var(--wao-radius-control); padding:var(--wao-space-1); background:var(--wao-bg-card); color:var(--wao-text); font:inherit; }
+.child-composer input { flex:1; min-width:120px; min-height:var(--wao-control-height); border:0; border-radius:0; padding:var(--wao-space-1) 0; background:transparent; color:var(--wao-text); font:inherit; }
+.child-composer > i,.child-composer input::placeholder { color:var(--wao-primary-text); }
 .child-draft-error { width:100%; margin:0; color:var(--wao-danger-strong); font-size:var(--wao-font-caption); }
 .add-child-button { margin-top:var(--wao-space-1); color:var(--wao-primary-text); }
 .more-actions { padding:0 var(--wao-space-1); min-height:32px; }
-.checklist-row { position:relative; display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); min-height:44px; }
+.checklist-row { position:relative; display:flex; align-items:center; gap:var(--wao-space-1); border-radius:var(--wao-radius-control); min-height:40px; }
+.checklist-row::after { content:""; position:absolute; inset-inline:32px 8px; bottom:0; height:1px; background:var(--wao-line); pointer-events:none; }
 .checklist-row:hover,.checklist-row.selected { background:var(--wao-bg-sub); }
 input[type=checkbox] { appearance:none; box-sizing:border-box; border:1px solid var(--task-priority-color, var(--wao-text-weak)); border-radius:var(--wao-radius-checkbox); background:var(--wao-bg-card); display:grid; place-content:center; flex-shrink:0; accent-color:var(--wao-primary); width:14px; height:14px; margin:0; }
 input[type=checkbox]:checked { background:var(--task-priority-color, var(--wao-primary)); border-color:var(--task-priority-color, var(--wao-primary)); }
@@ -955,9 +918,6 @@ h2 { font-size:calc(var(--wao-font-body) + 2px); line-height:1.5; overflow-wrap:
 .detail-title-input { width:100%; min-width:0; box-sizing:border-box; border:0; border-radius:var(--wao-radius-control); background:transparent; color:var(--wao-text); font:inherit; padding:var(--wao-space-1) 0; }
 .detail-title-input:hover,.detail-title-input:focus { background:var(--wao-bg-sub); }
 .save-status { margin-top:var(--wao-space-1); display:flex; gap:var(--wao-space-2); flex-wrap:wrap; }
-.parent-task-link { justify-content:flex-start; max-width:100%; margin-top:var(--wao-space-3); padding:var(--wao-space-1) var(--wao-space-2); font-family:var(--wao-font); text-align:left; }
-.parent-task-link span { min-width:0; overflow-wrap:anywhere; }
-.parent-task-link i { flex-shrink:0; }
 .empty { padding:var(--wao-space-2); color:var(--wao-text-weak); }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 @media(max-width:760px) {

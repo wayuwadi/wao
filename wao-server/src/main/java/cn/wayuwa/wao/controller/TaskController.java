@@ -74,6 +74,16 @@ public class TaskController {
         return ApiResponse.ok(taskService.addComment(id, currentMember.idOr(http, "unknown"), request.text()));
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.TaskCommentImageService commentImages;
+
+    @PostMapping(value = "/{id}/comments/images", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<cn.wayuwa.wao.dto.ImageItemDto> uploadCommentImage(@PathVariable String id,
+            @org.springframework.web.bind.annotation.RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            HttpServletRequest http) {
+        return ApiResponse.ok(commentImages.upload(id, currentMember.id(http), file));
+    }
+
     /** 由当前成员明确要求把任务发到通知群；自动成功通知策略不影响这个人工动作。 */
     @PostMapping("/{id}/notifications")
     public ApiResponse<Boolean> notifyManually(@PathVariable String id, HttpServletRequest http) {

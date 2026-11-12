@@ -247,6 +247,7 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
 
 .search-row {
   padding: 2px 10px 6px;
+  container-type: inline-size;
 }
 .search {
   width: 100%;
@@ -260,13 +261,17 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
   padding: 0 10px;
   cursor: pointer;
   color: var(--wao-text-weak);
-  font-size: 12.5px;
+  font-size: var(--wao-font-help);
 }
 .search:hover {
   border-color: var(--wao-line-strong);
 }
 .search-text {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   text-align: left;
 }
 .compact-search-row { padding: 2px var(--wao-space-1) 6px; }
@@ -284,7 +289,10 @@ function goSettings() { emit('navigate'); void router.push('/settings') }
 .compact-search .search-text { flex: none; font-size: var(--wao-font-caption); text-align: center; }
 .compact-search:hover { background: var(--wao-bg-hover); border-color: transparent; }
 .search:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@container (max-width: 192px) { .kbd { display: none; } }
 .kbd {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 11px;
   border: 1px solid var(--wao-line-control);
   border-radius: 5px;

@@ -51,6 +51,10 @@ AI SSE 等待连接默认上限 16，可通过 `wao.ai.stream.max-concurrency` �
 
 验收重点：满载时其他业务可访问；等待连接关闭后任务仍保留；超大 Markdown 不读取正文；文件存储不可用时仍遵循既有 MySQL 副本回退。回退沿既有协调器切换旧制品，本次不包含数据库迁移。完整流式文件读写和生产备份恢复演练不在本次变更内。
 
+## 每日共享卦象调度
+
+每日共享卦象在北京时间 8 点后生成一次。若部署配置使用 `wao.scheduling.enabled=false`，需在独立的生产私有配置中设置 `wao.tianren.shared-daily-scheduler-enabled: true`，仅启用共享卦象任务；启动约 10 秒后补生成当天缺失结果，此后每分钟检查一次。全局调度已启用的部署沿用普通 `@Scheduled`，不会重复注册独立任务。开发环境默认不启用。
+
 ## 考勤后台同步配置
 
 当部署使用 `wao.scheduling.enabled=false` 时，普通 `@Scheduled` 考勤任务不会注册。维护者可在独立的生产私有配置中显式设置 `wao.attendance.scheduling-enabled: true`，仅开启已启用成员的 Moka 考勤后台同步；开发环境默认不启用。应用重启后自动注册，默认启动 10 秒后同步一次，此后每次完成后等待 15 分钟，成功后继续渐进补齐历史。

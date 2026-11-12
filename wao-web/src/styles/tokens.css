@@ -290,3 +290,32 @@
     opacity: 0.4;
   }
 }
+
+/* 待办颜色系列，仅在标记的工作区与预览中解析。 */
+[data-todo-palette='default'] { --wao-todo-gradient-start:#c7cbd4; --wao-todo-gradient-end:#eef0f4; }
+[data-todo-palette='blue'] { --wao-todo-gradient-start:#6d8cff; --wao-todo-gradient-end:#4269f4; }
+[data-todo-palette='turquoise'] { --wao-todo-gradient-start:#19b99d; --wao-todo-gradient-end:#58cfb9; }
+[data-todo-palette='mist'] { --wao-todo-gradient-start:#93d7d9; --wao-todo-gradient-end:#5aafba; }
+[data-todo-palette='sage'] { --wao-todo-gradient-start:#c5d2b8; --wao-todo-gradient-end:#9eaf90; }
+[data-todo-palette='apricot'] { --wao-todo-gradient-start:#ffd47b; --wao-todo-gradient-end:#ffb28b; }
+[data-todo-palette='pink'] { --wao-todo-gradient-start:#ff80ad; --wao-todo-gradient-end:#ffb0a7; }
+[data-todo-palette='purple'] { --wao-todo-gradient-start:#d7c2df; --wao-todo-gradient-end:#999ed9; }
+[data-todo-palette='brown'] { --wao-todo-gradient-start:#c7ad9d; --wao-todo-gradient-end:#a78063; }
+[data-todo-palette='navy'] { --wao-todo-gradient-start:#404f83; --wao-todo-gradient-end:#222b4c; }
+[data-todo-palette='gray'] { --wao-todo-gradient-start:#53585e; --wao-todo-gradient-end:#30343f; }
+[data-todo-palette='midnight'] { --wao-todo-gradient-start:#17191e; --wao-todo-gradient-end:#030407; }
+[data-todo-palette='midnight']:not(.palette-swatch) {
+  color-scheme:dark;
+  --wao-bg-card:#16181d;
+  --wao-bg-page:#13151a;
+  --wao-text:#e8eaf0;
+  --wao-text-2:#c7cbd5;
+  --wao-text-3:#a3aaba;
+  --wao-text-weak:#8d95a8;
+  --wao-line:#2b3039;
+  --wao-line-control:#414959;
+  --wao-primary:#8496ff;
+  --wao-primary-text:#a8b5ff;
+  --wao-primary-line:#414e87;
+  --wao-danger-strong:#ff9999;
+}

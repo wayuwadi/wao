@@ -6,6 +6,9 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
+import { apiUploadTaskCommentImage } from '@/api/board'
+
+vi.mock('@/api/board', async original => ({ ...await original<typeof import('@/api/board')>(), apiUploadTaskCommentImage: vi.fn() }))
 
 enableAutoUnmount(afterEach)
 let serial = 0
@@ -24,6 +27,40 @@ function setup() {
   return { data, id, mountFor }
 }
 describe('任务侧栏评论', () => {
+  it('上传图片后保留可发送草稿，并在主任务评论中显示图片', async () => {
+    const { data, id, mountFor } = setup()
+    vi.mocked(apiUploadTaskCommentImage).mockResolvedValue({ id:'image-1', url:'/api/images/image-1/raw' } as Awaited<ReturnType<typeof apiUploadTaskCommentImage>>)
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    const w = mountFor()
+    const file = new File(['image'], 'family.png', { type:'image/png' })
+    Object.defineProperty(w.get('input[type="file"]').element, 'files', { configurable:true, value:[file] })
+    await w.get('input[type="file"]').trigger('change'); await flushPromises()
+    expect(apiUploadTaskCommentImage).toHaveBeenCalledWith(id, file)
+    expect(w.get('[aria-label="评论内容"]').element).toHaveProperty('value', '![图片](/api/images/image-1/raw)')
+    expect(w.get('[aria-label="评论图片预览"] img').attributes('src')).toBe('/api/images/image-1/raw')
+    await w.get('[aria-label="评论内容"]').trigger('keydown', { key:'Enter' }); await flushPromises()
+    expect(data.taskById(id)?.comments[0]?.text).toBe('![图片](/api/images/image-1/raw)')
+    expect(w.get('.comment-body img').attributes('src')).toBe('/api/images/image-1/raw')
+  })
+
+  it('图片上传失败保留文字草稿，子任务可发送图片评论', async () => {
+    const { data, id, mountFor } = setup()
+    vi.mocked(apiUploadTaskCommentImage).mockRejectedValueOnce(new Error('上传失败'))
+      .mockResolvedValueOnce({ id:'image-2', url:'/api/images/image-2/raw' } as Awaited<ReturnType<typeof apiUploadTaskCommentImage>>)
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('saved')
+    vi.spyOn(data, 'flushTask').mockResolvedValue()
+    const w = mountFor('sub')
+    await w.get('[aria-label="评论内容"]').setValue('家里的日子')
+    const input = w.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable:true, value:[new File(['a'], 'a.png', { type:'image/png' })] })
+    await input.trigger('change'); await flushPromises()
+    expect(w.get('[role="alert"]').text()).toContain('上传失败')
+    expect(w.get('[aria-label="评论内容"]').element).toHaveProperty('value', '家里的日子')
+    await input.trigger('change'); await flushPromises()
+    await w.get('[aria-label="评论内容"]').trigger('keydown', { key:'Enter' }); await flushPromises()
+    expect(data.subById(id, 'sub')?.comments?.[0]?.text).toContain('![图片](/api/images/image-2/raw)')
+  })
   it('输入法确认和 Shift+Enter 不发送，保存失败后重试不重复追加', async () => {
     const { data, id, mountFor } = setup()
     let state: 'error' | 'saved' = 'error'

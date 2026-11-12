@@ -32,7 +32,7 @@ public class BuiltinMenuRegistryService {
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
-            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world");
+            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world", "focus", "countdowns");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("notes", "小记", "ri-sticky-note-line", "ROOT", 15, true, "TAB"),
@@ -40,8 +40,6 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
             new BuiltinMenuConfigDto("capabilities", "能力中心", "ri-box-3-line", "TOOLS", 15, true, "TAB"),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
-            new BuiltinMenuConfigDto("focus", "番茄专注", "ri-timer-line", "PERSONAL", 15, true, "TAB"),
-            new BuiltinMenuConfigDto("countdowns", "倒数日", "ri-calendar-event-line", "PERSONAL", 16, true, "TAB"),
             new BuiltinMenuConfigDto("habits", "习惯打卡", "ri-seedling-line", "PERSONAL", 17, true, "TAB"),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),

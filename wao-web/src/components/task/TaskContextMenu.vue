@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -26,7 +25,7 @@ import type { ContextAction } from '@/types/contextAction'
 import type { ProjectItemRefs } from '@/utils/projectWorkItems'
 const props=defineProps<{itemRefs?:ProjectItemRefs;inlineSelection?:boolean}>()
 const emit=defineEmits<{ dateChanging:[id:string]; created:[id:string]; changed:[] }>()
-const data=useDataStore(), session=useSessionStore(), router=useRouter(), ui=useUiStore()
+const data=useDataStore(), session=useSessionStore(), ui=useUiStore()
 const pins=useTaskPinsStore()
 const actions=useProjectItemActions(()=>props.itemRefs)
 const menu=ref<InstanceType<typeof ContextActionMenu>>()
@@ -193,7 +192,6 @@ function openAt(event:MouseEvent|KeyboardEvent,task:Task,extra:ContextAction[]=[
   {id:'move',label:'移动到',icon:'ri-folder-transfer-line',disabled:disabled||!actions.canMoveToList(task.id),run:()=>dialog('move')},
   {id:'tags',label:'标签',icon:'ri-price-tag-3-line',run:()=>{quick.value={...ref,mode:'tags'}}},
   ...(!ref.subId?[{id:'attachment',label:'上传附件',icon:'ri-attachment-line',disabled:disabled||uploading.value,run:chooseAttachment}]:[]),
-  {id:'focus',label:'开始专注',icon:'ri-timer-line',separatorBefore:true,run:async()=>{await router.push({path:'/focus',query:{focusTask:ref.taskId,focusSub:ref.subId}})}},
   {id:'activity',label:'任务动态',icon:'ri-list-check-2',run:()=>dialog('activity')},
   {id:'template',label:'保存为模板',icon:'ri-save-line',run:()=>{templateTarget.value={...ref}}},
   {id:'duplicate',label:'创建副本',icon:'ri-file-copy-line',separatorBefore:true,disabled,run:()=>menuAction('duplicate')},

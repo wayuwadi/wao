@@ -20,20 +20,37 @@ beforeEach(()=>{
 })
 const viewOptions={global:{stubs:{ProjectChecklistView:{template:'<div><slot name="list-header" /></div>'},TodoOrganization:{template:'<button aria-label="筛选入口">筛选</button>'},TodoFolderNavigation:true,TaskQuadrantView:true,TaskTimeSettings:true,MarkdownEditor:true,TaskDocuments:true}}}
 
-it('筛选插槽位于标题工具栏内，搜索、批量与视图菜单仍可独立操作',async()=>{
-  const wrapper=mount(TodoListHeader,{props:{heading:'所有',count:3,selection:'all',navigationCollapsed:false,creating:false,error:'',view:defaultTodoView(),display:decodeTodoDisplay(null),syncError:'',destination:'收集箱',quick:''},slots:{filters:'<button aria-label="示例筛选">筛选</button>'}})
-  expect(wrapper.find('header [aria-label="示例筛选"]').exists()).toBe(true)
+it('移除顶部筛选和快速属性行，外观、搜索、批量与视图菜单仍可操作',async()=>{
+  const wrapper=mount(TodoListHeader,{props:{heading:'所有',count:3,selection:'all',navigationCollapsed:false,creating:false,error:'',view:defaultTodoView(),display:decodeTodoDisplay(null),syncError:'',destination:'收集箱',quick:''},slots:{appearance:'<button aria-label="待办背景颜色">外观</button>',filters:'<button aria-label="示例筛选">筛选</button>'}})
+  expect(wrapper.find('[aria-label="示例筛选"]').exists()).toBe(false)
+  expect(wrapper.find('header [aria-label="待办背景颜色"]').exists()).toBe(true)
+  expect(wrapper.find('.capture-fields').exists()).toBe(false)
   await wrapper.get('[aria-label="搜索任务"]').setValue('名称')
   expect(wrapper.emitted('update:query')?.[0]).toEqual(['名称'])
   await wrapper.get('[aria-label="批量选择"]').trigger('click');expect(wrapper.emitted('batch')).toHaveLength(1)
+  await wrapper.setProps({batchMode:true})
+  expect(wrapper.get('[aria-label="批量选择"]').attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('.batch-label').text()).toBe('批量选择')
   expect(wrapper.find('header [aria-label="更多视图选项"]').exists()).toBe(true)
+})
+
+it('任务搜索在中文组字结束后才响应 Escape，清空时保留焦点',async()=>{
+  const wrapper=mount(TodoListHeader,{attachTo:document.body,props:{heading:'所有',count:3,selection:'all',navigationCollapsed:false,creating:false,error:'',view:defaultTodoView(),display:decodeTodoDisplay(null),syncError:'',destination:'收集箱',quick:'',query:'名称'}})
+  const input=wrapper.get('input[type="search"]')
+  await input.trigger('compositionstart')
+  await input.trigger('keydown',{key:'Escape'})
+  expect(wrapper.emitted('update:query')).toBeUndefined()
+  await input.trigger('compositionend')
+  await input.trigger('keydown',{key:'Escape'})
+  expect(wrapper.emitted('update:query')).toEqual([['']])
+  expect(document.activeElement).toBe(input.element)
 })
 
 it('手机首次打开收起导航，明确展开后重新打开保留选择',async()=>{
   Object.defineProperty(window,'innerWidth',{value:390,configurable:true})
   let wrapper=mount(TodoView,viewOptions);await flushPromises()
   expect(wrapper.get('[aria-label="展开待办导航"]').attributes('aria-expanded')).toBe('false')
-  expect(wrapper.findAll('header [aria-label="筛选入口"]')).toHaveLength(1)
+  expect(wrapper.findAll('[aria-label="筛选入口"]')).toHaveLength(0)
   await wrapper.get('[aria-label="展开待办导航"]').trigger('click')
   expect(wrapper.get('[aria-label="收起待办导航"]').attributes('aria-expanded')).toBe('true')
   wrapper.unmount();wrapper=mount(TodoView,viewOptions);await flushPromises()
