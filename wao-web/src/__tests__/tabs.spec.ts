@@ -47,7 +47,7 @@ describe('tabs store', () => {
 
   it('恢复历史页签时移除本次下线功能并保留知识库', () => {
     localStorage.setItem('wao-tabs-v1', JSON.stringify({ tabs: [
-      ...['life-review', 'system-reports', 'ideas'].map(key => ({ key, path: '/' + key, label: '旧页签' })),
+      ...['life-review', 'system-reports', 'ideas', 'focus', 'countdowns', 'tianren'].map(key => ({ key, path: '/' + key, label: '旧页签' })),
       proj('p1'),
     ], activeKey: 'life-review' }))
     const tabs = useTabsStore()

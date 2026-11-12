@@ -19,7 +19,7 @@ export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
 /** 已全站下线的独立功能；旧个人布局和历史页签不得使入口重新出现。 */
 export const RETIRED_MODULE_IDS = new Set<ModuleId>([
-  'focus', 'countdowns', 'projects', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
+  'focus', 'countdowns', 'tianren', 'projects', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections',
@@ -310,7 +310,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 /** 全体用户共用的主菜单；顺序和名称只随代码发布变更。 */
 export const FIXED_NAV_IDS = [
   'home', 'notes', 'todo', 'knowledge', 'files', 'drawings', 'vault',
-  'calendar', 'focus', 'countdowns', 'tianren', 'navigation',
+  'calendar', 'navigation',
 ] as const satisfies readonly ModuleId[]
 export const FIXED_BUILTIN_MENUS: BuiltinMenuConfig[] = FIXED_NAV_IDS.map((id, index) => ({
   id, label: MODULES[id].label, icon: MODULES[id].icon,

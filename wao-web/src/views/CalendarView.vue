@@ -1334,7 +1334,7 @@ useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
           <button v-if="calendarMemberId === session.userId" class="mobile-day-records" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })"><i class="ri-calendar-check-line"></i><span><b>查看当天记录</b><small>{{ selectedDate }}</small></span></button>
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
-          <button type="button" @click="legacyDateManager = true"><i class="ri-calendar-event-line"></i><span><b>日期记录</b><small>查看和管理已有日期</small></span></button>
+          <button type="button" @click="legacyDateManager = true"><i class="ri-calendar-event-line"></i><span><b>日期记录</b><small>倒数日、纪念日与生日</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
           <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
         </div></details>
