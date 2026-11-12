@@ -7,7 +7,7 @@ import { decodeTaskFolders, organizedProjectGroups, type TaskFolderSettings } fr
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
-const props = defineProps<{ projects: Project[]; selection: string }>()
+const props = defineProps<{ projects: Project[]; selection: string; dropTarget?: string }>()
 const emit = defineEmits<{ select: [value: string]; menu: [project: Project, event: MouseEvent]; create: [] }>()
 const preferences = useTaskOrganizationPreference('todo-list-folders-v1', decodeTaskFolders)
 const session = useSessionStore(), search = ref(''), collapsed = ref<string[]>([]), manage = ref(false)
@@ -79,7 +79,7 @@ function toggle(id: string) { collapsed.value=collapsed.value.includes(id)?colla
     <div v-for="group in groups" :key="group.id" class="folder-group">
       <button v-if="group.name" class="folder-heading" :aria-expanded="!!search || !collapsed.includes(group.id)" @click="toggle(group.id)"><i :class="!search && collapsed.includes(group.id)?'ri-arrow-right-s-line':'ri-arrow-down-s-line'" aria-hidden="true" /><i class="ri-folder-line" aria-hidden="true" /><span>{{ group.name }}</span><small>{{ group.projects.length }}</small></button>
       <div v-show="!!search || !collapsed.includes(group.id)">
-        <div v-for="project in group.projects" :key="project.id" class="list-entry">
+        <div v-for="project in group.projects" :key="project.id" class="list-entry" :data-todo-drop="'project:'+project.id" :class="{ 'task-drop-target': dropTarget==='project:'+project.id }">
           <button :class="{active:selection==='project:'+project.id}" :aria-current="selection==='project:'+project.id ? 'page' : undefined" @click="emit('select','project:'+project.id)"><i class="ri-list-check" aria-hidden="true" /><span>{{ project.name }}</span></button>
           <button :aria-label="`清单操作 ${project.name}`" @click="emit('menu',project,$event)"><i class="ri-more-line" aria-hidden="true" /></button>
         </div>

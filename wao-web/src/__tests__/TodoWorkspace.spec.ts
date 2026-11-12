@@ -22,6 +22,16 @@ vi.mock('@/api/favorites',async original=>({...await original<typeof import('@/a
 vi.mock('@/api/smartListVisibility',()=>({fetchSmartListVisibility:vi.fn(async()=>({})),saveSmartListVisibility:vi.fn(async()=>{})}))
 const options={global:{stubs:{Teleport:true,MarkdownEditor:true,TaskDocuments:true}}}
 const buttonText = (w:VueWrapper, selector:string, text:string) => w.findAll(selector).find(button => button.text().trim()===text)!
+function taskTransfer() {
+ const values = new Map<string, string>()
+ return {
+  setData: (type: string, value: string) => values.set(type, value),
+  getData: (type: string) => values.get(type) ?? '',
+  get types() { return [...values.keys()] },
+  effectAllowed: '',
+  dropEffect: '',
+ }
+}
 async function switchView(w:VueWrapper, name:string) {
  await w.get('[aria-label="更多视图选项"]').trigger('click')
  await buttonText(w,'[role="menuitemradio"]',name).trigger('click')
@@ -268,6 +278,56 @@ describe('task workspace',()=>{
   await wrapper.get('[data-task-id="other"]').trigger('dragstart',{dataTransfer:{setData:vi.fn(),effectAllowed:''}})
   await target.trigger('drop',{clientY:120});await flushPromises()
   expect(relation).toHaveBeenCalledWith('other','parent')
+  wrapper.unmount()
+ })
+ it('四象限拖到标签时追加原有标签，重复放置不写入', async () => {
+  const wrapper = mount(TodoView, options)
+  await flushPromises()
+  await useTaskLabelsStore().save({ taskId: 'other', subId: '', revision: 0, tags: ['已有'] })
+  vi.mocked(saveTaskLabels).mockClear()
+  await switchView(wrapper, '四象限')
+  const task = wrapper.get('#quadrant-item-other .quadrant-title')
+  const target = wrapper.get('[data-todo-drop="tag:联调"]')
+  const dataTransfer = taskTransfer()
+  await task.trigger('dragstart', { dataTransfer })
+  await target.trigger('dragover', { dataTransfer })
+  expect(target.classes()).toContain('task-drop-target')
+  expect(dataTransfer.dropEffect).toBe('copy')
+  await target.trigger('drop', { dataTransfer })
+  await flushPromises()
+  expect(saveTaskLabels).toHaveBeenCalledWith({ taskId: 'other', subId: '', revision: 1, tags: ['已有', '联调'] })
+  expect(target.classes()).not.toContain('task-drop-target')
+  const repeated = taskTransfer()
+  await task.trigger('dragstart', { dataTransfer: repeated })
+  await target.trigger('drop', { dataTransfer: repeated })
+  expect(saveTaskLabels).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+ })
+ it('任务拖到侧栏清单时沿用保存链路，内嵌子项仍随主任务移动', async () => {
+  const data = useDataStore(), project = data.projects.find(project => project.id !== data.taskById('parent')?.project)!
+  const flush = vi.spyOn(data, 'flushTask').mockResolvedValue()
+  const patch = vi.spyOn(data, 'patchTask')
+  const wrapper = mount(TodoView, options)
+  await flushPromises()
+  const target = wrapper.get(`[data-todo-drop="project:${project.id}"]`)
+  const child = wrapper.get('[data-task-id="sub:parent:child"]')
+  const childTransfer = taskTransfer()
+  await child.trigger('dragstart', { dataTransfer: childTransfer })
+  await target.trigger('dragover', { dataTransfer: childTransfer })
+  expect(target.classes()).not.toContain('task-drop-target')
+  await target.trigger('drop', { dataTransfer: childTransfer })
+  expect(patch).not.toHaveBeenCalled()
+  const dataTransfer = taskTransfer()
+  await wrapper.get('[data-task-id="parent"]').trigger('dragstart', { dataTransfer })
+  await target.get('span').trigger('dragover', { dataTransfer })
+  expect(target.classes()).toContain('task-drop-target')
+  expect(dataTransfer.dropEffect).toBe('move')
+  await target.get('span').trigger('drop', { dataTransfer })
+  await flushPromises()
+  expect(patch).toHaveBeenCalledWith('parent', { project: project.id, groupId: '' })
+  expect(flush).toHaveBeenCalledWith('parent')
+  expect(data.subById('parent', 'child')?.text).toBe('独立子任务')
+  expect(wrapper.get('h1').text()).toBe('所有')
   wrapper.unmount()
  })
  it('清单创建失败保留名称，成功选择新清单并支持改名',async()=>{

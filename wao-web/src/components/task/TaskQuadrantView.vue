@@ -23,8 +23,8 @@ import TaskContextMenu from './TaskContextMenu.vue'
 import type { Priority, Task } from '@/types'
 import { isTaskFinished } from '@/utils/projectCompletion'
 
-const props = defineProps<{ addProjectId?: string; hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
-const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
+const props = defineProps<{ addProjectId?: string; hideListName?: boolean; stateKey?: string; tasks: Task[]; selectedIds: string[]; showDone: boolean; completionToggle?: boolean; selectionMode?: boolean; allowSidebarDrop?: boolean; projectId?: string; itemRefs?: ProjectItemRefs; contextTasks?: Task[]; tagOptions?: string[] }>()
+const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean]; 'sidebar-drag': [id: string, event: DragEvent] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const pins=useTaskPinsStore()
@@ -110,13 +110,18 @@ async function toggleComplete(id: string) {
     else cancel(id)
   })
 }
-function startDrag(event: DragEvent, id: string) {
-  if (busy(id) || isChild(id)) { event.preventDefault(); return }
-  dragId.value = id
+const canDragPriority = (id: string) => !customized.value && !isChild(id)
+const canDrag = (task: { id: string; contextOnly: boolean }) => !busy(task.id) && !props.selectionMode
+  && (canDragPriority(task.id) || (props.allowSidebarDrop && !task.contextOnly))
+function startDrag(event: DragEvent, task: { id: string; contextOnly: boolean }) {
+  if (!canDrag(task)) { event.preventDefault(); return }
+  const id = task.id
+  dragId.value = canDragPriority(id) ? id : null
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', id)
   }
+  if (props.allowSidebarDrop && !task.contextOnly) emit('sidebar-drag', id, event)
 }
 function endDrag() { dragId.value = null; dropTarget.value = null; orderingOver.value = null }
 function drop(priority: Priority) {
@@ -177,7 +182,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
           <article v-for="task in section.tasks" :key="task.id" :id="`quadrant-item-${task.id}`" class="quadrant-task" :style="{ marginInlineStart: `min(${Math.min(task.depth, 6) * 18}px, 30%)` }"
             tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="openItem(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ 'context-only': task.contextOnly, done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
-            :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
+            :draggable="canDrag(task)" @dragstart="startDrag($event, task)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
             @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
             <button v-if="selectionMode" :disabled="task.contextOnly" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
@@ -185,7 +190,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body" :class="{ 'has-error': data.taskSaveState(sourceId(task.id)) === 'error' }">
-              <button class="quadrant-title" :title="task.title" :draggable="!customized && !isChild(task.id) && !busy(task.id) && !selectionMode" @click="openItem(task.id)"><i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
+              <button class="quadrant-title" :title="task.title" :draggable="canDrag(task)" @click="openItem(task.id)"><i v-if="pins.has(task.id)" class="ri-pushpin-line" aria-label="已置顶" /><span v-if="itemRefs?.[task.id]?.parentKey" aria-label="子任务">↳ </span>{{ task.title }}</button>
               <span v-if="itemRefs?.[task.id]?.priorityUnset && itemRefs?.[task.id]?.parentKey" class="save-hint" title="未单独设置优先级，跟随父任务">继承</span>
               <span v-if="task.contextOnly" class="save-hint" title="仅展示父子关系，不计入本象限数量">父任务</span>
               <span v-if="task.unfinishedSubCount" class="save-hint" :title="`仍有 ${task.unfinishedSubCount} 项子项未收尾`">{{ task.unfinishedSubCount }} 项未收尾</span>
