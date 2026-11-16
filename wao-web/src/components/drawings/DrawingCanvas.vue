@@ -4,6 +4,7 @@ import '@excalidraw/excalidraw/index.css'
 import type {
   AppState,
   BinaryFiles,
+  ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from '@excalidraw/excalidraw/types'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
@@ -29,6 +30,8 @@ const host = ref<HTMLElement | null>(null)
 const { effective } = useTheme()
 const pageVisible = usePageVisibility()
 let root: Root | null = null
+let canvasApi: ExcalidrawImperativeAPI | null = null
+let additiveSelectionPointer: number | null = null
 let ready = false
 let mountedKey = ''
 let lastScene = props.sceneJson
@@ -80,10 +83,46 @@ function changed(
   emit('change', sceneJson)
 }
 
+function setCanvasApi(api: ExcalidrawImperativeAPI) {
+  canvasApi = api
+}
+
+function useAdditiveSelection(event: PointerEvent) {
+  // Excalidraw uses Shift for additive selection and Cmd/Ctrl for entering groups.
+  Object.defineProperties(event, {
+    shiftKey: { value: true, configurable: true },
+    metaKey: { value: false, configurable: true },
+    ctrlKey: { value: false, configurable: true },
+  })
+}
+
+function startAdditiveSelection(event: PointerEvent) {
+  additiveSelectionPointer = null
+  if (event.pointerType !== 'mouse' || event.button !== 0 || event.altKey) return
+  if (!(event.metaKey || event.ctrlKey)) return
+  if (!(event.target instanceof HTMLCanvasElement) ||
+      !event.target.matches('.excalidraw__canvas.interactive')) return
+
+  const state = canvasApi?.getAppState()
+  if (state?.activeTool.type !== 'selection' || state.viewModeEnabled) return
+  if (state.editingTextElement || state.editingLinearElement || state.croppingElementId) return
+
+  additiveSelectionPointer = event.pointerId
+  useAdditiveSelection(event)
+}
+
+function finishAdditiveSelection(event: PointerEvent) {
+  if (event.pointerId !== additiveSelectionPointer) return
+  additiveSelectionPointer = null
+  if (event.type === 'pointerup' && event.button === 0) useAdditiveSelection(event)
+}
+
 function render() {
   if (!host.value) return
   if (!root) root = createRoot(host.value)
   if (mountedKey !== props.sceneKey) {
+    canvasApi = null
+    additiveSelectionPointer = null
     mountedKey = props.sceneKey
     ready = false
     lastScene = props.sceneJson
@@ -96,6 +135,7 @@ function render() {
       name: props.name,
       theme: effective.value,
       autoFocus: true,
+      excalidrawAPI: setCanvasApi,
       onChange: changed,
     }),
   )
@@ -123,7 +163,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="drawing-canvas"></div>
+  <div
+    ref="host"
+    class="drawing-canvas"
+    @pointerdown.capture="startAdditiveSelection"
+    @pointerup.capture="finishAdditiveSelection"
+    @pointercancel.capture="finishAdditiveSelection"
+  ></div>
 </template>
 
 <style scoped>
