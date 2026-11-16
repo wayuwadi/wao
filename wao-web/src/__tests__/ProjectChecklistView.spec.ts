@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -12,7 +14,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 vi.mock('@/api/favorites', async original => ({ ...await original<object>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
-function setup(error = false, realEditor = false, attach = false) {
+function setup(error = false, realEditor = false, attach = false, visible = ref(true)) {
   const data = useDataStore()
   data.tasks = [{ ...data.tasks[0]!, id: 'parent', title: '父任务', desc: '父正文', status: '待办', subs: [
     { id: 'child', text: '子任务', desc: '子正文', done: false },
@@ -25,11 +27,97 @@ function setup(error = false, realEditor = false, attach = false) {
   const wrapper = mount(ProjectChecklistView, {
     attachTo: attach ? document.body : undefined,
     props: { items: projection.items, contextItems: projection.items, itemRefs: projection.refs, showDone: false, collapsed: [], query: '' },
-    global: { stubs: { RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' }, TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
+    global: { provide: { [pageVisibleKey as symbol]: visible }, stubs: { RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' }, TaskDocuments: true, CellMenu: { template: '<div><slot /></div>' }, MarkdownEditor: realEditor ? false : { name: 'MarkdownEditor', props: ['modelValue', 'bare'], template: '<div>{{ modelValue }}</div>' } } },
   })
   return { data, wrapper }
 }
 describe('项目清单详情', () => {
+  it('真实编辑器在收起、全屏和页签隐藏后保留同一个实例与评论草稿', async () => {
+    const visible = ref(true)
+    const { wrapper } = setup(false, true, true, visible)
+    await vi.dynamicImportSettled(); await flushPromises()
+    const component = wrapper.getComponent((await import('@/components/ui/MarkdownEditor.vue')).default)
+    const editor = (component.vm as unknown as { editor: import('@tiptap/core').Editor }).editor
+    const editorElement = wrapper.get('.tiptap').element
+    await wrapper.get('[aria-label="评论内容"]').setValue('分享前的评论草稿')
+    await wrapper.get('[aria-label="收起任务详情"]').trigger('click')
+    await wrapper.get('[aria-label="展开任务详情"]').trigger('click')
+    await wrapper.get('[aria-label="全屏任务详情"]').trigger('click')
+    expect(document.querySelector('.detail-fullscreen .tiptap')).toBe(editorElement)
+    visible.value = false
+    await flushPromises()
+    expect(document.querySelector('.detail-fullscreen')).toBeNull()
+    expect(wrapper.get('.tiptap').element).toBe(editorElement)
+    expect(editor.isDestroyed).toBe(false)
+    expect(wrapper.get<HTMLTextAreaElement>('[aria-label="评论内容"]').element.value).toBe('分享前的评论草稿')
+    expect(document.body.style.overflow).toBe('')
+  }, 15000)
+
+  it('收起后保留详情编辑器、标题草稿与选中项，展开和点击任务都能恢复', async () => {
+    const { wrapper } = setup(false, false, true)
+    const title = wrapper.get<HTMLInputElement>('[aria-label="任务标题"]')
+    const editor = wrapper.getComponent({ name: 'MarkdownEditor' }).vm
+    await title.setValue('分享前整理的标题')
+    await wrapper.get('[aria-label="收起任务详情"]').trigger('click')
+    expect(wrapper.get('.checklist-layout').attributes('style')).toContain('minmax(0, 1fr)')
+    expect(wrapper.get('.task-detail-host').isVisible()).toBe(false)
+    expect(wrapper.get('.checklist-divider').isVisible()).toBe(false)
+    expect(wrapper.get('[data-task-id="parent"]').classes()).toContain('selected')
+    await wrapper.get('[aria-label="展开任务详情"]').trigger('click')
+    expect(wrapper.get('.task-detail-host').isVisible()).toBe(true)
+    expect(wrapper.getComponent({ name: 'MarkdownEditor' }).vm).toBe(editor)
+    expect(wrapper.get<HTMLInputElement>('[aria-label="任务标题"]').element).toBe(title.element)
+    expect(title.element.value).toBe('分享前整理的标题')
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="收起任务详情"]').element)
+    await wrapper.get('[aria-label="收起任务详情"]').trigger('click')
+    await wrapper.get('[data-task-id="sub:parent:child"] .task-select').trigger('click')
+    expect(wrapper.get('.task-detail-host').isVisible()).toBe(true)
+    expect(title.element.value).toBe('子任务')
+  })
+
+  it('全屏移动同一个详情节点，Esc 返回并恢复焦点，保留配色和失败重试', async () => {
+    const { data, wrapper } = setup(true, false, true)
+    await wrapper.setProps({ palette: 'midnight' })
+    const title = wrapper.get<HTMLInputElement>('[aria-label="任务标题"]')
+    const editor = wrapper.getComponent({ name: 'MarkdownEditor' }).vm
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    const originalOverflow = document.body.style.overflow
+    await wrapper.get('[aria-label="全屏任务详情"]').trigger('click')
+    const fullscreen = new DOMWrapper(document.body.querySelector<HTMLElement>('[aria-label="任务详情全屏"]')!)
+    expect(fullscreen.element.parentElement).toBe(document.body)
+    expect(fullscreen.attributes('data-todo-palette')).toBe('midnight')
+    expect(fullscreen.find('.checklist-list-pane').exists()).toBe(false)
+    expect(fullscreen.get<HTMLInputElement>('[aria-label="任务标题"]').element).toBe(title.element)
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(document.activeElement).toBe(fullscreen.get('[aria-label="退出任务详情全屏"]').element)
+    expect(fullscreen.text()).toContain('服务器已有新版本')
+    await fullscreen.get('[aria-label="任务标题"]').trigger('keydown', { key: 'Escape', isComposing: true })
+    expect(document.body.querySelector('.detail-fullscreen')).not.toBeNull()
+    await fullscreen.get('[aria-label="退出任务详情全屏"]').trigger('keydown', { key: 'Escape' })
+    expect(document.body.querySelector('.detail-fullscreen')).toBeNull()
+    expect(wrapper.getComponent({ name: 'MarkdownEditor' }).vm).toBe(editor)
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="全屏任务详情"]').element)
+    expect(document.body.style.overflow).toBe(originalOverflow)
+    expect(flush).not.toHaveBeenCalled()
+  })
+
+  it('全屏可直接收起，并在账号切换或卸载时释放全屏和滚动锁', async () => {
+    const { wrapper } = setup(false, false, true)
+    await wrapper.get('[aria-label="全屏任务详情"]').trigger('click')
+    await new DOMWrapper(document.body.querySelector('[aria-label="收起任务详情"]')!).trigger('click')
+    expect(wrapper.get('.task-detail-host').isVisible()).toBe(false)
+    await wrapper.get('[aria-label="展开任务详情"]').trigger('click')
+    await wrapper.get('[aria-label="全屏任务详情"]').trigger('click')
+    useSessionStore().account = { accountId: 'next-account', member: { id: 'next-member' } } as never
+    await flushPromises()
+    expect(document.body.querySelector('.detail-fullscreen')).toBeNull()
+    expect(document.body.style.overflow).toBe('')
+    await wrapper.get('[aria-label="全屏任务详情"]').trigger('click')
+    wrapper.unmount()
+    expect(document.body.querySelector('.detail-fullscreen')).toBeNull()
+    expect(document.body.style.overflow).toBe('')
+  })
+
   it('直接点击子任务日期打开日历，保存到该子项且保持当前详情', async () => {
     const { data, wrapper } = setup()
     data.tasks[0]!.subs[0]!.due = '2026-11-01'

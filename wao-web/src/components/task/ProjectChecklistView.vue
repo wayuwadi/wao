@@ -7,6 +7,9 @@ import { useTaskEditorUpload } from '@/composables/taskEditorUpload'
 const uploadEditorFile = useTaskEditorUpload()
 import { useTaskViewMemory, useTaskScrollMemory } from '@/composables/taskViewMemory'
 import { useInputComposition } from '@/composables/inputComposition'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { usePageVisibility } from '@/composables/pageVisibility'
+import type { TodoPalette } from '@/utils/todoAppearance'
 import { computed, defineAsyncComponent, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMemberPreference } from '@/composables/memberPreference'
 import { useSessionStore } from '@/stores/session'
@@ -65,7 +68,7 @@ function jumpToHeading(index: number) {
 }
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; keepScopeOnChildAdd?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; allowSidebarDrop?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
+const props = defineProps<{ palette?: TodoPalette; showAbandoned?: boolean; groupOverdue?: boolean; hideGroups?: boolean; hideListName?: boolean; keepScopeOnChildAdd?: boolean; stateKey?: string; selectedIds?: string[]; selectionMode?: boolean; items: Task[]; contextItems: Task[]; itemRefs: ProjectItemRefs; showDone: boolean; collapsed: string[]; query: string; busy?: boolean; disableHierarchyDrag?: boolean; allowSidebarDrop?: boolean; todoView?: TodoViewSettings; todoDisplay?: TodoDisplaySettings; todoTags?: (id:string)=>readonly string[]; sections?: { id: string; name: string; header: boolean; collapsed: boolean; itemIds: string[] }[] }>()
 const emit = defineEmits<{ select: [id: string]; toggle: [id: string]; toggleGroup: [id: string]; add: [groupId: string]; reveal: [id: string]; move: [source: string, target: string | null, side: 'before' | 'inside' | 'after']; 'sidebar-drag': [id: string, event: DragEvent] }>()
 const data = useDataStore()
 const pins=useTaskPinsStore()
@@ -159,7 +162,7 @@ function boundSplit(value: number) {
 }
 const splitRatio = computed(() => boundSplit(previewSplit.value ?? split.value.value))
 const popupDetail = computed(() => props.todoDisplay?.detail === 'popup')
-const splitStyle = computed(() => popupDetail.value ? { gridTemplateColumns: 'minmax(0, 1fr)' } : compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
+const splitStyle = computed(() => (popupDetail.value || detailCollapsed.value) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : compact.value ? {} : { gridTemplateColumns: `minmax(0, ${splitRatio.value}fr) 9px minmax(0, ${1 - splitRatio.value}fr)` })
 function startSplit(event: PointerEvent) {
   if (event.button !== 0 || compact.value) return
   event.preventDefault()
@@ -198,8 +201,57 @@ onMounted(() => {
 })
 watch(() => useSessionStore().userId, () => endSplit(false))
 onBeforeUnmount(() => { endSplit(); layoutObserver?.disconnect() })
-const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => ({ selectedId: '' }))
+const viewMemory = useTaskViewMemory(() => props.stateKey ?? 'checklist', () => ({ selectedId: '', detailCollapsed: false }))
 const selectedId = computed({ get: () => viewMemory.value.selectedId, set: value => { viewMemory.value.selectedId = value } })
+const detailCollapsed = computed({ get: () => viewMemory.value.detailCollapsed, set: value => { viewMemory.value.detailCollapsed = value } })
+const detailFullscreen = ref(false)
+const detailHost = ref<HTMLElement | null>(null)
+const pageVisible = usePageVisibility()
+function focusDetailControl(label: string) {
+  void nextTick(() => layout.value?.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)?.focus({ preventScroll: true }))
+}
+function exitDetailFullscreen() {
+  detailFullscreen.value = false
+  focusDetailControl('全屏任务详情')
+}
+function collapseDetail() {
+  endSplit(false)
+  detailFullscreen.value = false
+  detailCollapsed.value = true
+  focusDetailControl('展开任务详情')
+}
+function expandDetail() {
+  detailCollapsed.value = false
+  focusDetailControl('收起任务详情')
+}
+function enterDetailFullscreen() {
+  endSplit(false)
+  propertyMenu.value = null
+  outlineOpen.value = false
+  detailFullscreen.value = true
+  void nextTick(() => detailHost.value?.querySelector<HTMLButtonElement>('[aria-label="退出任务详情全屏"]')?.focus({ preventScroll: true }))
+}
+const fullscreenDismiss = useOverlayDismiss(() => detailFullscreen.value, exitDetailFullscreen)
+watch(detailFullscreen, (active, _, onCleanup) => {
+  if (!active) return
+  const previousOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  onCleanup(() => { document.body.style.overflow = previousOverflow })
+})
+watch([() => useSessionStore().account?.accountId, () => useSessionStore().userId, () => props.stateKey, popupDetail, pageVisible], () => { detailFullscreen.value = false })
+function trapDetailFocus(event: KeyboardEvent) {
+  if (!detailFullscreen.value || !fullscreenDismiss.isTopmost() || event.defaultPrevented || event.key !== 'Tab') return
+  const controls = Array.from(detailHost.value?.querySelectorAll<HTMLElement>('a[href], button, input, textarea, select, [contenteditable="true"], [tabindex]') ?? [])
+    .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length > 0)
+  const first = controls[0], last = controls[controls.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!controls.includes(document.activeElement as HTMLElement) || (!event.shiftKey && document.activeElement === last)) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
 const detailOnlySelection = ref(false)
 // A date edit can remove its own row from the active filter. Keep its save/retry UI
 // until the server acknowledges the write, including a later retry after failure.
@@ -345,6 +397,7 @@ function dropBoard(event: DragEvent, section: string) {
   void setTaskStatus(id ?? undefined, section as TaskStatus)
 }
 function openRow(id: string) {
+  detailCollapsed.value = false
   detailOnlySelection.value = false; selectedId.value = id
   if (popupDetail.value) actions.open(id)
 }
@@ -363,6 +416,7 @@ watch(displayedRows, (value, previous) => {
 }, { immediate: true })
 const rememberScroll = useTaskScrollMemory(layout, () => `${props.stateKey ?? 'checklist'}:scroll`, () => `${displayedRows.value.length}:${selectedId.value}`)
 const selected = computed(() => props.contextItems.find(t => t.id === selectedId.value))
+watch(selected, task => { if (!task) detailFullscreen.value = false })
 const source = computed(() => actions.source(selectedId.value))
 const propertyMenu = ref<'group' | 'status' | 'priority' | null>(null)
 const groupAnchor = ref<HTMLElement | null>(null)
@@ -595,7 +649,12 @@ function rowKey(event: KeyboardEvent, id:string) {
   openChecklistMenu(event,id)
 }
 function focusRow(id:string){ const row=Array.from(layout.value?.querySelectorAll<HTMLElement>('.checklist-row')??[]).find(el=>el.dataset.taskId===id);row?.focus();row?.scrollIntoView?.({block:'nearest'}) }
-function returnToRow(event:KeyboardEvent){if(event.key!=='Escape'||propertyMenu.value)return;event.preventDefault();event.stopPropagation();focusRow(selectedId.value)}
+function returnToRow(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.key !== 'Escape' || propertyMenu.value || detailFullscreen.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  focusRow(selectedId.value)
+}
 function openChecklistMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (event instanceof KeyboardEvent) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
@@ -623,8 +682,11 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
 
 <template>
   <div v-if="split.error.value && !popupDetail" class="split-sync" role="status">{{ split.error.value }}<button @click="split.retry()">重试布局同步</button></div>
-  <div ref="layout" @scroll.capture="rememberScroll" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact && !popupDetail, 'todo-checklist': hideGroups, 'popup-detail':popupDetail }" :style="splitStyle">
+  <div ref="layout" @scroll.capture="rememberScroll" class="checklist-layout" :class="{ 'is-resizing': splitPointer !== null, 'is-compact': compact && !popupDetail, 'todo-checklist': hideGroups, 'popup-detail':popupDetail, 'detail-collapsed':detailCollapsed }" :style="splitStyle">
     <div class="checklist-list-pane"><slot name="list-header" />
+    <div v-if="detailCollapsed && !popupDetail" class="detail-reopen">
+      <WaoButton variant="ghost" aria-label="展开任务详情" @click="expandDetail"><i class="ri-layout-right-line" aria-hidden="true" />展开详情</WaoButton>
+    </div>
     <div v-if="timeline" class="timeline-controls" aria-label="时间线日期范围">
       <button type="button" title="上一段" aria-label="上一段时间线" @click="stepTimeline(-1)"><i class="ri-arrow-left-s-line" aria-hidden="true" /></button>
       <button type="button" title="下一段" aria-label="下一段时间线" @click="stepTimeline(1)"><i class="ri-arrow-right-s-line" aria-hidden="true" /></button>
@@ -679,8 +741,37 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       <p v-if="board && !section.rows.length" class="board-empty">暂无任务</p>
       </div></section></div>
     </WaoCard></div>
-    <div v-if="!popupDetail" class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
-    <WaoCard v-if="!popupDetail" :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" @keydown="returnToRow" padding="roomy" aria-label="任务详情卡片">
+    <div v-if="!popupDetail" v-show="!detailCollapsed" class="checklist-divider" role="separator" tabindex="0" aria-label="调整任务清单和详情宽度" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="Math.round(boundSplit(.25) * 100)" :aria-valuemax="Math.round(boundSplit(.75) * 100)" title="拖动调整宽度；方向键微调，双击恢复默认" @pointerdown="startSplit" @pointermove="moveSplit" @pointerup="endSplit()" @pointercancel="endSplit(false)" @lostpointercapture="splitPointer !== null && endSplit(false)" @keydown="keySplit" @dblclick="split.set(.55)"></div>
+    <Teleport to="body" :disabled="!detailFullscreen">
+    <div
+      v-if="!popupDetail"
+      v-show="!detailCollapsed"
+      ref="detailHost"
+      class="task-detail-host"
+      :class="{ 'detail-fullscreen': detailFullscreen }"
+      :data-todo-palette="detailFullscreen ? palette : undefined"
+      :role="detailFullscreen ? 'dialog' : undefined"
+      :aria-modal="detailFullscreen ? true : undefined"
+      :aria-label="detailFullscreen ? '任务详情全屏' : undefined"
+      @keydown="trapDetailFocus"
+      @scroll.capture="detailFullscreen && rememberScroll($event)"
+    >
+    <WaoCard :data-task-scroll="`detail:${selectedId}`" class="checklist-detail" @keydown="returnToRow" padding="roomy" aria-label="任务详情卡片">
+      <div class="detail-view-actions">
+        <WaoButton
+          v-if="selected"
+          variant="ghost"
+          :aria-label="detailFullscreen ? '退出任务详情全屏' : '全屏任务详情'"
+          :title="detailFullscreen ? '退出全屏（Esc）' : '全屏任务详情'"
+          @click="detailFullscreen ? exitDetailFullscreen() : enterDetailFullscreen()"
+        >
+          <i :class="detailFullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'" aria-hidden="true" />
+          {{ detailFullscreen ? '退出全屏' : '全屏' }}
+        </WaoButton>
+        <WaoButton variant="ghost" aria-label="收起任务详情" title="收起任务详情" @click="collapseDetail">
+          <i class="ri-arrow-right-double-line" aria-hidden="true" />收起
+        </WaoButton>
+      </div>
       <template v-if="selected">
         <div class="detail-caption"><span v-if="selected.workItemType==='note'"><i class="ri-sticky-note-line" /> 笔记</span><span v-else-if="selected.status==='已放弃'">已放弃</span><label v-else class="detail-completion"><input type="checkbox" :aria-label="`完成 ${selected.title}`" :style="{ '--task-priority-color': priorityColor(selected) }" :checked="isComplete(selected)" :disabled="!pendingCompletion.has(selected.id) && actions.busy(selected.id)" @change="toggleCompletion(selected.id)" /><span v-if="!hideGroups || pendingCompletion.has(selected.id)">{{ pendingCompletion.has(selected.id) ? '3 秒内可取消' : selected.status === '已完成' ? '已完成' : '未完成' }}</span></label><span v-if="taskGroups.length" ref="groupAnchor" class="property-anchor">
             <button class="group-chip" aria-label="任务分组" aria-haspopup="menu" :aria-expanded="propertyMenu === 'group'" :title="inheritedGroup ? '子任务跟随父任务分组，请在父任务上调整' : '切换分组'" :disabled="inheritedGroup || actions.busy(selected.id)" @click="propertyMenu = propertyMenu === 'group' ? null : 'group'"><i class="ri-folder-2-line"></i>{{ taskGroups.find(group => group.id === selectedGroup)?.name }}<i v-if="!inheritedGroup" class="ri-arrow-down-s-line"></i></button>
@@ -738,6 +829,8 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
       </template>
       <p v-else class="empty">选择左侧任务，在这里查看详情</p>
     </WaoCard>
+    </div>
+    </Teleport>
   </div>
   <TaskContextMenu ref="contextMenu" :inline-selection="!popupDetail" @changed="detailOnlySelection=false" @created="selectedId=$event;detailOnlySelection=!popupDetail" :item-refs="itemRefs" @date-changing="pendingDateChanges.add($event)" />
   <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" icon="ri-delete-bin-line" width="460px" height="auto" :close-disabled="deleting" @close="deleteTarget = null">
@@ -934,4 +1027,41 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:2px soli
   .task-title { flex:1 0 100%; }
   .task-select .task-meta { font-size:var(--wao-font-caption); }
 }
+.task-detail-host { display:contents; }
+.detail-view-actions {
+  position:sticky;
+  top:0;
+  z-index:10;
+  display:flex;
+  justify-content:flex-end;
+  gap:var(--wao-space-1);
+  background:var(--wao-todo-detail-bg,var(--wao-bg-card));
+}
+.detail-view-actions .wao-button { padding:4px var(--wao-space-1); }
+.detail-reopen { display:flex; justify-content:flex-end; }
+.detail-fullscreen {
+  position:fixed;
+  inset:0;
+  z-index:900;
+  display:flex;
+  min-width:0;
+  background:var(--wao-todo-detail-bg,var(--wao-bg-card));
+  color:var(--wao-text);
+  font-family:var(--wao-font);
+  font-size:var(--wao-font-body);
+}
+.detail-fullscreen .checklist-detail {
+  position:static;
+  flex:1;
+  height:100%;
+  min-height:0;
+  max-height:none;
+  box-sizing:border-box;
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:var(--wao-space-2) clamp(16px,4vw,64px);
+  background:var(--wao-todo-detail-bg,var(--wao-bg-card));
+}
+.detail-fullscreen .detail-caption { font-size:var(--wao-font-body); }
+.detail-fullscreen h2 { font-size:var(--wao-font-title); font-weight:var(--wao-weight-heading); }
 </style>
