@@ -56,6 +56,7 @@ const DrawingCanvas = defineAsyncComponent({
 })
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft, type DrawingDraft } from '@/utils/drawingDrafts'
 import { sameDrawingContent } from '@/utils/drawingScene'
+import type { DrawingImageFormat } from '@/utils/drawingImageExport'
 
 type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
@@ -228,23 +229,56 @@ async function duplicateFile(file: DrawingFileSummary) {
   } catch (cause) { error.value = message(cause, '复制结果未确认，请先刷新列表检查是否已创建副本') }
   finally { transitioning.value = false; actionBusy.value = false }
 }
-async function exportFile(file: DrawingFileSummary) {
-  if (actionBusy.value) return
-  actionBusy.value = true; error.value = ''
+type DrawingExportFormat = DrawingImageFormat | 'excalidraw'
+const exporting = ref(false)
+const exportError = ref('')
+const exportFormats = [
+  { format: 'png', label: '导出 PNG', icon: 'ri-image-line' },
+  { format: 'jpg', label: '导出 JPG', icon: 'ri-image-line' },
+  { format: 'svg', label: '导出 SVG', icon: 'ri-image-line' },
+  { format: 'excalidraw', label: '导出源文件', icon: 'ri-file-download-line' },
+] as const
+
+function exportActions(file: DrawingFileSummary, disabled = false) {
+  return exportFormats.map(({ format, label, icon }) => ({
+    id: `export:${format}`, label, icon, disabled: disabled || exporting.value,
+    run: () => exportFile(file, format),
+  }))
+}
+
+function openExportMenu(event: MouseEvent) {
+  if (!current.value || !(event.currentTarget instanceof HTMLElement)) return
+  void contextMenu.value?.openAt(event, '导出草图', exportActions(current.value), event.currentTarget)
+}
+
+async function exportFile(file: DrawingFileSummary, format: DrawingExportFormat) {
+  if (exporting.value || !sameOwner()) return
+  exporting.value = true
+  exportError.value = ''
   try {
-    const selected = current.value?.id === file.id
-    const scene = selected ? sceneJson.value : (await fetchDrawing(file.id)).sceneJson
+    const selected = current.value?.id === file.id ? current.value : null
+    const scene = selected ? { ...selected, sceneJson: sceneJson.value } : await fetchDrawing(file.id)
     if (!sameOwner()) return
-    downloadScene(file.title, scene)
-  } catch (cause) { error.value = message(cause, '导出失败，请重试') }
-  finally { actionBusy.value = false }
+    if (format === 'excalidraw') {
+      downloadScene(scene.title, scene.sceneJson)
+    } else {
+      const { renderDrawingImage } = await import('@/utils/drawingImageExport')
+      if (!sameOwner()) return
+      const blob = await renderDrawingImage(scene.sceneJson, format)
+      if (sameOwner()) downloadBlob(scene.title, format, blob)
+    }
+  } catch (cause) {
+    if (sameOwner()) exportError.value = message(cause, '导出失败，请重试')
+  } finally {
+    exporting.value = false
+  }
 }
 function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummary, anchor?: HTMLElement) {
   const disabled = actionBusy.value || transitioning.value || !!deletingId.value || restoringVersion.value !== null
   void contextMenu.value?.openAt(event, file.title, [
     { id: 'new-group', label: '新建分组', icon: 'ri-folder-add-line', disabled: groupLoading.value || !!groupError.value, run: () => showDialog('new-group') },
     { id: 'rename', label: '重命名', icon: 'ri-edit-line', disabled, run: () => showDialog('rename-file', file.id, file.title) },
-    { id: 'export', label: '导出源文件', icon: 'ri-download-line', disabled, run: () => exportFile(file) },
+    ...exportActions(file, disabled),
     { id: 'copy', label: '复制当前文件', icon: 'ri-file-copy-line', disabled, run: () => duplicateFile(file) },
     { id: 'up', label: '上移', icon: 'ri-arrow-up-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, -1) },
     { id: 'down', label: '下移', icon: 'ri-arrow-down-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, 1) },
@@ -766,13 +800,19 @@ function downloadDraft() {
 }
 
 function downloadScene(title: string, scene: string) {
-  const blob = new Blob([scene], { type: 'application/json' })
+  downloadBlob(title, 'excalidraw', new Blob([scene], { type: 'application/json' }))
+}
+
+function downloadBlob(title: string, format: DrawingExportFormat, blob: Blob) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${title || '未命名草图'}.excalidraw`
-  anchor.click()
-  URL.revokeObjectURL(url)
+  anchor.download = `${title || '未命名草图'}.${format}`
+  try {
+    anchor.click()
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 }
 
 async function useCloudVersion() {
@@ -852,6 +892,7 @@ watch(
     assignments.value = {}
     dialogMode.value = null
     contextMenu.value?.close()
+    exportError.value = ''
     dirty.value = false
   },
 )
@@ -1152,10 +1193,13 @@ defineExpose({ flush: flushEmbedded })
         </button>
         <button
           v-if="current"
+          type="button"
           class="icon-button"
-          title="下载草图备份"
-          aria-label="下载草图备份"
-          @click="downloadDraft"
+          :title="exporting ? '正在导出草图…' : '导出草图'"
+          :aria-label="exporting ? '正在导出草图…' : '导出草图'"
+          aria-haspopup="menu"
+          :disabled="exporting || transitioning || !!deletingId || restoringVersion !== null"
+          @click="openExportMenu"
         >
           <i class="ri-download-2-line"></i>
         </button>
@@ -1171,6 +1215,10 @@ defineExpose({ flush: flushEmbedded })
         </button>
       </header>
 
+      <div v-if="exportError" class="error-banner" role="alert">
+        <span>{{ exportError }}</span>
+        <button type="button" @click="exportError = ''">关闭</button>
+      </div>
       <div v-if="draftError && dirty" class="error-banner" role="alert">
         <span>{{ draftError }}</span
         ><button @click="downloadDraft">下载备份</button>
