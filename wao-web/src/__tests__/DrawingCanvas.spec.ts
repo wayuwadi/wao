@@ -11,6 +11,39 @@ vi.mock('@excalidraw/excalidraw', () => ({
     JSON.stringify({ elements, appState, files }),
 }))
 vi.mock('react-dom/client', () => ({ createRoot: () => ({ render, unmount: vi.fn() }) }))
+
+it.each(['metaKey', 'ctrlKey'])('选择工具将 %s＋左键交给原有的多选逻辑', (modifier) => {
+  const wrapper = mount(DrawingCanvas, {
+    props: { sceneJson: '{}', sceneKey: 'test', name: '测试画布' },
+  })
+  const { props } = render.mock.lastCall![0] as ReactElement<{
+    excalidrawAPI: (api: { getAppState: () => { activeTool: { type: string } } }) => void
+  }>
+  const activeTool = { type: 'selection' }
+  props.excalidrawAPI({ getAppState: () => ({ activeTool }) })
+  const canvas = document.createElement('canvas')
+  canvas.className = 'excalidraw__canvas interactive'
+  wrapper.element.append(canvas)
+
+  function dispatch(type: string, options: PointerEventInit) {
+    const event = new PointerEvent(type, { pointerId: 1, pointerType: 'mouse', bubbles: true, ...options })
+    canvas.dispatchEvent(event)
+    return event
+  }
+
+  const down = dispatch('pointerdown', { [modifier]: true })
+  expect(down.shiftKey).toBe(true)
+  expect(down.metaKey || down.ctrlKey).toBe(false)
+  expect(dispatch('pointerup', {}).shiftKey).toBe(true)
+  expect(dispatch('pointerdown', {}).shiftKey).toBe(false)
+
+  activeTool.type = 'rectangle'
+  const draw = dispatch('pointerdown', { [modifier]: true })
+  expect(draw.shiftKey).toBe(false)
+  expect(draw.metaKey || draw.ctrlKey).toBe(true)
+  wrapper.unmount()
+})
+
 it('画布拦截 Ctrl/Cmd+S，卸载后恢复浏览器快捷键', () => {
   const wrapper = mount(DrawingCanvas, {
     props: { sceneJson: '{}', sceneKey: 'test', name: '测试画布' },
@@ -36,9 +69,9 @@ it('初始化归一化仅报告就绪，后续真实编辑才触发保存', asyn
   })
   const element = render.mock.calls[render.mock.calls.length - 1]![0] as ReactElement<{
     onChange: (elements: unknown[], state: unknown, files: unknown) => void
-    excalidrawAPI?: () => void
+    excalidrawAPI: (api: object) => void
   }>
-  element.props.excalidrawAPI?.()
+  element.props.excalidrawAPI({})
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
   const normalized = [{ id: 'shape', version: 1, isDeleted: false }]
   element.props.onChange(normalized, { viewBackgroundColor: '#ffffff' }, {})
