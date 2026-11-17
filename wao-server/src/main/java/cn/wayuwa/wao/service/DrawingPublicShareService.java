@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.UnauthorizedException;
+import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.mapper.DrawingPublicShareMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,37 +21,41 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DrawingPublicShareService {
+    private static final Logger LOG = LoggerFactory.getLogger(DrawingPublicShareService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Pattern TOKEN = Pattern.compile("ds_[A-Za-z0-9_-]{43}");
     private static final Pattern INLINE_IMAGE = Pattern.compile(
             "^data:image/(?:png|jpeg|gif|webp|svg\\+xml|bmp|avif|x-icon);base64,");
     private final DrawingPublicShareMapper mapper;
     private final ObjectMapper json;
+    private final VaultCryptoService crypto;
 
-    public record Entry(String id, Instant createdAt, Instant expiresAt) {}
-    public record Created(String id, Instant createdAt, Instant expiresAt, String token) {}
+    public record Entry(String id, Instant createdAt, Instant expiresAt, String token) {}
     public record PublicScene(String title, int revision, Instant updatedAt, Instant expiresAt, ObjectNode scene) {}
 
-    public DrawingPublicShareService(DrawingPublicShareMapper mapper, ObjectMapper json) {
+    public DrawingPublicShareService(DrawingPublicShareMapper mapper, ObjectMapper json, VaultCryptoService crypto) {
         this.mapper = mapper;
         this.json = json;
+        this.crypto = crypto;
     }
 
     @Transactional
     public List<Entry> list(String ownerId, String drawingId) {
         requirePersonalDrawing(drawingId, ownerId);
         return mapper.list(drawingId, ownerId, now()).stream()
-                .map(link -> new Entry(link.id(), utc(link.createdAt()), utc(link.expiresAt())))
+                .map(link -> new Entry(link.id(), utc(link.createdAt()), utc(link.expiresAt()), recoverToken(link)))
                 .toList();
     }
 
     @Transactional
-    public Created create(String ownerId, String drawingId, String validity) {
+    public Entry create(String ownerId, String drawingId, String validity) {
         requirePersonalDrawing(drawingId, ownerId);
         LocalDateTime now = now();
         LocalDateTime expiresAt = switch (validity == null ? "7d" : validity) {
@@ -67,8 +72,20 @@ public class DrawingPublicShareService {
         RANDOM.nextBytes(secret);
         String token = "ds_" + Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
         String id = UUID.randomUUID().toString().replace("-", "");
-        mapper.insert(id, drawingId, ownerId, hash(token), now, expiresAt);
-        return new Created(id, utc(now), utc(expiresAt), token);
+        var encrypted = crypto.encrypt(token);
+        mapper.insert(id, drawingId, ownerId, hash(token), now, expiresAt, encrypted.ciphertext(), encrypted.nonce());
+        return new Entry(id, utc(now), utc(expiresAt), token);
+    }
+
+    private String recoverToken(DrawingPublicShareMapper.Link link) {
+        if (link.tokenCiphertext() == null || link.tokenNonce() == null) return null;
+        try {
+            return crypto.decrypt(link.tokenCiphertext(), link.tokenNonce());
+        } catch (IllegalStateException e) {
+            // Keep revocation available even when an encrypted copy cannot be recovered.
+            LOG.warn("Cannot decrypt stored drawing share {}", link.id());
+            return null;
+        }
     }
 
     @Transactional

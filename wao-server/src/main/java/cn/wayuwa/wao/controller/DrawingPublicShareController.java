@@ -25,7 +25,7 @@ public class DrawingPublicShareController {
     }
 
     @PostMapping("/api/drawings/{id}/public-shares")
-    public ApiResponse<DrawingPublicShareService.Created> create(@PathVariable String id,
+    public ApiResponse<DrawingPublicShareService.Entry> create(@PathVariable String id,
             @RequestBody CreateRequest body, HttpServletRequest request) {
         return ApiResponse.ok(service.create(member.id(request), id, body.validity()));
     }

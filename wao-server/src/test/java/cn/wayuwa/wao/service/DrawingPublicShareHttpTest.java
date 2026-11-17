@@ -69,7 +69,8 @@ class DrawingPublicShareHttpTest {
                 CREATE TABLE drawing_public_share (
                   id CHAR(32) PRIMARY KEY, drawing_id VARCHAR(32) NOT NULL, owner_member_id VARCHAR(32) NOT NULL,
                   token_hash CHAR(64) UNIQUE NOT NULL, created_at TIMESTAMP NOT NULL, expires_at TIMESTAMP,
-                  revoked_at TIMESTAMP, FOREIGN KEY (drawing_id) REFERENCES drawing_file(id) ON DELETE CASCADE
+                  revoked_at TIMESTAMP, token_ciphertext VARBINARY(96), token_nonce BINARY(12),
+                  FOREIGN KEY (drawing_id) REFERENCES drawing_file(id) ON DELETE CASCADE
                 )
                 """);
         db.update("INSERT INTO drawing_file VALUES ('personal','owner',NULL,'Old title',1,CURRENT_TIMESTAMP,?)", SCENE);
@@ -90,6 +91,8 @@ class DrawingPublicShareHttpTest {
         assertThat(token).matches("ds_[A-Za-z0-9_-]{43}");
         assertThat(db.queryForObject("SELECT token_hash FROM drawing_public_share", String.class))
                 .hasSize(64).isNotEqualTo(token);
+        assertThat(db.queryForObject("SELECT token_ciphertext FROM drawing_public_share", byte[].class))
+                .isNotEqualTo(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token))
                 .andExpect(status().isOk())
@@ -133,14 +136,30 @@ class DrawingPublicShareHttpTest {
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, limitedToken).param("knownRevision", "1"))
                 .andExpect(status().isNotFound()).andExpect(header().string("Cache-Control", "private, no-store"));
         mvc.perform(get(MANAGE).header(SESSION, "owner")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(1)).andExpect(jsonPath("$.data[0].token").doesNotExist());
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].token").value(permanentToken))
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        mvc.perform(get(MANAGE).header(SESSION, "other")).andExpect(status().isNotFound());
         mvc.perform(delete(MANAGE + "/" + permanentId).header(SESSION, "owner")).andExpect(status().isOk());
+        assertThat(db.queryForObject("SELECT token_ciphertext FROM drawing_public_share WHERE id=?", byte[].class,
+                permanentId)).isNull();
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, permanentToken)).andExpect(status().isNotFound());
 
         var afterRevoke = create("permanent");
         db.update("DELETE FROM drawing_file WHERE id='personal'");
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, afterRevoke.path("token").asText())).andExpect(status().isNotFound());
         assertThat(db.queryForObject("SELECT COUNT(*) FROM drawing_public_share", Integer.class)).isZero();
+    }
+
+    @Test void digestOnlyLinksStillOpenAndCanBeRevokedWithoutReturningAnAddress() throws Exception {
+        var created = create("permanent");
+        var id = created.path("id").asText();
+        db.update("UPDATE drawing_public_share SET token_ciphertext=NULL, token_nonce=NULL WHERE id=?", id);
+        mvc.perform(get(MANAGE).header(SESSION, "owner")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(id))
+                .andExpect(jsonPath("$.data[0].token").doesNotExist());
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, created.path("token").asText())).andExpect(status().isOk());
+        mvc.perform(delete(MANAGE + "/" + id).header(SESSION, "owner")).andExpect(status().isOk());
     }
 
     private JsonNode create(String validity) throws Exception {
