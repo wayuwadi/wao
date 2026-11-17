@@ -13,6 +13,7 @@ import {
 } from 'vue'
 import { onBeforeRouteLeave, routerKey, routeLocationKey } from 'vue-router'
 import { usePageVisibility } from '@/composables/pageVisibility'
+import { useDrawingSnapMode } from '@/composables/drawingSnapMode'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -63,6 +64,7 @@ type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
 const session = useSessionStore()
 const owner = session.userId
+const snapMode = useDrawingSnapMode(owner)
 const lastDrawingKey = `wao:last-drawing:${owner}`
 function readLastDrawing() { try { return localStorage.getItem(lastDrawingKey) || '' } catch { return '' } }
 function rememberDrawing(id: string) { try { if (id) localStorage.setItem(lastDrawingKey, id); else localStorage.removeItem(lastDrawingKey) } catch { /* 本机偏好不可用时仍可使用草图。 */ } }
@@ -1131,6 +1133,14 @@ defineExpose({ flush: flushEmbedded })
           <strong v-else>个人草图</strong>
           <span v-if="current">{{ renaming ? '正在保存名称' : `版本 ${revision}` }}</span>
         </div>
+        <label v-if="current" class="drawing-snap-control">
+          <i class="ri-focus-3-line" aria-hidden="true"></i>
+          <select v-model="snapMode" aria-label="草图吸附模式">
+            <option value="objects">对象吸附</option>
+            <option value="grid">网格吸附</option>
+            <option value="off">关闭吸附</option>
+          </select>
+        </label>
         <div v-if="current" class="drawing-meta">
           <span class="edited-at">编辑于 {{ new Date(current.updatedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) }}</span>
           <button class="icon-button" :aria-label="`重命名 ${current.title}`" title="重命名" :disabled="renaming || transitioning || !!deletingId" @click="startTitleEdit"><i class="ri-pencil-line" aria-hidden="true" /></button>
@@ -1253,6 +1263,7 @@ defineExpose({ flush: flushEmbedded })
         <DrawingCanvas
           v-else-if="current"
           :key="canvasKey"
+          v-model:snap-mode="snapMode"
           :scene-json="sceneJson"
           :scene-key="canvasKey"
           :name="current.title"
@@ -1512,6 +1523,26 @@ defineExpose({ flush: flushEmbedded })
   border-bottom: 1px solid var(--wao-line);
   background: var(--wao-bg-card);
 }
+.drawing-snap-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wao-space-1);
+  padding-inline-start: var(--wao-space-1);
+  border: 1px solid var(--wao-line-control);
+  border-radius: var(--wao-radius-control);
+  color: var(--wao-text-3);
+}
+.drawing-snap-control select {
+  min-height: 34px;
+  padding-inline-end: var(--wao-space-1);
+  border: 0;
+  border-radius: var(--wao-radius-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  font: inherit;
+  font-size: var(--wao-font-body);
+  cursor: pointer;
+}
 .title-block {
   min-width: 0;
   flex: 1;
@@ -1720,7 +1751,7 @@ defineExpose({ flush: flushEmbedded })
   border-radius: var(--wao-radius-control);
   box-shadow: var(--wao-shadow-pop);
 }
-.drawings-page:fullscreen .drawing-toolbar > :not(.fullscreen-button) {
+.drawings-page:fullscreen .drawing-toolbar > :not(.fullscreen-button, .drawing-snap-control) {
   display: none;
 }
 .canvas-loading,
@@ -1877,6 +1908,7 @@ summary:focus-visible {
 }
 @media (pointer: coarse) {
   .file-open { min-height:44px; }
+  .drawing-snap-control select { min-height:44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spin {
