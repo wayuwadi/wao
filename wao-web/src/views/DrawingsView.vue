@@ -1361,7 +1361,7 @@ defineExpose({ flush: flushEmbedded })
             :key="layer.key"
             class="canvas-layer"
             :class="{ 'retained-canvas': layer.key !== canvasKey }"
-            :inert.attr="loadingFile || layer.key !== canvasKey ? '' : undefined"
+            :inert.attr="loadingFile || layer.key !== canvasKey ? true : undefined"
           >
             <DrawingCanvas
               v-model:snap-mode="snapMode"
