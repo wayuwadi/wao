@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import type {
   AppState,
@@ -13,17 +13,20 @@ import { createRoot, type Root } from 'react-dom/client'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from '@/composables/theme'
 import { usePageVisibility } from '@/composables/pageVisibility'
+import type { DrawingSnapMode } from '@/composables/drawingSnapMode'
 
 const props = defineProps<{
   sceneJson: string
   sceneKey: string
   name: string
+  snapMode: DrawingSnapMode
 }>()
 
 const emit = defineEmits<{
   change: [sceneJson: string]
   ready: []
   save: []
+  'update:snapMode': [mode: DrawingSnapMode]
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -35,6 +38,8 @@ let additiveSelectionPointer: number | null = null
 let ready = false
 let mountedKey = ''
 let lastScene = props.sceneJson
+let sceneGridModeEnabled = false
+let lastSnapMode: DrawingSnapMode | null = null
 
 function persistedContent(sceneJson: string) {
   try {
@@ -54,11 +59,27 @@ function persistedContent(sceneJson: string) {
 }
 
 function initialData(): ExcalidrawInitialDataState {
+  let scene: ExcalidrawInitialDataState | null = null
   try {
-    return { ...JSON.parse(props.sceneJson), scrollToContent: true } as ExcalidrawInitialDataState
+    scene = JSON.parse(props.sceneJson) as ExcalidrawInitialDataState | null
   } catch {
-    return { elements: [], appState: {}, files: {} }
+    // An unreadable scene still opens a blank editor with the member's preference.
   }
+  sceneGridModeEnabled = scene?.appState?.gridModeEnabled === true
+  return {
+    ...scene,
+    scrollToContent: true,
+    appState: { ...scene?.appState, ...snapState(props.snapMode) },
+  }
+}
+
+function snapState(mode: DrawingSnapMode) {
+  return { objectsSnapModeEnabled: mode === 'objects', gridModeEnabled: mode === 'grid' }
+}
+
+function applySnapMode(mode: DrawingSnapMode) {
+  if (!ready || mode === lastSnapMode) return
+  canvasApi?.updateScene({ appState: snapState(mode), captureUpdate: CaptureUpdateAction.NEVER })
 }
 
 function changed(
@@ -66,14 +87,22 @@ function changed(
   appState: AppState,
   files: BinaryFiles,
 ) {
-  const sceneJson = serializeAsJSON(elements, appState, files, 'local')
+  const mode = appState.gridModeEnabled ? 'grid' : appState.objectsSnapModeEnabled ? 'objects' : 'off'
+  // Excalidraw exports its grid flag. Retain the file's original value so preferences stay local.
+  const sceneJson = serializeAsJSON(elements, { ...appState, gridModeEnabled: sceneGridModeEnabled }, files, 'local')
   if (!ready) {
     // Excalidraw calls onChange after loading and normalizing initialData.
     // Its API callback runs earlier, before that normalization has completed.
     lastScene = sceneJson
     ready = true
+    lastSnapMode = mode
+    applySnapMode(props.snapMode)
     emit('ready')
     return
+  }
+  if (mode !== lastSnapMode) {
+    lastSnapMode = mode
+    if (mode !== props.snapMode) emit('update:snapMode', mode)
   }
   if (persistedContent(sceneJson) === persistedContent(lastScene)) {
     lastScene = sceneJson
@@ -142,6 +171,7 @@ function render() {
 }
 
 watch(() => [props.sceneKey, props.name, effective.value], render)
+watch(() => props.snapMode, applySnapMode)
 function preventBrowserSave(event: KeyboardEvent) {
   if (!pageVisible.value) return
   if (event.target instanceof Element && host.value && !host.value.closest('.drawings-page')?.contains(event.target)) return
