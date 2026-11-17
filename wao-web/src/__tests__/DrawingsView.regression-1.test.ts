@@ -103,10 +103,13 @@ describe('草图保存与文件管理回归', () => {
     change(w, scene('last'))
     await w.vm.$nextTick()
     await w.findAll('.file-open')[1]!.trigger('click')
+    expect(fetchDrawing).toHaveBeenLastCalledWith('b', expect.any(AbortSignal))
+    expect(w.findComponent({ name: 'DrawingCanvas' }).props('sceneJson')).toBe(scene('last'))
     pending.resolve(file('a', { sceneJson: scene('first'), revision: 2 }))
     await flushPromises()
     expect(saveDrawing).toHaveBeenLastCalledWith('a', scene('last'), 2)
-    expect(fetchDrawing).toHaveBeenLastCalledWith('b')
+    expect(w.findComponent({ name: 'DrawingCanvas' }).props('sceneJson')).toBe(scene('b'))
+    expect(fetchDrawingVersions).not.toHaveBeenCalled()
   })
 
   it('云端和本机均保存失败时不能切换并遗失修改', async () => {
@@ -117,7 +120,9 @@ describe('草图保存与文件管理回归', () => {
     await w.vm.$nextTick()
     await w.findAll('.file-open')[1]!.trigger('click')
     await flushPromises()
-    expect(fetchDrawing).not.toHaveBeenCalledWith('b')
+    const [targetId, signal] = vi.mocked(fetchDrawing).mock.lastCall!
+    expect(targetId).toBe('b')
+    expect(signal?.aborted).toBe(true)
     expect(w.findComponent({ name: 'DrawingCanvas' }).props('sceneJson')).toBe(scene('unsaved'))
     expect(w.text()).not.toContain('草稿仍在本机')
   })
@@ -157,8 +162,34 @@ describe('草图保存与文件管理回归', () => {
     await w.get('.error-banner button').trigger('click')
     await flushPromises()
     expect(fetchDrawing).toHaveBeenCalledTimes(2)
-    expect(fetchDrawing).toHaveBeenLastCalledWith('a')
+    expect(fetchDrawing).toHaveBeenLastCalledWith('a', expect.any(AbortSignal))
     expect(w.find('.canvas-stub').exists()).toBe(true)
+  })
+
+  it('切换时保留原画布到新画布就绪，读取失败可重试且不会销毁原画布', async () => {
+    const w = await open()
+    const original = w.findComponent({ name: 'DrawingCanvas' })
+    original.vm.$emit('ready')
+    vi.mocked(fetchDrawing).mockRejectedValueOnce(new Error('目标读取失败'))
+    await w.findAll('.file-open')[1]!.trigger('click')
+    await flushPromises()
+    expect(w.find('.canvas-stub').element).toBe(original.element)
+    expect(w.get('.canvas-layer').attributes('inert')).toBeUndefined()
+
+    const target = deferred<DrawingFile>()
+    vi.mocked(fetchDrawing).mockReturnValueOnce(target.promise)
+    await w.get('.error-banner button').trigger('click')
+    expect(w.find('.canvas-stub').element).toBe(original.element)
+    expect(w.get('.canvas-layer').attributes('inert')).toBeDefined()
+
+    target.resolve(file('b'))
+    await flushPromises()
+    const [retained, incoming] = w.findAllComponents({ name: 'DrawingCanvas' })
+    expect(retained?.element).toBe(original.element)
+    incoming!.vm.$emit('ready')
+    await w.vm.$nextTick()
+    expect(w.findAllComponents({ name: 'DrawingCanvas' })).toHaveLength(1)
+    expect(w.find('.canvas-stub').element).toBe(incoming!.element)
   })
 
   it('列表读取失败不显示为没有草图', async () => {

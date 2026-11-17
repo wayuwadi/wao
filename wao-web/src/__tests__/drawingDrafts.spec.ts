@@ -40,8 +40,8 @@ it('旧草稿仅在个人文件授权成功后迁移一次，共享画板不读�
       }
     }
   })
-  expect(await readDrawingDraft('b', draft.id)).toBeNull()
-  expect(await readDrawingDraft('a', draft.id, true)).toMatchObject(draft)
+  expect(await readDrawingDraft('b', draft.id, Promise.resolve(false))).toBeNull()
+  expect(await readDrawingDraft('a', draft.id, Promise.resolve(true))).toMatchObject(draft)
   expect(await readDrawingDraft('b', draft.id, true)).toBeNull()
   await removeDrawingDraft('a', draft.id)
   expect(await readDrawingDraft('a', draft.id, true)).toBeNull()
