@@ -7,7 +7,6 @@ import {
   drawingShareUrl,
   listDrawingShares,
   revokeDrawingShare,
-  type CreatedDrawingShare,
   type DrawingShareLink,
   type DrawingShareValidity,
 } from '@/api/drawingShare'
@@ -16,7 +15,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 const props = defineProps<{ drawingId: string; title: string }>()
 const emit = defineEmits<{ close: [] }>()
 const entries = ref<DrawingShareLink[]>([])
-const created = ref<CreatedDrawingShare>()
+const shownAddress = ref<DrawingShareLink>()
 const validity = ref<DrawingShareValidity>('7d')
 const validityId = useId()
 const loading = ref(false)
@@ -47,7 +46,7 @@ async function create() {
   try {
     const link = await createDrawingShare(props.drawingId, validity.value)
     if (request.signal.aborted) return
-    created.value = link
+    shownAddress.value = link
     entries.value = [link, ...entries.value]
     notice.value = '链接已生成，可以复制发送'
   } catch {
@@ -65,7 +64,7 @@ async function revoke(entry: DrawingShareLink) {
   try {
     await revokeDrawingShare(props.drawingId, entry.id)
     entries.value = entries.value.filter(({ id }) => id !== entry.id)
-    if (created.value?.id === entry.id) created.value = undefined
+    if (shownAddress.value?.id === entry.id) shownAddress.value = undefined
     notice.value = '链接已撤销'
   } catch {
     if (!request.signal.aborted) error.value = '撤销失败，请重试'
@@ -74,12 +73,12 @@ async function revoke(entry: DrawingShareLink) {
   }
 }
 
-async function copy() {
-  if (created.value) {
-    notice.value = await copyToClipboard(drawingShareUrl(created.value.token))
-      ? '链接已复制'
-      : '复制失败，请手动复制地址'
-  }
+async function copy(entry: DrawingShareLink) {
+  if (!entry.token) return
+  const copied = await copyToClipboard(drawingShareUrl(entry.token))
+  if (request.signal.aborted || !entries.value.some(({ id }) => id === entry.id)) return
+  if (!copied) shownAddress.value = entry
+  notice.value = copied ? '链接已复制' : '复制失败，请手动复制地址'
 }
 
 const formatTime = (value: string) => new Date(value).toLocaleString()
@@ -115,24 +114,26 @@ onBeforeUnmount(() => request.abort())
           </WaoButton>
         </form>
         <p v-if="entries.length >= 20">最多可有 20 个有效链接。撤销一个后可以继续生成。</p>
-        <section v-if="created" class="share-fields" aria-label="新生成的链接">
+        <section v-if="shownAddress?.token" class="share-fields" aria-label="分享链接地址">
           <label class="share-url">
             分享地址
-            <input :value="drawingShareUrl(created.token)" readonly @focus="($event.target as HTMLInputElement).select()" />
+            <input :value="drawingShareUrl(shownAddress.token)" readonly @focus="($event.target as HTMLInputElement).select()" />
           </label>
-          <WaoButton :disabled="busy" @click="copy">复制链接</WaoButton>
         </section>
         <section aria-label="有效链接" class="share-links">
           <h3>有效链接</h3>
           <p v-if="!entries.length">还没有分享链接。</p>
-          <p v-else>地址仅在新生成时提供。链接可以随时撤销。</p>
           <ul v-if="entries.length">
             <li v-for="entry in entries" :key="entry.id">
               <div>
                 <div>生成于 {{ formatTime(entry.createdAt) }}</div>
                 <div>{{ entry.expiresAt ? `到期于 ${formatTime(entry.expiresAt)}` : '长期有效' }}</div>
+                <div v-if="!entry.token">无法从此处复制原链接</div>
               </div>
-              <WaoButton variant="danger" :disabled="busy" @click="revoke(entry)">撤销链接</WaoButton>
+              <div class="share-link-actions">
+                <WaoButton v-if="entry.token" :disabled="busy" @click="copy(entry)">复制链接</WaoButton>
+                <WaoButton variant="danger" :disabled="busy" @click="revoke(entry)">撤销链接</WaoButton>
+              </div>
             </li>
           </ul>
         </section>
@@ -167,6 +168,7 @@ select, input {
   border-radius: var(--wao-radius-control);
 }
 .share-links { display: grid; gap: var(--wao-space-1); }
+.share-link-actions { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); }
 li { align-items: center; justify-content: space-between; padding: var(--wao-space-1) 0; border-top: 1px solid var(--wao-line); }
 .share-error { color: var(--wao-danger-strong); }
 @media (pointer: coarse) { .drawing-share-settings button { min-height: 44px; } }

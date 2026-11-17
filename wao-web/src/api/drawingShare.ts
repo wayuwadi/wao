@@ -7,10 +7,7 @@ export interface DrawingShareLink {
   id: string
   createdAt: string
   expiresAt: string | null
-}
-
-export interface CreatedDrawingShare extends DrawingShareLink {
-  token: string
+  token: string | null
 }
 
 export interface SharedDrawing {
@@ -28,7 +25,7 @@ export async function listDrawingShares(id: string, signal?: AbortSignal) {
 }
 
 export async function createDrawingShare(id: string, validity: DrawingShareValidity) {
-  return (await http.post<ApiResponse<CreatedDrawingShare>>(managementPath(id), { validity })).data.data
+  return (await http.post<ApiResponse<DrawingShareLink>>(managementPath(id), { validity })).data.data
 }
 
 export async function revokeDrawingShare(id: string, shareId: string) {
