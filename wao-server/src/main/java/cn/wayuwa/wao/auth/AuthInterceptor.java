@@ -34,7 +34,7 @@ public class AuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String path=request.getRequestURI();
-        if(path.startsWith("/api/share/") || path.matches("/api/docs/[^/]+/public-shares(?:/[^/]+)?")) {
+        if(path.startsWith("/api/share/") || path.matches("/api/(?:docs|drawings)/[^/]+/public-shares(?:/[^/]+)?")) {
             response.setHeader("Cache-Control","no-store");
             response.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
         }

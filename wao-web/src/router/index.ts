@@ -81,6 +81,12 @@ const router = createRouter({
       component: () => import('@/views/ShareDocView.vue'),
       meta: { public: true },
     },
+    {
+      path: '/s/drawing',
+      name: 'share-drawing',
+      component: () => import('@/views/ShareDrawingView.vue'),
+      meta: { public: true },
+    },
     // 旧文档 ID 分享页仅显示迁移提示，不再读取正文。
     {
       path: '/s/d/:id',
@@ -299,7 +305,7 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.path === '/settings' && to.query.tab === 'workspace-mcp') return { path: '/capabilities', query: { area: 'connections' }, replace: true }
   // 安装包分发无需会话；服务端临时不可用也不应阻塞公开下载页。
-  if (to.name === 'client-download' || to.name === 'connection-recovery' || to.name === 'not-found')
+  if (to.name === 'client-download' || to.name === 'connection-recovery' || to.name === 'not-found' || to.name === 'share-drawing')
     return true
   const session = useSessionStore()
   await session.initialize()
