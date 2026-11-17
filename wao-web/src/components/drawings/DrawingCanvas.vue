@@ -173,7 +173,7 @@ function render() {
 watch(() => [props.sceneKey, props.name, effective.value], render)
 watch(() => props.snapMode, applySnapMode)
 function preventBrowserSave(event: KeyboardEvent) {
-  if (!pageVisible.value) return
+  if (!pageVisible.value || host.value?.closest('[inert]')) return
   if (event.target instanceof Element && host.value && !host.value.closest('.drawings-page')?.contains(event.target)) return
   if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 's') {
     event.preventDefault()

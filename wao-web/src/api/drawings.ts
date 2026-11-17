@@ -26,8 +26,8 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 export const fetchDrawings = () =>
   data(http.get<ApiResponse<DrawingFileSummary[]>>('/api/drawings'))
 
-export const fetchDrawing = (id: string) =>
-  data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000 }))
+export const fetchDrawing = (id: string, signal?: AbortSignal) =>
+  data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000, signal }))
 
 export const createDrawing = (title?: string, groupId?: string) =>
   data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId }))

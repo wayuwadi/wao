@@ -9,6 +9,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  shallowRef,
   watch,
 } from 'vue'
 import { onBeforeRouteLeave, routerKey, routeLocationKey } from 'vue-router'
@@ -35,8 +36,14 @@ import {
   type DrawingFileSummary,
   type DrawingFileVersion,
 } from '@/api/drawings'
+let canvasModule: Promise<typeof import('@/components/drawings/DrawingCanvas.vue').default> | undefined
+function loadCanvas() {
+  return canvasModule ??= import('@/components/drawings/DrawingCanvas.vue')
+    .then((module) => module.default)
+    .catch((cause: unknown) => { canvasModule = undefined; throw cause })
+}
 const DrawingCanvas = defineAsyncComponent({
-  loader: () => import('@/components/drawings/DrawingCanvas.vue').then((module) => module.default),
+  loader: loadCanvas,
   loadingComponent: {
     render: () => h('div', { class: 'canvas-loading', role: 'status' }, '正在加载画布…'),
   },
@@ -325,9 +332,21 @@ const renaming = ref(false)
 const isFullscreen = ref(false)
 const versions = ref<DrawingFileVersion[]>([])
 const loadingVersions = ref(false)
+const versionMenu = ref<HTMLDetailsElement | null>(null)
+let versionsRequest = 0
 const restoringVersion = ref<number | null>(null)
 let loadToken = 0
+let openingRequest: AbortController | undefined
+const openFailure = ref<{ id: string; message: string }>()
 let canvasGeneration = 0
+let readyCanvasKey = ''
+const activeCanvas = computed(() => current.value
+  ? { key: canvasKey.value, sceneJson: sceneJson.value, name: current.value.title }
+  : undefined)
+const retainedCanvas = shallowRef<NonNullable<typeof activeCanvas.value>>()
+const canvasLayers = computed(() =>
+  [retainedCanvas.value, activeCanvas.value].filter((layer) => layer !== undefined),
+)
 let saveTimer: number | undefined
 let draftTimer: number | undefined
 let savePromise: Promise<void> | null = null
@@ -364,34 +383,57 @@ function message(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback
 }
 
-async function loadList() {
+async function loadDirectory() {
   loadingList.value = true
   listError.value = ''
-  error.value = ''
   try {
-    if (props.embedded && props.drawingId) {
-      await openFile(props.drawingId)
-      return
-    }
     const loaded = await fetchDrawings()
-    if (!sameOwner()) return
+    if (!sameOwner()) return null
     files.value = loaded.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-    const queryDrawing = localRoute?.query.drawing
-    const requested = typeof queryDrawing === 'string' ? queryDrawing : new URLSearchParams(window.location.search).get('drawing') ?? ''
-    const remembered = readLastDrawing()
-    if (requested) await openFile(requested)
-    else if (remembered && files.value.some(file => file.id === remembered)) await openFile(remembered)
-    else { if (remembered) rememberDrawing(''); syncState.value = 'saved' }
+    if (current.value) {
+      const summary = loaded.find((file) => file.id === current.value?.id)
+      if (!summary || summary.revision < current.value.revision ||
+          (summary.revision === current.value.revision && summary.updatedAt < current.value.updatedAt)) {
+        updateSummary(current.value)
+      }
+    }
+    return loaded
   } catch (cause) {
-    error.value = message(cause, '草图文件列表读取失败')
-    listError.value = error.value
-    syncState.value = 'error'
+    if (sameOwner()) listError.value = message(cause, '草图文件列表读取失败')
+    return null
   } finally {
     loadingList.value = false
   }
 }
 
-async function openFile(id: string) {
+async function loadList() {
+  if (props.embedded && props.drawingId) {
+    try { await openFile(props.drawingId) }
+    finally { loadingList.value = false }
+    return
+  }
+  const directory = loadDirectory()
+  if (current.value) {
+    await directory
+    return
+  }
+  const queryDrawing = localRoute?.query.drawing
+  const requested = typeof queryDrawing === 'string' ? queryDrawing : new URLSearchParams(window.location.search).get('drawing') ?? ''
+  const remembered = readLastDrawing()
+  if (requested) {
+    handledRouteDrawing = requested
+    await Promise.all([directory, openFile(requested)])
+  } else if (remembered) {
+    await openFile(remembered, directory.then((loaded) => {
+      if (!loaded || !sameOwner()) return false
+      if (loaded.some((file) => file.id === remembered)) return true
+      if (readLastDrawing() === remembered) rememberDrawing('')
+      return false
+    }))
+  } else await directory
+}
+
+async function openFile(id: string, eligible: boolean | Promise<boolean> = true) {
   if (
     !sameOwner() ||
     transitioning.value ||
@@ -404,48 +446,58 @@ async function openFile(id: string) {
     sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760
     return
   }
-  transitioning.value = true
-  clearTimeout(saveTimer)
-  if (!(await settleEdits())) {
-    transitioning.value = false
-    return
-  }
-
   const token = ++loadToken
-  activeId.value = id
+  const request = new AbortController()
+  openingRequest = request
+  transitioning.value = true
   loadingFile.value = true
-  syncState.value = 'loading'
-  error.value = ''
-  versions.value = []
-  versionsError.value = ''
-  draftError.value = ''
-  editingTitle.value = false
-  try {
-    const remote = await fetchDrawing(id)
-    let draft = null
-    try {
-      draft = await readDrawingDraft(owner, id, !remote.docId)
-    } catch {
-      // IndexedDB 被浏览器禁用时仍可使用云端保存。
-    }
-    if (token !== loadToken || !sameOwner()) return
+  openFailure.value = undefined
+  clearTimeout(saveTimer)
+  void loadCanvas().catch(() => undefined)
 
+  const settled = settleEdits()
+  const remoteRequest = fetchDrawing(id, request.signal)
+  const mayMigrate = Promise.all([remoteRequest, settled, eligible]).then(
+    ([remote, saved, allowed]) => saved && allowed && !remote.docId && sameOwner() && !request.signal.aborted,
+    () => false,
+  )
+  const draftRequest = readDrawingDraft(owner, id, mayMigrate).catch(() => null)
+  const target = Promise.all([remoteRequest, draftRequest]).then(
+    ([remote, draft]) => ({ remote, draft }),
+    (cause: unknown) => ({ cause }),
+  )
+  try {
+    if (!(await settled) || !(await eligible)) return
+    const loaded = await target
+    if ('cause' in loaded) throw loaded.cause
+    if (token !== loadToken || !sameOwner()) return
+    const { remote, draft } = loaded
+    const targetScene = draft?.sceneJson ?? remote.sceneJson
+    const targetDirty = !!draft && !sameDrawingContent(targetScene, remote.sceneJson)
+    const targetPendingSave = targetDirty ? draft?.pendingSave : undefined
+    const pendingConfirmed = !!targetPendingSave && sameDrawingContent(targetPendingSave.sceneJson, remote.sceneJson)
+
+    if (draft && !targetDirty) await clearDraft(id)
+    if ((dirty.value || editingTitle.value) && !(await settleEdits())) return
+    if (token !== loadToken || !sameOwner()) return
+    if (activeCanvas.value?.key === readyCanvasKey) retainedCanvas.value = activeCanvas.value
+    activeId.value = id
     current.value = remote
     if (!props.embedded) rememberDrawing(id)
     titleDraft.value = remote.title
-    sceneJson.value = draft?.sceneJson ?? remote.sceneJson
-    dirty.value = !!draft && !sameDrawingContent(draft.sceneJson, remote.sceneJson)
-    pendingSave = dirty.value ? draft?.pendingSave : undefined
-    // A timed-out request may already have committed while newer edits stayed local.
-    const pendingConfirmed = !!pendingSave && sameDrawingContent(pendingSave.sceneJson, remote.sceneJson)
-    revision.value = dirty.value && !pendingConfirmed ? draft!.revision : remote.revision
-    if (pendingConfirmed) pendingSave = undefined
+    sceneJson.value = targetScene
+    dirty.value = targetDirty
+    pendingSave = pendingConfirmed ? undefined : targetPendingSave
+    revision.value = draft && targetDirty && !pendingConfirmed ? draft.revision : remote.revision
     draftScene.value = draft?.sceneJson ?? ''
-    if (draft && !dirty.value) await clearDraft(id)
-    if (token !== loadToken || !sameOwner()) return
+    draftError.value = ''
+    error.value = ''
+    ++versionsRequest
+    versions.value = []
+    versionsError.value = ''
+    loadingVersions.value = false
     canvasKey.value = `${id}:${++canvasGeneration}`
     updateSummary(remote)
-    void loadVersions(id)
 
     conflict.value = dirty.value && revision.value !== remote.revision
     if (conflict.value) {
@@ -458,28 +510,31 @@ async function openFile(id: string) {
     sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760 && sidebarOpen.value
   } catch (cause) {
     if (token !== loadToken || !sameOwner()) return
-    current.value = null
-    sceneJson.value = ''
-    error.value = message(cause, '草图文件读取失败')
-    syncState.value = 'error'
+    openFailure.value = { id, message: message(cause, '草图文件读取失败') }
   } finally {
-    if (token === loadToken) loadingFile.value = false
-    transitioning.value = false
+    request.abort()
+    if (openingRequest === request) openingRequest = undefined
+    if (token === loadToken) {
+      loadingFile.value = false
+      transitioning.value = false
+    }
   }
 }
 
 async function loadVersions(id = activeId.value) {
-  if (!id) return
+  if (!id || !versionMenu.value?.open) return
+  const request = ++versionsRequest
+  const isCurrent = () => request === versionsRequest && activeId.value === id && sameOwner()
   loadingVersions.value = true
   versionsError.value = ''
   try {
     const loaded = await fetchDrawingVersions(id)
-    if (activeId.value === id && sameOwner()) versions.value = loaded
+    if (isCurrent()) versions.value = loaded
   } catch (cause) {
-    if (activeId.value === id && sameOwner())
+    if (isCurrent())
       versionsError.value = message(cause, '草图版本读取失败')
   } finally {
-    if (activeId.value === id) loadingVersions.value = false
+    if (isCurrent()) loadingVersions.value = false
   }
 }
 
@@ -556,7 +611,10 @@ function canvasChanged(nextScene: string) {
   if (!conflict.value) scheduleSave()
 }
 
-function canvasReady() {
+function canvasReady(key: string) {
+  if (key !== canvasKey.value) return
+  readyCanvasKey = key
+  retainedCanvas.value = undefined
   if (dirty.value && syncState.value === 'dirty') scheduleSave()
 }
 
@@ -882,6 +940,7 @@ onBeforeUnmount(() => {
   }
   disposed = true
   ++loadToken
+  openingRequest?.abort()
   window.removeEventListener('beforeunload', beforeUnload)
   document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
@@ -892,6 +951,11 @@ watch(
     clearTimeout(draftTimer)
     if (dirty.value) void persistDraft()
     ++loadToken
+    openingRequest?.abort()
+    loadingFile.value = false
+    transitioning.value = false
+    openFailure.value = undefined
+    retainedCanvas.value = undefined
     current.value = null
     pendingSave = undefined
     files.value = []
@@ -1160,7 +1224,7 @@ defineExpose({ flush: flushEmbedded })
           <button v-if="!current.docId && !embedded" class="icon-button" :aria-label="`删除 ${current.title}`" title="删除" :disabled="transitioning || !!deletingId" @click="removeFile(current)"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
           <a v-if="current.docId && current.kbId && !embedded" :href="`/kb/${current.kbId}?doc=${current.docId}`" title="在知识库查看" aria-label="在知识库查看"><i class="ri-book-open-line" aria-hidden="true" /></a>
         </div>
-        <details v-if="current" class="version-menu">
+        <details v-if="current" :key="current.id" ref="versionMenu" class="version-menu" @toggle="loadVersions()">
           <summary :title="loadingVersions ? '正在读取版本' : '查看最近三个版本'">
             <i :class="loadingVersions ? 'ri-loader-4-line spin' : 'ri-history-line'"></i>
             <span>版本</span>
@@ -1258,6 +1322,16 @@ defineExpose({ flush: flushEmbedded })
         <span>{{ draftError }}</span
         ><button @click="downloadDraft">下载备份</button>
       </div>
+      <div v-if="openFailure" class="error-banner" role="alert">
+        <i class="ri-error-warning-line" aria-hidden="true"></i>
+        <span>{{ openFailure.message }}</span>
+        <button type="button" @click="openFile(openFailure.id)">重试读取</button>
+        <button v-if="current" type="button" @click="openFailure = undefined">关闭提示</button>
+      </div>
+      <div v-else-if="listError && !current && !loadingFile" class="error-banner" role="alert">
+        <span>{{ listError }}</span>
+        <button type="button" @click="loadList">重试读取</button>
+      </div>
       <div
         v-if="error"
         class="error-banner"
@@ -1280,23 +1354,35 @@ defineExpose({ flush: flushEmbedded })
         <button v-else @click="error = ''">关闭提示</button>
       </div>
 
-      <div class="canvas-shell">
-        <div v-if="loadingFile" class="canvas-loading">
+      <div class="canvas-shell" :aria-busy="loadingFile || !!retainedCanvas">
+        <template v-if="current">
+          <div
+            v-for="layer in canvasLayers"
+            :key="layer.key"
+            class="canvas-layer"
+            :class="{ 'retained-canvas': layer.key !== canvasKey }"
+            :inert.attr="loadingFile || layer.key !== canvasKey ? '' : undefined"
+          >
+            <DrawingCanvas
+              v-model:snap-mode="snapMode"
+              :scene-json="layer.sceneJson"
+              :scene-key="layer.key"
+              :name="layer.name"
+              @change="layer.key === canvasKey && canvasChanged($event)"
+              @ready="canvasReady(layer.key)"
+              @save="layer.key === canvasKey && saveNow()"
+            />
+          </div>
+          <div v-if="loadingFile || retainedCanvas" class="canvas-switch-status" role="status">
+            <i class="ri-loader-4-line spin" aria-hidden="true"></i>
+            <span>正在打开草图</span>
+          </div>
+        </template>
+        <div v-else-if="loadingFile" class="canvas-loading" role="status">
           <i class="ri-loader-4-line spin"></i>
           <span>正在打开草图</span>
         </div>
-        <DrawingCanvas
-          v-else-if="current"
-          :key="canvasKey"
-          v-model:snap-mode="snapMode"
-          :scene-json="sceneJson"
-          :scene-key="canvasKey"
-          :name="current.title"
-          @change="canvasChanged"
-          @ready="canvasReady"
-          @save="saveNow"
-        />
-        <div v-else-if="!embedded && !loadingList && !error" class="canvas-empty">
+        <div v-else-if="!embedded && !loadingList && !error && !openFailure && !listError" class="canvas-empty">
           <span><i class="ri-draft-line"></i></span>
           <h1>{{ files.length ? '继续你的想法' : '把想法画出来' }}</h1>
           <p>用自由画布整理思路、绘制流程或记录灵感。修改自动保存到账号。</p>
@@ -1778,6 +1864,29 @@ defineExpose({ flush: flushEmbedded })
 }
 .drawings-page:fullscreen .drawing-toolbar > :not(.fullscreen-button, .drawing-snap-control) {
   display: none;
+}
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+}
+.retained-canvas {
+  z-index: 1;
+  background: var(--wao-bg-card);
+}
+.canvas-switch-status {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: var(--wao-space-2);
+  inset-inline-end: var(--wao-space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--wao-space-1);
+  padding: var(--wao-space-1);
+  border: 1px solid var(--wao-line);
+  border-radius: var(--wao-radius-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  font-size: var(--wao-font-help);
 }
 .canvas-loading,
 .canvas-empty {

@@ -44,7 +44,7 @@ function completed(transaction: IDBTransaction): Promise<void> {
 export async function readDrawingDraft(
   memberId: string,
   id: string,
-  allowLegacy = false,
+  allowLegacy: boolean | Promise<boolean> = false,
 ): Promise<DrawingDraft | null> {
   const db = await database()
   try {
@@ -54,7 +54,7 @@ export async function readDrawingDraft(
     if (row) return row
     // Only a successfully authorized personal drawing establishes the owner of a
     // legacy draft. Shared drawings must never adopt another member's old draft.
-    if (allowLegacy && db.objectStoreNames.contains('drafts')) {
+    if (db.objectStoreNames.contains('drafts') && await allowLegacy) {
       const legacy = await requestResult(db.transaction('drafts').objectStore('drafts').get(id))
       if (legacy) {
         const draft = { ...legacy, memberId }

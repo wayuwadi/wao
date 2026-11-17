@@ -124,7 +124,7 @@ describe('个人草图优化', () => {
     expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(false)
     await wrapper.get('.file-open').trigger('click')
     await flushPromises()
-    expect(fetchDrawing).toHaveBeenCalledWith('dr1')
+    expect(fetchDrawing).toHaveBeenCalledWith('dr1', expect.any(AbortSignal))
     wrapper.unmount()
   })
 
@@ -138,7 +138,7 @@ describe('个人草图优化', () => {
     const second = mount(DrawingsView)
     await flushPromises()
     expect(second.find('.drawing-canvas-stub').exists()).toBe(true)
-    expect(fetchDrawing).toHaveBeenLastCalledWith('dr1')
+    expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal))
     second.unmount()
     localStorage.setItem('wao:last-drawing:member-a', 'missing')
     const third = mount(DrawingsView)
@@ -150,7 +150,7 @@ describe('个人草图优化', () => {
     window.history.replaceState({}, '', '/drawings?drawing=dr1')
     const linked = mount(DrawingsView)
     await flushPromises()
-    expect(fetchDrawing).toHaveBeenLastCalledWith('dr1')
+    expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal))
     linked.unmount()
   })
 
@@ -386,15 +386,22 @@ describe('个人草图优化', () => {
     wrapper.unmount()
   })
 
-  it('打开未修改草图不触发保存并展示最近三个版本', async () => {
+  it('显式链接不等待目录，展开时才读取最近三个版本', async () => {
+    let resolveDirectory!: (files: DrawingFile[]) => void
+    vi.mocked(fetchDrawings).mockReturnValueOnce(new Promise(resolve => { resolveDirectory = resolve }))
     const wrapper = mount(DrawingsView)
     await flushPromises()
 
+    expect(wrapper.find('.drawing-canvas-stub').exists()).toBe(true)
     expect(saveDrawing).not.toHaveBeenCalled()
+    expect(fetchDrawingVersions).not.toHaveBeenCalled()
+    const history = wrapper.get<HTMLDetailsElement>('.version-menu')
+    history.element.open = true
+    await vi.waitFor(() => expect(wrapper.findAll('.version-popover button')).toHaveLength(3))
     expect(fetchDrawingVersions).toHaveBeenCalledWith('dr1')
-    await wrapper.get('.version-menu summary').trigger('click')
-    expect(wrapper.findAll('.version-popover button')).toHaveLength(3)
     expect(wrapper.text()).toContain('最近三个有效版本')
+    resolveDirectory([drawing()])
+    await flushPromises()
     wrapper.unmount()
   })
 
@@ -444,7 +451,8 @@ describe('个人草图优化', () => {
     const wrapper = mount(DrawingsView)
     await flushPromises()
 
-    await wrapper.get('.version-menu summary').trigger('click')
+    wrapper.get<HTMLDetailsElement>('.version-menu').element.open = true
+    await vi.waitFor(() => expect(wrapper.findAll('.version-popover button')).toHaveLength(3))
     await wrapper.findAll('.version-popover button')[1]!.trigger('click')
     await flushPromises()
 
@@ -457,7 +465,7 @@ describe('个人草图优化', () => {
     vi.mocked(fetchDrawing).mockResolvedValue(drawing({ docId: 'doc1', kbId: 'kb1' }))
     const wrapper = mount(DrawingsView, { props: { drawingId: 'dr1', embedded: true } })
     await flushPromises()
-    expect(fetchDrawing).toHaveBeenCalledWith('dr1')
+    expect(fetchDrawing).toHaveBeenCalledWith('dr1', expect.any(AbortSignal))
     expect(fetchDrawings).not.toHaveBeenCalled()
     expect(wrapper.find('.file-sidebar').exists()).toBe(false)
     expect(wrapper.find('.title-trigger').exists()).toBe(true)
