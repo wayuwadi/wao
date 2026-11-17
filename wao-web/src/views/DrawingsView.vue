@@ -19,6 +19,7 @@ import { useSessionStore } from '@/stores/session'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import DrawingShareDialog from '@/components/drawings/DrawingShareDialog.vue'
 import {
   createDrawing,
   createDrawingGroup, copyDrawing, fetchDrawingGroups, moveDrawing, renameDrawingGroup, saveDrawingOrder,
@@ -161,6 +162,7 @@ async function dropOnFile(event: DragEvent, target: DrawingFileSummary, groupId:
 }
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu>>()
+const sharing = ref<DrawingFileSummary>()
 const dialogMode = ref<'new-group' | 'rename-group' | 'rename-file' | null>(null)
 const dialogName = ref(''), dialogError = ref(''), dialogTarget = ref('')
 const fileGroups = computed(() => [
@@ -280,6 +282,9 @@ function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummar
   void contextMenu.value?.openAt(event, file.title, [
     { id: 'new-group', label: '新建分组', icon: 'ri-folder-add-line', disabled: groupLoading.value || !!groupError.value, run: () => showDialog('new-group') },
     { id: 'rename', label: '重命名', icon: 'ri-edit-line', disabled, run: () => showDialog('rename-file', file.id, file.title) },
+    ...(!file.docId ? [
+      { id: 'share', label: '分享草图', icon: 'ri-share-forward-line', disabled, run: () => { sharing.value = file } },
+    ] : []),
     ...exportActions(file, disabled),
     { id: 'copy', label: '复制当前文件', icon: 'ri-file-copy-line', disabled, run: () => duplicateFile(file) },
     { id: 'up', label: '上移', icon: 'ri-arrow-up-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, -1) },
@@ -893,6 +898,7 @@ watch(
     groups.value = []
     assignments.value = {}
     dialogMode.value = null
+    sharing.value = undefined
     contextMenu.value?.close()
     exportError.value = ''
     dirty.value = false
@@ -995,6 +1001,13 @@ defineExpose({ flush: flushEmbedded })
     :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }"
   >
     <ContextActionMenu ref="contextMenu" />
+    <DrawingShareDialog
+      v-if="sharing"
+      :key="sharing.id"
+      :drawing-id="sharing.id"
+      :title="sharing.title"
+      @close="sharing = undefined"
+    />
     <SettingsDialogShell v-if="dialogMode" :title="dialogMode === 'new-group' ? '新建分组' : dialogMode === 'rename-group' ? '重命名分组' : '重命名草图'" width="480px" height="auto" :close-disabled="actionBusy" @close="dialogMode = null">
       <form class="name-dialog" @submit.prevent="saveDialog"><label>名称<input v-model="dialogName" maxlength="128" autofocus :disabled="actionBusy" /></label><p v-if="dialogError" role="alert">{{ dialogError }}</p><WaoButton type="submit" :loading="actionBusy" :disabled="!dialogName.trim()">保存</WaoButton></form>
     </SettingsDialogShell>
@@ -1200,6 +1213,18 @@ defineExpose({ flush: flushEmbedded })
           @click="saveNow"
         >
           <i class="ri-save-3-line"></i>立即保存
+        </button>
+        <button
+          v-if="current && !current.docId && !embedded"
+          type="button"
+          class="icon-button"
+          title="分享草图"
+          aria-label="分享草图"
+          aria-haspopup="dialog"
+          :disabled="transitioning || !!deletingId || restoringVersion !== null"
+          @click="sharing = current"
+        >
+          <i class="ri-share-forward-line" aria-hidden="true"></i>
         </button>
         <button
           v-if="current"

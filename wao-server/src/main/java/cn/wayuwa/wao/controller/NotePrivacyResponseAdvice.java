@@ -17,7 +17,7 @@ public class NotePrivacyResponseAdvice implements ResponseBodyAdvice<Object> {
     @Override public Object beforeBodyWrite(Object body,MethodParameter parameter,MediaType media,
             Class<? extends HttpMessageConverter<?>> converter,ServerHttpRequest request,ServerHttpResponse response) {
         String path=request.getURI().getPath();
-        if(path.startsWith("/api/share/") || path.matches("/api/docs/[^/]+/public-shares(?:/[^/]+)?")
+        if(path.startsWith("/api/share/") || path.matches("/api/(?:docs|drawings)/[^/]+/public-shares(?:/[^/]+)?")
                 || request instanceof ServletServerHttpRequest servlet && Boolean.TRUE.equals(servlet.getServletRequest().getAttribute("wao.private-note-asset"))) {
             response.getHeaders().set("Cache-Control","private, no-store");
             response.getHeaders().set("X-Robots-Tag","noindex, nofollow, noarchive");

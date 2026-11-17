@@ -66,7 +66,9 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 页面入口复用 ResourceMenu 和 ContextActionMenu，位于目录加号、目录行右键及目录空白处右键。小记不显示表格和画板创建选项。
 
-工作区 MCP/CLI 沿用既有文档正文接口与令牌范围，本次未增加草图授权或新的命令。独立表格/画板创建入口为浏览器与 HTTP API，不将画板权限赋予旧令牌。草图浏览器的串行保存、账号草稿隔离、失败恢复与文件管理行为见 [草图工作区](specs/drawings.md)，接口与令牌范围保持不变。
+个人草图所有者可通过 `GET/POST /api/drawings/{id}/public-shares` 列举有效链接或创建链接，通过 `DELETE /api/drawings/{id}/public-shares/{shareId}` 撤销。创建参数为 `validity`（`1h`、`1d`、`7d` 默认、`permanent`），原始令牌仅在创建响应返回。匿名 `GET /api/share/drawings/current?knownRevision=...` 通过 `X-Drawing-Share-Token` 验证访问，返回标题、修订、更新时间、到期时间及场景。修订相同时场景为空，标题仍可更新。权限失效返回 404。
+
+工作区 MCP/CLI 沿用既有文档正文接口与令牌范围。分享管理使用浏览器会话，不授予工作区令牌。草图的保存、草稿和分享行为见 [草图工作区](specs/drawings.md)。
 
 
 ### 清单标题、截止日期与知识归档（2026-10-28）
