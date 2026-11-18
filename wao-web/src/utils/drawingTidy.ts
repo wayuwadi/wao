@@ -1,6 +1,6 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
 import { orthogonalRoute } from './drawingOrthogonalRouter'
+import { planDrawingLayout, type DrawingLayout } from './drawingTidyLayout'
 import {
   boundsOf, contains, crosses, insideBounds, overlaps, samePoint, segments, sharedLength, translate, unionBounds,
   type Bounds, type Point,
@@ -13,7 +13,7 @@ export type DrawingTidyMode = 'light' | 'route' | 'layout'
 export type DrawingTidyRequest = {
   mode: DrawingTidyMode
   scope: 'selection' | 'all'
-  layout?: 'right' | 'down' | 'tree'
+  layout?: DrawingLayout
 }
 
 export type DrawingTidyInput = {
@@ -29,7 +29,8 @@ export type DrawingTidyResult = {
   skipped: number
 }
 
-type Unit = { id: string; elements: Shape[]; bounds: Bounds; frameId: string | null; inScope: boolean; movable: boolean }
+type Unit = { id: string; elements: Element[]; bounds: Bounds; frameId: string | null; inScope: boolean; movable: boolean }
+type Endpoints = readonly [string | undefined, string | undefined]
 const origin = { x: 0, y: 0 }
 const isFrame = (element: Element) => element.type === 'frame' || element.type === 'magicframe'
 const isShape = (element: Element): element is Shape =>
@@ -40,7 +41,21 @@ const isObstacle = (element: Element) => !isFrame(element) && element.type !== '
 const idOfGroup = (element: Element) => element.groupIds[element.groupIds.length - 1]
 const endpointIds = (arrow: Arrow) => [arrow.startBinding?.elementId, arrow.endBinding?.elementId] as const
 
-function unitsFor(elements: readonly Element[], selected: ReadonlySet<string>, all: boolean) {
+function nearbyShape(point: Point, shapes: Shape[], frameId: string | null) {
+  const candidates = shapes.flatMap((shape) => {
+    if (shape.angle || (frameId && shape.frameId !== frameId)) return []
+    const x = point.x - shape.x, y = point.y - shape.y
+    const dx = Math.max(0, -x, x - shape.width), dy = Math.max(0, -y, y - shape.height)
+    const distance = dx || dy ? Math.hypot(dx, dy) : Math.min(x, y, shape.width - x, shape.height - y)
+    return distance <= 12 ? [{ id: shape.id, distance }] : []
+  }).sort((a, b) => a.distance - b.distance)
+  const best = candidates[0]
+  return best && (!candidates[1] || candidates[1].distance > best.distance + 4) ? best.id : undefined
+}
+
+function unitsFor(
+  elements: readonly Element[], selected: ReadonlySet<string>, all: boolean, endpoints: Map<string, Endpoints>,
+) {
   const groups = new Map<string, Element[]>()
   const locked = new Set(elements.filter((element) => element.locked).map((element) => element.id))
   for (const element of elements) {
@@ -51,7 +66,7 @@ function unitsFor(elements: readonly Element[], selected: ReadonlySet<string>, a
   for (const arrow of elements.filter(isArrow)) {
     if (!arrow.locked && !hasFixedSegments(arrow) && !arrow.angle &&
       !arrow.boundElements?.some(({ id }) => locked.has(id))) continue
-    for (const id of endpointIds(arrow)) if (id) pinned.add(id)
+    for (const id of endpoints.get(arrow.id)!) if (id) pinned.add(id)
   }
   const units = new Map<string, Unit>()
   for (const element of elements.filter(isShape)) {
@@ -60,16 +75,16 @@ function unitsFor(elements: readonly Element[], selected: ReadonlySet<string>, a
     if (units.has(id)) continue
     const members = group ? groups.get(group)! : [element]
     const shapes = members.filter(isShape)
+    const boxes = members.filter((member) => isShape(member) || (member.type === 'text' && !member.containerId))
     const shapeIds = new Set(shapes.map((shape) => shape.id))
     const inScope = all || members.some((member) =>
       selected.has(member.id) || (member.frameId !== null && selected.has(member.frameId)),
     ) || shapes.some((shape) => shape.boundElements?.some((item) => item.type === 'text' && selected.has(item.id)))
     const movable = inScope && !members.some((member) => member.locked || pinned.has(member.id) ||
       member.boundElements?.some(({ type, id }) => type === 'text' && locked.has(id)) ||
-      (isArrow(member) && endpointIds(member).some((id) => !id || !shapeIds.has(id))) ||
-      member.frameId !== element.frameId || (!isShape(member) && !isArrow(member) &&
-        !(member.type === 'text' && member.containerId)))
-    units.set(id, { id, elements: shapes, bounds: unionBounds(shapes.map(boundsOf)), frameId: element.frameId, inScope, movable })
+      (isArrow(member) && endpoints.get(member.id)!.some((id) => !id || !shapeIds.has(id))) ||
+      member.frameId !== element.frameId || (!isShape(member) && !isArrow(member) && member.type !== 'text'))
+    units.set(id, { id, elements: boxes, bounds: unionBounds(boxes.map(boundsOf)), frameId: element.frameId, inScope, movable })
   }
   return [...units.values()]
 }
@@ -124,39 +139,13 @@ function lightOffsets(units: Unit[]) {
   return changed
 }
 
-async function layoutOffsets(units: Unit[], arrows: Arrow[], preset: DrawingTidyRequest['layout']) {
-  if (units.length < 2) return new Map<string, Point>()
-  const { default: ELK } = await import('elkjs/lib/elk.bundled.js')
-  const engine = new ELK()
+function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>) {
   const unitIds = new Map(units.flatMap((unit) => unit.elements.map((element) => [element.id, unit.id] as const)))
-  const edges: ElkExtendedEdge[] = arrows.flatMap((arrow) => {
-    const [from, to] = endpointIds(arrow)
+  return [...endpoints].flatMap(([id, [from, to]]) => {
     const source = from && unitIds.get(from)
     const target = to && unitIds.get(to)
-    return source && target && source !== target ? [{ id: arrow.id, sources: [source], targets: [target] }] : []
+    return source && target && source !== target ? [{ id, source, target }] : []
   })
-  const ordered = [...units].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x)
-  const graph: ElkNode = {
-    id: 'drawing',
-    layoutOptions: {
-      'elk.algorithm': edges.length ? (preset === 'tree' ? 'mrtree' : 'layered') : 'box',
-      'elk.direction': preset === 'right' ? 'RIGHT' : 'DOWN',
-      'elk.spacing.nodeNode': '44',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '76',
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      'elk.padding': '[top=0,left=0,bottom=0,right=0]',
-    },
-    children: ordered.map((unit) => ({ id: unit.id, width: unit.bounds.width, height: unit.bounds.height })),
-    edges,
-  }
-  const layout = await engine.layout(graph)
-  const anchor = unionBounds(units.map((unit) => unit.bounds))
-  return new Map((layout.children ?? []).flatMap((node) => {
-    const unit = units.find((item) => item.id === node.id)
-    return unit && Number.isFinite(node.x) && Number.isFinite(node.y)
-      ? [[node.id, { x: anchor.x + node.x! - unit.bounds.x, y: anchor.y + node.y! - unit.bounds.y }] as const]
-      : []
-  }))
 }
 
 function hasFixedSegments(arrow: Arrow) {
@@ -194,9 +183,8 @@ function arrowWithPath(arrow: Arrow, path: Point[], automatic: boolean): Arrow {
   return { ...arrow, ...first, width: box.width, height: box.height, points, customData, lastCommittedPoint: null }
 }
 
-function moveEndpoints(arrow: Arrow, offsets: ReadonlyMap<string, Point>) {
+function moveEndpoints(arrow: Arrow, offsets: ReadonlyMap<string, Point>, [from, to]: Endpoints) {
   const path = arrowPoints(arrow)
-  const [from, to] = endpointIds(arrow)
   const start = (from && offsets.get(from)) || origin
   const end = (to && offsets.get(to)) || origin
   if (path.length < 2 || (samePoint(start, origin) && samePoint(end, origin))) return arrow
@@ -218,15 +206,18 @@ function moveEndpoints(arrow: Arrow, offsets: ReadonlyMap<string, Point>) {
   return arrowWithPath(arrow, moved, arrow.customData?.waoTidyRoute === relativePointsKey(arrow.points))
 }
 
-function score(arrow: Arrow, paths: ReadonlyMap<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>) {
-  const path = paths.get(arrow.id) ?? []
-  const legs = segments(path)
-  const [start, end] = endpointIds(arrow)
+function collisionsOf(legs: ReturnType<typeof segments>, obstacles: ReadonlyMap<string, Bounds>, [start, end]: Endpoints) {
   const collisions = new Set<string>()
   for (const [id, box] of obstacles) {
     if (legs.some((leg, index) => (id !== start || index > 0) &&
       (id !== end || index < legs.length - 1) && insideBounds(leg, box))) collisions.add(id)
   }
+  return collisions
+}
+
+function score(arrow: Arrow, paths: ReadonlyMap<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>, endpoints: Endpoints) {
+  const legs = segments(paths.get(arrow.id) ?? [])
+  const collisions = collisionsOf(legs, obstacles, endpoints)
   let crossings = 0
   let shared = 0
   for (const [id, other] of paths) {
@@ -262,10 +253,13 @@ function perimeterPaths(path: Point[], obstacles: ReadonlyMap<string, Bounds>) {
 
 function chooseRoute(
   arrow: Arrow, paths: Map<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>,
-  conservative: boolean, frame?: Bounds,
+  endpoints: Endpoints, conservative: boolean, frame?: Bounds,
 ) {
   const original = paths.get(arrow.id)!
-  const before = score(arrow, paths, obstacles)
+  const before = score(arrow, paths, obstacles, endpoints)
+  if (original.length === 2 && !before.collisions.size && !before.crossings && !before.shared) {
+    return { needsImprovement: false }
+  }
   const otherLines = [...paths.entries()].flatMap(([id, points]) => id === arrow.id ? [] : segments(points))
   const proposal = orthogonalRoute(original[0]!, original[original.length - 1]!, [...obstacles.values()], otherLines)
   let best = original
@@ -278,7 +272,7 @@ function chooseRoute(
     if (frame && candidate.some((point) => !contains(frame, { ...point, width: 0, height: 0 }))) continue
     if (candidate.length === original.length && candidate.every((point, index) => samePoint(point, original[index]!))) continue
     paths.set(arrow.id, candidate)
-    const next = score(arrow, paths, obstacles)
+    const next = score(arrow, paths, obstacles, endpoints)
     if (conservative && next.length > before.length * 1.5 + 32) continue
     if ([...next.collisions].some((id) => !before.collisions.has(id)) || next.crossings > before.crossings) continue
     const improvement = bestScore.collisions.size - next.collisions.size ||
@@ -290,6 +284,44 @@ function chooseRoute(
   }
   paths.set(arrow.id, best)
   return { path: best === original ? undefined : best, needsImprovement: !!(before.collisions.size || before.crossings || before.shared) }
+}
+
+function alignArrowPorts(
+  arrow: Arrow, ids: Endpoints, paths: Map<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>, frame?: Bounds,
+) {
+  const [from, to] = ids
+  const a = from && obstacles.get(from), b = to && obstacles.get(to)
+  if (!a || !b || arrow.elbowed) return
+  const startGap = arrow.startBinding?.gap ?? 5, endGap = arrow.endBinding?.gap ?? 5
+  const xGap = Math.max(b.x - a.x - a.width, a.x - b.x - b.width)
+  const yGap = Math.max(b.y - a.y - a.height, a.y - b.y - b.height)
+  if (Math.max(xGap, yGap) <= startGap + endGap) return
+  const horizontal = xGap >= yGap
+  const axis = horizontal ? 'x' : 'y', size = horizontal ? 'width' : 'height'
+  const forward = a[axis] < b[axis]
+  const start = { x: a.x + a.width / 2, y: a.y + a.height / 2 }
+  const end = { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  start[axis] = forward ? a[axis] + a[size] + startGap : a[axis] - startGap
+  end[axis] = forward ? b[axis] - endGap : b[axis] + b[size] + endGap
+
+  const original = paths.get(arrow.id)!
+  if (samePoint(start, original[0]!) && samePoint(end, original[original.length - 1]!)) return
+  const before = score(arrow, paths, obstacles, ids)
+  const lines = [...paths.entries()].flatMap(([id, points]) => id === arrow.id ? [] : segments(points))
+  const path = orthogonalRoute(start, end, [...obstacles.values()], lines)
+  if (!path || path.length < 2 || (frame && path.some((point) => !contains(frame, { ...point, width: 0, height: 0 })))) return
+  paths.set(arrow.id, path)
+  const after = score(arrow, paths, obstacles, ids)
+  if ([...after.collisions].some((id) => !before.collisions.has(id)) || after.crossings > before.crossings ||
+    after.length > before.length * 1.25 + 24) {
+    paths.set(arrow.id, original)
+    return
+  }
+  return arrowWithPath({
+    ...arrow,
+    startBinding: arrow.startBinding && { ...arrow.startBinding, focus: 0 },
+    endBinding: arrow.endBinding && { ...arrow.endBinding, focus: 0 },
+  }, path, true)
 }
 
 function permitsMove(
@@ -304,43 +336,74 @@ function permitsMove(
   return true
 }
 
-export async function tidyDrawing(
+export function tidyDrawing(input: DrawingTidyInput): Promise<DrawingTidyResult> {
+  return runTidy(input, input.request.mode === 'light', new Set())
+}
+
+async function runTidy(
   { elements, selectedIds, request }: DrawingTidyInput,
-  conservative = request.mode === 'light',
+  conservative: boolean,
+  frozen: ReadonlySet<string>,
+  retries = 0,
 ): Promise<DrawingTidyResult> {
   const live = elements.filter((element) => !element.isDeleted)
   const selected = new Set(selectedIds)
   const elementById = new Map(live.map((element) => [element.id, element]))
   const arrows = live.filter(isArrow)
   const all = request.scope === 'all'
-  const units = unitsFor(live, selected, all)
+  const originalPaths = new Map(arrows.map((arrow) => [arrow.id, arrowPoints(arrow)]))
+  const shapes = request.mode === 'layout' ? live.filter(isShape) : []
+  const endpoints = new Map(arrows.map((arrow): [string, Endpoints] => {
+    const points = originalPaths.get(arrow.id)!
+    const first = points[0], last = points.length >= 2 ? points[points.length - 1] : undefined
+    const [from, to] = endpointIds(arrow)
+    return [arrow.id, [
+      from ?? (first && last && nearbyShape(first, shapes, arrow.frameId)),
+      to ?? (last && nearbyShape(last, shapes, arrow.frameId)),
+    ]]
+  }))
+  const units = unitsFor(live, selected, all, endpoints)
+  const unitByElement = new Map(units.flatMap((unit) => unit.elements.map(({ id }) => [id, unit.id])))
+  const inScope = new Set(units.filter((unit) => unit.inScope).flatMap((unit) => unit.elements.map(({ id }) => id)))
   const changes = new Map<string, Element>()
   const offsets = new Map<string, Point>()
   const originalBounds = new Map(live.filter(isObstacle).map((element) => [element.id, boundsOf(element)]))
   const obstacles = new Map(originalBounds)
-  const originalPaths = new Map(arrows.map((arrow) => [arrow.id, arrowPoints(arrow)]))
-  let skipped = 0
+  let skipped = frozen.size
 
   if (request.mode !== 'route') {
-    const frames = new Set(units.filter((unit) => unit.movable).map((unit) => unit.frameId))
-    for (const frameId of frames) {
-      const candidates = units.filter((unit) => unit.movable && unit.frameId === frameId)
-      const planned = request.mode === 'light' ? lightOffsets(candidates) :
-        await layoutOffsets(candidates, arrows, request.layout)
-      const proposed = new Map(obstacles)
-      for (const unit of candidates) {
-        const offset = planned.get(unit.id)
-        if (!offset) continue
-        for (const element of unit.elements) proposed.set(element.id, translate(boundsOf(element), offset))
-      }
+    const partitions = new Map<string | null, Unit[]>()
+    for (const unit of units) {
+      if (!unit.movable || frozen.has(unit.id)) continue
+      if (!partitions.has(unit.frameId)) partitions.set(unit.frameId, [])
+      partitions.get(unit.frameId)!.push(unit)
+    }
+    for (const [frameId, candidates] of partitions) {
       const frame = frameId ? elementById.get(frameId) : undefined
-      // Keep the partition's geometry consistent if a move would run into a fixed obstacle.
-      if (candidates.some((unit) => {
-        const offset = planned.get(unit.id)
-        return offset && !permitsMove(unit, translate(unit.bounds, offset), proposed, originalBounds, frame)
-      })) {
-        skipped += planned.size
-        continue
+      let planned: Map<string, Point>
+      if (request.mode === 'layout') {
+        const moving = new Set(candidates.flatMap((unit) => unit.elements.map(({ id }) => id)))
+        const fixed = [...obstacles].flatMap(([id, box]) => moving.has(id) ? [] : [box])
+        if (!frame) fixed.push(...live.filter(isFrame).map(boundsOf))
+        const layout = await planDrawingLayout(candidates, layoutLinks(candidates, endpoints), request.layout ?? 'auto',
+          fixed, frame && boundsOf(frame))
+        planned = layout.offsets
+        skipped += layout.skipped
+      } else {
+        planned = lightOffsets(candidates)
+        const proposed = new Map(obstacles)
+        for (const unit of candidates) {
+          const offset = planned.get(unit.id)
+          if (!offset) continue
+          for (const element of unit.elements) proposed.set(element.id, translate(boundsOf(element), offset))
+        }
+        if (candidates.some((unit) => {
+          const offset = planned.get(unit.id)
+          return offset && !permitsMove(unit, translate(unit.bounds, offset), proposed, originalBounds, frame)
+        })) {
+          skipped += planned.size
+          continue
+        }
       }
       for (const unit of candidates) {
         const offset = planned.get(unit.id)
@@ -362,15 +425,16 @@ export async function tidyDrawing(
   const paths = new Map<string, Point[]>()
   const route: Arrow[] = []
   for (const arrow of arrows) {
-    const [from, to] = endpointIds(arrow)
-    const moved = moveEndpoints(arrow, offsets)
+    const ids = endpoints.get(arrow.id)!
+    const [from, to] = ids
+    const moved = moveEndpoints(arrow, offsets, ids)
     const after = arrowPoints(moved)
     paths.set(arrow.id, after)
     if (moved !== arrow) changes.set(arrow.id, moved)
-    const internal = !!from && !!to && (all || [from, to].every((id) =>
-      units.some((unit) => unit.inScope && unit.elements.some((element) => element.id === id)),
-    ))
-    const eligible = request.mode === 'route' ? all || selected.has(arrow.id) || internal : internal
+    const internal = !!from && !!to && (all || (inScope.has(from) && inScope.has(to)))
+    const eligible = internal || (request.mode === 'layout' && moved !== arrow) ||
+      (request.mode !== 'light' && selected.has(arrow.id)) ||
+      (request.mode === 'route' && all)
     if (!eligible) continue
     const manual = !arrow.elbowed && arrow.points.length > 2 &&
       arrow.customData?.waoTidyRoute !== relativePointsKey(arrow.points)
@@ -384,10 +448,24 @@ export async function tidyDrawing(
   }
   let routed = 0
   for (const arrow of route) {
-    const [from, to] = endpointIds(arrow)
+    const ids = endpoints.get(arrow.id)!
+    const [from, to] = ids
     const frameId = from ? elementById.get(from)?.frameId : null
     const frame = frameId && to && elementById.get(to)?.frameId === frameId ? elementById.get(frameId) : undefined
-    const choice = chooseRoute(arrow, paths, obstacles, conservative, frame && boundsOf(frame))
+    const frameBounds = frame && boundsOf(frame)
+    if (request.mode === 'layout' && from && to && inScope.has(from) && inScope.has(to) &&
+      (offsets.has(from) || offsets.has(to)) && [from, to].every((id) => {
+        const shape = elementById.get(id)!
+        return isShape(shape) && !shape.angle
+      })) {
+      const aligned = alignArrowPorts(arrow, ids, paths, obstacles, frameBounds)
+      if (aligned) {
+        changes.set(arrow.id, aligned)
+        routed++
+        continue
+      }
+    }
+    const choice = chooseRoute(arrow, paths, obstacles, ids, conservative, frameBounds)
     if (!choice.path) {
       if (choice.needsImprovement) skipped++
       continue
@@ -395,15 +473,29 @@ export async function tidyDrawing(
     changes.set(arrow.id, arrowWithPath(arrow, choice.path, true))
     routed++
   }
-  if (offsets.size && arrows.some((arrow) => {
-    const before = score(arrow, originalPaths, originalBounds)
-    const after = score(arrow, paths, obstacles)
-    return [...after.collisions].some((id) => !before.collisions.has(id)) ||
-      (request.mode === 'light' && after.crossings > before.crossings)
-  })) {
+  const unsafe = new Set<string>()
+  if (offsets.size) for (const arrow of arrows) {
+    const ids = endpoints.get(arrow.id)!
+    const before = collisionsOf(segments(originalPaths.get(arrow.id)!), originalBounds, ids)
+    const after = collisionsOf(segments(paths.get(arrow.id)!), obstacles, ids)
+    const introduced = [...after].filter((id) => !before.has(id))
+    if (introduced.length) {
+      for (const id of [...ids, ...introduced]) {
+        if (id && offsets.has(id)) unsafe.add(unitByElement.get(id)!)
+      }
+    }
+    if (request.mode === 'light' &&
+      score(arrow, paths, obstacles, ids).crossings > score(arrow, originalPaths, originalBounds, ids).crossings) {
+      unsafe.add(arrow.id)
+    }
+  }
+  if (unsafe.size) {
+    if (request.mode === 'layout' && retries < 4) {
+      return runTidy({ elements, selectedIds, request }, conservative, new Set([...frozen, ...unsafe]), retries + 1)
+    }
     // If the new node positions block a connector, still offer safe routing on the original positions.
-    const result = await tidyDrawing({ elements, selectedIds, request: { ...request, mode: 'route' } }, conservative)
+    const result = await runTidy({ elements, selectedIds, request: { ...request, mode: 'route' } }, conservative, frozen)
     return { ...result, skipped: result.skipped + offsets.size }
   }
-  return { changed: [...changes.values()], moved: offsets.size, routed, skipped }
+  return { changed: [...changes.values()], moved: [...offsets.keys()].filter((id) => isShape(elementById.get(id)!)).length, routed, skipped }
 }

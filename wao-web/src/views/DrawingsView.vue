@@ -401,7 +401,6 @@ function openTidyMenu(event: MouseEvent) {
   void contextMenu.value?.openAt(event, '一键整理', [
     { id: 'tidy:light', label: '轻量整理', icon: 'ri-align-top', run: quickTidy },
     { id: 'tidy:route', label: '只整理连线', icon: 'ri-route-line', run: () => { tidyDialog.value = 'route' } },
-    { id: 'tidy:layout', label: '重新布局', icon: 'ri-node-tree', run: () => { tidyDialog.value = 'layout' } },
   ], event.currentTarget)
 }
 let saveTimer: number | undefined
@@ -1288,7 +1287,8 @@ defineExpose({ flush: flushEmbedded })
             variant="ghost"
             :loading="tidyBusy"
             :disabled="!tidyCanvas || transitioning || !!deletingId || restoringVersion !== null"
-            @click="quickTidy"
+            aria-haspopup="dialog"
+            @click="tidyDialog = 'layout'"
           >一键整理</WaoButton>
           <button
             type="button"
