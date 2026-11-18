@@ -14,7 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 const hasSelection = props.canvas.hasSelection()
 const scope = ref<DrawingTidyRequest['scope']>(hasSelection ? 'selection' : 'all')
-const layout = ref<NonNullable<DrawingTidyRequest['layout']>>('right')
+const layout = ref<NonNullable<DrawingTidyRequest['layout']>>('auto')
 const preview = shallowRef<DrawingTidyPreparation>()
 const beforeUrl = ref('')
 const afterUrl = ref('')
@@ -77,36 +77,44 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <SettingsDialogShell :title="mode === 'route' ? '只整理连线' : '重新布局'" icon="ri-node-tree" @close="emit('close')">
-    <div class="tidy-settings">
-      <label>
-        <span>范围</span>
-        <select v-model="scope" aria-label="整理范围">
-          <option v-if="hasSelection" value="selection">当前选区</option>
-          <option value="all">整张画板</option>
-        </select>
-      </label>
-      <label v-if="mode === 'layout'">
-        <span>布局</span>
-        <select v-model="layout" aria-label="布局方式">
-          <option value="right">横向流程</option>
-          <option value="down">纵向流程</option>
-          <option value="tree">树形</option>
-        </select>
-      </label>
-    </div>
-    <p v-if="busy" role="status">正在生成整理预览…</p>
-    <p v-else-if="error" role="alert">{{ error }}</p>
-    <template v-else-if="preview">
-      <div v-if="preview.changed" class="tidy-previews">
-        <figure><figcaption>整理前</figcaption><img :src="beforeUrl" alt="整理前的草图" /></figure>
-        <figure><figcaption>整理后</figcaption><img :src="afterUrl" alt="整理后的草图" /></figure>
+  <SettingsDialogShell
+    :title="mode === 'route' ? '只整理连线' : '重新布局'"
+    height="min(620px, calc(100dvh - 48px))"
+    icon="ri-node-tree"
+    @close="emit('close')"
+  >
+    <div class="tidy-dialog-body">
+      <div class="tidy-settings">
+        <label>
+          <span>范围</span>
+          <select v-model="scope" aria-label="整理范围">
+            <option v-if="hasSelection" value="selection">当前选区</option>
+            <option value="all">整张画板</option>
+          </select>
+        </label>
+        <label v-if="mode === 'layout'">
+          <span>布局</span>
+          <select v-model="layout" aria-label="布局方式">
+            <option value="auto">自动布局</option>
+            <option value="right">横向流程</option>
+            <option value="down">纵向流程</option>
+            <option value="tree">树形</option>
+          </select>
+        </label>
       </div>
-      <p role="status">
-        {{ preview.changed ? `移动 ${preview.moved} 个图形，重新布线 ${preview.routed} 条。` : '当前没有可安全改善的布局。' }}
-        <span v-if="preview.skipped">保留了 {{ preview.skipped }} 项无法安全调整的内容。</span>
-      </p>
-    </template>
+      <p v-if="busy" role="status">正在生成整理预览…</p>
+      <p v-else-if="error" role="alert">{{ error }}</p>
+      <template v-else-if="preview">
+        <p role="status">
+          {{ preview.changed ? `移动 ${preview.moved} 个图形，重新布线 ${preview.routed} 条。` : '当前没有可安全改善的布局。' }}
+          <span v-if="preview.skipped">保留了 {{ preview.skipped }} 项无法安全调整的内容。</span>
+        </p>
+        <div v-if="preview.changed" class="tidy-previews">
+          <figure><figcaption>整理前</figcaption><img :src="beforeUrl" alt="整理前的草图" /></figure>
+          <figure><figcaption>整理后</figcaption><img :src="afterUrl" alt="整理后的草图" /></figure>
+        </div>
+      </template>
+    </div>
     <template #footer>
       <WaoButton variant="ghost" @click="emit('close')">取消</WaoButton>
       <WaoButton v-if="error" @click="generate()">重新预览</WaoButton>
@@ -116,6 +124,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.tidy-dialog-body {
+  padding: var(--wao-space-2) var(--wao-space-3);
+}
 .tidy-settings {
   display: flex;
   flex-wrap: wrap;
@@ -153,8 +164,12 @@ onBeforeUnmount(() => {
 .tidy-previews figcaption { padding: var(--wao-space-1); }
 .tidy-previews img {
   width: 100%;
-  height: clamp(160px, 32vh, 350px);
+  height: clamp(140px, 25vh, 300px);
   object-fit: contain;
+}
+@media (max-width: 560px) {
+  .tidy-dialog-body { padding-inline: var(--wao-space-2); }
+  .tidy-settings { gap: var(--wao-space-1); }
 }
 @media (pointer: coarse) {
   .tidy-settings select { min-height: 44px; }

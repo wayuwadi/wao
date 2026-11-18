@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { tidyDrawing } from '@/utils/drawingTidy'
-import { crosses, segments } from '@/utils/drawingTidyGeometry'
+import { boundsOf, contains, crosses, overlaps, segments } from '@/utils/drawingTidyGeometry'
 
 type Element = OrderedExcalidrawElement
 type Arrow = Extract<Element, { type: 'arrow' }>
@@ -129,5 +129,69 @@ describe('草图整理', () => {
       expect(selected.get('outside')).toBe(elements[3])
       expect(selected.get('a-b')).toMatchObject({ startBinding: { elementId: 'a' }, endBinding: { elementId: 'b' } })
     }
+  })
+
+  it('自动整理整张画板，根据箭头走向排成纵向流程，并绕开锁定图形', async () => {
+    const fixed = shape('fixed', 0, 108, { locked: true, width: 85, height: 60 })
+    const elements = [
+      shape('a', 0, 0), shape('b', 64, 190), shape('c', 7, 390), fixed,
+      edge('a-b', 'a', 'b', 28, 44, 64, 142),
+      edge('b-c', 'b', 'c', 92, 234, -57, 152),
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all' } })
+    const [a, b, c] = elements.map((element) => result.changed.find(({ id }) => id === element.id) ?? element)
+    expect(result.moved).toBeGreaterThanOrEqual(2)
+    expect([b!.x, c!.x]).toEqual([a!.x, a!.x])
+    expect(b!.y).toBeGreaterThan(a!.y + a!.height)
+    expect(c!.y).toBeGreaterThan(b!.y + b!.height)
+    expect(result.changed.some(({ id }) => id === fixed.id)).toBe(false)
+    expect([a!, b!, c!].some((item) => overlaps(boundsOf(item), boundsOf(fixed)))).toBe(false)
+  })
+
+  it('根据贴近端点的未绑定箭头恢复流程方向，并带着分组内的标题一起移动', async () => {
+    const arrow = { ...edge('loose', 'a', 'b', 160, 100, -84, -80), startBinding: null, endBinding: null }
+    const elements = [
+      shape('a', 160, 80, { groupIds: ['a-group'] }), shape('b', 16, 0),
+      shape('label', 168, 87, { type: 'text', groupIds: ['a-group'], width: 32, height: 20 } as Partial<Element>),
+      arrow,
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'right' } })
+    const [a, b, label, after] = elements.map((element) => result.changed.find(({ id }) => id === element.id) ?? element)
+    expect(a!.x).toBeLessThan(b!.x)
+    expect([label!.x - a!.x, label!.y - a!.y]).toEqual([8, 7])
+    expect(after).toMatchObject({ startBinding: null, endBinding: null })
+    expect(path(after as Arrow)).toEqual([[{ x: a!.x + a!.width + 5, y: a!.y + 20 }, { x: b!.x - 5, y: b!.y + 20 }]])
+  })
+
+  it('狭窄画框使用紧凑间距，放不下的画框不会阻止其他画框整理', async () => {
+    const frame = shape('frame', 400, 0, { type: 'frame', width: 150, height: 100 } as Partial<Element>)
+    const cramped = shape('cramped', 0, 0, { type: 'frame', width: 124, height: 84 } as Partial<Element>)
+    const elements = [
+      frame, cramped,
+      shape('a', 491, 53, { frameId: frame.id }), shape('b', 407, 3, { frameId: frame.id }),
+      shape('c', 65, 41, { frameId: cramped.id }), shape('d', 0, 0, { frameId: cramped.id }),
+      edge('a-b', 'a', 'b', 487, 73, -20, -50), edge('c-d', 'c', 'd', 61, 61, -1, -41),
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'right' } })
+    const [a, b] = ['a', 'b'].map((id) => result.changed.find((item) => item.id === id)!)
+    expect(a!.x + a!.width).toBeLessThan(b!.x)
+    expect([a!, b!].every((item) => contains(boundsOf(frame), boundsOf(item)))).toBe(true)
+    expect(result.changed.some(({ id }) => id === 'c' || id === 'd')).toBe(false)
+  })
+
+  it('画框内一组流程放不下时，仍会整理有空间的另一组', async () => {
+    const frame = shape('frame', 0, 0, { type: 'frame', width: 160, height: 350 } as Partial<Element>)
+    const frameId = frame.id
+    const elements = [frame,
+      shape('a', 0, 5, { frameId }), shape('b', 95, 65, { frameId }), shape('c', 3, 125, { frameId }),
+      shape('d', 98, 300, { frameId }), shape('e', 5, 215, { frameId }),
+      edge('a-b', 'a', 'b', 60, 25, 31, 60), edge('b-c', 'b', 'c', 123, 109, -92, 12),
+      edge('d-e', 'd', 'e', 94, 320, -29, -85),
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [frameId], request: { mode: 'layout', scope: 'selection', layout: 'right' } })
+    const positions = new Map(result.changed.map((element) => [element.id, element]))
+    expect(positions.get('d')!.x + 56).toBeLessThan(positions.get('e')!.x)
+    expect(positions.get('d')!.y).toBe(positions.get('e')!.y)
+    expect(['a', 'b', 'c'].some((id) => positions.has(id))).toBe(false)
   })
 })

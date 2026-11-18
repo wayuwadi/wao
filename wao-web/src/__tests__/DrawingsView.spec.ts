@@ -39,6 +39,7 @@ vi.mock('@/utils/drawingDrafts', () => ({
 vi.mock('@/components/drawings/DrawingCanvas.vue', () => ({
   default: { props: ['snapMode'], template: '<div class="drawing-canvas-stub"></div>' },
 }))
+vi.mock('@/utils/drawingImageExport', () => ({ renderDrawingImage: vi.fn() }))
 
 function drawing(patch: Partial<DrawingFile> = {}): DrawingFile {
   return {
@@ -113,6 +114,25 @@ describe('个人草图优化', () => {
     expect(nextSelect.element.value).toBe('grid')
     await nextSelect.setValue('objects')
     next.unmount()
+  })
+
+  it.each([false, true])('一键整理打开自动布局预览，按是否有选区确定范围（选区 %s）', async (hasSelection) => {
+    const apply = vi.fn()
+    const prepare = vi.fn().mockResolvedValue({ changed: 0, moved: 0, routed: 0, skipped: 0, apply })
+    const wrapper = mount(DrawingsView, { props: { drawingId: 'dr1', embedded: true } })
+    await flushPromises()
+    wrapper.findComponent(DrawingCanvas).vm.$emit('ready', { hasSelection: () => hasSelection, prepare })
+    await flushPromises()
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(prepare).toHaveBeenCalledWith(
+      { mode: 'layout', scope: hasSelection ? 'selection' : 'all', layout: 'auto' },
+      expect.any(AbortSignal),
+    )
+    expect(apply).not.toHaveBeenCalled()
+    expect(saveDrawing).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('普通入口只加载列表，不读取首个草图或历史版本', async () => {
