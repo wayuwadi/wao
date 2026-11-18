@@ -58,7 +58,8 @@ describe('知识库工作区', () => {
     library.folders.push({ id: 'nested-folder', name: '子文件夹', docs: [] })
     library.directory = { ...library.directory, 'f:nested-folder': `f:${rootFolder.id}`, 'd:d7': 'f:nested-folder', 'd:d8': 'f:nested-folder' }
     const list = wrapper.get('.library-list')
-    await list.get(`button[title="${library.name}"]`).trigger('click')
+    const libraryButton = list.get(`button[title="${library.name}"]`)
+    await libraryButton.trigger('click')
     await flushPromises()
 
     const tree = list.get(`[role="tree"][aria-label="${library.name}的目录"]`)
@@ -74,6 +75,15 @@ describe('知识库工作区', () => {
     expect(tree.get('[data-tree-key="d:d7"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('.editor').element).toBe(editor)
 
+    await libraryButton.trigger('click')
+    expect(libraryButton.attributes('aria-expanded')).toBe('false')
+    expect(tree.isVisible()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ kb: 'k3', doc: 'd7' })
+    expect(wrapper.get('.editor').element).toBe(editor)
+    await libraryButton.trigger('click')
+    expect(libraryButton.attributes('aria-expanded')).toBe('true')
+    expect(tree.get('[data-tree-key="d:d7"]').isVisible()).toBe(true)
+
     await folder.trigger('click')
     expect(tree.find('[data-tree-key="d:d7"]').exists()).toBe(false)
     await router.push('/knowledge?kb=k3&doc=d8'); await flushPromises()
@@ -82,6 +92,26 @@ describe('知识库工作区', () => {
     expect(list.find('[role="tree"]').exists()).toBe(false)
     await resize(false)
     expect(list.get('[data-tree-key="d:d8"]').attributes('aria-current')).toBe('page')
+  })
+  it('左侧知识库宽度独立记住，窄屏和收起时不显示调整柄', async () => {
+    const { wrapper } = await setup()
+    const sidebar = wrapper.get('.libraries')
+    const selector = '[role="separator"][aria-label="知识库清单宽度"]'
+    const sibling = wrapper.get('[role="separator"][aria-label="知识库目录宽度"]')
+    const original = sibling.attributes('aria-valuenow')
+    await sidebar.get(selector).trigger('keydown', { key: 'ArrowRight' })
+    expect(sidebar.attributes('style')).toContain('--library-width: 224px')
+    expect(sibling.attributes('aria-valuenow')).toBe(original)
+    await wrapper.get('[aria-label="收起知识库清单"]').trigger('click')
+    expect(sidebar.find(selector).exists()).toBe(false)
+    await wrapper.get('[aria-label="展开知识库清单"]').trigger('click')
+    expect(sidebar.get(selector).attributes('aria-valuenow')).toBe('224')
+    await resize(true)
+    expect(sidebar.find(selector).exists()).toBe(false)
+    await resize(false)
+    expect(sidebar.get(selector).attributes('aria-valuenow')).toBe('224')
+    await sidebar.get(selector).trigger('keydown', { key: 'Home' })
+    expect(sidebar.attributes('style')).toContain('--library-width: 208px')
   })
   it('创建失败保留输入，关闭不产生知识库', async () => {
     const { wrapper, data } = await setup()
