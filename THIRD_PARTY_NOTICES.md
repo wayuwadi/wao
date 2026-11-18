@@ -7,3 +7,4 @@ WAO 自有源码采用 MIT。Maven、npm、Cargo、Gradle 依赖仍适用各依�
 `deploy/jenkins/fonts/` 保留的字体不属于 WAO 自有源码，其许可证位于同目录的 `OFL.txt`。历史客户端、图标和生成资源仍保留在仓库中；新增第三方资源时须记录来源和许可证，不能以仓库 MIT 替代原许可。
 
 - ExcelJS — MIT — https://github.com/exceljs/exceljs ：浏览器端 Excel 工作簿导出。
+- elkjs 0.12.1 — EPL-2.0（上游提供 GPL-3.0-or-later 作为次级许可证） — https://github.com/kieler/elkjs/tree/624ae90aa37110033a8af59c5ccbb292708b4317 。草图在浏览器 Worker 中使用其分层和树形布局算法。
