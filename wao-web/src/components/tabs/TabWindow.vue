@@ -77,8 +77,8 @@ function startDrag(event: PointerEvent) {
   min-height: 0;
   height: 100%;
 }
-/* 工作区填满页签，叠层画布的绝对定位子元素不参与外层宽度计算。 */
-.tab-page-window:not(.floating):has(.quadrant-view, .bounded-workspace, .drawings-page) { flex: 1; width: 100%; }
+/* 普通页签撑满父容器，避免页面内容较少或绝对定位时按内容宽度收缩。 */
+.tab-page-window:not(.floating) { flex: 1; width: 100%; }
 .window-content:has(.quadrant-view, .bounded-workspace, .drawings-page) { display: flex; flex-direction: column; }
 .floating {
   position: fixed;
