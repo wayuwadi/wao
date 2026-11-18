@@ -105,14 +105,14 @@ onBeforeUnmount(() => {
       <p v-if="busy" role="status">正在生成整理预览…</p>
       <p v-else-if="error" role="alert">{{ error }}</p>
       <template v-else-if="preview">
-        <div v-if="preview.changed" class="tidy-previews">
-          <figure><figcaption>整理前</figcaption><img :src="beforeUrl" alt="整理前的草图" /></figure>
-          <figure><figcaption>整理后</figcaption><img :src="afterUrl" alt="整理后的草图" /></figure>
-        </div>
         <p role="status">
           {{ preview.changed ? `移动 ${preview.moved} 个图形，重新布线 ${preview.routed} 条。` : '当前没有可安全改善的布局。' }}
           <span v-if="preview.skipped">保留了 {{ preview.skipped }} 项无法安全调整的内容。</span>
         </p>
+        <div v-if="preview.changed" class="tidy-previews">
+          <figure><figcaption>整理前</figcaption><img :src="beforeUrl" alt="整理前的草图" /></figure>
+          <figure><figcaption>整理后</figcaption><img :src="afterUrl" alt="整理后的草图" /></figure>
+        </div>
       </template>
     </div>
     <template #footer>
@@ -169,6 +169,7 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 560px) {
   .tidy-dialog-body { padding-inline: var(--wao-space-2); }
+  .tidy-settings { gap: var(--wao-space-1); }
 }
 @media (pointer: coarse) {
   .tidy-settings select { min-height: 44px; }
