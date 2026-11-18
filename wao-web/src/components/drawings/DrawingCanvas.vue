@@ -6,6 +6,7 @@ import type {
   BinaryFiles,
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
+  LibraryItems,
 } from '@excalidraw/excalidraw/types'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { createElement } from 'react'
@@ -16,12 +17,14 @@ import { usePageVisibility } from '@/composables/pageVisibility'
 import type { DrawingSnapMode } from '@/composables/drawingSnapMode'
 import { calculateDrawingTidy, type DrawingTidyCanvas } from '@/utils/drawingTidyClient'
 import type { DrawingTidyRequest } from '@/utils/drawingTidy'
+import { sameLibraryItem } from '@/stores/drawingLibrary'
 
 const props = defineProps<{
   sceneJson: string
   sceneKey: string
   name: string
   snapMode: DrawingSnapMode
+  libraryItems?: LibraryItems
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +32,7 @@ const emit = defineEmits<{
   ready: [tidyCanvas?: DrawingTidyCanvas]
   save: []
   'update:snapMode': [mode: DrawingSnapMode]
+  'library-change': [previous: LibraryItems, next: LibraryItems]
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -42,6 +46,7 @@ let mountedKey = ''
 let lastScene = props.sceneJson
 let sceneGridModeEnabled = false
 let lastSnapMode: DrawingSnapMode | null = null
+let canvasLibrary: LibraryItems = []
 
 function persistedContent(sceneJson: string) {
   try {
@@ -70,6 +75,7 @@ function initialData(): ExcalidrawInitialDataState {
   sceneGridModeEnabled = scene?.appState?.gridModeEnabled === true
   return {
     ...scene,
+    libraryItems: props.libraryItems === undefined ? scene?.libraryItems : undefined,
     scrollToContent: true,
     appState: { ...scene?.appState, ...snapState(props.snapMode) },
   }
@@ -116,6 +122,31 @@ function changed(
 
 function setCanvasApi(api: ExcalidrawImperativeAPI) {
   canvasApi = api
+  syncCanvasLibrary(true)
+}
+
+function libraryChanged(next: LibraryItems) {
+  const previous = canvasLibrary
+  canvasLibrary = next
+  if (props.libraryItems !== undefined) emit('library-change', previous, next)
+}
+
+function syncCanvasLibrary(force = false) {
+  const api = canvasApi
+  const desired = props.libraryItems
+  if (!api || desired === undefined || !pageVisible.value) return
+  if (!force && canvasLibrary.length === desired.length &&
+      canvasLibrary.every((item, index) => sameLibraryItem(item, desired[index]!))) return
+  void api.updateLibrary({
+    merge: false,
+    libraryItems: (current) => {
+      if (canvasApi !== api) return current
+      // Excalidraw batches library notifications. Record edits queued ahead of this load.
+      libraryChanged(current)
+      canvasLibrary = props.libraryItems ?? desired
+      return canvasLibrary
+    },
+  }).catch((cause: unknown) => console.warn('Unable to load account drawing library', cause))
 }
 
 function editableCanvas() {
@@ -211,11 +242,13 @@ function render() {
   if (!root) root = createRoot(host.value)
   if (mountedKey !== props.sceneKey) {
     canvasApi = null
+    canvasLibrary = []
     additiveSelectionPointer = null
     mountedKey = props.sceneKey
     ready = false
     lastScene = props.sceneJson
   }
+  const key = mountedKey
   root.render(
     createElement(Excalidraw, {
       key: props.sceneKey,
@@ -226,12 +259,18 @@ function render() {
       autoFocus: true,
       excalidrawAPI: setCanvasApi,
       onChange: changed,
+      onLibraryChange: (items: LibraryItems) => {
+        if (canvasApi && mountedKey === key) libraryChanged(items)
+      },
+      libraryReturnUrl: new URL('/drawings', location.origin).href,
     }),
   )
 }
 
 watch(() => [props.sceneKey, props.name, effective.value], render)
 watch(() => props.snapMode, applySnapMode)
+watch(() => props.libraryItems, () => syncCanvasLibrary())
+watch(pageVisible, (visible) => { if (visible) syncCanvasLibrary(true) })
 function preventBrowserSave(event: KeyboardEvent) {
   if (!pageVisible.value || host.value?.closest('[inert]')) return
   if (event.target instanceof Element && host.value && !host.value.closest('.drawings-page')?.contains(event.target)) return

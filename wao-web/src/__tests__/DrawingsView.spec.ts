@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { routeLocationKey } from 'vue-router'
 import { pageVisibleKey } from '@/composables/pageVisibility'
 import DrawingsView from '@/views/DrawingsView.vue'
@@ -24,6 +25,7 @@ vi.mock('@/api/drawings', () => ({
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
+  fetchDrawingLibrary: vi.fn().mockResolvedValue([]),
   fetchDrawingVersions: vi.fn(),
   renameDrawing: vi.fn(),
   restoreDrawingVersion: vi.fn(),
@@ -84,6 +86,7 @@ describe('个人草图优化', () => {
     wrapper.unmount()
   })
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [], assignments: [] })
     localStorage.clear()
