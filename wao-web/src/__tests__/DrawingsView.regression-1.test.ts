@@ -2,11 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DrawingsView from '@/views/DrawingsView.vue'
 import { ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { pageVisibleKey } from '@/composables/pageVisibility'
 import {
   deleteDrawing,
   fetchDrawing,
   fetchDrawingGroups,
+  fetchDrawingLibrary,
   fetchDrawings,
   fetchDrawingVersions,
   saveDrawing,
@@ -23,6 +25,7 @@ vi.mock('@/api/drawings', () => ({
   deleteDrawing: vi.fn(),
   fetchDrawing: vi.fn(),
   fetchDrawings: vi.fn(),
+  fetchDrawingLibrary: vi.fn().mockResolvedValue([]),
   fetchDrawingVersions: vi.fn(),
   renameDrawing: vi.fn(),
   restoreDrawingVersion: vi.fn(),
@@ -74,7 +77,9 @@ function change(w: ReturnType<typeof mount>, value: string) {
 // Found by /qa on 2026-10-29. Report: artifacts/drawing-qa-report.md (local).
 describe('草图保存与文件管理回归', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.resetAllMocks()
+    vi.mocked(fetchDrawingLibrary).mockResolvedValue([])
     vi.mocked(fetchDrawingGroups).mockResolvedValue({ groups: [], assignments: [] })
     window.history.replaceState({}, '', '/drawings?drawing=a')
     vi.mocked(fetchDrawings).mockResolvedValue([file(), file('b')])

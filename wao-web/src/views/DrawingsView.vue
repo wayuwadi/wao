@@ -19,6 +19,10 @@ import { toast } from '@/composables/toast'
 import type { DrawingTidyCanvas } from '@/utils/drawingTidyClient'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
+import { useDrawingLibraryStore } from '@/stores/drawingLibrary'
+import { useConfirmAction } from '@/composables/confirmAction'
+import { loadOfficialDrawingLibrary, officialDrawingLibraryUrl } from '@/utils/drawingLibraryCatalog'
+import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
@@ -74,6 +78,9 @@ type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
 const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
 const session = useSessionStore()
+const library = useDrawingLibraryStore()
+const { confirmation: libraryConfirmation, confirmAction: confirmLibrary, dismissConfirmation: dismissLibraryConfirmation } = useConfirmAction()
+const libraryRequests = new AbortController()
 const owner = session.userId
 const snapMode = useDrawingSnapMode(owner)
 const lastDrawingKey = `wao:last-drawing:${owner}`
@@ -977,14 +984,72 @@ async function useCloudVersion() {
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value && (!editingTitle.value || titleDraft.value === current.value?.title)) return
+  if (!library.pending && !dirty.value && (!editingTitle.value || titleDraft.value === current.value?.title)) return
   event.preventDefault()
   event.returnValue = ''
 }
 
+function refreshLibrary() {
+  if (sameOwner() && pageVisible.value && !document.hidden) void library.sync()
+}
+
+function checkLibraryInstallLink() {
+  if (props.embedded || !sameOwner() || !owner || !pageVisible.value || location.pathname !== '/drawings') return
+  const params = new URLSearchParams(location.hash.slice(1))
+  const source = params.get('addLibrary')
+  if (source === null) return
+  params.delete('addLibrary')
+  params.delete('token')
+  history.replaceState(history.state, '', location.pathname + location.search + (params.size ? '#' + params.toString() : ''))
+  const url = officialDrawingLibraryUrl(source)
+  if (!url) {
+    toast('此素材链接不在 Excalidraw 官方素材库中。', 'ri-error-warning-line')
+    return
+  }
+  confirmLibrary({
+    title: '添加在线素材',
+    description: '将这套 Excalidraw 官方素材添加到当前账号，在其他设备上也能使用。',
+    confirmLabel: '添加到素材库',
+    danger: false,
+    async run() {
+      const signal = AbortSignal.any([libraryRequests.signal, AbortSignal.timeout(30_000)])
+      const [incoming, { mergeLibraryItems }] = await Promise.all([
+        loadOfficialDrawingLibrary(url, signal),
+        import('@excalidraw/excalidraw'),
+        library.sync(),
+      ])
+      if (!sameOwner() || signal.aborted) return
+      if (!incoming.length) throw new Error('这套素材没有可添加的图形。')
+      const before = library.items
+      const next = mergeLibraryItems(before, incoming)
+      library.change(before, next)
+      await library.sync()
+      if (!sameOwner()) return
+      if (library.error) throw new Error(library.error)
+      if (next.length === before.length) toast('这套素材已在账号素材库中。')
+    },
+  })
+}
+
+watch(() => library.pending, (pending, previous) => {
+  if (previous && !pending && sameOwner() && pageVisible.value) toast('素材库已同步到账号。', 'ri-cloud-line')
+})
+watch(pageVisible, (visible) => {
+  if (!visible) return
+  refreshLibrary()
+  checkLibraryInstallLink()
+})
+watch(() => localRoute?.hash, checkLibraryInstallLink)
+
 onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
+  window.addEventListener('hashchange', checkLibraryInstallLink)
+  window.addEventListener('focus', refreshLibrary)
+  window.addEventListener('online', refreshLibrary)
+  document.addEventListener('visibilitychange', refreshLibrary)
   document.addEventListener('fullscreenchange', fullscreenChanged)
+  refreshLibrary()
+  checkLibraryInstallLink()
   void loadList()
   void loadGroups()
 })
@@ -996,9 +1061,14 @@ onBeforeUnmount(() => {
     void persistDraft()
   }
   disposed = true
+  libraryRequests.abort()
   ++loadToken
   openingRequest?.abort()
   window.removeEventListener('beforeunload', beforeUnload)
+  window.removeEventListener('hashchange', checkLibraryInstallLink)
+  window.removeEventListener('focus', refreshLibrary)
+  window.removeEventListener('online', refreshLibrary)
+  document.removeEventListener('visibilitychange', refreshLibrary)
   document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
 watch(
@@ -1104,6 +1174,10 @@ watch(() => [localRoute?.query.drawing, loadingList.value, transitioning.value, 
 watch(() => localRoute?.query.drawing, requested => { if (!requested) handledRouteDrawing = '' })
 useSaveBeforeRefresh(async () => {
   if (!(await settleEdits())) throw new Error('草图尚未保存，请先处理保存失败或版本冲突')
+  if (library.pending) {
+    await library.sync()
+    if (library.pending) throw new Error('素材未同步到账号，请先重试同步。')
+  }
 })
 if (inject(routerKey, null)) onBeforeRouteLeave(settleEdits)
 async function flushEmbedded() {
@@ -1400,6 +1474,11 @@ defineExpose({ flush: flushEmbedded })
         <span>{{ exportError }}</span>
         <button type="button" @click="exportError = ''">关闭</button>
       </div>
+      <ConfirmActionDialog v-if="libraryConfirmation" :action="libraryConfirmation" @close="dismissLibraryConfirmation" />
+      <div v-if="library.error" class="error-banner" role="alert">
+        <span>{{ library.error }}</span>
+        <button type="button" @click="library.sync()">重试同步素材</button>
+      </div>
       <div v-if="draftError && dirty" class="error-banner" role="alert">
         <span>{{ draftError }}</span
         ><button @click="downloadDraft">下载备份</button>
@@ -1450,6 +1529,8 @@ defineExpose({ flush: flushEmbedded })
               :scene-json="layer.sceneJson"
               :scene-key="layer.key"
               :name="layer.name"
+              :library-items="library.items"
+              @library-change="(previous, next) => sameOwner() && library.change(previous, next)"
               @change="layer.key === canvasKey && canvasChanged($event)"
               @ready="canvasReady(layer.key, $event)"
               @save="layer.key === canvasKey && saveNow()"

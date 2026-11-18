@@ -1,4 +1,5 @@
 import { http, type ApiResponse } from './http'
+import type { LibraryItems } from '@excalidraw/excalidraw/types'
 
 export interface DrawingFileSummary {
   kbId?: string | null
@@ -25,6 +26,12 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 
 export const fetchDrawings = () =>
   data(http.get<ApiResponse<DrawingFileSummary[]>>('/api/drawings'))
+
+export const fetchDrawingLibrary = (signal?: AbortSignal) =>
+  data(http.get<ApiResponse<LibraryItems>>('/api/drawings/library', { signal }))
+
+export const updateDrawingLibrary = (upsert: LibraryItems, remove: string[], signal?: AbortSignal) =>
+  data(http.patch<ApiResponse<LibraryItems>>('/api/drawings/library', { upsert, remove }, { signal }))
 
 export const fetchDrawing = (id: string, signal?: AbortSignal) =>
   data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000, signal }))

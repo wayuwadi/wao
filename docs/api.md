@@ -66,6 +66,8 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 页面入口复用 ResourceMenu 和 ContextActionMenu，位于目录加号、目录行右键及目录空白处右键。小记不显示表格和画板创建选项。
 
+账号素材库通过 `GET /api/drawings/library` 返回当前登录成员的 Excalidraw 素材数组。`PATCH /api/drawings/library` 接收 `upsert` 素材数组和 `remove` 素材 ID 数组，按条目在一个事务中合并并返回当前素材库。上限为 1,500 项及 8 MiB。素材不随草图文件共享，未登录访问返回 401。
+
 个人草图所有者可通过 `GET/POST /api/drawings/{id}/public-shares` 列举有效链接或创建链接，通过 `DELETE /api/drawings/{id}/public-shares/{shareId}` 撤销。创建参数为 `validity`（`1h`、`1d`、`7d` 默认、`permanent`）。创建与所有者的有效列表响应返回相同的 `token`，仅存有摘要的历史链接返回空值。匿名 `GET /api/share/drawings/current?knownRevision=...` 通过 `X-Drawing-Share-Token` 验证访问，返回标题、修订、更新时间、到期时间及场景。修订相同时场景为空，标题仍可更新。权限失效返回 404。
 
 工作区 MCP/CLI 沿用既有文档正文接口与令牌范围。分享管理使用浏览器会话，不授予工作区令牌。草图的保存、草稿和分享行为见 [草图工作区](specs/drawings.md)。
