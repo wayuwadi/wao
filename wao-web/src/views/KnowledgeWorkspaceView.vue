@@ -7,7 +7,7 @@ import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingStat
 import { useSessionStore } from '@/stores/session'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import { directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
+import { directoryParents, directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
 import type { DirectoryNode } from '@/utils/knowledgeDirectory'
 import KbDetailView from './KbDetailView.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -24,6 +24,7 @@ import { useNarrowWorkspace } from '@/composables/viewport'
 const data = useDataStore(), route = useRoute(), router = useRouter(), session = useSessionStore()
 const now = useNow(60_000)
 const selected = computed(() => String(route.params.id || route.query.kb || ''))
+const activeDocumentId = computed(() => typeof route.query.doc === 'string' ? route.query.doc : '')
 const selectedName = computed(() => libraries.value.find(kb => kb.id === selected.value)?.name || '全部内容')
 const libraries = computed(() => data.kbs.filter(kb => !kb.notes))
 const libraryEntries = computed(() => libraries.value.map(kb => ({
@@ -34,6 +35,7 @@ const directoryMemory = useTaskViewMemory('knowledge-directory', () => ({ collap
 const directoryWidth = ref(262)
 const documentFocus = ref(false)
 const folderOpen = ref<Record<string, Record<string, boolean>>>({})
+const inlineFolderOpen = ref<Record<string, Record<string, boolean>>>({})
 const { query, view } = toRefs(useBrowsingState('knowledge-home', { query: '', view: 'directory' }, {
   query: validSearch, view: oneOf('directory', 'recent'),
 }))
@@ -98,6 +100,21 @@ const librariesPanel = ref<HTMLElement | null>(null), directoryPanel = ref<HTMLE
 const mobileNavigationOpen = computed(() => narrow.value && (mobileLibrary.value || mobileDirectory.value))
 const librariesExpanded = computed(() => narrow.value ? mobileLibrary.value : !memory.value.collapsed)
 const directoryExpanded = computed(() => narrow.value ? mobileDirectory.value : !directoryMemory.value.collapsed)
+const inlineLibrary = computed(() => !narrow.value && librariesExpanded.value && !documentFocus.value
+  ? libraries.value.find(library => library.id === selected.value) : undefined)
+const inlineDefaults = computed(() => inlineLibrary.value ? groupLevelExpansion(inlineLibrary.value) : {})
+const inlineParents = computed(() => inlineLibrary.value ? directoryParents(inlineLibrary.value) : {})
+const inlineExpanded = computed(() => ({ ...inlineDefaults.value, ...inlineFolderOpen.value[selected.value] }))
+const inlineRows = computed(() => inlineLibrary.value ? directoryRows(inlineLibrary.value, normalizedTitle, inlineExpanded.value, '') : [])
+function toggleInlineNode(key: string, expanded: boolean) {
+  inlineFolderOpen.value[selected.value] = { ...inlineFolderOpen.value[selected.value], [key]: expanded }
+}
+watch([inlineParents, activeDocumentId], ([parents, id]) => {
+  if (!id || !inlineLibrary.value) return
+  const ancestors: Record<string, boolean> = {}
+  for (let parent = parents[`d:${id}`]; parent && !ancestors[parent]; parent = parents[parent]) ancestors[parent] = true
+  if (Object.keys(ancestors).length) inlineFolderOpen.value[selected.value] = { ...inlineFolderOpen.value[selected.value], ...ancestors }
+}, { immediate: true })
 function toggleLibraries(event?: MouseEvent) {
   if (narrow.value) {
     if (mobileLibrary.value) { closeMobile(true); return }
@@ -161,7 +178,7 @@ watch(selected, () => { documentFocus.value = false; closeMobile() })
 watch(() => data.kbById(selected.value), kb => { if (!kb) documentFocus.value = false }, { flush: 'sync' })
 let createGeneration = 0
 watch(() => `${session.account?.accountId ?? ''}:${session.userId}`, () => {
-  folderOpen.value = {}; rowLimit.value = {}; recentLimit.value = 30; documentFocus.value = false; closeMobile()
+  folderOpen.value = {}; inlineFolderOpen.value = {}; rowLimit.value = {}; recentLimit.value = 30; documentFocus.value = false; closeMobile()
   createGeneration++
   creating.value = false; saving.value = false; name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''
 }, { flush: 'sync' })
@@ -202,9 +219,14 @@ async function create() {
         <button type="button" class="pane-toggle icon-button" :aria-label="librariesExpanded ? '收起知识库清单' : '展开知识库清单'" :aria-expanded="librariesExpanded" @click="toggleLibraries"><i class="ri-side-bar-line" aria-hidden="true" /></button>
       </header>
       <nav v-show="librariesExpanded" class="library-list" aria-label="选择知识库">
-        <button type="button" :class="{ active: !selected }" :aria-current="!selected ? 'page' : undefined" @click="open()"><i class="ri-home-4-line" aria-hidden="true" /><span>全部内容</span><small>{{ totalDocuments }}</small></button>
+        <button type="button" class="library-row" :class="{ active: !selected }" :aria-current="!selected ? 'page' : undefined" @click="open()"><i class="ri-home-4-line" aria-hidden="true" /><span>全部内容</span><small>{{ totalDocuments }}</small></button>
         <p class="navigation-label">我的知识库 <span>{{ libraries.length }}</span></p>
-        <button v-for="item in libraryEntries" :key="item.kb.id" type="button" :title="item.kb.name" :class="{ active: selected === item.kb.id }" :aria-current="selected === item.kb.id ? 'page' : undefined" @click="open(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><small>{{ item.count }}</small></button>
+        <div v-for="item in libraryEntries" :key="item.kb.id" class="library-entry">
+          <button type="button" class="library-row" :title="item.kb.name" :class="{ active: selected === item.kb.id }" :aria-current="selected === item.kb.id && !activeDocumentId ? 'page' : undefined" @click="open(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><small>{{ item.count }}</small></button>
+          <KnowledgeDirectoryTree v-if="inlineLibrary?.id === item.kb.id && inlineRows.length" class="inline-directory"
+            :nodes="inlineRows" :expanded="inlineExpanded" :label="`${item.kb.name}的目录`" :icon-of="documentIcon"
+            :current-key="activeDocumentId ? `d:${activeDocumentId}` : undefined" @toggle="toggleInlineNode" @open="open(item.kb.id, $event)" />
+        </div>
         <p v-if="!libraries.length && data.loadStates.knowledge === 'loaded'" class="navigation-empty">在这里整理你的知识</p>
       </nav>
     </aside>
@@ -221,7 +243,7 @@ async function create() {
       </div>
     </aside>
     <main class="workspace-content" :inert="mobileNavigationOpen || undefined">
-      <KbDetailView v-if="selected" :navigation-hidden="mobileNavigationOpen" @focus-change="documentFocus = $event" />
+      <KbDetailView v-if="selected" directory-initially-collapsed :navigation-hidden="mobileNavigationOpen" @focus-change="documentFocus = $event" />
       <section v-else class="knowledge-home">
         <div class="home-inner">
           <header class="home-header">
@@ -277,11 +299,13 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .pane-toggle { min-width: 36px; min-height: 36px; }
 .collapsed .pane-toggle { min-width: 44px; min-height: 44px; }
 .library-list { overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 var(--wao-space-1) var(--wao-space-2); }
-.library-list > button { display: flex; align-items: center; gap: var(--wao-space-1); text-align: left; flex-shrink: 0; min-height: 36px; padding: 6px var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; }
-.library-list > button:hover { background: var(--wao-bg-hover); }
-.library-list > button.active { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: var(--wao-weight-heading); }
-.library-list > button > i { flex-shrink: 0; }
-.library-list > button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-row { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; text-align: left; flex-shrink: 0; min-height: 36px; padding: 6px var(--wao-space-1); border: 0; border-radius: var(--wao-radius-control); background: transparent; }
+.library-row:hover { background: var(--wao-bg-hover); }
+.library-row.active { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: var(--wao-weight-heading); }
+.library-row > i { flex-shrink: 0; }
+.library-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-entry { flex-shrink: 0; min-width: 0; }
+.inline-directory { margin: var(--wao-space-1) 0 var(--wao-space-1) var(--wao-space-2); --knowledge-tree-indent: 10px; }
 .library-list small, .navigation-label, .navigation-empty, .tree-search-hint { color: var(--wao-text-3); font-size: var(--wao-font-caption); font-weight: 400; }
 .library-list small { font-variant-numeric: tabular-nums; }
 .navigation-label { display: flex; justify-content: space-between; margin: var(--wao-space-3) var(--wao-space-1) var(--wao-space-1); }
@@ -365,5 +389,5 @@ time { color: var(--wao-text-3); font-size: var(--wao-font-caption); flex-shrink
   .library-count { font-size: var(--wao-font-caption); }
 }
 @container app-main (max-width: 390px) { .recent-row button { flex-wrap: wrap; gap: var(--wao-space-1); } .recent-row time { margin-left: 24px; } }
-@media (pointer: coarse) { .icon-button, .pane-toggle, .library-list > button, .home-views button, .tree-library-title, .library-title, .index-row button { min-height: 44px; } }
+@media (pointer: coarse) { .icon-button, .pane-toggle, .library-row, .home-views button, .tree-library-title, .library-title, .index-row button { min-height: 44px; } }
 </style>

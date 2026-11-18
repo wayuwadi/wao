@@ -7,6 +7,7 @@ const props = withDefaults(defineProps<{
   nodes: DirectoryNode[]
   expanded: Record<string, boolean>
   label: string
+  currentKey?: string
   searching?: boolean
   iconOf?: (id: string) => string
   density?: 'compact' | 'comfortable'
@@ -100,7 +101,7 @@ function onKey(event: KeyboardEvent, node: DirectoryNode) {
   <div class="knowledge-directory">
   <div ref="tree" class="knowledge-tree" role="tree" :aria-label="label">
     <button v-for="node in visibleNodes" :key="node.key" type="button" class="tree-node" :class="{ 'tree-node--comfortable': density === 'comfortable' }"
-      role="treeitem" :aria-level="node.depth + 1" :aria-expanded="node.hasChildren ? isExpanded(node) : undefined"
+      role="treeitem" :aria-level="node.depth + 1" :aria-expanded="node.hasChildren ? isExpanded(node) : undefined" :aria-current="node.key === currentKey ? 'page' : undefined"
       :aria-posinset="siblingPositions.get(node.key)?.position" :aria-setsize="siblingPositions.get(node.key)?.size"
       :tabindex="focused === node.key ? 0 : -1" :data-tree-key="node.key" :title="node.title"
       :style="{ '--tree-depth': Math.min(node.depth, 8) }"
@@ -121,9 +122,10 @@ function onKey(event: KeyboardEvent, node: DirectoryNode) {
 .knowledge-tree { display: grid; gap: 2px; min-width: 0; }
 .knowledge-directory { min-width: 0; }
 .directory-more { width: 100%; margin-top: var(--wao-space-1); padding-inline: var(--wao-space-1); font-size: var(--wao-font-help); }
-.tree-node { display: flex; align-items: center; width: 100%; min-width: 0; min-height: 34px; gap: 6px; padding: 4px 6px 4px calc(4px + var(--tree-depth) * 16px); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); font: inherit; font-size: var(--wao-font-body); text-align: left; cursor: pointer; }
+.tree-node { display: flex; align-items: center; width: 100%; min-width: 0; min-height: 34px; gap: 6px; padding: 4px 6px 4px calc(4px + var(--tree-depth) * var(--knowledge-tree-indent, 16px)); border: 0; border-radius: var(--wao-radius-control); background: transparent; color: var(--wao-text-2); font: inherit; font-size: var(--wao-font-body); text-align: left; cursor: pointer; }
 .tree-node--comfortable { min-height: 40px; gap: var(--wao-space-1); }
 .tree-node:hover { background: var(--wao-bg-hover); color: var(--wao-text); }
+.tree-node[aria-current='page'] { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: var(--wao-weight-heading); }
 .tree-node:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .tree-caret { display: inline-flex; align-items: center; justify-content: center; width: 16px; min-height: 24px; flex: 0 0 16px; }
 .node-icon { flex: 0 0 auto; color: var(--wao-text-3); }
