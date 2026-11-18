@@ -77,9 +77,9 @@ function startDrag(event: PointerEvent) {
   min-height: 0;
   height: 100%;
 }
-/* 四象限在普通页签和悬浮窗口都沿容器铺满，列表使用组件内部滚动。 */
-.tab-page-window:not(.floating):has(.quadrant-view, .bounded-workspace) { flex: 1; width: 100%; }
-.window-content:has(.quadrant-view, .bounded-workspace) { display: flex; flex-direction: column; }
+/* 工作区填满页签，叠层画布的绝对定位子元素不参与外层宽度计算。 */
+.tab-page-window:not(.floating):has(.quadrant-view, .bounded-workspace, .drawings-page) { flex: 1; width: 100%; }
+.window-content:has(.quadrant-view, .bounded-workspace, .drawings-page) { display: flex; flex-direction: column; }
 .floating {
   position: fixed;
   top: 90px;
