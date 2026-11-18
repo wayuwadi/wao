@@ -4,14 +4,49 @@ import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 import type { ReactElement } from 'react'
 import { ref } from 'vue'
 import { pageVisibleKey } from '@/composables/pageVisibility'
-const render = vi.hoisted(() => vi.fn())
+import type { DrawingTidyCanvas } from '@/utils/drawingTidyClient'
+const { render, calculate } = vi.hoisted(() => ({ render: vi.fn(), calculate: vi.fn() }))
 vi.mock('@excalidraw/excalidraw', () => ({
-  CaptureUpdateAction: { NEVER: 'NEVER' },
+  CaptureUpdateAction: { NEVER: 'NEVER', IMMEDIATELY: 'IMMEDIATELY' },
   Excalidraw: () => null,
+  newElementWith: (_element: unknown, update: unknown) => update,
   serializeAsJSON: (elements: unknown[], appState: unknown, files: unknown) =>
     JSON.stringify({ elements, appState, files }),
 }))
 vi.mock('react-dom/client', () => ({ createRoot: () => ({ render, unmount: vi.fn() }) }))
+vi.mock('@/utils/drawingTidyClient', () => ({ calculateDrawingTidy: calculate }))
+
+it('预览不写入画布，过期结果被拒绝，应用时只生成一笔撤销记录', async () => {
+  const wrapper = mount(DrawingCanvas, {
+    props: { sceneJson: '{}', sceneKey: 'tidy', name: '测试画布', snapMode: 'objects' },
+  })
+  const { props } = render.mock.lastCall![0] as ReactElement<{
+    excalidrawAPI: (api: object) => void
+    onChange: (elements: unknown[], state: unknown, files: unknown) => void
+  }>
+  const initial = { id: 'shape', x: 12, version: 1, versionNonce: 2 }
+  const state = { objectsSnapModeEnabled: true, selectedElementIds: { shape: true } }
+  let elements = [initial]
+  const updateScene = vi.fn()
+  props.excalidrawAPI({
+    getAppState: () => state, getFiles: () => ({}),
+    getSceneElementsIncludingDeleted: () => elements, updateScene,
+  })
+  props.onChange(elements, state, {})
+  const canvas = wrapper.emitted('ready')?.[0]?.[0] as DrawingTidyCanvas
+  const signal = new AbortController().signal
+  const changed = { ...initial, x: 0 }
+  calculate.mockResolvedValue({ changed: [changed], moved: 1, routed: 0, skipped: 0 })
+  const stale = await canvas.prepare({ mode: 'layout', scope: 'selection' }, signal)
+  expect(updateScene).not.toHaveBeenCalled()
+  elements = [{ ...initial, version: 2 }]
+  expect(() => stale.apply()).toThrow('草图已发生变化')
+  expect(updateScene).not.toHaveBeenCalled()
+  const fresh = await canvas.prepare({ mode: 'light', scope: 'selection' }, signal)
+  fresh.apply()
+  expect(updateScene).toHaveBeenCalledExactlyOnceWith({ elements: [changed], captureUpdate: 'IMMEDIATELY' })
+  wrapper.unmount()
+})
 
 it.each(['metaKey', 'ctrlKey'])('选择工具将 %s＋左键交给原有的多选逻辑', (modifier) => {
   const wrapper = mount(DrawingCanvas, {

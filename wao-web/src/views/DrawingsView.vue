@@ -15,6 +15,8 @@ import {
 import { onBeforeRouteLeave, routerKey, routeLocationKey } from 'vue-router'
 import { usePageVisibility } from '@/composables/pageVisibility'
 import { useDrawingSnapMode } from '@/composables/drawingSnapMode'
+import { toast } from '@/composables/toast'
+import type { DrawingTidyCanvas } from '@/utils/drawingTidyClient'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -63,6 +65,7 @@ const DrawingCanvas = defineAsyncComponent({
       ]),
   },
 })
+const DrawingTidyDialog = defineAsyncComponent(() => import('@/components/drawings/DrawingTidyDialog.vue'))
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft, type DrawingDraft } from '@/utils/drawingDrafts'
 import { sameDrawingContent } from '@/utils/drawingScene'
 import type { DrawingImageFormat } from '@/utils/drawingImageExport'
@@ -347,6 +350,60 @@ const retainedCanvas = shallowRef<NonNullable<typeof activeCanvas.value>>()
 const canvasLayers = computed(() =>
   [retainedCanvas.value, activeCanvas.value].filter((layer) => layer !== undefined),
 )
+const tidyCanvas = shallowRef<DrawingTidyCanvas>()
+const tidyDialog = ref<'route' | 'layout'>()
+const tidyBusy = ref(false)
+let tidyRequest: AbortController | undefined
+
+function cancelTidy() {
+  tidyRequest?.abort()
+  tidyRequest = undefined
+  tidyBusy.value = false
+  tidyDialog.value = undefined
+}
+
+watch(canvasKey, () => {
+  cancelTidy()
+  tidyCanvas.value = undefined
+})
+watch(current, (file) => { if (!file) cancelTidy() })
+onBeforeUnmount(cancelTidy)
+
+async function quickTidy() {
+  const canvas = tidyCanvas.value
+  if (!canvas || tidyBusy.value || transitioning.value || restoringVersion.value !== null || deletingId.value) return
+  if (!canvas.hasSelection()) {
+    toast('先框选或多选要整理的内容。')
+    return
+  }
+  const request = new AbortController()
+  tidyRequest = request
+  tidyBusy.value = true
+  try {
+    const result = await canvas.prepare({ mode: 'light', scope: 'selection' }, request.signal)
+    if (request.signal.aborted) return
+    result.apply()
+    toast(result.changed
+      ? `整理完成。移动 ${result.moved} 个图形，重新布线 ${result.routed} 条。`
+      : '当前选区没有可安全改善的布局。')
+  } catch (cause) {
+    if (!request.signal.aborted) toast(message(cause, '整理失败，请重试。'), 'ri-error-warning-line')
+  } finally {
+    if (tidyRequest === request) {
+      tidyRequest = undefined
+      tidyBusy.value = false
+    }
+  }
+}
+
+function openTidyMenu(event: MouseEvent) {
+  if (!(event.currentTarget instanceof HTMLElement)) return
+  void contextMenu.value?.openAt(event, '一键整理', [
+    { id: 'tidy:light', label: '轻量整理', icon: 'ri-align-top', run: quickTidy },
+    { id: 'tidy:route', label: '只整理连线', icon: 'ri-route-line', run: () => { tidyDialog.value = 'route' } },
+    { id: 'tidy:layout', label: '重新布局', icon: 'ri-node-tree', run: () => { tidyDialog.value = 'layout' } },
+  ], event.currentTarget)
+}
 let saveTimer: number | undefined
 let draftTimer: number | undefined
 let savePromise: Promise<void> | null = null
@@ -611,8 +668,9 @@ function canvasChanged(nextScene: string) {
   if (!conflict.value) scheduleSave()
 }
 
-function canvasReady(key: string) {
+function canvasReady(key: string, canvas?: DrawingTidyCanvas) {
   if (key !== canvasKey.value) return
+  tidyCanvas.value = canvas
   readyCanvasKey = key
   retainedCanvas.value = undefined
   if (dirty.value && syncState.value === 'dirty') scheduleSave()
@@ -1065,6 +1123,13 @@ defineExpose({ flush: flushEmbedded })
     :class="{ 'wao-page-frame': !embedded, 'sidebar-open': sidebarOpen, embedded }"
   >
     <ContextActionMenu ref="contextMenu" />
+    <DrawingTidyDialog
+      v-if="tidyDialog && tidyCanvas"
+      :mode="tidyDialog"
+      :canvas="tidyCanvas"
+      :disabled="transitioning || !!deletingId || restoringVersion !== null"
+      @close="tidyDialog = undefined"
+    />
     <DrawingShareDialog
       v-if="sharing"
       :key="sharing.id"
@@ -1218,6 +1283,23 @@ defineExpose({ flush: flushEmbedded })
             <option value="off">关闭吸附</option>
           </select>
         </label>
+        <div v-if="current" class="drawing-tidy-control" role="group" aria-label="一键整理">
+          <WaoButton
+            variant="ghost"
+            :loading="tidyBusy"
+            :disabled="!tidyCanvas || transitioning || !!deletingId || restoringVersion !== null"
+            @click="quickTidy"
+          >一键整理</WaoButton>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="整理方式"
+            title="整理方式"
+            aria-haspopup="menu"
+            :disabled="!tidyCanvas || tidyBusy || transitioning || !!deletingId || restoringVersion !== null"
+            @click="openTidyMenu"
+          ><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button>
+        </div>
         <div v-if="current" class="drawing-meta">
           <span class="edited-at">编辑于 {{ new Date(current.updatedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) }}</span>
           <button class="icon-button" :aria-label="`重命名 ${current.title}`" title="重命名" :disabled="renaming || transitioning || !!deletingId" @click="startTitleEdit"><i class="ri-pencil-line" aria-hidden="true" /></button>
@@ -1369,7 +1451,7 @@ defineExpose({ flush: flushEmbedded })
               :scene-key="layer.key"
               :name="layer.name"
               @change="layer.key === canvasKey && canvasChanged($event)"
-              @ready="canvasReady(layer.key)"
+              @ready="canvasReady(layer.key, $event)"
               @save="layer.key === canvasKey && saveNow()"
             />
           </div>
@@ -1643,6 +1725,16 @@ defineExpose({ flush: flushEmbedded })
   border-radius: var(--wao-radius-control);
   color: var(--wao-text-3);
 }
+.drawing-tidy-control {
+  display: inline-flex;
+  align-items: center;
+}
+.drawing-tidy-control :deep(.wao-button) {
+  padding-inline: var(--wao-space-1);
+  white-space: nowrap;
+}
+.drawing-tidy-control .icon-button { width: 30px; }
+.drawing-tidy-control button:disabled { opacity: 0.5; cursor: not-allowed; }
 .drawing-snap-control select {
   min-height: 34px;
   padding-inline-end: var(--wao-space-1);
@@ -2043,6 +2135,7 @@ summary:focus-visible {
 @media (pointer: coarse) {
   .file-open { min-height:44px; }
   .drawing-snap-control select { min-height:44px; }
+  .drawing-tidy-control .icon-button { min-width: 44px; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spin {

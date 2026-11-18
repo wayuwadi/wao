@@ -66,6 +66,8 @@ export default defineConfig({
     __WAO_BUILD_RELEASE__: JSON.stringify(gitRelease.edition),
     __WAO_RELEASE_HISTORY__: JSON.stringify(archive),
   },
+  // Load ELK separately inside the tidy worker, only for full layouts.
+  worker: { format: 'es' },
   resolve: {
     dedupe: ['vue'],
     alias: {

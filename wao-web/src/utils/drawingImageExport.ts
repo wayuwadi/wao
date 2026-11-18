@@ -2,7 +2,7 @@ import { exportToBlob, exportToSvg, restore } from '@excalidraw/excalidraw'
 
 export type DrawingImageFormat = 'png' | 'jpg' | 'svg'
 
-export async function renderDrawingImage(sceneJson: string, format: DrawingImageFormat) {
+export async function renderDrawingImage(sceneJson: string, format: DrawingImageFormat, maxWidthOrHeight = 4096) {
   const { elements, appState, files } = restore(JSON.parse(sceneJson), null, null)
   if (!elements.some((element) => !element.isDeleted)) {
     throw new Error('草图还没有可导出的内容')
@@ -27,7 +27,7 @@ export async function renderDrawingImage(sceneJson: string, format: DrawingImage
     ...options,
     mimeType,
     quality: 0.92,
-    maxWidthOrHeight: 4096,
+    maxWidthOrHeight,
   })
   if (blob.type !== mimeType) throw new Error('当前浏览器不支持此图片格式')
   return blob

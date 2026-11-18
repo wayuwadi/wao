@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CaptureUpdateAction, Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction, Excalidraw, newElementWith, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import type {
   AppState,
@@ -14,6 +14,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from '@/composables/theme'
 import { usePageVisibility } from '@/composables/pageVisibility'
 import type { DrawingSnapMode } from '@/composables/drawingSnapMode'
+import { calculateDrawingTidy, type DrawingTidyCanvas } from '@/utils/drawingTidyClient'
+import type { DrawingTidyRequest } from '@/utils/drawingTidy'
 
 const props = defineProps<{
   sceneJson: string
@@ -24,7 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   change: [sceneJson: string]
-  ready: []
+  ready: [tidyCanvas?: DrawingTidyCanvas]
   save: []
   'update:snapMode': [mode: DrawingSnapMode]
 }>()
@@ -97,7 +99,7 @@ function changed(
     ready = true
     lastSnapMode = mode
     applySnapMode(props.snapMode)
-    emit('ready')
+    emit('ready', tidyCanvas)
     return
   }
   if (mode !== lastSnapMode) {
@@ -114,6 +116,64 @@ function changed(
 
 function setCanvasApi(api: ExcalidrawImperativeAPI) {
   canvasApi = api
+}
+
+function editableCanvas() {
+  if (!canvasApi || !ready || !pageVisible.value || !host.value || host.value.closest('[inert]')) return null
+  const state = canvasApi.getAppState()
+  if (state.viewModeEnabled || state.isLoading || state.editingTextElement ||
+      state.editingLinearElement || state.croppingElementId || state.newElement ||
+      state.selectedElementsAreBeingDragged || state.isResizing || state.isRotating) return null
+  return canvasApi
+}
+
+function selectedIds(api: ExcalidrawImperativeAPI | null) {
+  return Object.entries(api?.getAppState().selectedElementIds ?? {}).filter(([, selected]) => selected).map(([id]) => id)
+}
+
+async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
+  const api = editableCanvas()
+  if (!api) throw new Error('请先结束当前编辑，再整理草图。')
+  const elements = api.getSceneElementsIncludingDeleted()
+  // Keep immutable versions separately because the editor can mutate a scene element in place.
+  const fingerprint = (items: readonly OrderedExcalidrawElement[]) =>
+    JSON.stringify(items.map(({ id, version, versionNonce }) => [id, version, versionNonce]))
+  const version = fingerprint(elements)
+  const result = await calculateDrawingTidy({ elements, selectedIds: selectedIds(api), request }, signal)
+  const ensureCurrent = () => {
+    signal.throwIfAborted()
+    if (editableCanvas() !== api || fingerprint(api.getSceneElementsIncludingDeleted()) !== version) {
+      throw new Error('草图已发生变化，请重新整理。')
+    }
+  }
+  ensureCurrent()
+  const changes = new Map(result.changed.map((element) => [element.id, element]))
+  const preview = elements.map((element) => changes.get(element.id) ?? element)
+  const includePreview = request.mode !== 'light' && changes.size > 0
+  const before = includePreview ? serializeAsJSON(elements, api.getAppState(), api.getFiles(), 'local') : ''
+  const after = includePreview ? serializeAsJSON(preview, api.getAppState(), api.getFiles(), 'local') : ''
+  return {
+    moved: result.moved, routed: result.routed, skipped: result.skipped, changed: changes.size, before, after,
+    apply() {
+      ensureCurrent()
+      if (!changes.size) return
+      api.updateScene({
+        elements: api.getSceneElementsIncludingDeleted().map((element) => {
+          const candidate = changes.get(element.id)
+          return candidate ? newElementWith(element, candidate) : element
+        }),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      })
+      requestAnimationFrame(() => {
+        if (canvasApi === api) host.value?.querySelector<HTMLElement>('.excalidraw')?.focus({ preventScroll: true })
+      })
+    },
+  }
+}
+
+const tidyCanvas: DrawingTidyCanvas = {
+  hasSelection: () => selectedIds(editableCanvas()).length > 0,
+  prepare: prepareTidy,
 }
 
 function useAdditiveSelection(event: PointerEvent) {
@@ -189,6 +249,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', preventBrowserSave, true)
   root?.unmount()
   root = null
+  canvasApi = null
 })
 </script>
 
