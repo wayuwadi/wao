@@ -51,6 +51,38 @@ describe('知识库工作区', () => {
     expect(wrapper.get('.editor').element).toBe(editor)
     wrapper.unmount()
   })
+  it('在选中的库名下显示可展开的目录，打开文档后高亮并保留编辑器', async () => {
+    const { wrapper, router, data } = await setup()
+    const library = data.kbById('k3')!
+    const rootFolder = library.folders[0]!
+    library.folders.push({ id: 'nested-folder', name: '子文件夹', docs: [] })
+    library.directory = { ...library.directory, 'f:nested-folder': `f:${rootFolder.id}`, 'd:d7': 'f:nested-folder', 'd:d8': 'f:nested-folder' }
+    const list = wrapper.get('.library-list')
+    await list.get(`button[title="${library.name}"]`).trigger('click')
+    await flushPromises()
+
+    const tree = list.get(`[role="tree"][aria-label="${library.name}的目录"]`)
+    const editor = wrapper.get('.editor').element
+    expect(list.findAll('[role="tree"]')).toHaveLength(1)
+    const folder = tree.get('[data-tree-key="f:nested-folder"]')
+    expect(folder.attributes('aria-level')).toBe('2')
+    expect(tree.find('[data-tree-key="d:d7"]').exists()).toBe(false)
+    await folder.trigger('click')
+    await tree.get('[data-tree-key="d:d7"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ kb: 'k3', doc: 'd7' })
+    expect(tree.get('[data-tree-key="d:d7"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('.editor').element).toBe(editor)
+
+    await folder.trigger('click')
+    expect(tree.find('[data-tree-key="d:d7"]').exists()).toBe(false)
+    await router.push('/knowledge?kb=k3&doc=d8'); await flushPromises()
+    expect(tree.get('[data-tree-key="d:d8"]').attributes('aria-current')).toBe('page')
+    await resize(true)
+    expect(list.find('[role="tree"]').exists()).toBe(false)
+    await resize(false)
+    expect(list.get('[data-tree-key="d:d8"]').attributes('aria-current')).toBe('page')
+  })
   it('创建失败保留输入，关闭不产生知识库', async () => {
     const { wrapper, data } = await setup()
     const add = vi.spyOn(data, 'addKb').mockRejectedValue(new Error('offline'))

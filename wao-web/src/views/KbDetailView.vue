@@ -57,7 +57,9 @@ const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const sheetEditor = ref<InstanceType<typeof KnowledgeSheet> | null>(null)
-const props = withDefaults(defineProps<{ navigationHidden?: boolean }>(), { navigationHidden: false })
+const props = withDefaults(defineProps<{ navigationHidden?: boolean; directoryInitiallyCollapsed?: boolean }>(), {
+  navigationHidden: false, directoryInitiallyCollapsed: false,
+})
 async function flushSheet() { await sheetEditor.value?.flush() }
 onBeforeRouteLeave(flushSheet)
 onBeforeRouteUpdate(flushSheet)
@@ -153,9 +155,10 @@ function exportMarkdown() {
 const kbId = computed(() => String(route.params.id || route.query.kb || ''))
 let workspaceGeneration = 0
 const directoryWidth = ref(262)
-const paneMemory = useTaskViewMemory('knowledge-directory', () => ({ collapsed: false }))
+const paneMemory = useTaskViewMemory('knowledge-library-directory', () => ({ collapsed: props.directoryInitiallyCollapsed }))
 const directoryCollapsed = computed({ get: () => isMobile.value ? !mobileDirectoryOpen.value : paneMemory.value.collapsed, set: value => { if (isMobile.value) mobileDirectoryOpen.value = !value; else paneMemory.value.collapsed = value } })
 const directoryVisible = computed(() => !focused.value && !directoryCollapsed.value)
+const directoryName = computed(() => props.directoryInitiallyCollapsed && !isMobile.value ? '知识库目录管理' : '知识库目录')
 function closeMobileDirectory() { closeDirectory() }
 const kb = computed(() => data.kbById(kbId.value))
 watch(kb, library => { if (!library) { focused.value = false; reading.value = false } })
@@ -1489,7 +1492,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
     <template v-else>正在读取知识库…</template>
   </div>
   <div v-else ref="workspace" class="kb-detail wao-page-frame" :class="{ 'directory-collapsed': !directoryVisible, 'document-reading': reading, 'document-focused': focused }" @keydown="onWorkspaceKeydown">
-    <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :title="directoryVisible ? '收起知识库目录' : '展开知识库目录'" :aria-label="directoryVisible ? '收起知识库目录' : '展开知识库目录'" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i></button>
+    <button v-show="!focused" ref="directoryTrigger" type="button" class="directory-toggle" :class="{ 'with-label': !doc && !directoryVisible }" :title="`${directoryVisible ? '收起' : '展开'}${directoryName}`" :aria-label="`${directoryVisible ? '收起' : '展开'}${directoryName}`" aria-controls="kb-directory" :aria-expanded="directoryVisible" @click="toggleDirectory"><i class="ri-side-bar-line" aria-hidden="true"></i><span v-if="!doc && !directoryVisible">{{ directoryName === '知识库目录管理' ? '目录管理' : '展开目录' }}</span></button>
     <div v-if="isMobile && mobileDirectoryOpen" class="mobile-pane-mask" aria-hidden="true" @click="closeDirectory" />
     <!-- 左栏 -->
     <div v-show="directoryVisible" id="kb-directory" ref="directoryPanel" class="side" :style="{ '--directory-width': `${directoryWidth}px` }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? true : undefined" aria-label="知识库目录" @keydown="navigationKeydown($event, 'directory')" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
@@ -1913,6 +1916,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   .side-top > .back { margin-left: 48px; }
   .directory-collapsed > .document-pane > .doc-bar { padding-left: 60px; min-height: 48px; }
 }
+.directory-toggle.with-label { width: auto; gap: var(--wao-space-1); padding-inline: var(--wao-space-2); font-size: var(--wao-font-body); }
 .editor-workspace .doc-scroll { display: flex; overflow: hidden; }
 .editor-workspace .doc-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; }
 .editor-workspace .doc-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

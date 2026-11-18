@@ -298,6 +298,27 @@ describe('知识库详情目录体验', () => {
     expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe('目录切换期间的草稿')
     expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
   })
+  it('全部目录的收起偏好不隐藏本库的多级目录，本库可独立收起和恢复', async () => {
+    const allDirectoryKey = 'wao-task-view-v1:account-m1:m1:knowledge-directory'
+    sessionStorage.setItem(allDirectoryKey, '{"collapsed":true}')
+    const library = useDataStore(pinia).kbById('k3')!
+    const rootFolder = library.folders[0]!
+    library.folders.push({ id: 'nested-folder', name: '子文件夹', docs: [] })
+    library.directory = { ...library.directory, 'f:nested-folder': `f:${rootFolder.id}` }
+    const wrapper = await mountView()
+    expect(wrapper.get('#kb-directory').isVisible()).toBe(true)
+    expect(wrapper.get('#kb-directory [data-node="f:nested-folder"]').attributes('aria-level')).toBe('2')
+
+    await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
+    wrapper.unmount()
+    const reopened = await mountView()
+    expect(reopened.get('#kb-directory').isVisible()).toBe(false)
+    const toggle = reopened.get('[aria-label="展开知识库目录"]')
+    expect(toggle.text()).toBe('展开目录')
+    await toggle.trigger('click')
+    expect(reopened.get('#kb-directory').isVisible()).toBe(true)
+    expect(sessionStorage.getItem(allDirectoryKey)).toBe('{"collapsed":true}')
+  })
   it('文档宽度切换保留未保存正文和同一个编辑器，重开恢复成员偏好', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7', false, true)
     const data = useDataStore(pinia)
@@ -857,7 +878,9 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.find('.toc').exists()).toBe(true)
     await wrapper.get('[aria-label="收起知识库目录"]').trigger('click')
     await wrapper.get('[aria-label="关闭文档大纲"]').trigger('click')
-    const desktopState = sessionStorage.getItem('wao-task-view-v1:account-m1:m1:knowledge-directory')
+    const desktopKey = 'wao-task-view-v1:account-m1:m1:knowledge-library-directory'
+    const desktopState = sessionStorage.getItem(desktopKey)
+    expect(desktopState).toBe('{"collapsed":true}')
     await resize(true)
     await wrapper.get('[aria-label="文档大纲"]').trigger('click')
     expect(wrapper.find('.toc').exists()).toBe(true)
@@ -872,7 +895,7 @@ describe('知识库详情目录体验', () => {
     await resize(false)
     expect(wrapper.get('#kb-directory').isVisible()).toBe(false)
     expect(wrapper.find('.toc').exists()).toBe(false)
-    expect(sessionStorage.getItem('wao-task-view-v1:account-m1:m1:knowledge-directory')).toBe(desktopState)
+    expect(sessionStorage.getItem(desktopKey)).toBe(desktopState)
   })
 
   it('手机大纲跳转后让出正文，Escape尊重输入法，关闭恢复入口焦点', async () => {
