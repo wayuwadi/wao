@@ -11,9 +11,9 @@ import { useFloatingTabsStore } from '@/stores/floatingTabs'
 import { tabFromRoute } from '@/config/nav'
 import tabWindowSource from '@/components/tabs/TabWindow.vue?raw'
 
-it('草图叠层画布通过页签容器铺满可用宽度', () => {
+it('普通页签独立于页面内容铺满可用宽度，草图叠层沿列布局伸展', () => {
   expect(tabWindowSource).toMatch(
-    /\.tab-page-window:not\(\.floating\):has\([^)]*\.drawings-page[^)]*\)\s*\{[^}]*flex:\s*1;[^}]*width:\s*100%/,
+    /\.tab-page-window:not\(\.floating\)\s*\{[^}]*flex:\s*1;[^}]*width:\s*100%/,
   )
   expect(tabWindowSource).toMatch(
     /\.window-content:has\([^)]*\.drawings-page[^)]*\)\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column/,
