@@ -13,6 +13,7 @@
 .task-workspace[data-todo-palette] .checklist-tasks { background:transparent; }
 .task-workspace[data-todo-palette] .checklist-detail { background:var(--wao-todo-detail-bg); }
 .task-workspace[data-todo-palette] .workspace-main { padding:0; }
+.task-workspace[data-todo-palette]:not(.bounded-workspace) .workspace-main { padding:var(--wao-space-3); }
 .task-workspace[data-todo-palette] .checklist-list-pane { padding:var(--wao-space-2) var(--wao-space-2) 0; }
 .task-workspace[data-todo-palette] .checklist-detail { padding:var(--wao-space-2) var(--wao-space-3); }
 .task-workspace[data-todo-palette] .checklist-layout.is-compact .checklist-detail { padding:var(--wao-space-2); }
