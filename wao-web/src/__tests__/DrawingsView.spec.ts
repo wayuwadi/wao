@@ -119,7 +119,7 @@ describe('个人草图优化', () => {
     next.unmount()
   })
 
-  it.each([false, true])('一键整理打开自动布局预览，按是否有选区确定范围（选区 %s）', async (hasSelection) => {
+  it.each([false, true])('智能排版打开推荐布局预览，按是否有选区确定范围（选区 %s）', async (hasSelection) => {
     const apply = vi.fn()
     const prepare = vi.fn().mockResolvedValue({ changed: 0, moved: 0, routed: 0, skipped: 0, apply })
     const wrapper = mount(DrawingsView, { props: { drawingId: 'dr1', embedded: true } })
@@ -130,7 +130,7 @@ describe('个人草图优化', () => {
     await vi.dynamicImportSettled()
     await flushPromises()
     expect(prepare).toHaveBeenCalledWith(
-      { mode: 'layout', scope: hasSelection ? 'selection' : 'all', layout: 'auto' },
+      { mode: 'layout', scope: hasSelection ? 'selection' : 'all', layout: 'smart' },
       expect.any(AbortSignal),
     )
     expect(apply).not.toHaveBeenCalled()

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { tidyDrawing } from '@/utils/drawingTidy'
-import { boundsOf, contains, crosses, overlaps, segments } from '@/utils/drawingTidyGeometry'
+import { boundsOf, contains, crosses, insideBounds, overlaps, segments } from '@/utils/drawingTidyGeometry'
 
 type Element = OrderedExcalidrawElement
 type Arrow = Extract<Element, { type: 'arrow' }>
@@ -194,4 +194,95 @@ describe('草图整理', () => {
     expect(positions.get('d')!.y).toBe(positions.get('e')!.y)
     expect(['a', 'b', 'c'].some((id) => positions.has(id))).toBe(false)
   })
+  it('把正常链路排成主轴，将失败和重试分出，并保留箭头方向与绑定', async () => {
+    const elements = [
+      shape('start', 0, 120), shape('decision', 145, 65, { type: 'diamond' }),
+      shape('success', 275, 130), shape('done', 400, 80), shape('retry', 280, 300),
+      edge('entry', 'start', 'decision', 60, 140, 81, -55),
+      edge('yes', 'decision', 'success', 205, 85, 66, 65),
+      edge('finish', 'success', 'done', 335, 150, 61, -50),
+      edge('no', 'decision', 'retry', 173, 108, 100, 206),
+      edge('loop', 'retry', 'decision', 276, 320, -136, -218),
+      shape('yes-label', 219, 119, { type: 'text', containerId: 'yes', text: '是' } as Partial<Element>),
+      shape('no-label', 217, 212, { type: 'text', containerId: 'no', text: '失败' } as Partial<Element>),
+      shape('note', 100, 450, { locked: true }),
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'main' } })
+    const after = (id: string) => result.changed.find((element) => element.id === id) ?? elements.find((element) => element.id === id)!
+    const chain = ['start', 'decision', 'success', 'done'].map(after)
+    expect(result.mainCount).toBe(4)
+    const horizontal = chain.every(({ y }) => y === chain[0]!.y)
+    const axis = horizontal ? 'x' : 'y'
+    const across = horizontal ? 'y' : 'x'
+    expect(chain.every((item, i) => !i || item[axis] > chain[i - 1]![axis])).toBe(true)
+    expect(chain.every((item) => item[across] === chain[0]![across])).toBe(true)
+    expect(after('retry')[across]).not.toBe(chain[0]![across])
+    expect(after('loop')).toMatchObject({ startBinding: { elementId: 'retry' }, endBinding: { elementId: 'decision' }, endArrowhead: 'arrow' })
+    expect(path(after('loop') as Arrow).length).toBeGreaterThan(1)
+    expect(path(after('loop') as Arrow).some((segment) => insideBounds(segment, boundsOf(after('retry'))))).toBe(false)
+    expect(after('note')).toBe(elements[elements.length - 1])
+    expect(result.crossings!.after).toBeLessThanOrEqual(result.crossings!.before)
+  })
+
+  it('用明确的角色标记生成泳道，跨角色连线保持原有连接关系', async () => {
+    const elements = [
+      shape('entry', 30, 120), shape('check', 280, 0), shape('done', 510, 150),
+      shape('entry-label', 36, 124, { type: 'text', containerId: 'entry', text: '角色：门店\n下单' } as Partial<Element>),
+      shape('check-label', 286, 4, { type: 'text', containerId: 'check', text: '【角色：后台】\n校验' } as Partial<Element>),
+      shape('done-label', 516, 154, { type: 'text', containerId: 'done', text: '角色：门店\n完成' } as Partial<Element>),
+      edge('submit', 'entry', 'check', 90, 140, 186, -120), edge('result', 'check', 'done', 340, 20, 166, 150),
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'smart' } })
+    expect(result.lanes?.map((lane) => [lane.name, lane.units])).toEqual([
+      ['门店', ['entry', 'done']], ['后台', ['check']],
+    ])
+    expect(result.lanes?.[0]?.bounds.width).toBe(result.lanes?.[1]?.bounds.width)
+    expect(result.lanes?.[0]?.bounds.y).toBeLessThan(result.lanes?.[1]?.bounds.y ?? 0)
+    const submit = result.changed.find((item) => item.id === 'submit')
+    expect(submit).toMatchObject({ startBinding: { elementId: 'entry' }, endBinding: { elementId: 'check' } })
+  })
+
+  it('对齐已有分区里的截图及说明，保持箭头和区外标题', async () => {
+    const elements = [
+      shape('outline', 0, 0, { width: 640, height: 480, backgroundColor: 'transparent' }),
+      shape('title', 0, -30, { type: 'text' } as Partial<Element>),
+      shape('pic-a', 35, 85, { type: 'image', width: 100, height: 150 } as Partial<Element>),
+      shape('pic-b', 280, 65, { type: 'image', width: 120, height: 180 } as Partial<Element>),
+      shape('caption-a', 45, 280, { type: 'text', width: 155 } as Partial<Element>),
+      shape('caption-b', 285, 293, { type: 'text', width: 150 } as Partial<Element>),
+      { ...edge('next', 'pic-a', 'pic-b', 155, 143, 105, 0), startBinding: null, endBinding: null },
+    ]
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'smart' } })
+    const after = (id: string) => result.changed.find((element) => element.id === id)
+    expect(result).toMatchObject({ sections: 1, moved: 4, routed: 1 })
+    expect(after('pic-a')?.y).toBe(after('pic-b')?.y)
+    expect(after('caption-a')?.y).toBe(after('caption-b')?.y)
+    expect(after('next')).toMatchObject({ startBinding: null, endBinding: null, endArrowhead: 'arrow' })
+    expect(after('title')).toBeUndefined()
+    expect(after('outline')).toBeUndefined()
+  })
+
+  it('画框只在单独请求时扩展，并避免覆盖区外内容', async () => {
+    const frame = shape('frame', 0, 0, { type: 'frame', width: 160, height: 120 } as Partial<Element>)
+    const elements = [
+      frame, shape('a', 2, 1, { frameId: frame.id }), shape('b', 94, 43, { frameId: frame.id }),
+      shape('c', 2, 79, { frameId: frame.id }),
+      edge('ab', 'a', 'b', 62, 21, 28, 42), edge('bc', 'b', 'c', 94, 69, -32, 29),
+    ]
+    const input = { elements, selectedIds: ['frame'],
+      request: { mode: 'layout', layout: 'main', scope: 'selection' } } as const
+    const preview = await tidyDrawing(input)
+    expect(preview.canExpandFrames).toBe(true)
+    expect(preview.changed.some(({ id }) => id === 'frame')).toBe(false)
+    const expanded = await tidyDrawing({ ...input, request: { ...input.request, expandFrames: true } })
+    const after = expanded.changed.find(({ id }) => id === 'frame')
+    expect(after).toBeDefined()
+    expect(after!.width * after!.height).toBeGreaterThan(frame.width * frame.height)
+    const withNeighbor = await tidyDrawing({
+      ...input, elements: [...elements, shape('right-neighbor', 165, 0), shape('below-neighbor', 0, 125)],
+      request: { ...input.request, expandFrames: true },
+    })
+    expect(withNeighbor.changed.some(({ id }) => id === 'frame')).toBe(false)
+  })
+
 })
