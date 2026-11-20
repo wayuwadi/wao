@@ -18,8 +18,8 @@ export type FlowPlan = {
 function direction(preset: DrawingLayout, nodes: readonly Node[], links: readonly Link[]) {
   if (preset === 'right' || preset === 'lanes') return 'RIGHT'
   if (preset === 'down' || preset === 'tree') return 'DOWN'
-  const centers = new Map(nodes.map(({ id, bounds }) =>
-    [id, { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
+  const centers = new Map(nodes.map(({ id, bounds, anchor }) =>
+    [id, anchor ?? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
   ))
   let preference = 0
   for (const { source, target } of links) {
@@ -115,7 +115,7 @@ function planFlowLayout(
     const anchor = unionBounds(members.map(({ bounds }) => bounds))
     let placed = false
     for (const [wide, compact] of [[horizontal, false], [horizontal, true], [!horizontal, true]] as const) {
-      if (lanes && !wide) continue
+      if (wide !== horizontal && (lanes || !frame)) continue
       const { boxes, guides, spine, feedback, mainCount } = arrangeFlow(members, edges, wide, lanes, compact)
       // Place the full bands so the lane outlines don't cover neighboring content.
       const collisionBoxes = guides.length ? guides.map(({ bounds }) => bounds) : boxes

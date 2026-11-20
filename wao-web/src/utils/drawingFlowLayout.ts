@@ -1,6 +1,6 @@
-import { unionBounds, type Bounds } from './drawingTidyGeometry'
+import { unionBounds, type Bounds, type Point } from './drawingTidyGeometry'
 
-export type FlowNode = { id: string; bounds: Bounds; lane?: string }
+export type FlowNode = { id: string; bounds: Bounds; lane?: string; anchor?: Point }
 export type FlowLink = { id: string; source: string; target: string; label?: string }
 export type FlowLane = { name: string; bounds: Bounds; units: string[] }
 
@@ -104,21 +104,25 @@ export function arrangeFlow(
     position += size + gap
     return base + size / 2
   })
+  const distanceToAnchor = ({ bounds, anchor }: FlowNode) =>
+    anchor ? anchor[secondary] - bounds[secondary] : bounds[breadth] / 2
   let crossPosition = 0
   const crossCenters = new Map<string, number>()
   for (const track of tracks.values()) {
     for (const members of track) {
       if (!members?.length) continue
-      const size = Math.max(...members.map((id) => byId.get(id)!.bounds[breadth]))
-      for (const id of members) crossCenters.set(id, crossPosition + size / 2)
-      crossPosition += size + crossGap
+      const items = members.map((id) => byId.get(id)!)
+      const before = Math.max(...items.map(distanceToAnchor))
+      const after = Math.max(...items.map((item) => item.bounds[breadth] - distanceToAnchor(item)))
+      for (const id of members) crossCenters.set(id, crossPosition + before)
+      crossPosition += before + after + crossGap
     }
     crossPosition += lanes ? crossGap : 0
   }
-  const boxes = nodes.map(({ id, bounds }) => ({
-    ...bounds,
-    [primary]: bases[rank.get(id)!]! - bounds[length] / 2,
-    [secondary]: crossCenters.get(id)! - bounds[breadth] / 2,
+  const boxes = nodes.map((node) => ({
+    ...node.bounds,
+    [primary]: bases[rank.get(node.id)!]! - node.bounds[length] / 2,
+    [secondary]: crossCenters.get(node.id)! - distanceToAnchor(node),
   }))
   const envelope = unionBounds(boxes)
   const guides: FlowLane[] = []

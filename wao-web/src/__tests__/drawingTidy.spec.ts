@@ -320,4 +320,59 @@ describe('草图整理', () => {
     expect(repeat.changed).toHaveLength(0)
   })
 
+  function diagramWithUngroupedText() {
+    const text = (id: string, x: number, y: number, width: number, height = 24) =>
+      shape(id, x, y, { type: 'text', containerId: null, text: id, fontSize: 20, width, height } as unknown as Partial<Element>)
+    const loose = (id: string, x: number, y: number, dx: number, dy: number): Arrow =>
+      ({ ...edge(id, '', '', x, y, dx, dy), startBinding: null, endBinding: null })
+    return [
+      shape('source', 5, 100, { width: 320, height: 230 }),
+      text('source-title', 103, 58, 120),
+      text('source-channels', 60, 150, 155, 100),
+      shape('service', 515, 120, { width: 195, height: 165 }),
+      text('service-title', 584, 80, 65),
+      text('service-skus', 545, 140, 66, 35),
+      text('service-list', 553, 228, 123),
+      text('destination-title', 876, 66, 138),
+      text('destination-channels', 870, 163, 134, 140),
+      text('sync-label', 380, 186, 88),
+      loose('sync', 329, 220, 180, -8),
+      loose('downstream', 625, 168, 229, 8),
+    ]
+  }
+
+  it('未组合的框、内部文字和标题作为整体，线旁说明及内部出线随布局保留关系', async () => {
+    const elements = diagramWithUngroupedText()
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'smart' } })
+    const byId = new Map(elements.map((element) => [element.id, element]))
+    const after = new Map(result.changed.map((element) => [element.id, element]))
+    const get = (id: string) => after.get(id) ?? byId.get(id)!
+    const sameDelta = (id: string, parent: string) => {
+      const a = byId.get(id)!, b = byId.get(parent)!
+      expect(get(id).x - get(parent).x).toBeCloseTo(a.x - b.x)
+      expect(get(id).y - get(parent).y).toBeCloseTo(a.y - b.y)
+    }
+    expect(result.mainCount).toBe(2)
+    expect(result.moved).toBeGreaterThan(0)
+    expect(get('source').x + get('source').width).toBeLessThan(get('service').x)
+    expect(get('source').y + get('source').height / 2).toBe(get('service').y + get('service').height / 2)
+    expect(path(get('sync') as Arrow)).toHaveLength(1)
+    for (const id of ['source-title', 'source-channels']) sameDelta(id, 'source')
+    for (const id of ['service-title', 'service-skus', 'service-list', 'downstream']) sameDelta(id, 'service')
+    expect(after.has('sync-label')).toBe(true)
+    expect(get('sync-label').x).toBeGreaterThan(get('source').x + get('source').width)
+    expect(get('sync-label').x + get('sync-label').width).toBeLessThan(get('service').x)
+    expect(get('destination-title')).toBe(byId.get('destination-title'))
+    expect(get('destination-channels')).toBe(byId.get('destination-channels'))
+    const downstream = path(get('downstream') as Arrow)
+    expect(downstream[downstream.length - 1]![1]).toEqual({ x: 854, y: 176 })
+  })
+
+  it('框内文字锁定时保留所属框和文字', async () => {
+    const elements = diagramWithUngroupedText().map((element) =>
+      element.id === 'service-skus' ? { ...element, locked: true } : element)
+    const result = await tidyDrawing({ elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'smart' } })
+    expect(result.changed.some(({ id }) => ['service', 'service-title', 'service-skus', 'service-list'].includes(id))).toBe(false)
+  })
+
 })
