@@ -118,13 +118,13 @@ onBeforeUnmount(() => {
       <p v-else-if="error" role="alert">{{ error }}</p>
       <template v-else-if="preview">
         <p role="status">
-          <template v-if="preview.sections">对齐 {{ preview.sections }} 个分区的截图、标题和说明。</template>
+          <template v-if="preview.sections">重排 {{ preview.sections }} 个分区，调整 {{ preview.images }} 张图片和 {{ preview.captions }} 处文字。</template>
           <template v-else-if="preview.laneCount">按 {{ preview.laneCount }} 个角色泳道呈现流程交接。</template>
           <template v-else-if="preview.changed && preview.mainCount">将 {{ preview.mainCount }} 个主流程节点连成阅读主轴。</template>
           <template v-else-if="preview.changed">移动 {{ preview.moved }} 个图形，重排 {{ preview.routed }} 条连线。</template>
           <template v-else-if="preview.limited === 'lanes'">需要现有截图分区，或至少两个相连的角色。可以在节点文字首行写「角色：名称」。</template>
           <template v-else-if="preview.limited === 'wiring'">当前方案可能遮挡节点或增加交叉。可以缩小选区或切换布局。</template>
-          <template v-else-if="preview.limited === 'space'">画框空间不足或有固定内容占位。可以尝试扩展画框或缩小范围。</template>
+          <template v-else-if="preview.limited === 'space'">画框空间不足或有固定内容占位。可扩大画框或缩小整理范围。</template>
           <template v-else>当前没有可安全改善的布局。</template>
           <span v-if="preview.crossings && preview.crossings.after < preview.crossings.before">
             连线交叉从 {{ preview.crossings.before }} 处减少到 {{ preview.crossings.after }} 处。

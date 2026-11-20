@@ -1,6 +1,6 @@
 import type { DrawingTidyInput, DrawingTidyRequest, DrawingTidyResult } from './drawingTidy'
 
-export type DrawingTidyPreparation = Pick<DrawingTidyResult, 'moved' | 'routed' | 'skipped' | 'mainCount' | 'sections' | 'canExpandFrames' | 'crossings' | 'limited'> & {
+export type DrawingTidyPreparation = Pick<DrawingTidyResult, 'moved' | 'routed' | 'skipped' | 'mainCount' | 'sections' | 'images' | 'captions' | 'canExpandFrames' | 'crossings' | 'limited'> & {
   changed: number
   laneCount?: number
   before: string

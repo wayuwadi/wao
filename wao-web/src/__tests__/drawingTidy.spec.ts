@@ -285,4 +285,39 @@ describe('草图整理', () => {
     expect(withNeighbor.changed.some(({ id }) => id === 'frame')).toBe(false)
   })
 
+  it('含跨区箭头和越界截图时仍重排图片、分行并保留说明原文', async () => {
+    const image = (id: string, x: number, y: number, width: number, height: number) =>
+      shape(id, x, y, { type: 'image', width, height } as Partial<Element>)
+    const upper = shape('sale', 0, 0, { width: 1000, height: 400, backgroundColor: 'transparent' })
+    const lower = shape('redeem', 0, 550, { width: 1400, height: 720, backgroundColor: 'transparent' })
+    const label = '一段需要根据新列宽重新换行但保留原文的说明。'.repeat(4)
+    const elements = [
+      upper, lower,
+      image('sale-a', 60, 40, 122, 210), image('sale-b', 570, 60, 120, 198),
+      ...[42, 265, 485, 720, 945, 1290].map((x, index) =>
+        image(`redeem-${index}`, x, 600 + index * 4, 175, 310 - index * 16)),
+      shape('note', 60, 960, { type: 'text', text: label, originalText: label, fontSize: 18, lineHeight: 1.25,
+        width: 820, height: 23, containerId: null } as unknown as Partial<Element>),
+      { ...edge('cross-panel', 'sale-b', 'redeem', 630, 260, -320, 284), endBinding: null },
+    ]
+    const input = { elements, selectedIds: [], request: { mode: 'layout', scope: 'all', layout: 'smart' } } as const
+    const result = await tidyDrawing(input)
+    const after = new Map(result.changed.map((item) => [item.id, item]))
+    expect(result).toMatchObject({ sections: 2, images: 8, captions: 1, routed: 1 })
+    const images = elements.filter((item) => item.type === 'image')
+    for (const original of images) {
+      const next = after.get(original.id)!
+      const panel = original.id.startsWith('sale') ? upper : lower
+      expect(contains(boundsOf(panel), boundsOf(next))).toBe(true)
+      expect(next.width / next.height).toBeCloseTo(original.width / original.height)
+    }
+    expect(after.get('redeem-0')?.y).toBe(after.get('redeem-2')?.y)
+    expect(after.get('redeem-3')?.y).toBe(after.get('redeem-5')?.y)
+    expect(after.get('redeem-3')!.y).toBeGreaterThan(after.get('redeem-0')!.y)
+    expect(after.get('note')).toMatchObject({ originalText: label, autoResize: false })
+    expect(after.get('cross-panel')).toMatchObject({ startBinding: { elementId: 'sale-b' }, endArrowhead: 'arrow' })
+    const repeat = await tidyDrawing({ ...input, elements: elements.map((item) => after.get(item.id) ?? item) })
+    expect(repeat.changed).toHaveLength(0)
+  })
+
 })

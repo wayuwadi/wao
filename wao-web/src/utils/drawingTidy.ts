@@ -33,6 +33,8 @@ export type DrawingTidyResult = {
   lanes?: FlowLane[]
   mainCount?: number
   sections?: number
+  images?: number
+  captions?: number
   canExpandFrames?: boolean
   crossings?: { before: number; after: number }
   limited?: 'lanes' | 'space' | 'wiring'
@@ -428,6 +430,107 @@ function permitsMove(
   return true
 }
 
+function storyboardEndpoint(point: Point, candidates: readonly Element[]) {
+  const nearby = candidates.flatMap((element) => {
+    const box = boundsOf(element)
+    const dx = Math.max(box.x - point.x, point.x - box.x - box.width, 0)
+    const dy = Math.max(box.y - point.y, point.y - box.y - box.height, 0)
+    const distance = dx || dy ? Math.hypot(dx, dy) :
+      Math.min(point.x - box.x, box.x + box.width - point.x, point.y - box.y, box.y + box.height - point.y)
+    return distance <= 48 ? [{ element, distance }] : []
+  }).sort((a, b) => a.distance - b.distance)
+  const first = nearby[0], second = nearby[1]
+  return first && (!second || second.distance > first.distance + 6) ? first.element : undefined
+}
+
+function storyboardPort(point: Point, original: Element | undefined, changed: ReadonlyMap<string, Element>) {
+  const next = original && changed.get(original.id)
+  if (!original || !next) return point
+  const old = boundsOf(original), box = boundsOf(next)
+  const ratio = (offset: number, size: number) => Math.max(0.08, Math.min(0.92, offset / size))
+  const projected = {
+    x: box.x + ratio(point.x - old.x, old.width) * box.width,
+    y: box.y + ratio(point.y - old.y, old.height) * box.height,
+  }
+  const edges = [
+    { distance: Math.abs(point.x - old.x), point: { ...projected, x: box.x - 6 } },
+    { distance: Math.abs(point.x - old.x - old.width), point: { ...projected, x: box.x + box.width + 6 } },
+    { distance: Math.abs(point.y - old.y), point: { ...projected, y: box.y - 6 } },
+    { distance: Math.abs(point.y - old.y - old.height), point: { ...projected, y: box.y + box.height + 6 } },
+  ]
+  return edges.sort((a, b) => a.distance - b.distance)[0]!.point
+}
+
+function arrangeStoryboard(
+  live: readonly Element[], selected: ReadonlySet<string> | undefined,
+): DrawingTidyResult | undefined {
+  const arrows = live.filter(isArrow)
+  const candidates = live.filter((element) => !element.angle && isShape(element))
+  const byId = new Map(live.map((element) => [element.id, element]))
+  const pinned = new Set<string>()
+  const connectors = arrows.map((arrow) => {
+    const path = arrowPoints(arrow)
+    const [from, to] = endpointIds(arrow)
+    const start = from ? byId.get(from) : (path[0] && storyboardEndpoint(path[0], candidates))
+    const last = path[path.length - 1]
+    const end = to ? byId.get(to) : (last && storyboardEndpoint(last, candidates))
+    const fixed = arrow.elbowed || arrow.locked || arrow.angle || hasFixedSegments(arrow) ||
+      (path.length > 2 && arrow.customData?.waoTidyRoute !== relativePointsKey(arrow.points)) ||
+      arrow.boundElements?.some(({ id }) => byId.get(id)?.locked)
+    if (fixed) for (const endpoint of [start, end]) if (endpoint) pinned.add(endpoint.id)
+    return { arrow, path, start, end, fixed }
+  })
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const layout = planDrawingStoryboard(live, selected, pinned)
+    if (!layout) return
+    const { changes, panelIds, sections } = layout
+    if (!changes.size) {
+      return { changed: [], moved: 0, routed: 0, skipped: pinned.size, limited: layout.aligned ? undefined : 'space' }
+    }
+    const obstacles = live.filter((element) => isObstacle(element) && !panelIds.has(element.id))
+    const before = new Map(obstacles.map((element) => [element.id, boundsOf(element)]))
+    const after = new Map(obstacles.map((element) => [element.id, boundsOf(changes.get(element.id) ?? element)]))
+    const paths = new Map(connectors.map(({ arrow, path }) => [arrow.id, path]))
+    let routed = 0, retry = false
+    for (const { arrow, path, start, end, fixed } of connectors) {
+      if (path.length < 2) continue
+      const originalStart = path[0]!, originalEnd = path[path.length - 1]!
+      const ids = [start?.id, end?.id] as const
+      const a = storyboardPort(originalStart, start, changes)
+      const b = storyboardPort(originalEnd, end, changes)
+      const movedPort = !samePoint(a, originalStart) || !samePoint(b, originalEnd)
+      const knownHits = collisionsOf(segments(path), before, ids)
+      const introduced = (route: Point[]) => [...collisionsOf(segments(route), after, ids)]
+        .filter((id) => !knownHits.has(id))
+      const newHits = introduced(path)
+      if (!movedPort && !newHits.length) continue
+      if (!fixed && !samePoint(a, b)) {
+        const otherLines = [...paths].flatMap(([id, points]) => id === arrow.id ? [] : segments(points))
+        const route = orthogonalRoute(a, b, [...after.values()], otherLines)
+        if (route && route.length > 1 && !introduced(route).length) {
+          changes.set(arrow.id, arrowWithPath(arrow, route, true))
+          paths.set(arrow.id, route)
+          routed++
+          continue
+        }
+      }
+      for (const id of [...ids, ...newHits]) {
+        if (id && changes.has(id)) {
+          pinned.add(id)
+          retry = true
+        }
+      }
+    }
+    if (retry) continue
+    const changed = [...changes.values()]
+    const images = changed.filter(({ type }) => type === 'image').length
+    const captions = changed.filter(({ type }) => type === 'text').length
+    return { changed, images, captions, sections, moved: images + captions, routed, skipped: pinned.size }
+  }
+  return { changed: [], moved: 0, routed: 0, skipped: pinned.size, limited: 'wiring' }
+}
+
 export function tidyDrawing(input: DrawingTidyInput): Promise<DrawingTidyResult> {
   return runTidy(input, input.request.mode === 'light', new Set())
 }
@@ -458,9 +561,8 @@ async function runTidy(
       to ?? (last && nearbyShape(last, shapes, arrow.frameId)),
     ]]
   }))
-  const storyboard = smart && !frozen.size && (request.layout === 'lanes' ||
-    (request.layout === 'smart' && !arrows.some((arrow) => arrow.startBinding && arrow.endBinding)))
-    ? planDrawingStoryboard(live, all ? undefined : selected)
+  const storyboard = smart && !frozen.size && request.layout !== 'main'
+    ? arrangeStoryboard(live, all ? undefined : selected)
     : undefined
   if (storyboard) return storyboard
   const units = unitsFor(live, selected, all, endpoints)
