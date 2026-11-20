@@ -196,7 +196,7 @@ async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
   const after = includePreview ? serializeAsJSON(preview, api.getAppState(), api.getFiles(), 'local') : ''
   return {
     moved: result.moved, routed: result.routed, skipped: result.skipped, changed: changes.size,
-    laneCount: lanes.length, mainCount: result.mainCount, sections: result.sections,
+    laneCount: lanes.length, mainCount: result.mainCount, sections: result.sections, images: result.images, captions: result.captions,
     crossings: result.crossings, canExpandFrames: result.canExpandFrames, limited: result.limited, before, after,
     apply() {
       ensureCurrent()
