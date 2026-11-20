@@ -1,5 +1,6 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { orthogonalRoute } from './drawingOrthogonalRouter'
+import { findDrawingAttachments, floatingLabelPositions } from './drawingLayoutAttachments'
 import { flowLane, type FlowLane } from './drawingFlowLayout'
 import { planDrawingStoryboard } from './drawingStoryboardLayout'
 import { planDrawingLayout, type DrawingLayout } from './drawingTidyLayout'
@@ -66,34 +67,51 @@ function nearbyShape(point: Point, shapes: Shape[], frameId: string | null) {
 
 function unitsFor(
   elements: readonly Element[], selected: ReadonlySet<string>, all: boolean, endpoints: Map<string, Endpoints>,
+  attachments: ReturnType<typeof findDrawingAttachments> | undefined,
 ) {
   const groups = new Map<string, Element[]>()
+  const groupByElement = new Map(elements.map((element) =>
+    [element.id, idOfGroup(element) ? `group:${idOfGroup(element)}` : `element:${element.id}`]))
+  const merged = new Map<string, string>()
+  const root = (id: string): string => {
+    let current = id
+    while (merged.has(current)) current = merged.get(current)!
+    return current
+  }
+  for (const [child, parent] of attachments?.parents ?? []) {
+    const a = root(groupByElement.get(child)!), b = root(groupByElement.get(parent)!)
+    if (a !== b) merged.set(a, b)
+  }
+  for (const [id, group] of groupByElement) groupByElement.set(id, root(group))
   const locked = new Set(elements.filter((element) => element.locked).map((element) => element.id))
   for (const element of elements) {
-    const group = idOfGroup(element)
-    if (group) groups.set(group, [...(groups.get(group) ?? []), element])
+    const group = groupByElement.get(element.id)!
+    const members = groups.get(group) ?? []
+    members.push(element)
+    groups.set(group, members)
   }
-  const pinned = new Set<string>()
+  const pinned = new Set(attachments?.ambiguous)
   for (const arrow of elements.filter(isArrow)) {
     if (!arrow.locked && !hasFixedSegments(arrow) && !arrow.angle &&
-      !arrow.boundElements?.some(({ id }) => locked.has(id))) continue
+      !arrow.boundElements?.some(({ id }) => locked.has(id)) &&
+      !attachments?.labels.get(arrow.id)?.some(({ text }) => text.locked) &&
+      !attachments?.ambiguousArrows.has(arrow.id)) continue
     for (const id of endpoints.get(arrow.id)!) if (id) pinned.add(id)
   }
   const units = new Map<string, Unit>()
   for (const element of elements.filter(isShape)) {
-    const group = idOfGroup(element)
-    const id = group ? `group:${group}` : `element:${element.id}`
+    const id = groupByElement.get(element.id)!
     if (units.has(id)) continue
-    const members = group ? groups.get(group)! : [element]
+    const members = groups.get(id)!
     const shapes = members.filter(isShape)
     const boxes = members.filter((member) => isShape(member) || (member.type === 'text' && !member.containerId))
-    const shapeIds = new Set(shapes.map((shape) => shape.id))
+    const memberIds = new Set(boxes.map(({ id }) => id))
     const inScope = all || members.some((member) =>
       selected.has(member.id) || (member.frameId !== null && selected.has(member.frameId)),
     ) || shapes.some((shape) => shape.boundElements?.some((item) => item.type === 'text' && selected.has(item.id)))
     const movable = inScope && !members.some((member) => member.locked || pinned.has(member.id) ||
       member.boundElements?.some(({ type, id }) => type === 'text' && locked.has(id)) ||
-      (isArrow(member) && endpoints.get(member.id)!.some((id) => !id || !shapeIds.has(id))) ||
+      (isArrow(member) && endpoints.get(member.id)!.some((id) => !id || !memberIds.has(id))) ||
       member.frameId !== element.frameId || (!isShape(member) && !isArrow(member) && member.type !== 'text'))
     units.set(id, { id, elements: boxes, bounds: unionBounds(boxes.map(boundsOf)), frameId: element.frameId, inScope, movable })
   }
@@ -150,7 +168,10 @@ function lightOffsets(units: Unit[]) {
   return changed
 }
 
-function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>, labels: Map<string, string>, arrows: Map<string, Arrow>) {
+function layoutLinks(
+  units: Unit[], endpoints: Map<string, Endpoints>, labels: Map<string, string>, arrows: Map<string, Arrow>,
+  floating: ReturnType<typeof findDrawingAttachments>['labels'] | undefined,
+) {
   const unitIds = new Map(units.flatMap((unit) => unit.elements.map((element) => [element.id, unit.id] as const)))
   return [...endpoints].flatMap(([id, [from, to]]) => {
     const arrow = arrows.get(id)!
@@ -160,7 +181,13 @@ function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>, labels: M
     const targetId = reversed ? from : to
     const source = sourceId && unitIds.get(sourceId)
     const target = targetId && unitIds.get(targetId)
-    return source && target && source !== target ? [{ id, source, target, label: labels.get(id) }] : []
+    if (!source || !target || source === target) return []
+    const text = floating?.get(id)
+    const captionSize = text?.length ? {
+      width: Math.max(...text.map(({ text }) => text.width)),
+      height: Math.max(...text.map(({ text }) => text.height)),
+    } : undefined
+    return [{ id, source, target, label: labels.get(id), captionSize }]
   })
 }
 
@@ -551,21 +578,36 @@ async function runTidy(
   const smart = request.mode === 'layout' && !!request.layout && ['main', 'smart', 'lanes'].includes(request.layout)
   const all = request.scope === 'all'
   const originalPaths = new Map(arrows.map((arrow) => [arrow.id, arrowPoints(arrow)]))
-  const shapes = request.mode === 'layout' ? live.filter(isShape) : []
-  const endpoints = new Map(arrows.map((arrow): [string, Endpoints] => {
-    const points = originalPaths.get(arrow.id)!
-    const first = points[0], last = points.length >= 2 ? points[points.length - 1] : undefined
-    const [from, to] = endpointIds(arrow)
-    return [arrow.id, [
-      from ?? (first && last && nearbyShape(first, shapes, arrow.frameId)),
-      to ?? (last && nearbyShape(last, shapes, arrow.frameId)),
-    ]]
-  }))
   const storyboard = smart && !frozen.size && request.layout !== 'main'
     ? arrangeStoryboard(live, all ? undefined : selected)
     : undefined
   if (storyboard) return storyboard
-  const units = unitsFor(live, selected, all, endpoints)
+  const shapes = request.mode !== 'route' ? live.filter(isShape) : []
+  const looseTexts = live.filter((element) =>
+    element.type === 'text' && !element.containerId && !element.angle)
+  const attachments = request.mode === 'route' ? undefined : findDrawingAttachments(live, originalPaths)
+  const endpointAt = (point: Point, frameId: string | null) => {
+    const close = nearbyShape(point, shapes, frameId)
+    if (close) return close
+    const enclosing = shapes.filter((shape) => attachments?.occupied.has(shape.id) &&
+      shape.frameId === frameId && contains(boundsOf(shape), { ...point, width: 0, height: 0 }))
+      .sort((a, b) => a.width * a.height - b.width * b.height)[0]
+    if (enclosing) return enclosing.id
+    const text = looseTexts.filter((element) => {
+      const box = boundsOf(element)
+      return element.frameId === frameId && point.y > box.y - 8 && point.y < box.y + box.height + 8 &&
+        Math.min(Math.abs(point.x - box.x), Math.abs(point.x - box.x - box.width)) <= 24
+    })
+    return text.length === 1 ? text[0]!.id : undefined
+  }
+  const endpoints = new Map(arrows.map((arrow): [string, Endpoints] => {
+    const points = originalPaths.get(arrow.id)!
+    const first = points[0], last = points.length >= 2 ? points[points.length - 1] : undefined
+    const [from, to] = endpointIds(arrow)
+    if (!first || !last || request.mode === 'route') return [arrow.id, [from, to]]
+    return [arrow.id, [from ?? endpointAt(first, arrow.frameId), to ?? endpointAt(last, arrow.frameId)]]
+  }))
+  const units = unitsFor(live, selected, all, endpoints, attachments)
   const unitByElement = new Map(units.flatMap((unit) => unit.elements.map(({ id }) => [id, unit.id])))
   const inScope = new Set(units.filter((unit) => unit.inScope).flatMap((unit) => unit.elements.map(({ id }) => id)))
   const changes = new Map<string, Element>()
@@ -598,9 +640,13 @@ async function runTidy(
             const role = flowLane(labels.get(element.id))
             return role ? [role] : []
           }))
-          return { ...unit, lane: names.size === 1 ? [...names][0] : undefined }
+          const containers = unit.elements.filter((element) => attachments?.occupied.has(element.id) &&
+            !attachments.parents.has(element.id))
+          const box = containers.length === 1 ? boundsOf(containers[0]!) : undefined
+          const anchor = box && { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          return { ...unit, lane: names.size === 1 ? [...names][0] : undefined, anchor }
         })
-        const links = layoutLinks(candidates, endpoints, labels, arrowsById)
+        const links = layoutLinks(candidates, endpoints, labels, arrowsById, attachments?.labels)
         const preset = request.layout ?? 'auto'
         const frameBox = frame && boundsOf(frame)
         let layout = await planDrawingLayout(nodes, links, preset, fixed, frameBox)
@@ -677,15 +723,17 @@ async function runTidy(
     const after = arrowPoints(moved)
     paths.set(arrow.id, after)
     if (moved !== arrow) changes.set(arrow.id, moved)
+    const sameUnit = !!from && !!to && unitByElement.has(from) && unitByElement.get(from) === unitByElement.get(to)
     const internal = !!from && !!to && (all || (inScope.has(from) && inScope.has(to)))
     const eligible = internal || (request.mode === 'layout' && moved !== arrow) ||
       (request.mode !== 'light' && selected.has(arrow.id)) ||
       (request.mode === 'route' && all)
-    if (!eligible) continue
+    if (!eligible || sameUnit && request.mode !== 'route') continue
     const manual = !arrow.elbowed && arrow.points.length > 2 &&
       arrow.customData?.waoTidyRoute !== relativePointsKey(arrow.points)
     if (arrow.locked || arrow.boundElements?.some(({ id }) => elementById.get(id)?.locked) ||
-      arrow.angle || manual || hasFixedSegments(arrow) || after.length < 2 ||
+      attachments?.labels.get(arrow.id)?.some(({ text }) => text.locked) ||
+      attachments?.ambiguousArrows.has(arrow.id) || arrow.angle || manual || hasFixedSegments(arrow) || after.length < 2 ||
       (from && from === to) || (from && !elementById.has(from)) || (to && !elementById.has(to))) {
       skipped++
       continue
@@ -701,7 +749,16 @@ async function runTidy(
     const frameId = from ? elementById.get(from)?.frameId : null
     const frame = frameId && to && elementById.get(to)?.frameId === frameId ? elementById.get(frameId) : undefined
     const frameBounds = frame && boundsOf(changes.get(frame.id) ?? frame)
-    if (feedback.has(arrow.id)) {
+    const insetEndpoint = ids.some((id, index) => {
+      const target = id && elementById.get(id)
+      const points = originalPaths.get(arrow.id)!
+      const anchor = points[index === 0 ? 0 : points.length - 1]!
+      if (!target || !attachments?.occupied.has(target.id)) return false
+      const box = boundsOf(target)
+      return Math.min(anchor.x - box.x, box.x + box.width - anchor.x,
+        anchor.y - box.y, box.y + box.height - anchor.y) > 12
+    })
+    if (feedback.has(arrow.id) && !insetEndpoint) {
       const outside = outsideFeedback(arrow, ids, paths, obstacles, frameBounds)
       if (outside) {
         changes.set(arrow.id, outside)
@@ -709,7 +766,7 @@ async function runTidy(
         continue
       }
     }
-    if (request.mode === 'layout' && !feedback.has(arrow.id) && from && to && inScope.has(from) && inScope.has(to) &&
+    if (request.mode === 'layout' && !insetEndpoint && !feedback.has(arrow.id) && from && to && inScope.has(from) && inScope.has(to) &&
       (offsets.has(from) || offsets.has(to)) && [from, to].every((id) => {
         const shape = elementById.get(id)!
         return isShape(shape) && !shape.angle
@@ -730,6 +787,39 @@ async function runTidy(
     routed++
   }
   const unsafe = new Set<string>()
+  for (const [arrowId, labels] of attachments?.labels ?? []) {
+    if (!changes.has(arrowId)) continue
+    const path = paths.get(arrowId)!
+    const arrow = arrowsById.get(arrowId)!
+    const next: Element[] = []
+    const attachedIds = new Set(labels.map(({ text }) => text.id))
+    for (const label of labels) {
+      const previous = boundsOf(label.text)
+      const item = floatingLabelPositions(label, path).find((candidate) => {
+        const box = boundsOf(candidate)
+        return ![...obstacles].some(([id, obstacle]) => !attachedIds.has(id) && overlaps(box, obstacle) &&
+          !overlaps(previous, originalBounds.get(id) ?? obstacle)) &&
+          !next.some((other) => overlaps(box, boundsOf(other))) &&
+          !segments(path).some((leg) => insideBounds(leg, box)) &&
+          ![...paths].some(([id, other]) => id !== arrowId && segments(other).some((leg) => insideBounds(leg, box)) &&
+            !segments(originalPaths.get(id)!).some((leg) => insideBounds(leg, previous)))
+      })
+      if (!item) break
+      next.push(item)
+    }
+    if (next.length === labels.length) {
+      for (const item of next) {
+        changes.set(item.id, item)
+        obstacles.set(item.id, boundsOf(item))
+      }
+      continue
+    }
+    for (const id of endpoints.get(arrow.id)!) {
+      if (id && offsets.has(id)) unsafe.add(unitByElement.get(id)!)
+    }
+    changes.delete(arrowId)
+    paths.set(arrowId, originalPaths.get(arrowId)!)
+  }
   if (offsets.size) for (const arrow of arrows) {
     const ids = endpoints.get(arrow.id)!
     const before = collisionsOf(segments(originalPaths.get(arrow.id)!), originalBounds, ids)
