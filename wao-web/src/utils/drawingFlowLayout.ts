@@ -1,7 +1,13 @@
 import { unionBounds, type Bounds, type Point } from './drawingTidyGeometry'
 
 export type FlowNode = { id: string; bounds: Bounds; lane?: string; anchor?: Point }
-export type FlowLink = { id: string; source: string; target: string; label?: string }
+export type FlowLink = {
+  id: string
+  source: string
+  target: string
+  label?: string
+  captionSize?: Pick<Bounds, 'width' | 'height'>
+}
 export type FlowLane = { name: string; bounds: Bounds; units: string[] }
 
 const exception = /^(?:否|不通过|失败|异常|取消|撤回|重试|no|false|error|fail)(?:$|[\s：:，,（(])/i
@@ -97,11 +103,17 @@ export function arrangeFlow(
   const gap = compact ? 44 : 104
   const crossGap = compact ? 24 : 60
   const columns = Array.from({ length: Math.max(...rank.values()) + 1 }, () => 0)
+  const columnGaps = columns.map(() => gap)
+  for (const { source, target, captionSize } of links) {
+    const sourceRank = rank.get(source)!
+    if (!captionSize || rank.get(target) !== sourceRank + 1) continue
+    columnGaps[sourceRank] = Math.max(columnGaps[sourceRank]!, captionSize[length] + 24)
+  }
   for (const { id, bounds } of sorted) columns[rank.get(id)!] = Math.max(columns[rank.get(id)!]!, bounds[length])
   let position = 0
-  const bases = columns.map((size) => {
+  const bases = columns.map((size, index) => {
     const base = position
-    position += size + gap
+    position += size + columnGaps[index]!
     return base + size / 2
   })
   const distanceToAnchor = ({ bounds, anchor }: FlowNode) =>

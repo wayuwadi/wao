@@ -168,7 +168,10 @@ function lightOffsets(units: Unit[]) {
   return changed
 }
 
-function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>, labels: Map<string, string>, arrows: Map<string, Arrow>) {
+function layoutLinks(
+  units: Unit[], endpoints: Map<string, Endpoints>, labels: Map<string, string>, arrows: Map<string, Arrow>,
+  floating: ReturnType<typeof findDrawingAttachments>['labels'] | undefined,
+) {
   const unitIds = new Map(units.flatMap((unit) => unit.elements.map((element) => [element.id, unit.id] as const)))
   return [...endpoints].flatMap(([id, [from, to]]) => {
     const arrow = arrows.get(id)!
@@ -178,7 +181,13 @@ function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>, labels: M
     const targetId = reversed ? from : to
     const source = sourceId && unitIds.get(sourceId)
     const target = targetId && unitIds.get(targetId)
-    return source && target && source !== target ? [{ id, source, target, label: labels.get(id) }] : []
+    if (!source || !target || source === target) return []
+    const text = floating?.get(id)
+    const captionSize = text?.length ? {
+      width: Math.max(...text.map(({ text }) => text.width)),
+      height: Math.max(...text.map(({ text }) => text.height)),
+    } : undefined
+    return [{ id, source, target, label: labels.get(id), captionSize }]
   })
 }
 
@@ -637,7 +646,7 @@ async function runTidy(
           const anchor = box && { x: box.x + box.width / 2, y: box.y + box.height / 2 }
           return { ...unit, lane: names.size === 1 ? [...names][0] : undefined, anchor }
         })
-        const links = layoutLinks(candidates, endpoints, labels, arrowsById)
+        const links = layoutLinks(candidates, endpoints, labels, arrowsById, attachments?.labels)
         const preset = request.layout ?? 'auto'
         const frameBox = frame && boundsOf(frame)
         let layout = await planDrawingLayout(nodes, links, preset, fixed, frameBox)

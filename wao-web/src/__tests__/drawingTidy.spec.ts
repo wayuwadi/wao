@@ -335,7 +335,7 @@ describe('草图整理', () => {
       text('service-list', 553, 228, 123),
       text('destination-title', 876, 66, 138),
       text('destination-channels', 870, 163, 134, 140),
-      text('sync-label', 380, 186, 88),
+      text('sync-label', 359, 186, 130),
       loose('sync', 329, 220, 180, -8),
       loose('downstream', 625, 168, 229, 8),
     ]
