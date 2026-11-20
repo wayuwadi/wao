@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, toRefs, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useTaskViewMemory } from '@/composables/taskViewMemory'
@@ -7,7 +7,7 @@ import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingStat
 import { useSessionStore } from '@/stores/session'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import { directoryParents, directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
+import { directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
 import type { DirectoryNode } from '@/utils/knowledgeDirectory'
 import KbDetailView from './KbDetailView.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
@@ -37,8 +37,8 @@ const libraryWidth = ref(defaultLibraryWidth)
 const directoryWidth = ref(262)
 const documentFocus = ref(false)
 const folderOpen = ref<Record<string, Record<string, boolean>>>({})
-const inlineFolderOpen = ref<Record<string, Record<string, boolean>>>({})
 const inlineCollapsed = ref(false)
+const inlineHosts = shallowReactive(new Map<string, HTMLElement>())
 const { query, view } = toRefs(useBrowsingState('knowledge-home', { query: '', view: 'directory' }, {
   query: validSearch, view: oneOf('directory', 'recent'),
 }))
@@ -103,29 +103,21 @@ const librariesPanel = ref<HTMLElement | null>(null), directoryPanel = ref<HTMLE
 const mobileNavigationOpen = computed(() => narrow.value && (mobileLibrary.value || mobileDirectory.value))
 const librariesExpanded = computed(() => narrow.value ? mobileLibrary.value : !memory.value.collapsed)
 const directoryExpanded = computed(() => narrow.value ? mobileDirectory.value : !directoryMemory.value.collapsed)
-const inlineLibrary = computed(() => !narrow.value && librariesExpanded.value && !documentFocus.value
-  ? libraries.value.find(library => library.id === selected.value) : undefined)
-const inlineDefaults = computed(() => inlineLibrary.value ? groupLevelExpansion(inlineLibrary.value) : {})
-const inlineParents = computed(() => inlineLibrary.value ? directoryParents(inlineLibrary.value) : {})
-const inlineExpanded = computed(() => ({ ...inlineDefaults.value, ...inlineFolderOpen.value[selected.value] }))
-const inlineRows = computed(() => inlineLibrary.value ? directoryRows(inlineLibrary.value, normalizedTitle, inlineExpanded.value, '') : [])
-const inlineTreeLibraryId = computed(() => inlineRows.value.length ? inlineLibrary.value?.id : undefined)
-function toggleInlineNode(key: string, expanded: boolean) {
-  inlineFolderOpen.value[selected.value] = { ...inlineFolderOpen.value[selected.value], [key]: expanded }
+const inlineTreeLibraryId = computed(() => !narrow.value && librariesExpanded.value && !documentFocus.value
+  && libraries.value.some(library => library.id === selected.value) ? selected.value : undefined)
+const inlineDirectoryHost = computed(() => inlineHosts.get(inlineTreeLibraryId.value ?? ''))
+const managementOpen = ref(false)
+function setInlineHost(id: string, element: unknown) {
+  if (element instanceof HTMLElement) inlineHosts.set(id, element)
+  else inlineHosts.delete(id)
 }
 function selectLibrary(id: string) {
   if (!narrow.value && id === selected.value) {
-    if (inlineTreeLibraryId.value === id) inlineCollapsed.value = !inlineCollapsed.value
+    if (inlineTreeLibraryId.value === id && !managementOpen.value) inlineCollapsed.value = !inlineCollapsed.value
     return
   }
   void open(id)
 }
-watch([inlineParents, activeDocumentId], ([parents, id]) => {
-  if (!id || !inlineLibrary.value) return
-  const ancestors: Record<string, boolean> = {}
-  for (let parent = parents[`d:${id}`]; parent && !ancestors[parent]; parent = parents[parent]) ancestors[parent] = true
-  if (Object.keys(ancestors).length) inlineFolderOpen.value[selected.value] = { ...inlineFolderOpen.value[selected.value], ...ancestors }
-}, { immediate: true })
 function toggleLibraries(event?: MouseEvent) {
   if (narrow.value) {
     if (mobileLibrary.value) { closeMobile(true); return }
@@ -189,7 +181,7 @@ watch(selected, () => { inlineCollapsed.value = false; documentFocus.value = fal
 watch(() => data.kbById(selected.value), kb => { if (!kb) documentFocus.value = false }, { flush: 'sync' })
 let createGeneration = 0
 watch(() => `${session.account?.accountId ?? ''}:${session.userId}`, () => {
-  folderOpen.value = {}; inlineFolderOpen.value = {}; inlineCollapsed.value = false; rowLimit.value = {}; recentLimit.value = 30; documentFocus.value = false; closeMobile()
+  folderOpen.value = {}; inlineCollapsed.value = false; rowLimit.value = {}; recentLimit.value = 30; documentFocus.value = false; closeMobile()
   createGeneration++
   creating.value = false; saving.value = false; name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''
 }, { flush: 'sync' })
@@ -235,12 +227,10 @@ async function create() {
         <div v-for="item in libraryEntries" :key="item.kb.id" class="library-entry">
           <button type="button" class="library-row" :title="item.kb.name" :class="{ active: selected === item.kb.id }"
             :aria-current="selected === item.kb.id && !activeDocumentId ? 'page' : undefined"
-            :aria-expanded="inlineTreeLibraryId === item.kb.id ? !inlineCollapsed : undefined"
-            :aria-controls="inlineTreeLibraryId === item.kb.id ? `${paneId}-inline-directory` : undefined"
-            @click="selectLibrary(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><small>{{ item.count }}</small><i v-if="inlineTreeLibraryId === item.kb.id" :class="inlineCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true" /></button>
-          <KnowledgeDirectoryTree v-if="inlineTreeLibraryId === item.kb.id" v-show="!inlineCollapsed" :id="`${paneId}-inline-directory`" class="inline-directory"
-            :nodes="inlineRows" :expanded="inlineExpanded" :label="`${item.kb.name}的目录`" :icon-of="documentIcon"
-            :current-key="activeDocumentId ? `d:${activeDocumentId}` : undefined" @toggle="toggleInlineNode" @open="open(item.kb.id, $event)" />
+            :aria-expanded="inlineTreeLibraryId === item.kb.id && !managementOpen ? !inlineCollapsed : undefined"
+            :aria-controls="inlineTreeLibraryId === item.kb.id && !managementOpen ? `${paneId}-inline-directory` : undefined"
+            @click="selectLibrary(item.kb.id)"><i :class="item.kb.icon" aria-hidden="true" /><span>{{ item.kb.name }}</span><small>{{ item.count }}</small><i v-if="inlineTreeLibraryId === item.kb.id && !managementOpen" :class="inlineCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true" /></button>
+          <div v-if="inlineTreeLibraryId === item.kb.id" v-show="!inlineCollapsed && !managementOpen" :id="`${paneId}-inline-directory`" :ref="element => setInlineHost(item.kb.id, element)" />
         </div>
         <p v-if="!libraries.length && data.loadStates.knowledge === 'loaded'" class="navigation-empty">在这里整理你的知识</p>
       </nav>
@@ -259,7 +249,8 @@ async function create() {
       </div>
     </aside>
     <main class="workspace-content" :inert="mobileNavigationOpen || undefined">
-      <KbDetailView v-if="selected" directory-initially-collapsed :navigation-hidden="mobileNavigationOpen" @focus-change="documentFocus = $event" />
+      <KbDetailView v-if="selected" directory-initially-collapsed :inline-directory-host="inlineDirectoryHost"
+        :navigation-hidden="mobileNavigationOpen" @focus-change="documentFocus = $event" @directory-pane-change="managementOpen = $event" />
       <section v-else class="knowledge-home">
         <div class="home-inner">
           <header class="home-header">
@@ -321,7 +312,6 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .library-row > i { flex-shrink: 0; }
 .library-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-entry { flex-shrink: 0; min-width: 0; }
-.inline-directory { margin: var(--wao-space-1) 0 var(--wao-space-1) var(--wao-space-2); --knowledge-tree-indent: 10px; }
 .library-list small, .navigation-label, .navigation-empty, .tree-search-hint { color: var(--wao-text-3); font-size: var(--wao-font-caption); font-weight: 400; }
 .library-list small { font-variant-numeric: tabular-nums; }
 .navigation-label { display: flex; justify-content: space-between; margin: var(--wao-space-3) var(--wao-space-1) var(--wao-space-1); }

@@ -86,7 +86,7 @@ describe('知识库详情目录体验', () => {
     vi.mocked(apiCreateDocTemplate).mockReset()
   })
 
-  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1', attach = true) {
+  async function mountView(path = '/kb/k3', apiLive = false, realEditorStub = false, memberId = 'm1', attach = true, stubTeleport = true) {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/kb/:id', name: 'kb', component: KbDetailView }],
@@ -104,7 +104,7 @@ describe('知识库详情目录体验', () => {
       attachTo: attach ? document.body : undefined,
       global: {
         plugins: [pinia, router],
-        stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true, teleport: true },
+        stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true, teleport: stubTeleport },
       },
     })
     await flushPromises()
@@ -297,6 +297,109 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.get('#kb-directory').attributes('style')).not.toContain('display: none')
     expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe('目录切换期间的草稿')
     expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+  })
+  it('常驻左栏直接编辑目录，切换面板或收起库名不重建编辑器', async () => {
+    const data = useDataStore(pinia)
+    const library = data.kbById('k3')!
+    library.folders.push({ id: 'empty', name: '空分组', docs: [] })
+    library.directory = { 'f:empty': 'f:f4' }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge', component: KnowledgeWorkspaceView }] })
+    await router.push('/knowledge')
+    const wrapper = mount(KnowledgeWorkspaceView, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { MarkdownEditor: MarkdownEditorStub } } })
+    const libraryButton = wrapper.get('.library-row[title="个人成长"]')
+    await libraryButton.trigger('click')
+    await flushPromises()
+    const tree = wrapper.get('.libraries .inline-directory')
+    expect(tree.get('[data-node="f:empty"]').attributes('aria-level')).toBe('2')
+    expect(tree.find('[data-node="d:d8"]').exists()).toBe(false)
+    await tree.get('[data-node="f:f5"]').trigger('click')
+    await tree.get('[data-node="d:d8"]').trigger('click')
+    await flushPromises()
+    const editor = wrapper.get('.markdown-editor-stub').element
+    expect(tree.get('[data-node="d:d8"]').attributes('aria-current')).toBe('page')
+    await libraryButton.trigger('click')
+    expect(tree.isVisible()).toBe(false)
+    expect(router.currentRoute.value.query.doc).toBe('d8')
+    await libraryButton.trigger('click')
+    expect(tree.get('[data-node="d:d8"]').isVisible()).toBe(true)
+    await wrapper.get('[aria-label="展开知识库目录管理"]').trigger('click')
+    expect(wrapper.get('#kb-directory .tree').element).toBe(tree.element)
+    await wrapper.get('[aria-label="收起知识库目录管理"]').trigger('click')
+    expect(wrapper.get('.libraries .tree').element).toBe(tree.element)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+
+    const row = tree.get('[data-node="f:empty"]').element.closest('.directory-row')!
+    const deleteFolder = vi.spyOn(data, 'deleteFolder')
+    ;(row.querySelector('[aria-label="空分组的更多操作"]') as HTMLButtonElement).click()
+    await flushPromises()
+    const folderMenu = document.querySelector('[role="menu"][aria-label="空分组的更多操作"]')!
+    const remove = [...folderMenu.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === '移入回收站')!
+    remove.click()
+    await flushPromises()
+    const dialog = wrapper.findComponent(ConfirmActionDialog)
+    expect(deleteFolder).not.toHaveBeenCalled()
+    await dialog.props('action').run()
+    await flushPromises()
+    expect(deleteFolder).toHaveBeenCalledWith('k3', 'empty')
+    expect(tree.find('[data-node="f:empty"]').exists()).toBe(false)
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+
+    await wrapper.get('.library-row[title="群聊沉淀"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.libraries .tree').attributes('aria-label')).toBe('群聊沉淀的目录')
+    await router.push('/knowledge?kb=k3&doc=d7')
+    await flushPromises()
+    expect(wrapper.get('.libraries [data-node="d:d7"]').attributes('aria-current')).toBe('page')
+  })
+  it('左栏右键显示节点操作，拖到空分组保存失败可在原位重试', async () => {
+    const data = useDataStore(pinia)
+    const library = data.kbById('k3')!
+    library.folders.push({ id: 'empty', name: '目标分组', docs: [] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge', component: KnowledgeWorkspaceView }] })
+    await router.push('/knowledge?kb=k3&doc=d7')
+    const wrapper = mount(KnowledgeWorkspaceView, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { MarkdownEditor: MarkdownEditorStub } } })
+    await flushPromises()
+    const tree = wrapper.get('.libraries .inline-directory')
+    const documentNode = tree.get('[data-node="d:d7"]')
+    await documentNode.trigger('contextmenu')
+    await flushPromises()
+    const menu = document.querySelector('.wao-context-menu')!
+    expect(menu.textContent).toEqual(expect.stringContaining('移动…'))
+    expect(menu.textContent).toEqual(expect.stringContaining('归档'))
+    expect(menu.textContent).toEqual(expect.stringContaining('新建分组'))
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.activeElement).toBe(documentNode.element)
+    const folder = tree.get('[data-node="f:empty"]')
+    await folder.trigger('keydown', { key: 'F10', shiftKey: true })
+    await flushPromises()
+    const folderMenu = document.querySelector('.wao-context-menu')!
+    expect(folderMenu.textContent).toEqual(expect.stringContaining('重命名'))
+    expect(folderMenu.textContent).toEqual(expect.stringContaining('移入回收站'))
+    folderMenu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    const source = tree.get('.doc-row.selected')
+    const target = tree.findAll('.folder-row').find(row => row.find('[data-node="f:empty"]').exists())!
+    vi.spyOn(target.element, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 38 } as DOMRect)
+    const saved = JSON.parse(JSON.stringify(library))
+    saved.directory = { 'd:d7': 'f:empty' }
+    saved.folders.find((item: { id: string }) => item.id === 'f4').docs = []
+    saved.folders.find((item: { id: string }) => item.id === 'empty').docs = ['d7']
+    const move = vi.mocked(apiMoveKnowledgeNode).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(saved)
+    await source.trigger('dragstart')
+    await target.trigger('dragover', { clientY: 119 })
+    expect(target.classes()).toContain('drop-inside')
+    await target.trigger('drop')
+    await flushPromises()
+    expect(move).toHaveBeenCalledWith('k3', 'd:d7', 'f:empty', 'f:f4', null)
+    expect(data.kbById('k3')!.folders[0]!.docs).toContain('d7')
+    const retry = tree.get('.tree-save.error button')
+    await retry.trigger('click')
+    await flushPromises()
+    expect(tree.get('.tree-save.saved').text()).toContain('目录已保存')
+    expect(data.kbById('k3')!.folders.find(item => item.id === 'empty')!.docs).toEqual(['d7'])
+    expect(router.currentRoute.value.query.doc).toBe('d7')
+    move.mockReset()
   })
   it('全部目录的收起偏好不隐藏本库的多级目录，本库可独立收起和恢复', async () => {
     const allDirectoryKey = 'wao-task-view-v1:account-m1:m1:knowledge-directory'
@@ -579,7 +682,7 @@ describe('知识库详情目录体验', () => {
   })
 
   it('拖到行上缘显示排序线并保存同层顺序', async () => {
-    const wrapper = await mountView('/kb/k3')
+    const wrapper = await mountView('/kb/k3', false, false, 'm1', true, false)
     const data = useDataStore(pinia)
     const saved = JSON.parse(JSON.stringify(data.kbById('k3')!))
     saved.directory = { 'f:f5': '', 'd:d8': 'f:f5', 'f:f4': '', 'd:d7': 'f:f4' }
@@ -772,7 +875,7 @@ describe('知识库详情目录体验', () => {
   })
 
   it('本库目录支持方向键、首尾导航和搜索后进入结果', async () => {
-    const wrapper = await mountView('/kb/k3?doc=d7')
+    const wrapper = await mountView('/kb/k3?doc=d7', false, false, 'm1', true, false)
     const nodes = wrapper.findAll('.tree [data-node]')
     ;(nodes[0]!.element as HTMLElement).focus()
     await nodes[0]!.trigger('keydown', { key: 'ArrowDown' })
@@ -793,7 +896,7 @@ describe('知识库详情目录体验', () => {
     const first = library.folders[0]!
     library.directory = { 'd:d8': 'd:d7' }
     library.directoryOrder = [`f:${first.id}`, 'd:d7', 'd:d8']
-    const wrapper = await mountView()
+    const wrapper = await mountView('/kb/k3', false, false, 'm1', true, false)
     const child = wrapper.get('.home-directory-index [data-tree-key="d:d8"]')
     expect(child.attributes('aria-level')).toBe('3')
     await wrapper.get('[aria-label="搜索首页文档"]').setValue(first.name)
