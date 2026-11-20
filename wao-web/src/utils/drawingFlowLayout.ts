@@ -103,7 +103,7 @@ export function arrangeFlow(
   const gap = compact ? 44 : 104
   const crossGap = compact ? 24 : 60
   const columns = Array.from({ length: Math.max(...rank.values()) + 1 }, () => 0)
-  const columnGaps = columns.map(() => gap)
+  const columnGaps: number[] = columns.map(() => gap)
   for (const { source, target, captionSize } of links) {
     const sourceRank = rank.get(source)!
     if (!captionSize || rank.get(target) !== sourceRank + 1) continue
