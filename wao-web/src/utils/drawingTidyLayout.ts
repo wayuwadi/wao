@@ -1,12 +1,23 @@
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
+import { arrangeFlow, type FlowLane, type FlowLink, type FlowNode } from './drawingFlowLayout'
 import { contains, overlaps, translate, unionBounds, type Bounds, type Point } from './drawingTidyGeometry'
 
-export type DrawingLayout = 'auto' | 'right' | 'down' | 'tree'
-type Node = { id: string; bounds: Bounds }
-type Link = { id: string; source: string; target: string }
+export type DrawingLayout = 'smart' | 'main' | 'lanes' | 'auto' | 'right' | 'down' | 'tree'
+type Node = FlowNode
+type Link = FlowLink
+
+export type FlowPlan = {
+  offsets: Map<string, Point>
+  skipped: number
+  guides?: FlowLane[]
+  spine?: string[]
+  feedback?: string[]
+  mainCount?: number
+}
 
 function direction(preset: DrawingLayout, nodes: readonly Node[], links: readonly Link[]) {
-  if (preset !== 'auto') return preset === 'right' ? 'RIGHT' : 'DOWN'
+  if (preset === 'right' || preset === 'lanes') return 'RIGHT'
+  if (preset === 'down' || preset === 'tree') return 'DOWN'
   const centers = new Map(nodes.map(({ id, bounds }) =>
     [id, { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
   ))
@@ -43,7 +54,7 @@ function components(nodes: readonly Node[], links: readonly Link[]) {
 }
 
 /** Find nearby space without changing the geometry produced by ELK. */
-function place(nodes: readonly Bounds[], anchor: Point, fixed: readonly Bounds[], frame?: Bounds) {
+export function placeDrawingBoxes(nodes: readonly Bounds[], anchor: Point, fixed: readonly Bounds[], frame?: Bounds) {
   const envelope = unionBounds(nodes)
   if (frame && (envelope.width > frame.width || envelope.height > frame.height)) return
   const queue: Point[] = []
@@ -82,9 +93,58 @@ function place(nodes: readonly Bounds[], anchor: Point, fixed: readonly Bounds[]
   }
 }
 
+function planFlowLayout(
+  nodes: readonly Node[], links: readonly Link[], preset: DrawingLayout, fixed: readonly Bounds[], frame?: Bounds,
+): FlowPlan {
+  const result: Required<FlowPlan> = {
+    offsets: new Map(), skipped: 0, guides: [], spine: [], feedback: [], mainCount: 0,
+  }
+  const occupied = [...fixed]
+  for (const { nodes: members, links: edges } of components(nodes, links)) {
+    if (!edges.length) {
+      occupied.push(...members.map(({ bounds }) => bounds))
+      continue
+    }
+    const ids = new Set(members.map(({ id }) => id))
+    const roleCount = new Set(members.flatMap(({ lane }) => lane ? [lane] : [])).size
+    const lanes = !frame && preset !== 'main' && roleCount >= 2
+    if (preset === 'lanes' && !lanes) continue
+    const horizontal = lanes || direction(preset, members, edges) === 'RIGHT'
+    const other = [...occupied, ...nodes.filter(({ id }) => !ids.has(id) && !result.offsets.has(id))
+      .map(({ bounds }) => bounds)]
+    const anchor = unionBounds(members.map(({ bounds }) => bounds))
+    let placed = false
+    for (const [wide, compact] of [[horizontal, false], [horizontal, true], [!horizontal, true]] as const) {
+      if (lanes && !wide) continue
+      const { boxes, guides, spine, feedback, mainCount } = arrangeFlow(members, edges, wide, lanes, compact)
+      // Place the full bands so the lane outlines don't cover neighboring content.
+      const collisionBoxes = guides.length ? guides.map(({ bounds }) => bounds) : boxes
+      const pad = guides.length ? { x: anchor.x - 20, y: anchor.y - 20 } : anchor
+      const shift = placeDrawingBoxes(collisionBoxes, pad, other, frame)
+      if (!shift) continue
+      members.forEach(({ id, bounds }, index) => {
+        const box = translate(boxes[index]!, shift)
+        result.offsets.set(id, { x: box.x - bounds.x, y: box.y - bounds.y })
+      })
+      occupied.push(...collisionBoxes.map((box) => translate(box, shift)))
+      result.guides.push(...guides.map((guide) => ({ ...guide, bounds: translate(guide.bounds, shift) })))
+      result.spine.push(...spine)
+      result.feedback.push(...feedback)
+      result.mainCount += mainCount
+      placed = true
+      break
+    }
+    if (!placed) result.skipped += members.length
+  }
+  return result
+}
+
 export async function planDrawingLayout(
   nodes: readonly Node[], links: readonly Link[], preset: DrawingLayout, fixed: readonly Bounds[], frame?: Bounds,
-) {
+): Promise<FlowPlan> {
+  if (preset === 'smart' || preset === 'main' || preset === 'lanes') {
+    return planFlowLayout(nodes, links, preset, fixed, frame)
+  }
   const offsets = new Map<string, Point>()
   if (nodes.length < 2) return { offsets, skipped: 0 }
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js')
@@ -111,7 +171,7 @@ export async function planDrawingLayout(
     const layout = await engine.layout(graph)
     const positioned = new Map((layout.children ?? []).map((node) => [node.id, node]))
     const boxes = items.map(({ id, bounds }) => ({ ...bounds, x: positioned.get(id)!.x!, y: positioned.get(id)!.y! }))
-    const shift = place(boxes, unionBounds(items.map(({ bounds }) => bounds)), obstacles, frame)
+    const shift = placeDrawingBoxes(boxes, unionBounds(items.map(({ bounds }) => bounds)), obstacles, frame)
     if (!shift) return false
     const placed = boxes.map((box) => translate(box, shift))
     if (frame && placed.some((box) => !contains(frame, box))) return false

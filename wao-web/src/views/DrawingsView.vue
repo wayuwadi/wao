@@ -405,7 +405,7 @@ async function quickTidy() {
 
 function openTidyMenu(event: MouseEvent) {
   if (!(event.currentTarget instanceof HTMLElement)) return
-  void contextMenu.value?.openAt(event, '一键整理', [
+  void contextMenu.value?.openAt(event, '智能排版', [
     { id: 'tidy:light', label: '轻量整理', icon: 'ri-align-top', run: quickTidy },
     { id: 'tidy:route', label: '只整理连线', icon: 'ri-route-line', run: () => { tidyDialog.value = 'route' } },
   ], event.currentTarget)
@@ -1356,14 +1356,14 @@ defineExpose({ flush: flushEmbedded })
             <option value="off">关闭吸附</option>
           </select>
         </label>
-        <div v-if="current" class="drawing-tidy-control" role="group" aria-label="一键整理">
+        <div v-if="current" class="drawing-tidy-control" role="group" aria-label="智能排版">
           <WaoButton
             variant="ghost"
             :loading="tidyBusy"
             :disabled="!tidyCanvas || transitioning || !!deletingId || restoringVersion !== null"
             aria-haspopup="dialog"
             @click="tidyDialog = 'layout'"
-          >一键整理</WaoButton>
+          >智能排版</WaoButton>
           <button
             type="button"
             class="icon-button"

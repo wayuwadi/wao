@@ -1,5 +1,7 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { orthogonalRoute } from './drawingOrthogonalRouter'
+import { flowLane, type FlowLane } from './drawingFlowLayout'
+import { planDrawingStoryboard } from './drawingStoryboardLayout'
 import { planDrawingLayout, type DrawingLayout } from './drawingTidyLayout'
 import {
   boundsOf, contains, crosses, insideBounds, overlaps, samePoint, segments, sharedLength, translate, unionBounds,
@@ -14,6 +16,7 @@ export type DrawingTidyRequest = {
   mode: DrawingTidyMode
   scope: 'selection' | 'all'
   layout?: DrawingLayout
+  expandFrames?: boolean
 }
 
 export type DrawingTidyInput = {
@@ -27,6 +30,12 @@ export type DrawingTidyResult = {
   moved: number
   routed: number
   skipped: number
+  lanes?: FlowLane[]
+  mainCount?: number
+  sections?: number
+  canExpandFrames?: boolean
+  crossings?: { before: number; after: number }
+  limited?: 'lanes' | 'space' | 'wiring'
 }
 
 type Unit = { id: string; elements: Element[]; bounds: Bounds; frameId: string | null; inScope: boolean; movable: boolean }
@@ -139,12 +148,17 @@ function lightOffsets(units: Unit[]) {
   return changed
 }
 
-function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>) {
+function layoutLinks(units: Unit[], endpoints: Map<string, Endpoints>, labels: Map<string, string>, arrows: Map<string, Arrow>) {
   const unitIds = new Map(units.flatMap((unit) => unit.elements.map((element) => [element.id, unit.id] as const)))
   return [...endpoints].flatMap(([id, [from, to]]) => {
-    const source = from && unitIds.get(from)
-    const target = to && unitIds.get(to)
-    return source && target && source !== target ? [{ id, source, target }] : []
+    const arrow = arrows.get(id)!
+    if (arrow.startArrowhead && arrow.endArrowhead) return []
+    const reversed = arrow.startArrowhead && !arrow.endArrowhead
+    const sourceId = reversed ? to : from
+    const targetId = reversed ? from : to
+    const source = sourceId && unitIds.get(sourceId)
+    const target = targetId && unitIds.get(targetId)
+    return source && target && source !== target ? [{ id, source, target, label: labels.get(id) }] : []
   })
 }
 
@@ -251,13 +265,59 @@ function perimeterPaths(path: Point[], obstacles: ReadonlyMap<string, Bounds>) {
   return candidates
 }
 
+function outsideFeedback(
+  arrow: Arrow, [from, to]: Endpoints, paths: Map<string, Point[]>,
+  obstacles: ReadonlyMap<string, Bounds>, frame?: Bounds,
+) {
+  const source = from && obstacles.get(from), target = to && obstacles.get(to)
+  if (!source || !target || arrow.elbowed) return
+  const original = paths.get(arrow.id)!
+  const before = score(arrow, paths, obstacles, [from, to])
+  const bounds = unionBounds([source, target])
+  const near = { x: bounds.x - 48, y: bounds.y - 48, width: bounds.width + 96, height: bounds.height + 96 }
+  const nearby = [...obstacles.values()].filter((box) => overlaps(near, box))
+  const outer = unionBounds(nearby)
+  const boxes = [...obstacles.values()]
+  let chosen: Point[] | undefined
+  let quality = Infinity
+  for (const [axis, size] of [['x', 'width'], ['y', 'height']] as const) {
+    for (const sign of [-1, 1]) {
+      const edge = (box: Bounds) => box[axis] + (sign > 0 ? box[size] : 0)
+      const port = (box: Bounds, gap: number) => ({
+        x: box.x + box.width / 2, y: box.y + box.height / 2, [axis]: edge(box) + sign * gap,
+      })
+      const start = port(source, arrow.startBinding?.gap || 5)
+      const end = port(target, arrow.endBinding?.gap || 5)
+      const perimeter = edge(outer) + sign * 36
+      const candidate = [start, { ...start, [axis]: perimeter }, { ...end, [axis]: perimeter }, end]
+      const legs = segments(candidate)
+      if (samePoint(candidate[1]!, candidate[2]!) ||
+          frame && candidate.some((point) => !contains(frame, { ...point, width: 0, height: 0 })) ||
+          legs.some((leg) => boxes.some((box) => insideBounds(leg, box)))) continue
+      paths.set(arrow.id, candidate)
+      const after = score(arrow, paths, obstacles, [from, to])
+      const value = after.crossings * 300 + after.shared * 2 + after.length
+      if (after.crossings > before.crossings || value >= quality) continue
+      chosen = candidate
+      quality = value
+    }
+  }
+  paths.set(arrow.id, chosen ?? original)
+  if (!chosen) return
+  return arrowWithPath({
+    ...arrow,
+    startBinding: arrow.startBinding && { ...arrow.startBinding, focus: 0 },
+    endBinding: arrow.endBinding && { ...arrow.endBinding, focus: 0 },
+  }, chosen, true)
+}
+
 function chooseRoute(
   arrow: Arrow, paths: Map<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>,
-  endpoints: Endpoints, conservative: boolean, frame?: Bounds,
+  endpoints: Endpoints, conservative: boolean, frame?: Bounds, feedback = false,
 ) {
   const original = paths.get(arrow.id)!
   const before = score(arrow, paths, obstacles, endpoints)
-  if (original.length === 2 && !before.collisions.size && !before.crossings && !before.shared) {
+  if (!feedback && original.length === 2 && !before.collisions.size && !before.crossings && !before.shared) {
     return { needsImprovement: false }
   }
   const otherLines = [...paths.entries()].flatMap(([id, points]) => id === arrow.id ? [] : segments(points))
@@ -265,17 +325,25 @@ function chooseRoute(
   let best = original
   let bestScore = before
   const candidates = proposal ? [proposal] : []
-  if (before.crossings && !conservative) candidates.push(...perimeterPaths(original, obstacles))
+  if (feedback) candidates.unshift(...perimeterPaths(original, obstacles))
+  else if (before.crossings && !conservative) candidates.push(...perimeterPaths(original, obstacles))
+  const perimeter = feedback ? new Set(candidates.slice(0, proposal ? -1 : undefined)) : new Set<Point[]>()
   for (const candidate of candidates) {
     if (candidate.length < 2 || !samePoint(candidate[0]!, original[0]!) ||
       !samePoint(candidate[candidate.length - 1]!, original[original.length - 1]!)) continue
     if (frame && candidate.some((point) => !contains(frame, { ...point, width: 0, height: 0 }))) continue
+    if (feedback && endpoints.some((id) => {
+      const box = id && obstacles.get(id)
+      return box && segments(candidate).some((leg) => insideBounds(leg, box))
+    })) continue
     if (candidate.length === original.length && candidate.every((point, index) => samePoint(point, original[index]!))) continue
     paths.set(arrow.id, candidate)
     const next = score(arrow, paths, obstacles, endpoints)
     if (conservative && next.length > before.length * 1.5 + 32) continue
     if ([...next.collisions].some((id) => !before.collisions.has(id)) || next.crossings > before.crossings) continue
-    const improvement = bestScore.collisions.size - next.collisions.size ||
+    const usePerimeter = perimeter.has(candidate) && !perimeter.has(best) && !next.collisions.size
+    if (perimeter.has(best) && !perimeter.has(candidate) && next.crossings >= bestScore.crossings) continue
+    const improvement = usePerimeter ? 1 : bestScore.collisions.size - next.collisions.size ||
       bestScore.crossings - next.crossings || (Math.abs(bestScore.shared - next.shared) > 1 ? bestScore.shared - next.shared : 0) ||
       ((bestScore.length + best.length * 8) - (next.length + candidate.length * 8) > 1 ? 1 : 0)
     if (improvement <= 0) continue
@@ -287,7 +355,8 @@ function chooseRoute(
 }
 
 function alignArrowPorts(
-  arrow: Arrow, ids: Endpoints, paths: Map<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>, frame?: Bounds,
+  arrow: Arrow, ids: Endpoints, paths: Map<string, Point[]>, obstacles: ReadonlyMap<string, Bounds>,
+  frame?: Bounds, smart = false,
 ) {
   const [from, to] = ids
   const a = from && obstacles.get(from), b = to && obstacles.get(to)
@@ -308,12 +377,22 @@ function alignArrowPorts(
   if (samePoint(start, original[0]!) && samePoint(end, original[original.length - 1]!)) return
   const before = score(arrow, paths, obstacles, ids)
   const lines = [...paths.entries()].flatMap(([id, points]) => id === arrow.id ? [] : segments(points))
-  const path = orthogonalRoute(start, end, [...obstacles.values()], lines)
+  const clearance = Math.min(18, (Math.abs(end[axis] - start[axis])) / 4)
+  const outward = forward ? clearance : -clearance
+  const startStub = { ...start, [axis]: start[axis] + outward }
+  const endStub = { ...end, [axis]: end[axis] - outward }
+  const boxes = [...obstacles.values()]
+  const route = smart ? orthogonalRoute(startStub, endStub, boxes, lines) : orthogonalRoute(start, end, boxes, lines)
+  const path = smart && route ? [start, ...route, end].filter((point, i, points) => {
+    if (i === 0 || i === points.length - 1) return true
+    const a = points[i - 1]!, b = points[i + 1]!
+    return !(a.x === point.x && point.x === b.x || a.y === point.y && point.y === b.y)
+  }) : route
   if (!path || path.length < 2 || (frame && path.some((point) => !contains(frame, { ...point, width: 0, height: 0 })))) return
   paths.set(arrow.id, path)
   const after = score(arrow, paths, obstacles, ids)
   if ([...after.collisions].some((id) => !before.collisions.has(id)) || after.crossings > before.crossings ||
-    after.length > before.length * 1.25 + 24) {
+    after.length > before.length * (smart ? 1.8 : 1.25) + 24) {
     paths.set(arrow.id, original)
     return
   }
@@ -322,6 +401,19 @@ function alignArrowPorts(
     startBinding: arrow.startBinding && { ...arrow.startBinding, focus: 0 },
     endBinding: arrow.endBinding && { ...arrow.endBinding, focus: 0 },
   }, path, true)
+}
+
+function arrowCrossings(paths: ReadonlyMap<string, Point[]>) {
+  const lines = [...paths.values()].map(segments)
+  let intersections = 0
+  lines.forEach((line, index) => {
+    for (let other = 0; other < index; other++) {
+      for (const leg of line) {
+        for (const segment of lines[other]!) if (crosses(leg, segment)) intersections++
+      }
+    }
+  })
+  return intersections
 }
 
 function permitsMove(
@@ -350,6 +442,10 @@ async function runTidy(
   const selected = new Set(selectedIds)
   const elementById = new Map(live.map((element) => [element.id, element]))
   const arrows = live.filter(isArrow)
+  const arrowsById = new Map(arrows.map((arrow) => [arrow.id, arrow]))
+  const labels = new Map(live.flatMap((element) =>
+    element.type === 'text' && element.containerId ? [[element.containerId, element.originalText || element.text] as const] : []))
+  const smart = request.mode === 'layout' && !!request.layout && ['main', 'smart', 'lanes'].includes(request.layout)
   const all = request.scope === 'all'
   const originalPaths = new Map(arrows.map((arrow) => [arrow.id, arrowPoints(arrow)]))
   const shapes = request.mode === 'layout' ? live.filter(isShape) : []
@@ -362,6 +458,11 @@ async function runTidy(
       to ?? (last && nearbyShape(last, shapes, arrow.frameId)),
     ]]
   }))
+  const storyboard = smart && !frozen.size && (request.layout === 'lanes' ||
+    (request.layout === 'smart' && !arrows.some((arrow) => arrow.startBinding && arrow.endBinding)))
+    ? planDrawingStoryboard(live, all ? undefined : selected)
+    : undefined
+  if (storyboard) return storyboard
   const units = unitsFor(live, selected, all, endpoints)
   const unitByElement = new Map(units.flatMap((unit) => unit.elements.map(({ id }) => [id, unit.id])))
   const inScope = new Set(units.filter((unit) => unit.inScope).flatMap((unit) => unit.elements.map(({ id }) => id)))
@@ -369,6 +470,11 @@ async function runTidy(
   const offsets = new Map<string, Point>()
   const originalBounds = new Map(live.filter(isObstacle).map((element) => [element.id, boundsOf(element)]))
   const obstacles = new Map(originalBounds)
+  const lanes: FlowLane[] = []
+  const spine = new Set<string>()
+  const feedback = new Set<string>()
+  let mainCount = 0
+  let canExpandFrames = false
   let skipped = frozen.size
 
   if (request.mode !== 'route') {
@@ -385,10 +491,48 @@ async function runTidy(
         const moving = new Set(candidates.flatMap((unit) => unit.elements.map(({ id }) => id)))
         const fixed = [...obstacles].flatMap(([id, box]) => moving.has(id) ? [] : [box])
         if (!frame) fixed.push(...live.filter(isFrame).map(boundsOf))
-        const layout = await planDrawingLayout(candidates, layoutLinks(candidates, endpoints), request.layout ?? 'auto',
-          fixed, frame && boundsOf(frame))
+        const nodes = candidates.map((unit) => {
+          const names = new Set(unit.elements.flatMap((element) => {
+            const role = flowLane(labels.get(element.id))
+            return role ? [role] : []
+          }))
+          return { ...unit, lane: names.size === 1 ? [...names][0] : undefined }
+        })
+        const links = layoutLinks(candidates, endpoints, labels, arrowsById)
+        const preset = request.layout ?? 'auto'
+        const frameBox = frame && boundsOf(frame)
+        let layout = await planDrawingLayout(nodes, links, preset, fixed, frameBox)
+        if (smart && frame && frameBox && !frame.locked && !frame.angle && layout.skipped) {
+          canExpandFrames = true
+          if (request.expandFrames) {
+            const space = { ...frameBox, width: frameBox.width * 2, height: frameBox.height * 2 }
+            const expanded = await planDrawingLayout(nodes, links, preset, fixed, space)
+            const relocated = nodes.filter(({ id }) => expanded.offsets.has(id))
+              .map(({ id, bounds }) => translate(bounds, expanded.offsets.get(id)!))
+            if (expanded.skipped < layout.skipped && relocated.length) {
+              const padded = relocated.map((box) => ({ ...box, width: box.width + 20, height: box.height + 20 }))
+              const next = unionBounds([frameBox, ...padded])
+              const blockers = live.filter((item) => item.id !== frame.id && item.frameId !== frame.id &&
+                (isFrame(item) || isObstacle(item))).map((item) => boundsOf(changes.get(item.id) ?? item))
+              if (contains(space, next) && !blockers.some((box) => overlaps(next, box) && !overlaps(frameBox, box))) {
+                layout = expanded
+                changes.set(frame.id, { ...frame, width: next.width, height: next.height })
+              }
+            }
+          }
+        }
         planned = layout.offsets
         skipped += layout.skipped
+        mainCount += layout.mainCount ?? 0
+        layout.spine?.forEach((id) => spine.add(id))
+        layout.feedback?.forEach((id) => feedback.add(id))
+        for (const lane of layout.guides ?? []) {
+          const ids = new Set(lane.units)
+          const members = candidates.filter(({ id }) => ids.has(id)).flatMap(({ elements }) =>
+            elements.flatMap((element) => [element.id, ...(element.boundElements ?? [])
+              .filter(({ type }) => type === 'text').map(({ id }) => id)]))
+          lanes.push({ ...lane, units: members })
+        }
       } else {
         planned = lightOffsets(candidates)
         const proposed = new Map(obstacles)
@@ -447,25 +591,35 @@ async function runTidy(
     route.push(moved)
   }
   let routed = 0
+  route.sort((a, b) => Number(spine.has(b.id)) - Number(spine.has(a.id)) ||
+    Number(feedback.has(a.id)) - Number(feedback.has(b.id)))
   for (const arrow of route) {
     const ids = endpoints.get(arrow.id)!
     const [from, to] = ids
     const frameId = from ? elementById.get(from)?.frameId : null
     const frame = frameId && to && elementById.get(to)?.frameId === frameId ? elementById.get(frameId) : undefined
-    const frameBounds = frame && boundsOf(frame)
-    if (request.mode === 'layout' && from && to && inScope.has(from) && inScope.has(to) &&
+    const frameBounds = frame && boundsOf(changes.get(frame.id) ?? frame)
+    if (feedback.has(arrow.id)) {
+      const outside = outsideFeedback(arrow, ids, paths, obstacles, frameBounds)
+      if (outside) {
+        changes.set(arrow.id, outside)
+        routed++
+        continue
+      }
+    }
+    if (request.mode === 'layout' && !feedback.has(arrow.id) && from && to && inScope.has(from) && inScope.has(to) &&
       (offsets.has(from) || offsets.has(to)) && [from, to].every((id) => {
         const shape = elementById.get(id)!
         return isShape(shape) && !shape.angle
       })) {
-      const aligned = alignArrowPorts(arrow, ids, paths, obstacles, frameBounds)
+      const aligned = alignArrowPorts(arrow, ids, paths, obstacles, frameBounds, smart)
       if (aligned) {
         changes.set(arrow.id, aligned)
         routed++
         continue
       }
     }
-    const choice = chooseRoute(arrow, paths, obstacles, ids, conservative, frameBounds)
+    const choice = chooseRoute(arrow, paths, obstacles, ids, conservative, frameBounds, feedback.has(arrow.id))
     if (!choice.path) {
       if (choice.needsImprovement) skipped++
       continue
@@ -495,7 +649,17 @@ async function runTidy(
     }
     // If the new node positions block a connector, still offer safe routing on the original positions.
     const result = await runTidy({ elements, selectedIds, request: { ...request, mode: 'route' } }, conservative, frozen)
-    return { ...result, skipped: result.skipped + offsets.size }
+    return { ...result, skipped: result.skipped + offsets.size, ...(smart ? { limited: 'wiring' as const } : {}) }
   }
-  return { changed: [...changes.values()], moved: [...offsets.keys()].filter((id) => isShape(elementById.get(id)!)).length, routed, skipped }
+  const moved = [...offsets.keys()].filter((id) => isShape(elementById.get(id)!)).length
+  const result = { changed: [...changes.values()], moved, routed, skipped }
+  if (!smart) return result
+  const crossings = { before: arrowCrossings(originalPaths), after: arrowCrossings(paths) }
+  if (crossings.after > crossings.before) {
+    return { changed: [], moved: 0, routed: 0, skipped, limited: 'wiring' }
+  }
+  return {
+    ...result, lanes, mainCount, crossings, canExpandFrames,
+    limited: request.layout === 'lanes' && !lanes.length ? 'lanes' : skipped ? 'space' : undefined,
+  }
 }

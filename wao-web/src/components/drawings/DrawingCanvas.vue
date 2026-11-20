@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CaptureUpdateAction, Excalidraw, newElementWith, serializeAsJSON } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, newElementWith, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import type {
   AppState,
@@ -179,20 +179,33 @@ async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
   }
   ensureCurrent()
   const changes = new Map(result.changed.map((element) => [element.id, element]))
-  const preview = elements.map((element) => changes.get(element.id) ?? element)
+  const lanes = result.lanes ?? []
+  const frames = lanes.length ? convertToExcalidrawElements(lanes.map(({ name, bounds }) =>
+    ({ type: 'frame', name, children: [], ...bounds }))) : []
+  const currentElements = new Map(elements.map((element) => [element.id, element]))
+  lanes.forEach(({ units }, index) => {
+    const frameId = frames[index]!.id
+    for (const id of units) {
+      const element = changes.get(id) ?? currentElements.get(id)
+      if (element && !element.isDeleted && !element.locked) changes.set(id, { ...element, frameId })
+    }
+  })
+  const preview = [...elements.map((element) => changes.get(element.id) ?? element), ...frames]
   const includePreview = request.mode !== 'light' && changes.size > 0
   const before = includePreview ? serializeAsJSON(elements, api.getAppState(), api.getFiles(), 'local') : ''
   const after = includePreview ? serializeAsJSON(preview, api.getAppState(), api.getFiles(), 'local') : ''
   return {
-    moved: result.moved, routed: result.routed, skipped: result.skipped, changed: changes.size, before, after,
+    moved: result.moved, routed: result.routed, skipped: result.skipped, changed: changes.size,
+    laneCount: lanes.length, mainCount: result.mainCount, sections: result.sections,
+    crossings: result.crossings, canExpandFrames: result.canExpandFrames, limited: result.limited, before, after,
     apply() {
       ensureCurrent()
       if (!changes.size) return
       api.updateScene({
-        elements: api.getSceneElementsIncludingDeleted().map((element) => {
+        elements: [...api.getSceneElementsIncludingDeleted().map((element) => {
           const candidate = changes.get(element.id)
           return candidate ? newElementWith(element, candidate) : element
-        }),
+        }), ...frames],
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       })
       requestAnimationFrame(() => {
