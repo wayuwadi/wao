@@ -2,6 +2,7 @@ package cn.wayuwa.wao.controller;
 
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.CreateDrawingFileRequest;
 import cn.wayuwa.wao.dto.DrawingFileDto;
 import cn.wayuwa.wao.dto.DrawingFileSummaryDto;
@@ -46,6 +47,11 @@ public class DrawingFileController {
     @PostMapping
     public ApiResponse<DrawingFileDto> create(
             @Valid @RequestBody(required = false) CreateDrawingFileRequest request, HttpServletRequest http) {
+        if (request != null && (request.sceneJson() != null || request.requestId() != null)) {
+            String memberId = currentMember.id(http);
+            if (memberId == null) throw new UnauthorizedException("请登录后再保存草图");
+            return ApiResponse.ok(drawings.create(request, memberId));
+        }
         return ApiResponse.ok(drawings.create(request, member(http)));
     }
 

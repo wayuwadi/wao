@@ -54,22 +54,35 @@ public class DrawingFileService {
                 .map(this::summary).toList();
     }
 
-    /** 新建当前成员的空草图。 */
-    @Transactional
+    /** 原子新建当前成员的草图，支持用同一次请求标识安全重试。 */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public DrawingFileDto create(CreateDrawingFileRequest request, String memberId) {
+        String requestId = request == null ? null : request.requestId();
+        String id = "dr" + (requestId == null ? UUID.randomUUID() :
+                UUID.nameUUIDFromBytes((memberId + ":drawing:" + requestId).getBytes(StandardCharsets.UTF_8)))
+                .toString().replace("-", "").substring(0, 28);
+        if (requestId != null && mapper.selectById(id) != null) return get(id, memberId);
         String groupId = request == null ? null : request.groupId();
         if (groupId != null && !groupId.isBlank() && groups.owned(groupId, memberId) == 0) throw new NotFoundException("分组不存在");
+        String initialScene = request == null ? null : request.sceneJson();
+        if (initialScene != null) validateScene(initialScene);
         LocalDateTime now = LocalDateTime.now();
         DrawingFileEntity entity = new DrawingFileEntity();
-        entity.setId("dr" + UUID.randomUUID().toString().replace("-", "").substring(0, 28));
+        entity.setId(id);
         entity.setOwnerMemberId(memberId);
         entity.setTitle(normalizeTitle(request == null ? null : request.title(), true));
-        entity.setSceneJson(EMPTY_SCENE);
+        entity.setSceneJson(initialScene == null ? EMPTY_SCENE : initialScene);
         entity.setRevision(1);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
-        mapper.insert(entity);
+        try {
+            mapper.insert(entity);
+        } catch (org.springframework.dao.DuplicateKeyException error) {
+            if (requestId == null) throw error;
+            return get(id, memberId);
+        }
         if (groupId != null && !groupId.isBlank()) groups.assign(memberId, entity.getId(), groupId);
+        if (initialScene != null) recordVersion(entity);
         return dto(entity);
     }
 

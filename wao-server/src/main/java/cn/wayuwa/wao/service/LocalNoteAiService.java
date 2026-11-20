@@ -154,11 +154,26 @@ public class LocalNoteAiService {
     }
 
     private String enqueueRun(String memberId, String prompt, String purpose, String model, String effort) {
+        return enqueueRun("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24),
+                memberId, prompt, purpose, model, effort, null);
+    }
+
+    String enqueueDrawingPhoto(String runId, String memberId, String prompt, String purpose, String referenceId) {
+        requireCapacity();
+        String model = localModels == null ? "gpt-6-astra" : localModels.validate("gpt-6-astra");
+        String effort = localModels == null ? "medium" : localModels.validateEffort(model, "medium");
+        referenceImages.requireOwned(memberId, List.of(referenceId));
+        return enqueueRun(runId, memberId, prompt, purpose, model, effort, referenceId);
+    }
+
+    private String enqueueRun(String id, String memberId, String prompt, String purpose, String model,
+            String effort, String referenceId) {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
-        run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        run.setId(id);
         run.setMemberId(memberId); run.setAiCapabilityId(capability); run.setUsagePurpose(purpose);
         run.setRequestedModel(model); run.setReasoningEffort(effort);
         run.setPromptText(prompt); run.setWebSearchEnabled(false); run.setStatus("secure_queued");
+        run.setReferenceImageIds(referenceId);
         runs.insertReadOnlyQueued(run);
         return run.getId();
     }

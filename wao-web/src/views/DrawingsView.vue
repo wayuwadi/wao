@@ -70,6 +70,7 @@ const DrawingCanvas = defineAsyncComponent({
   },
 })
 const DrawingTidyDialog = defineAsyncComponent(() => import('@/components/drawings/DrawingTidyDialog.vue'))
+const DrawingPhotoDialog = defineAsyncComponent(() => import('@/components/drawings/DrawingPhotoDialog.vue'))
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft, type DrawingDraft } from '@/utils/drawingDrafts'
 import { sameDrawingContent } from '@/utils/drawingScene'
 import type { DrawingImageFormat } from '@/utils/drawingImageExport'
@@ -330,6 +331,8 @@ const canvasKey = ref('empty')
 const loadingList = ref(true)
 const loadingFile = ref(false)
 const creating = ref(false)
+const photoOpen = ref(false)
+const photoFitId = ref<string>()
 const sidebarOpen = ref(!props.embedded)
 const syncState = ref<SyncState>('loading')
 const error = ref('')
@@ -678,6 +681,7 @@ function canvasReady(key: string, canvas?: DrawingTidyCanvas) {
   if (key !== canvasKey.value) return
   tidyCanvas.value = canvas
   readyCanvasKey = key
+  if (current.value?.id === photoFitId.value) photoFitId.value = undefined
   retainedCanvas.value = undefined
   if (dirty.value && syncState.value === 'dirty') scheduleSave()
 }
@@ -780,6 +784,28 @@ async function newFile(groupId?: string) {
     sidebarOpen.value = (page.value?.clientWidth || window.innerWidth) > 760
   } catch (cause) {
     error.value = message(cause, '新建结果未确认，请先刷新列表检查是否已创建草图')
+  } finally {
+    creating.value = false
+  }
+}
+
+async function savePhotoDrawing(title: string, sceneJson: string, requestId: string) {
+  if (!sameOwner() || creating.value || transitioning.value || actionBusy.value || deletingId.value ||
+      restoringVersion.value !== null || reloadingCloud.value) {
+    throw new Error('草图正在切换，请稍后再保存。')
+  }
+  creating.value = true
+  try {
+    if (!(await settleEdits()) || !sameOwner()) {
+      throw new Error('当前草图有未保存的修改，请先处理后重试。')
+    }
+    const created = await createDrawing(title, undefined, { sceneJson, requestId })
+    if (!sameOwner()) throw new Error('账号已切换，请重新进入草图。')
+    photoFitId.value = created.id
+    updateSummary(created)
+    await openFile(created.id)
+  } catch (cause) {
+    throw new Error(message(cause, '保存结果未确认。可重试，同一次识别只会保存一张草图。'))
   } finally {
     creating.value = false
   }
@@ -1210,6 +1236,13 @@ defineExpose({ flush: flushEmbedded })
       :title="sharing.title"
       @close="sharing = undefined"
     />
+    <DrawingPhotoDialog
+      v-if="photoOpen && owner && sameOwner()"
+      :owner="owner"
+      :save-drawing="savePhotoDrawing"
+      :download-drawing="downloadScene"
+      @close="photoOpen = false"
+    />
     <SettingsDialogShell v-if="dialogMode" :title="dialogMode === 'new-group' ? '新建分组' : dialogMode === 'rename-group' ? '重命名分组' : '重命名草图'" width="480px" height="auto" :close-disabled="actionBusy" @close="dialogMode = null">
       <form class="name-dialog" @submit.prevent="saveDialog"><label>名称<input v-model="dialogName" maxlength="128" autofocus :disabled="actionBusy" /></label><p v-if="dialogError" role="alert">{{ dialogError }}</p><WaoButton type="submit" :loading="actionBusy" :disabled="!dialogName.trim()">保存</WaoButton></form>
     </SettingsDialogShell>
@@ -1253,6 +1286,14 @@ defineExpose({ flush: flushEmbedded })
         <i v-if="!creating" class="ri-add-line"></i>
         {{ creating ? '正在新建' : '新建草图' }}
       </WaoButton>
+
+      <WaoButton
+        v-if="!embedded && owner"
+        class="new-file"
+        variant="secondary"
+        :disabled="creating || transitioning"
+        @click="photoOpen = true"
+      ><i class="ri-camera-line" aria-hidden="true"></i>拍照转草图</WaoButton>
 
       <label class="file-search"
         ><i class="ri-search-line" aria-hidden="true"></i
@@ -1530,6 +1571,7 @@ defineExpose({ flush: flushEmbedded })
               :scene-key="layer.key"
               :name="layer.name"
               :library-items="library.items"
+              :fit-on-open="layer.key === canvasKey && !!photoFitId && current.id === photoFitId"
               @library-change="(previous, next) => sameOwner() && library.change(previous, next)"
               @change="layer.key === canvasKey && canvasChanged($event)"
               @ready="canvasReady(layer.key, $event)"
@@ -1568,6 +1610,12 @@ defineExpose({ flush: flushEmbedded })
             @click="newFile()"
             ><i class="ri-add-line"></i>新建草图</WaoButton
           >
+          <WaoButton
+            v-if="!sidebarOpen && !embedded && owner"
+            variant="secondary"
+            :disabled="creating || transitioning"
+            @click="photoOpen = true"
+          ><i class="ri-camera-line" aria-hidden="true"></i>拍照转草图</WaoButton>
         </div>
         <div
           v-if="
