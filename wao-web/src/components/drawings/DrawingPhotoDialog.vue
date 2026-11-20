@@ -113,7 +113,7 @@ async function recognize() {
     signal.throwIfAborted()
     remember({ ...current, runId: job.id })
     while (job.status === 'queued' || job.status === 'running') {
-      status.value = job.status === 'queued' ? '等待本机 Codex 处理…' : '正在识别框、文字和连线…'
+      status.value = job.status === 'queued' ? '等待本机 Codex 处理…' : '正在识别内容并分析分区和连线…'
       await new Promise((resolve) => window.setTimeout(resolve, 2000))
       signal.throwIfAborted()
       job = await fetchDrawingPhoto(job.id, signal)
@@ -123,10 +123,10 @@ async function recognize() {
       failedResult = true
       throw new Error(job.message || '识别未完成，请重试。')
     }
-    status.value = '正在生成预览…'
+    status.value = '正在排版并生成预览…'
     failedResult = true
     const plan = parseDrawingPhotoPlan(job.result)
-    const nextScene = await createDrawingPhotoScene(plan)
+    const { sceneJson: nextScene, uncertainties: reviewItems } = await createDrawingPhotoScene(plan)
     failedResult = false
     const { renderDrawingImage } = await import('@/utils/drawingImageExport')
     const blob = await renderDrawingImage(nextScene, 'png', 3400)
@@ -135,7 +135,7 @@ async function recognize() {
     scene.value = nextScene
     previewUrl.value = URL.createObjectURL(blob)
     title.value = plan.title
-    uncertainties.value = plan.uncertainties
+    uncertainties.value = reviewItems
   } catch (cause) {
     if (signal.aborted) return
     restart.value = failedResult

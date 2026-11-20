@@ -158,11 +158,11 @@ public class LocalNoteAiService {
                 memberId, prompt, purpose, model, effort, null);
     }
 
-    String enqueueDrawingPhoto(String runId, String memberId, String prompt, String purpose, String referenceId) {
+    String enqueueDrawingJob(String runId, String memberId, String prompt, String purpose, String referenceId) {
         requireCapacity();
         String model = localModels == null ? "gpt-6-astra" : localModels.validate("gpt-6-astra");
         String effort = localModels == null ? "medium" : localModels.validateEffort(model, "medium");
-        referenceImages.requireOwned(memberId, List.of(referenceId));
+        if (referenceId != null) referenceImages.requireOwned(memberId, List.of(referenceId));
         return enqueueRun(runId, memberId, prompt, purpose, model, effort, referenceId);
     }
 

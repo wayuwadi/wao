@@ -361,7 +361,7 @@ const canvasLayers = computed(() =>
   [retainedCanvas.value, activeCanvas.value].filter((layer) => layer !== undefined),
 )
 const tidyCanvas = shallowRef<DrawingTidyCanvas>()
-const tidyDialog = ref<'route' | 'layout'>()
+const tidyDialog = ref<'route' | 'layout' | 'ai'>()
 const tidyBusy = ref(false)
 let tidyRequest: AbortController | undefined
 
@@ -409,6 +409,7 @@ async function quickTidy() {
 function openTidyMenu(event: MouseEvent) {
   if (!(event.currentTarget instanceof HTMLElement)) return
   void contextMenu.value?.openAt(event, '智能排版', [
+    { id: 'tidy:ai', label: 'AI 整理', icon: 'ri-sparkling-2-line', run: () => { tidyDialog.value = 'ai' } },
     { id: 'tidy:light', label: '轻量整理', icon: 'ri-align-top', run: quickTidy },
     { id: 'tidy:route', label: '只整理连线', icon: 'ri-route-line', run: () => { tidyDialog.value = 'route' } },
   ], event.currentTarget)

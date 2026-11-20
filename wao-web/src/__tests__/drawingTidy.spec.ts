@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import { tidyDrawing } from '@/utils/drawingTidy'
+import { describeDrawingForAi, tidyDrawing } from '@/utils/drawingTidy'
+import { parseDrawingAiGuidance } from '@/utils/drawingAiLayoutModel'
 import { boundsOf, contains, crosses, insideBounds, overlaps, segments } from '@/utils/drawingTidyGeometry'
 
 type Element = OrderedExcalidrawElement
@@ -25,6 +26,33 @@ function edge(id: string, from: string, to: string, x: number, y: number, dx: nu
 const path = (arrow: Arrow) => segments(arrow.points.map(([x, y]) => ({ x: arrow.x + x, y: arrow.y + y })))
 
 describe('草图整理', () => {
+  it('利用 AI 分区和节点顺序生成预览，保护锁定对象且忽略不存在的模型标识', async () => {
+    const elements = [
+      shape('prepare', 0, 170),
+      shape('call', 200, 89),
+      shape('receipt', 45, 0),
+      shape('locked', 780, 150, { locked: true }),
+    ]
+    const selectedIds = ['prepare', 'call', 'receipt']
+    const graph = describeDrawingForAi({ elements, selectedIds, request: { mode: 'ai', scope: 'selection' } })
+    expect(graph.nodes.map(({ id }) => id)).toEqual(['element:prepare', 'element:call', 'element:receipt'])
+    const guidance = parseDrawingAiGuidance(JSON.stringify({
+      direction: 'right',
+      groups: [
+        { title: '处理', ids: ['element:prepare', 'element:call', 'missing'] },
+        { title: '回执', ids: ['element:receipt', 'element:call', 'element:locked'] },
+      ],
+      main: ['invented-edge'], summary: '先处理，再查看回执。',
+    }), graph)
+    expect(guidance.main).toEqual([])
+    const result = await tidyDrawing({ elements, selectedIds, request: { mode: 'layout', scope: 'selection', guidance } })
+    expect(result.lanes?.map(({ name, units }) => [name, units])).toEqual([
+      ['处理', ['prepare', 'call']], ['回执', ['receipt']],
+    ])
+    expect(result.changed.map(({ id }) => id).sort()).toEqual(['call', 'prepare', 'receipt'])
+    expect(elements[0]).toMatchObject({ x: 0, y: 170 })
+  })
+
   it('对齐并等距分布局部元素，忽略锁定和选区外内容', async () => {
     const elements = [
       shape('a', 0, 0), shape('b', 94, 10), shape('c', 210, 0),

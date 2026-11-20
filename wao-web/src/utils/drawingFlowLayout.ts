@@ -7,6 +7,7 @@ export type FlowLink = {
   target: string
   label?: string
   captionSize?: Pick<Bounds, 'width' | 'height'>
+  primary?: boolean
 }
 export type FlowLane = { name: string; bounds: Bounds; units: string[] }
 
@@ -14,6 +15,7 @@ const exception = /^(?:否|不通过|失败|异常|取消|撤回|重试|no|false
 const normal = /^(?:是|通过|成功|正常|yes|true|success)(?:$|[\s：:，,（(])/i
 
 function linkPriority(link: FlowLink) {
+  if (link.primary) return 12
   const label = link.label?.trim() ?? ''
   if (exception.test(label)) return -8
   return normal.test(label) ? 4 : 0
@@ -52,10 +54,11 @@ function orderFlow(nodes: readonly FlowNode[], links: readonly FlowLink[]) {
 
 export function arrangeFlow(
   nodes: readonly FlowNode[], links: readonly FlowLink[], horizontal: boolean, lanes: boolean, compact: boolean,
+  modelOrder = false,
 ) {
   const primary = horizontal ? 'x' : 'y', secondary = horizontal ? 'y' : 'x'
   const length = horizontal ? 'width' : 'height', breadth = horizontal ? 'height' : 'width'
-  const sorted = [...nodes].sort((a, b) => a.bounds[primary] - b.bounds[primary] ||
+  const sorted = modelOrder ? [...nodes] : [...nodes].sort((a, b) => a.bounds[primary] - b.bounds[primary] ||
     a.bounds[secondary] - b.bounds[secondary])
   const { order, back, outgoing } = orderFlow(sorted, links)
   const rank = new Map(order.map((id) => [id, 0]))

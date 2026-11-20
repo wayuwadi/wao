@@ -3,6 +3,7 @@ import type { DrawingTidyInput, DrawingTidyRequest, DrawingTidyResult } from './
 export type DrawingTidyPreparation = Pick<DrawingTidyResult, 'moved' | 'routed' | 'skipped' | 'mainCount' | 'sections' | 'images' | 'captions' | 'canExpandFrames' | 'crossings' | 'limited'> & {
   changed: number
   laneCount?: number
+  aiSummary?: string
   before: string
   after: string
   apply: () => void

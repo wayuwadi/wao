@@ -177,13 +177,25 @@ async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
   const fingerprint = (items: readonly OrderedExcalidrawElement[]) =>
     JSON.stringify(items.map(({ id, version, versionNonce }) => [id, version, versionNonce]))
   const version = fingerprint(elements)
-  const result = await calculateDrawingTidy({ elements, selectedIds: selectedIds(api), request }, signal)
+  const input = { elements, selectedIds: selectedIds(api), request }
   const ensureCurrent = () => {
     signal.throwIfAborted()
     if (editableCanvas() !== api || fingerprint(api.getSceneElementsIncludingDeleted()) !== version) {
       throw new Error('草图已发生变化，请重新整理。')
     }
   }
+  let aiSummary: string | undefined
+  if (request.mode === 'ai') {
+    const [{ describeDrawingForAi }, { requestDrawingAiGuidance }] = await Promise.all([
+      import('@/utils/drawingTidy'), import('@/utils/drawingAiLayoutModel'),
+    ])
+    ensureCurrent()
+    const guidance = await requestDrawingAiGuidance(describeDrawingForAi(input), signal)
+    ensureCurrent()
+    aiSummary = guidance.summary
+    input.request = { ...request, mode: 'layout', guidance }
+  }
+  const result = await calculateDrawingTidy(input, signal)
   ensureCurrent()
   const changes = new Map(result.changed.map((element) => [element.id, element]))
   const lanes = result.lanes ?? []
@@ -204,6 +216,7 @@ async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
   return {
     moved: result.moved, routed: result.routed, skipped: result.skipped, changed: changes.size,
     laneCount: lanes.length, mainCount: result.mainCount, sections: result.sections, images: result.images, captions: result.captions,
+    aiSummary,
     crossings: result.crossings, canExpandFrames: result.canExpandFrames, limited: result.limited, before, after,
     apply() {
       ensureCurrent()

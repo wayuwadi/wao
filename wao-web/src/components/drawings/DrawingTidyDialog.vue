@@ -7,7 +7,7 @@ import type { DrawingTidyCanvas, DrawingTidyPreparation } from '@/utils/drawingT
 import type { DrawingTidyRequest } from '@/utils/drawingTidy'
 
 const props = defineProps<{
-  mode: 'route' | 'layout'
+  mode: 'route' | 'layout' | 'ai'
   canvas: DrawingTidyCanvas
   disabled: boolean
 }>()
@@ -19,7 +19,7 @@ const preview = shallowRef<DrawingTidyPreparation>()
 const beforeUrl = ref('')
 const afterUrl = ref('')
 const expandFrames = ref(false)
-const view = ref<'after' | 'before' | 'compare'>('after')
+const view = ref<'after' | 'before' | 'compare'>(props.mode === 'ai' ? 'compare' : 'after')
 const zoom = ref(1)
 const busy = ref(false)
 const error = ref('')
@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
 
 <template>
   <SettingsDialogShell
-    :title="mode === 'route' ? '只整理连线' : '智能排版'"
+    :title="mode === 'route' ? '只整理连线' : mode === 'ai' ? 'AI 整理' : '智能排版'"
     width="min(1440px, calc(100vw - 48px))"
     height="calc(100dvh - 48px)"
     icon="ri-node-tree"
@@ -114,12 +114,16 @@ onBeforeUnmount(() => {
           </select>
         </label>
       </div>
-      <p v-if="busy" role="status">正在生成整理预览…</p>
+      <p v-if="busy" role="status">{{ mode === 'ai' ? '本机 Codex 正在分析草图的阅读顺序、主线和分区，随后生成可供对照的预览…' : '正在生成整理预览…' }}</p>
       <p v-else-if="error" role="alert">{{ error }}</p>
       <template v-else-if="preview">
+        <p v-if="preview.aiSummary">{{ preview.aiSummary }}</p>
         <p role="status">
           <template v-if="preview.sections">重排 {{ preview.sections }} 个分区，调整 {{ preview.images }} 张图片和 {{ preview.captions }} 处文字。</template>
-          <template v-else-if="preview.laneCount">按 {{ preview.laneCount }} 个角色泳道呈现流程交接。</template>
+          <template v-else-if="preview.laneCount">
+            {{ mode === 'ai' ? `按 ${preview.laneCount} 个分区排版，移动 ${preview.moved} 个对象，重排 ${preview.routed} 条连线。`
+              : `按 ${preview.laneCount} 个角色泳道呈现流程交接。` }}
+          </template>
           <template v-else-if="preview.changed && preview.mainCount">将 {{ preview.mainCount }} 个主流程节点连成阅读主轴。</template>
           <template v-else-if="preview.changed">移动 {{ preview.moved }} 个图形，重排 {{ preview.routed }} 条连线。</template>
           <template v-else-if="preview.limited === 'lanes'">需要现有截图分区，或至少两个相连的角色。可以在节点文字首行写「角色：名称」。</template>
