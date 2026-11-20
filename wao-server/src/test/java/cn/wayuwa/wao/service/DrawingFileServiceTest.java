@@ -86,6 +86,24 @@ class DrawingFileServiceTest {
     }
 
     @Test
+    void createsInitialSceneAndVersionOnlyOnceForTheSameMemberAndRequest() {
+        var request = new CreateDrawingFileRequest("照片草图", null, CHANGED_SCENE, "a".repeat(32));
+        DrawingFileEntity[] inserted = new DrawingFileEntity[1];
+        when(mapper.insert(any(DrawingFileEntity.class))).thenAnswer(invocation -> {
+            inserted[0] = invocation.getArgument(0);
+            return 1;
+        });
+        var created = service.create(request, OWNER);
+        when(mapper.selectById(created.id())).thenReturn(inserted[0]);
+        when(mapper.findOwned(created.id(), OWNER)).thenReturn(inserted[0]);
+
+        assertThat(created.sceneJson()).isEqualTo(CHANGED_SCENE);
+        assertThat(service.create(request, OWNER)).isEqualTo(created);
+        verify(mapper).insert(any(DrawingFileEntity.class));
+        verify(mapper).insertVersion(eq(created.id()), eq(1), eq(CHANGED_SCENE), any());
+    }
+
+    @Test
     void createInGroupChecksOwnerBeforeCreatingAndAssignsAtomically() {
         var groups = mock(cn.wayuwa.wao.mapper.DrawingGroupMapper.class);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "groups", groups);

@@ -25,6 +25,7 @@ const props = defineProps<{
   name: string
   snapMode: DrawingSnapMode
   libraryItems?: LibraryItems
+  fitOnOpen?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -105,6 +106,12 @@ function changed(
     ready = true
     lastSnapMode = mode
     applySnapMode(props.snapMode)
+    if (props.fitOnOpen && canvasApi && elements.length) {
+      const api = canvasApi
+      requestAnimationFrame(() => {
+        if (canvasApi === api) api.scrollToContent(elements, { fitToViewport: true, viewportZoomFactor: 0.82 })
+      })
+    }
     emit('ready', tidyCanvas)
     return
   }

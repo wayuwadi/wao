@@ -36,8 +36,24 @@ export const updateDrawingLibrary = (upsert: LibraryItems, remove: string[], sig
 export const fetchDrawing = (id: string, signal?: AbortSignal) =>
   data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000, signal }))
 
-export const createDrawing = (title?: string, groupId?: string) =>
-  data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId }))
+export const createDrawing = (
+  title?: string, groupId?: string, initial?: { sceneJson: string; requestId: string },
+) => data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId, ...initial }))
+
+export interface DrawingPhotoJob {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  result: string | null
+  message: string | null
+}
+
+export const startDrawingPhoto = (referenceId: string, requestId: string, signal: AbortSignal) =>
+  data(http.post<ApiResponse<DrawingPhotoJob>>('/api/drawings/photo-jobs', { referenceId, requestId }, { signal }))
+
+export const fetchDrawingPhoto = (id: string, signal: AbortSignal) =>
+  data(http.get<ApiResponse<DrawingPhotoJob>>(`/api/drawings/photo-jobs/${encodeURIComponent(id)}`, {
+    signal, headers: { 'Cache-Control': 'no-cache' },
+  }))
 
 export const saveDrawing = (id: string, sceneJson: string, revision: number) =>
   data(http.put<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { sceneJson, revision }, { timeout: 120_000 }))

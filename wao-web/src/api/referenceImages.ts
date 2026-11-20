@@ -14,9 +14,9 @@ export async function listReferenceImages(): Promise<ReferenceImage[]> {
   return response.data.data
 }
 
-export async function uploadReferenceImage(file: File): Promise<ReferenceImage> {
+export async function uploadReferenceImage(file: File, signal?: AbortSignal): Promise<ReferenceImage> {
   const form = new FormData()
   form.append('file', file)
-  const response = await http.post<ApiResponse<ReferenceImage>>('/api/reference-images', form)
+  const response = await http.post<ApiResponse<ReferenceImage>>('/api/reference-images', form, { signal })
   return response.data.data
 }
