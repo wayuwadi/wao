@@ -1,4 +1,5 @@
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
+import type { DrawingAiGuidance } from './drawingAiLayoutModel'
 import { arrangeFlow, type FlowLane, type FlowLink, type FlowNode } from './drawingFlowLayout'
 import { contains, overlaps, translate, unionBounds, type Bounds, type Point } from './drawingTidyGeometry'
 
@@ -139,9 +140,105 @@ function planFlowLayout(
   return result
 }
 
+function guidedGrid(nodes: readonly Node[], horizontal: boolean) {
+  const columns = Math.min(nodes.length, horizontal ? 3 : 2)
+  const widths = Array.from({ length: columns }, (_, column) =>
+    Math.max(...nodes.filter((_, index) => index % columns === column).map(({ bounds }) => bounds.width)))
+  let y = 0
+  const boxes: Bounds[] = []
+  for (let index = 0; index < nodes.length; index += columns) {
+    const row = nodes.slice(index, index + columns)
+    let x = 0
+    row.forEach(({ bounds }, column) => {
+      boxes.push({ ...bounds, x, y })
+      x += widths[column]! + 58
+    })
+    y += Math.max(...row.map(({ bounds }) => bounds.height)) + 56
+  }
+  return boxes
+}
+
+function planGuidedLayout(
+  nodes: readonly Node[], links: readonly Link[], fixed: readonly Bounds[], frame: Bounds | undefined,
+  guidance: DrawingAiGuidance,
+): FlowPlan {
+  const offsets = new Map<string, Point>()
+  if (nodes.length < 2) return { offsets, skipped: 0 }
+  const remaining = new Map(nodes.map((node) => [node.id, node]))
+  const groups = guidance.groups.flatMap(({ title, ids }) => {
+    const members = ids.flatMap((id) => {
+      const item = remaining.get(id)
+      remaining.delete(id)
+      return item ? [item] : []
+    })
+    return members.length ? [{ title, nodes: members }] : []
+  })
+  if (remaining.size) groups.push({ title: '补充内容', nodes: [...remaining.values()] })
+  const horizontal = guidance.direction === 'right'
+  const primary = new Set(guidance.main)
+  const feedback: string[] = []
+  const packed = groups.map(({ title, nodes: members }) => {
+    const ids = new Set(members.map(({ id }) => id))
+    const edges = links.filter(({ source, target }) => ids.has(source) && ids.has(target))
+      .map((edge) => ({ ...edge, primary: primary.has(edge.id) }))
+    const flow = edges.length ? arrangeFlow(members, edges, horizontal, false, !!frame, true) : undefined
+    if (flow) feedback.push(...flow.feedback)
+    const boxes = flow?.boxes ?? guidedGrid(members, horizontal)
+    const envelope = unionBounds(boxes)
+    return { title, members, boxes: boxes.map((box) => translate(box, { x: 24 - envelope.x, y: 48 - envelope.y })),
+      bounds: { x: 0, y: 0, width: envelope.width + 48, height: envelope.height + 72 } }
+  })
+  const start = unionBounds(nodes.map(({ bounds }) => bounds))
+  const width = frame?.width ?? Math.max(start.width, ...packed.map(({ bounds }) => bounds.width))
+  let x = 0, y = 0, rowHeight = 0
+  const bands = packed.map(({ bounds }) => {
+    if (x && x + bounds.width > width) {
+      y += rowHeight + 64
+      x = 0
+      rowHeight = 0
+    }
+    const band = { ...bounds, x, y }
+    x += bounds.width + 64
+    rowHeight = Math.max(rowHeight, bounds.height)
+    return band
+  })
+  const extent = unionBounds(bands)
+  const groupShift = placeDrawingBoxes(bands, start, fixed, frame)
+  const footprint = frame ?? {
+    x: start.x - 42, y: start.y - 42, width: Math.max(start.width + 168, extent.width + 84),
+    height: Math.max(start.height + 168, extent.height + 84),
+  }
+  const guides: FlowLane[] = []
+  const stillUnplaced = new Map(nodes.map(({ id, bounds }) => [id, bounds]))
+  const blockers = [...fixed]
+  let skipped = 0
+  for (const [index, group] of packed.entries()) {
+    for (const { id } of group.members) stillUnplaced.delete(id)
+    const target = translate(bands[index]!, start)
+    const shift = groupShift ?? placeDrawingBoxes([group.bounds], target, [...blockers, ...stillUnplaced.values()], footprint)
+    if (!shift) {
+      blockers.push(...group.members.map(({ bounds }) => bounds))
+      skipped += group.members.length
+      continue
+    }
+    const band = groupShift ? translate(bands[index]!, groupShift) : translate(group.bounds, shift)
+    blockers.push(band)
+    group.members.forEach(({ id, bounds }, i) => {
+      const box = group.boxes[i]!
+      offsets.set(id, { x: band.x + box.x - bounds.x, y: band.y + box.y - bounds.y })
+    })
+    if (!frame && packed.length > 1) guides.push({ name: group.title, bounds: band, units: group.members.map(({ id }) => id) })
+  }
+  const spine = links.filter(({ id }) => primary.has(id))
+  return { offsets, guides, skipped, spine: spine.map(({ id }) => id), feedback,
+    mainCount: new Set(spine.flatMap(({ source, target }) => [source, target])).size }
+}
+
 export async function planDrawingLayout(
   nodes: readonly Node[], links: readonly Link[], preset: DrawingLayout, fixed: readonly Bounds[], frame?: Bounds,
+  guidance?: DrawingAiGuidance,
 ): Promise<FlowPlan> {
+  if (guidance) return planGuidedLayout(nodes, links, fixed, frame, guidance)
   if (preset === 'smart' || preset === 'main' || preset === 'lanes') {
     return planFlowLayout(nodes, links, preset, fixed, frame)
   }

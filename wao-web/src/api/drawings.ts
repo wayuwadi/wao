@@ -40,7 +40,7 @@ export const createDrawing = (
   title?: string, groupId?: string, initial?: { sceneJson: string; requestId: string },
 ) => data(http.post<ApiResponse<DrawingFile>>('/api/drawings', { title, groupId, ...initial }))
 
-export interface DrawingPhotoJob {
+export interface DrawingAiJob {
   id: string
   status: 'queued' | 'running' | 'succeeded' | 'failed'
   result: string | null
@@ -48,10 +48,18 @@ export interface DrawingPhotoJob {
 }
 
 export const startDrawingPhoto = (referenceId: string, requestId: string, signal: AbortSignal) =>
-  data(http.post<ApiResponse<DrawingPhotoJob>>('/api/drawings/photo-jobs', { referenceId, requestId }, { signal }))
+  data(http.post<ApiResponse<DrawingAiJob>>('/api/drawings/photo-jobs', { referenceId, requestId }, { signal }))
 
 export const fetchDrawingPhoto = (id: string, signal: AbortSignal) =>
-  data(http.get<ApiResponse<DrawingPhotoJob>>(`/api/drawings/photo-jobs/${encodeURIComponent(id)}`, {
+  data(http.get<ApiResponse<DrawingAiJob>>(`/api/drawings/photo-jobs/${encodeURIComponent(id)}`, {
+    signal, headers: { 'Cache-Control': 'no-cache' },
+  }))
+
+export const startDrawingLayout = (graph: string, requestId: string, signal: AbortSignal) =>
+  data(http.post<ApiResponse<DrawingAiJob>>('/api/drawings/layout-jobs', { graph, requestId }, { signal }))
+
+export const fetchDrawingLayout = (id: string, signal: AbortSignal) =>
+  data(http.get<ApiResponse<DrawingAiJob>>(`/api/drawings/layout-jobs/${encodeURIComponent(id)}`, {
     signal, headers: { 'Cache-Control': 'no-cache' },
   }))
 

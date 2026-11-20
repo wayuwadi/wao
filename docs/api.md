@@ -8,6 +8,8 @@
 
 `POST /api/drawings` 接收可选的初始 `sceneJson`（最多 100 万字符）和 `requestId`，以当前登录成员创建个人草图并保存首个版本。相同成员重复提交同一请求号返回已创建的草图。详见 [拍照转草图](specs/drawings.md#拍照转草图)。
 
+有浏览器会话的成员可调用 `POST /api/drawings/layout-jobs`，传入 32 位十六进制 `requestId` 和最多 65,000 字符的 `graph` JSON 字符串。结构包含 `nodes` 与 `links`，支持 2–140 个布局单元和至多 230 条连线。 `GET /api/drawings/layout-jobs/{id}` 仅返回当前成员的整理任务，状态结构与照片识别相同。模型结果只给出方向、分区、主线标识和分析说明。接口不写入草图。详见 [AI 整理已有画板](specs/drawings.md#ai-整理已有画板)。
+
 ## 知识库归档目录（2026-11-06）
 
 `GET /api/docs/archived?kbId={id}&catalog=true` 返回指定知识库的轻量归档目录，按归档时间倒序。标题、作者、归属、修订号、标签与页面类型保持原口径；`bodyLoaded=false`、`blocks=[]`、`content=null`、`backlinks=[]` 明确表示尚未读取正文。浏览器展开归档目录时使用此参数，打开单篇后仍调用 `GET /api/docs/{id}` 获取完整正文及反向链接。目录查询只读取该库的元数据，不加载全库正文或构建全局反链。

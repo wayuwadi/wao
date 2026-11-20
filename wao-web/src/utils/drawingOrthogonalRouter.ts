@@ -114,3 +114,27 @@ export function orthogonalRoute(start: Point, end: Point, shapes: readonly Bound
     }
   }
 }
+
+/** Recompute visual ports while leaving the caller's node IDs and direction intact. */
+export function routeDrawingConnection(
+  source: Bounds, target: Bounds, obstacles: readonly Bounds[], earlier: readonly Segment[],
+  gaps: readonly [number, number] = [8, 8],
+) {
+  const center = (box: Bounds) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
+  const port = (box: Bounds, horizontal: boolean, sign: number, gap: number) => {
+    const point = center(box)
+    return horizontal ? { ...point, x: point.x + sign * (box.width / 2 + gap) }
+      : { ...point, y: point.y + sign * (box.height / 2 + gap) }
+  }
+  const from = center(source), to = center(target)
+  const dx = to.x - from.x, dy = to.y - from.y
+  const preferred = Math.abs(dx) >= Math.abs(dy)
+  for (const horizontal of [preferred, !preferred]) {
+    const sign = Math.sign(horizontal ? dx : dy) || 1
+    const start = port(source, horizontal, sign, gaps[0])
+    const end = source === target ? port(target, !horizontal, 1, gaps[1])
+      : port(target, horizontal, -sign, gaps[1])
+    const route = orthogonalRoute(start, end, obstacles, earlier) ?? orthogonalRoute(start, end, obstacles, [])
+    if (route && route.length > 1) return route
+  }
+}

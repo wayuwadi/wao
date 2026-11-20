@@ -1,8 +1,9 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import { orthogonalRoute } from './drawingOrthogonalRouter'
+import { orthogonalRoute, routeDrawingConnection } from './drawingOrthogonalRouter'
 import { findDrawingAttachments, floatingLabelPositions } from './drawingLayoutAttachments'
 import { flowLane, type FlowLane } from './drawingFlowLayout'
 import { planDrawingStoryboard } from './drawingStoryboardLayout'
+import type { DrawingAiGuidance } from './drawingAiLayoutModel'
 import { planDrawingLayout, type DrawingLayout } from './drawingTidyLayout'
 import {
   boundsOf, contains, crosses, insideBounds, overlaps, samePoint, segments, sharedLength, translate, unionBounds,
@@ -12,12 +13,13 @@ import {
 type Element = OrderedExcalidrawElement
 type Arrow = Extract<Element, { type: 'arrow' }>
 type Shape = Extract<Element, { type: 'rectangle' | 'diamond' | 'ellipse' | 'image' }>
-export type DrawingTidyMode = 'light' | 'route' | 'layout'
+export type DrawingTidyMode = 'light' | 'route' | 'layout' | 'ai'
 export type DrawingTidyRequest = {
   mode: DrawingTidyMode
   scope: 'selection' | 'all'
   layout?: DrawingLayout
   expandFrames?: boolean
+  guidance?: DrawingAiGuidance
 }
 
 export type DrawingTidyInput = {
@@ -68,6 +70,7 @@ function nearbyShape(point: Point, shapes: Shape[], frameId: string | null) {
 function unitsFor(
   elements: readonly Element[], selected: ReadonlySet<string>, all: boolean, endpoints: Map<string, Endpoints>,
   attachments: ReturnType<typeof findDrawingAttachments> | undefined,
+  includeLoose = false,
 ) {
   const groups = new Map<string, Element[]>()
   const groupByElement = new Map(elements.map((element) =>
@@ -91,6 +94,18 @@ function unitsFor(
     groups.set(group, members)
   }
   const pinned = new Set(attachments?.ambiguous)
+  if (includeLoose) {
+    const anchors = elements.flatMap((element) => {
+      if (element.type !== 'line') return []
+      const points = arrowPoints(element)
+      return points.length > 1 ? [points[0]!, points[points.length - 1]!] : []
+    })
+    for (const element of elements.filter(isObstacle)) {
+      const { x, y, width, height } = boundsOf(element)
+      if (anchors.some((point) => point.x >= x - 10 && point.x <= x + width + 10 &&
+        point.y >= y - 10 && point.y <= y + height + 10)) pinned.add(element.id)
+    }
+  }
   for (const arrow of elements.filter(isArrow)) {
     if (!arrow.locked && !hasFixedSegments(arrow) && !arrow.angle &&
       !arrow.boundElements?.some(({ id }) => locked.has(id)) &&
@@ -99,7 +114,10 @@ function unitsFor(
     for (const id of endpoints.get(arrow.id)!) if (id) pinned.add(id)
   }
   const units = new Map<string, Unit>()
-  for (const element of elements.filter(isShape)) {
+  const captions = new Set([...attachments?.labels.values() ?? []].flat().map(({ text }) => text.id))
+  const candidates = elements.filter((element) => isShape(element) ||
+    (includeLoose && element.type === 'text' && !element.containerId && !captions.has(element.id)))
+  for (const element of candidates) {
     const id = groupByElement.get(element.id)!
     if (units.has(id)) continue
     const members = groups.get(id)!
@@ -200,7 +218,7 @@ function hasFixedSegments(arrow: Arrow) {
   return !!(elbow.fixedSegments?.length || elbow.startIsSpecial || elbow.endIsSpecial)
 }
 
-function arrowPoints(arrow: Arrow) {
+function arrowPoints(arrow: Pick<Arrow, 'angle' | 'points' | 'x' | 'y'>) {
   const points = arrow.points.map(([x, y]) => ({ x: arrow.x + x, y: arrow.y + y }))
   if (!arrow.angle || !points.length) return points
   const box = unionBounds(points.map((point) => ({ ...point, width: 0, height: 0 })))
@@ -562,12 +580,7 @@ export function tidyDrawing(input: DrawingTidyInput): Promise<DrawingTidyResult>
   return runTidy(input, input.request.mode === 'light', new Set())
 }
 
-async function runTidy(
-  { elements, selectedIds, request }: DrawingTidyInput,
-  conservative: boolean,
-  frozen: ReadonlySet<string>,
-  retries = 0,
-): Promise<DrawingTidyResult> {
+function inspectDrawing({ elements, selectedIds, request }: DrawingTidyInput) {
   const live = elements.filter((element) => !element.isDeleted)
   const selected = new Set(selectedIds)
   const elementById = new Map(live.map((element) => [element.id, element]))
@@ -575,13 +588,8 @@ async function runTidy(
   const arrowsById = new Map(arrows.map((arrow) => [arrow.id, arrow]))
   const labels = new Map(live.flatMap((element) =>
     element.type === 'text' && element.containerId ? [[element.containerId, element.originalText || element.text] as const] : []))
-  const smart = request.mode === 'layout' && !!request.layout && ['main', 'smart', 'lanes'].includes(request.layout)
   const all = request.scope === 'all'
   const originalPaths = new Map(arrows.map((arrow) => [arrow.id, arrowPoints(arrow)]))
-  const storyboard = smart && !frozen.size && request.layout !== 'main'
-    ? arrangeStoryboard(live, all ? undefined : selected)
-    : undefined
-  if (storyboard) return storyboard
   const shapes = request.mode !== 'route' ? live.filter(isShape) : []
   const looseTexts = live.filter((element) =>
     element.type === 'text' && !element.containerId && !element.angle)
@@ -607,7 +615,46 @@ async function runTidy(
     if (!first || !last || request.mode === 'route') return [arrow.id, [from, to]]
     return [arrow.id, [from ?? endpointAt(first, arrow.frameId), to ?? endpointAt(last, arrow.frameId)]]
   }))
-  const units = unitsFor(live, selected, all, endpoints, attachments)
+  const units = unitsFor(live, selected, all, endpoints, attachments, request.mode === 'ai' || !!request.guidance)
+  return { live, selected, elementById, arrows, arrowsById, labels, all, originalPaths, attachments, endpoints, units }
+}
+
+export function describeDrawingForAi(input: DrawingTidyInput) {
+  const { units, labels, endpoints, arrowsById, attachments } = inspectDrawing(input)
+  const movable = units.filter((unit) => unit.movable)
+  if (movable.length < 2) throw new Error('AI 整理需要至少两个可移动的图形、图片或文字。')
+  if (movable.length > 140) throw new Error('画板内容较多，请分批框选后整理。')
+  const nodes = movable.map(({ id, bounds, elements, frameId }) => ({
+    id, frame: frameId, bounds,
+    items: elements.slice(0, 12).map((element) => ({
+      type: element.type,
+      text: (element.type === 'text' ? element.originalText || element.text : labels.get(element.id))?.slice(0, 160),
+    })),
+  }))
+  const links = layoutLinks(movable, endpoints, labels, arrowsById, attachments?.labels).flatMap((link) => {
+    const arrow = arrowsById.get(link.id)!
+    if (!arrow.startArrowhead && !arrow.endArrowhead) return []
+    return [{ id: link.id, from: link.source, to: link.target, label: link.label?.slice(0, 160) }]
+  })
+  return { nodes, links }
+}
+
+async function runTidy(
+  input: DrawingTidyInput,
+  conservative: boolean,
+  frozen: ReadonlySet<string>,
+  retries = 0,
+): Promise<DrawingTidyResult> {
+  const { elements, selectedIds, request } = input
+  const smart = request.mode === 'layout' && (!!request.guidance ||
+    !!request.layout && ['main', 'smart', 'lanes'].includes(request.layout))
+  const storyboard = smart && !request.guidance && !frozen.size && request.layout !== 'main'
+    ? arrangeStoryboard(elements.filter((element) => !element.isDeleted),
+      request.scope === 'all' ? undefined : new Set(selectedIds))
+    : undefined
+  if (storyboard) return storyboard
+  const { live, selected, elementById, arrows, arrowsById, labels, all, originalPaths, attachments, endpoints, units } =
+    inspectDrawing(input)
   const unitByElement = new Map(units.flatMap((unit) => unit.elements.map(({ id }) => [id, unit.id])))
   const inScope = new Set(units.filter((unit) => unit.inScope).flatMap((unit) => unit.elements.map(({ id }) => id)))
   const changes = new Map<string, Element>()
@@ -646,15 +693,19 @@ async function runTidy(
           const anchor = box && { x: box.x + box.width / 2, y: box.y + box.height / 2 }
           return { ...unit, lane: names.size === 1 ? [...names][0] : undefined, anchor }
         })
-        const links = layoutLinks(candidates, endpoints, labels, arrowsById, attachments?.labels)
+        const layoutEdges = layoutLinks(candidates, endpoints, labels, arrowsById, attachments?.labels)
+        const links = request.guidance ? layoutEdges.filter(({ id }) => {
+          const arrow = arrowsById.get(id)!
+          return arrow.startArrowhead || arrow.endArrowhead
+        }) : layoutEdges
         const preset = request.layout ?? 'auto'
         const frameBox = frame && boundsOf(frame)
-        let layout = await planDrawingLayout(nodes, links, preset, fixed, frameBox)
+        let layout = await planDrawingLayout(nodes, links, preset, fixed, frameBox, request.guidance)
         if (smart && frame && frameBox && !frame.locked && !frame.angle && layout.skipped) {
           canExpandFrames = true
           if (request.expandFrames) {
             const space = { ...frameBox, width: frameBox.width * 2, height: frameBox.height * 2 }
-            const expanded = await planDrawingLayout(nodes, links, preset, fixed, space)
+            const expanded = await planDrawingLayout(nodes, links, preset, fixed, space, request.guidance)
             const relocated = nodes.filter(({ id }) => expanded.offsets.has(id))
               .map(({ id, bounds }) => translate(bounds, expanded.offsets.get(id)!))
             if (expanded.skipped < layout.skipped && relocated.length) {
@@ -733,7 +784,7 @@ async function runTidy(
       arrow.customData?.waoTidyRoute !== relativePointsKey(arrow.points)
     if (arrow.locked || arrow.boundElements?.some(({ id }) => elementById.get(id)?.locked) ||
       attachments?.labels.get(arrow.id)?.some(({ text }) => text.locked) ||
-      attachments?.ambiguousArrows.has(arrow.id) || arrow.angle || manual || hasFixedSegments(arrow) || after.length < 2 ||
+      attachments?.ambiguousArrows.has(arrow.id) || arrow.angle || (manual && !request.guidance) || hasFixedSegments(arrow) || after.length < 2 ||
       (from && from === to) || (from && !elementById.has(from)) || (to && !elementById.has(to))) {
       skipped++
       continue
@@ -743,7 +794,9 @@ async function runTidy(
   let routed = 0
   route.sort((a, b) => Number(spine.has(b.id)) - Number(spine.has(a.id)) ||
     Number(feedback.has(a.id)) - Number(feedback.has(b.id)))
+  const stillToRoute = new Set(request.guidance ? route.map(({ id }) => id) : [])
   for (const arrow of route) {
+    stillToRoute.delete(arrow.id)
     const ids = endpoints.get(arrow.id)!
     const [from, to] = ids
     const frameId = from ? elementById.get(from)?.frameId : null
@@ -758,6 +811,25 @@ async function runTidy(
       return Math.min(anchor.x - box.x, box.x + box.width - anchor.x,
         anchor.y - box.y, box.y + box.height - anchor.y) > 12
     })
+    const source = from && obstacles.get(from), target = to && obstacles.get(to)
+    if (request.guidance && !arrow.elbowed && !insetEndpoint && source && target &&
+        (offsets.has(from!) || offsets.has(to!))) {
+      const earlier = [...paths.entries()].flatMap(([id, points]) =>
+        id === arrow.id || stillToRoute.has(id) ? [] : segments(points))
+      const candidate = routeDrawingConnection(source, target, [...obstacles.values()], earlier,
+        [arrow.startBinding?.gap || 6, arrow.endBinding?.gap || 6])
+      if (candidate && (!frameBounds || candidate.every((point) =>
+        contains(frameBounds, { ...point, width: 0, height: 0 })))) {
+        paths.set(arrow.id, candidate)
+        changes.set(arrow.id, arrowWithPath({
+          ...arrow,
+          startBinding: arrow.startBinding && { ...arrow.startBinding, focus: 0 },
+          endBinding: arrow.endBinding && { ...arrow.endBinding, focus: 0 },
+        }, candidate, true))
+        routed++
+        continue
+      }
+    }
     if (feedback.has(arrow.id) && !insetEndpoint) {
       const outside = outsideFeedback(arrow, ids, paths, obstacles, frameBounds)
       if (outside) {
@@ -839,19 +911,41 @@ async function runTidy(
     if (request.mode === 'layout' && retries < 4) {
       return runTidy({ elements, selectedIds, request }, conservative, new Set([...frozen, ...unsafe]), retries + 1)
     }
+    const independent = request.guidance && request.mode === 'layout'
+      ? freezeConnectedUnits(endpoints, unitByElement, frozen)
+      : undefined
+    if (independent) return runTidy(input, conservative, independent, retries + 1)
     // If the new node positions block a connector, still offer safe routing on the original positions.
     const result = await runTidy({ elements, selectedIds, request: { ...request, mode: 'route' } }, conservative, frozen)
     return { ...result, skipped: result.skipped + offsets.size, ...(smart ? { limited: 'wiring' as const } : {}) }
   }
-  const moved = [...offsets.keys()].filter((id) => isShape(elementById.get(id)!)).length
+  const moved = [...offsets.keys()].filter((id) => {
+    const element = elementById.get(id)!
+    return isShape(element) || (!!request.guidance && element.type === 'text')
+  }).length
   const result = { changed: [...changes.values()], moved, routed, skipped }
   if (!smart) return result
   const crossings = { before: arrowCrossings(originalPaths), after: arrowCrossings(paths) }
   if (crossings.after > crossings.before) {
+    const independent = request.guidance ? freezeConnectedUnits(endpoints, unitByElement, frozen) : undefined
+    if (independent) return runTidy(input, conservative, independent, retries + 1)
     return { changed: [], moved: 0, routed: 0, skipped, limited: 'wiring' }
   }
   return {
     ...result, lanes, mainCount, crossings, canExpandFrames,
     limited: request.layout === 'lanes' && !lanes.length ? 'lanes' : skipped ? 'space' : undefined,
   }
+}
+
+function freezeConnectedUnits(
+  endpoints: ReadonlyMap<string, Endpoints>, units: ReadonlyMap<string, string>, frozen: ReadonlySet<string>,
+) {
+  const next = new Set(frozen)
+  for (const endpointsOfArrow of endpoints.values()) {
+    for (const id of endpointsOfArrow) {
+      const unit = id && units.get(id)
+      if (unit) next.add(unit)
+    }
+  }
+  return next.size > frozen.size ? next : undefined
 }
