@@ -18,7 +18,7 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
 import { useConfirmAction } from '@/composables/confirmAction'
-import { directoryParents, directoryRows, groupLevelExpansion } from '@/utils/knowledgeDirectory'
+import { directoryParents, directoryRows, groupLevelExpansion, type DirectoryNode } from '@/utils/knowledgeDirectory'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 /**
  * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
@@ -57,7 +57,7 @@ const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const sheetEditor = ref<InstanceType<typeof KnowledgeSheet> | null>(null)
-const props = withDefaults(defineProps<{ navigationHidden?: boolean; directoryInitiallyCollapsed?: boolean }>(), {
+const props = withDefaults(defineProps<{ navigationHidden?: boolean; directoryInitiallyCollapsed?: boolean; inlineDirectoryHost?: HTMLElement }>(), {
   navigationHidden: false, directoryInitiallyCollapsed: false,
 })
 async function flushSheet() { await sheetEditor.value?.flush() }
@@ -99,7 +99,7 @@ watch(documentPane, element => {
 }, { flush: 'post' })
 onBeforeUnmount(() => paneObserver?.disconnect())
 const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
-const emit = defineEmits<{ 'focus-change': [focused: boolean] }>()
+const emit = defineEmits<{ 'focus-change': [focused: boolean]; 'directory-pane-change': [visible: boolean] }>()
 const reading = ref(false)
 const focused = ref(false)
 const shortcutsOpen = ref(false)
@@ -161,6 +161,8 @@ const directoryVisible = computed(() => !focused.value && !directoryCollapsed.va
 const directoryName = computed(() => props.directoryInitiallyCollapsed && !isMobile.value ? '知识库目录管理' : '知识库目录')
 function closeMobileDirectory() { closeDirectory() }
 const kb = computed(() => data.kbById(kbId.value))
+const inlineDirectoryActive = computed(() => !!props.inlineDirectoryHost && !directoryVisible.value)
+watch(() => !!kb.value && directoryVisible.value, visible => emit('directory-pane-change', visible), { immediate: true })
 watch(kb, library => { if (!library) { focused.value = false; reading.value = false } })
 
 const docId = ref<string | null>((route.query.doc as string) || null)
@@ -253,7 +255,11 @@ function startFolderRename(id: string) {
   folderNameDraft.value = kb.value?.folders.find(folder => folder.id === id)?.name ?? ''
   folderRenameError.value = ''
   renamingFolder.value = id
-  nextTick(() => treeElement.value?.querySelector<HTMLInputElement>('.folder-input')?.select())
+  void nextTick(() => {
+    const input = treeElement.value?.querySelector<HTMLInputElement>('.folder-input')
+    input?.focus()
+    input?.select()
+  })
 }
 const archivedOpen = ref(false)
 const archivedLoading = ref(false)
@@ -438,7 +444,7 @@ function toggleAllFolders() {
   for (const key of Object.keys(kb.value ? directoryParents(kb.value) : {})) folderOpen[key] = expand
 }
 // 切换知识库时使用该库的分组级默认值；同一页面保留用户的展开选择。
-watch(kbId, resetFolderExpansion, { flush: 'sync' })
+watch([kbId, currentIdentity], resetFolderExpansion, { flush: 'sync' })
 watch(
   [docId, kb],
   ([id, library]) => {
@@ -485,7 +491,7 @@ onBeforeUnmount(() => {
 function preloadSheet(id: string) {
   if (data.docById(id)?.pageType === 'spreadsheet') void loadSheetRuntime().catch(() => {})
 }
-async function selectDoc(id: string) {
+async function selectDoc(id: string, fromInlineDirectory = false) {
   closeDirectory()
   const request = ++documentNavigationRequest, generation = workspaceGeneration
   if (id === docId.value) return
@@ -493,7 +499,9 @@ async function selectDoc(id: string) {
   if (generation !== workspaceGeneration || request !== documentNavigationRequest) return
   flushCurrentDoc()
   docId.value = id
-  void router.replace({ query: { ...route.query, doc: id } })
+  const location = { query: { ...route.query, doc: id } }
+  if (fromInlineDirectory) void router.push(location)
+  else void router.replace(location)
 }
 let preparingDocumentTask = false
 async function addSelectionToTask(text: string) {
@@ -921,7 +929,8 @@ const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderStates.value, treeQuery.value, kb.value.notes ? compareNoteTime : undefined, { includeMatchedDescendants: true }) : [])
+const directoryQuery = computed(() => inlineDirectoryActive.value ? '' : treeQuery.value.trim())
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, documentTitle, folderStates.value, directoryQuery.value, kb.value.notes ? compareNoteTime : undefined, { includeMatchedDescendants: true }) : [])
 const treeRenderLimit = ref(500)
 const renderedTreeRows = computed(() => mixedRows.value.slice(0, treeRenderLimit.value))
 watch([kbId, treeQuery], () => { treeRenderLimit.value = 500 }, { flush: 'sync' })
@@ -942,6 +951,7 @@ async function showMoreTreeRows() {
   treeRenderLimit.value += 500
   if (firstNew) await focusTreeNode(firstNew)
 }
+let treePrefix = '', lastTreeKeyAt = 0
 function onTreeKeydown(event: KeyboardEvent) {
   if (navigationComposition.active(event) || event.altKey || event.ctrlKey || event.metaKey) return
   const key = (event.target as HTMLElement).closest<HTMLElement>('[data-node]')?.dataset.node
@@ -955,14 +965,29 @@ function onTreeKeydown(event: KeyboardEvent) {
     case 'Home': next = mixedRows.value[0]?.key; break
     case 'End': next = renderedTreeRows.value[renderedTreeRows.value.length - 1]?.key; break
     case 'ArrowRight':
-      if (node.hasChildren && !isOpen(node.key) && !treeQuery.value.trim()) folderOpen[node.key] = true
+      if (node.hasChildren && !isOpen(node.key) && !directoryQuery.value) folderOpen[node.key] = true
       else if (mixedRows.value[index + 1]?.parent === node.key) next = mixedRows.value[index + 1]?.key
       break
     case 'ArrowLeft':
-      if (node.hasChildren && isOpen(node.key) && !treeQuery.value.trim()) folderOpen[node.key] = false
+      if (node.hasChildren && isOpen(node.key) && !directoryQuery.value) folderOpen[node.key] = false
       else next = node.parent
       break
-    default: return
+    case 'ContextMenu':
+    case 'F10':
+      if (event.key === 'F10' && !event.shiftKey) return
+      event.preventDefault()
+      openDirectoryContext(event, node)
+      return
+    default: {
+      if (event.key.length !== 1 || event.key === ' ') return
+      const keyTime = Date.now()
+      treePrefix = (keyTime - lastTreeKeyAt < 600 ? treePrefix : '') + event.key.toLocaleLowerCase()
+      lastTreeKeyAt = keyTime
+      const rows = renderedTreeRows.value
+      next = [...rows.slice(index + 1), ...rows.slice(0, index + 1)]
+        .find(row => row.title.toLocaleLowerCase().startsWith(treePrefix))?.key
+      break
+    }
   }
   event.preventDefault()
   if (next) void focusTreeNode(next)
@@ -1352,8 +1377,18 @@ const createItems = computed(() => [
   { id: 'template', label: '从模板新建…', icon: 'ri-file-copy-2-line' },
   { id: 'folder', label: '新建分组', icon: 'ri-folder-add-line' },
 ].filter(item => !kb.value?.notes || !['spreadsheet', 'drawing'].includes(item.id)))
-function openDirectoryContext(event: MouseEvent, parent?: string) {
-  void directoryContext.value?.openAt(event, '新增内容', createItems.value.map(item => ({ ...item, disabled: creatingDoc.value, run: () => parent ? createNested(item.id, parent) : createAction(item.id) })))
+function openDirectoryContext(event: MouseEvent | KeyboardEvent, node?: DirectoryNode) {
+  const actions = node ? directoryNodeItems(node).map(item => ({
+    ...item, disabled: treeSaveState.value === 'saving', run: () => runDirectoryAction(node, item.id),
+  })) : []
+  const anchor = event instanceof KeyboardEvent && event.target instanceof HTMLElement ? event.target : undefined
+  void directoryContext.value?.openAt(event, node?.title || '新增内容', [
+    ...actions,
+    ...createItems.value.map((item, index) => ({
+      ...item, separatorBefore: !!node && index === 0, disabled: creatingDoc.value || treeSaveState.value === 'saving',
+      run: () => node ? createNested(item.id, node.key) : createAction(item.id),
+    })),
+  ], anchor)
 }
 const folderItems = [
   { id: 'rename', label: '重命名', icon: 'ri-edit-line' },
@@ -1366,6 +1401,15 @@ const docItems = [
   { id: 'archive', label: '归档', icon: 'ri-archive-line' },
   { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
 ]
+function directoryNodeItems(node: DirectoryNode) {
+  return node.kind === 'folder' ? folderItems
+    : docItems.filter(item => item.id !== 'template' || (data.docById(node.id)?.pageType ?? 'document') === 'document')
+}
+function runDirectoryAction(node: DirectoryNode, action: string) {
+  if (treeSaveState.value === 'saving') return
+  if (node.kind === 'folder') folderAction(action, node.id)
+  else void docAction(action, node.id)
+}
 async function goHome() {
   mobileDirectoryOpen.value = false
   const request = ++documentNavigationRequest, generation = workspaceGeneration
@@ -1469,9 +1513,11 @@ async function saveKbSettings() {
 // close or unlock a new library's form, even after navigating A → B → A.
 watch([kbId, currentIdentity], () => {
   workspaceGeneration++
+  treePrefix = ''; lastTreeKeyAt = 0
   kbSettingsOpen.value = false; kbSettingsBusy.value = false; kbSettingsError.value = ''
   Object.assign(kbSettings, { name: '', desc: '', icon: '', perm: '仅自己' })
   moveDocId.value = null; moveFolderId.value = ''; pendingMove = null
+  endNodeDrag()
   treeSaveState.value = 'idle'; directoryError.value = ''
   renamingFolder.value = null; folderNameDraft.value = ''; folderRenameSaving.value = false; folderRenameError.value = ''
   newDocFolderId.value = null; newDocParent.value = null; creatingDoc.value = false; templatePickerOpen.value = false
@@ -1479,7 +1525,7 @@ watch([kbId, currentIdentity], () => {
   focused.value = false; reading.value = false; mobileDirectoryOpen.value = false
   directoryContext.value?.close?.(); dismissConfirmation()
 }, { flush: 'sync' })
-onBeforeUnmount(() => { workspaceGeneration++ })
+onBeforeUnmount(() => { workspaceGeneration++; emit('directory-pane-change', false) })
 
 </script>
 
@@ -1508,41 +1554,50 @@ onBeforeUnmount(() => { workspaceGeneration++ })
           <ResourceMenu label="知识库设置" :items="[...(canManageKb ? [{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }] : []), { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
         </div>
 
-        <p v-if="creatingDoc" class="tree-save">正在创建文档…</p>
-        <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
-          <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
-          <span>{{ treeSaveState === 'saving' ? '正在保存目录' : treeSaveState === 'error' ? '目录保存失败' : '目录已保存' }}</span>
-          <button v-if="treeSaveState === 'error'" @click="persistNodeMove()">重试</button>
-        </div>
       </div>
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input ref="treeSearchInput" v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" @keydown="onTreeSearchKeydown" /><button v-if="treeQuery" type="button" aria-label="清除目录搜索" @click="treeQuery = ''; treeSearchInput?.focus()"><i class="ri-close-line" aria-hidden="true"></i></button></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <p v-if="treeQuery.trim()" class="directory-search-count" role="status">找到 {{ treeResultCount }} 篇文档</p>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
       <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
-      <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
-      <div ref="treeElement" class="tree" role="tree" aria-label="知识库文档目录" @keydown="onTreeKeydown" @contextmenu.prevent="openDirectoryContext($event)">
+      <Teleport :to="inlineDirectoryHost ?? 'body'" :disabled="!inlineDirectoryActive">
+      <div ref="treeElement" class="tree" :class="{ 'inline-directory': inlineDirectoryActive }" role="tree"
+        :aria-label="inlineDirectoryActive ? `${kb.name}的目录` : '知识库文档目录'" @keydown="onTreeKeydown"
+        @contextmenu.prevent="openDirectoryContext($event)" @compositionstart="navigationComposition.start" @compositionend="navigationComposition.end">
+        <div v-if="inlineDirectoryActive && !mixedRows.length" class="inline-empty">
+          <span>暂无目录内容</span>
+          <ResourceMenu label="新增目录内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" />
+        </div>
+        <p v-if="creatingDoc" class="tree-save" role="status">正在创建文档…</p>
+        <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
+          <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'" aria-hidden="true"></i>
+          <span role="status">{{ treeSaveState === 'saving' ? '正在保存目录' : treeSaveState === 'error' ? '目录保存失败' : '目录已保存' }}</span>
+          <button v-if="treeSaveState === 'error'" type="button" @click="persistNodeMove()">重试</button>
+        </div>
+        <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
         <div v-if="draggingNode?.startsWith('f:')" class="root-drop" @dragover.prevent @drop.prevent.stop="moveNode('', draggingNode, null)">拖到这里移至目录顶层</div>
-        <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
+        <p v-if="directoryQuery && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="node in renderedTreeRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
-          :style="{ '--node-depth': Math.min(node.depth, 8) }" @contextmenu.prevent.stop="openDirectoryContext($event, node.key)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
+          :style="{ '--node-depth': Math.min(node.depth, 8) }" @contextmenu.prevent.stop="openDirectoryContext($event, node)" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !directoryQuery"
           @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
           <button v-if="node.hasChildren" class="tree-caret" tabindex="-1" :aria-label="`展开或收起${node.title}`" :aria-expanded="isOpen(node.key)" @click="toggleFolder(node.key)"><i class="chev" :class="!isOpen(node.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
           <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown="folderNameKeydown($event, node.id)" @blur="commitFolderName(node.id)" />
-          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" role="treeitem" :aria-level="node.depth + 1" :aria-selected="docId === node.id" :aria-expanded="node.hasChildren ? (treeQuery.trim() ? true : isOpen(node.key)) : undefined" :tabindex="treeFocusKey === node.key ? 0 : -1" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="treeFocusKey = node.key; preloadSheet(node.id)" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (toggleFolder(node.key)) : selectDoc(node.id)">
+          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" role="treeitem" :aria-level="node.depth + 1" :aria-selected="docId === node.id" :aria-current="docId === node.id ? 'page' : undefined" :aria-expanded="node.hasChildren ? (directoryQuery ? true : isOpen(node.key)) : undefined" :tabindex="treeFocusKey === node.key ? 0 : -1" :data-node="node.key" @pointerenter="preloadSheet(node.id)" @focus="treeFocusKey = node.key; preloadSheet(node.id)" :style="{ minWidth: 0 }"
+            @contextmenu.prevent.stop="openDirectoryContext($event, node)" @click="node.kind === 'folder' ? toggleFolder(node.key) : selectDoc(node.id, inlineDirectoryActive)">
+            <i v-if="inlineDirectoryActive && node.kind === 'folder'" :class="isOpen(node.key) ? 'ri-folder-open-line' : 'ri-folder-line'" aria-hidden="true" />
             <i v-if="node.kind === 'doc'" :class="pageIcon(node.id)" aria-hidden="true"></i>
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>
-          <div class="tree-row-actions"><ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems.filter(item => item.id !== 'template' || !data.docById(node.id)?.pageType || data.docById(node.id)?.pageType === 'document')" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
+          <div v-if="renamingFolder !== node.id" class="tree-row-actions"><ResourceMenu :label="`${node.title}的更多操作`" :items="directoryNodeItems(node)" @select="runDirectoryAction(node, $event)" />
           <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" /></div>
         </div>
 
         <button v-if="mixedRows.length > treeRenderLimit" type="button" class="directory-load-more" @click="showMoreTreeRows">继续显示目录（已显示 {{ renderedTreeRows.length }} / {{ mixedRows.length }}）</button>
 
-        <section class="archive-tree">
+        <section v-show="!inlineDirectoryActive" class="archive-tree">
           <button class="archive-head" :aria-expanded="archivedOpen" @click="archivedOpen = !archivedOpen">
             <i :class="archivedOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
             <i class="ri-archive-line"></i>
@@ -1567,6 +1622,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
           </div>
         </section>
       </div>
+      </Teleport>
 
       <div v-if="kb.auto" class="sync-bar">
         <div class="sync-title"><i class="ri-archive-line" aria-hidden="true"></i>飞书群聊 · 历史归档</div>
@@ -2866,7 +2922,9 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 .tree-search label { flex: 1; min-width: 0; }
 
 /* 语雀式目录：缩进属于整行，展开位固定宽度，选中和拖放覆盖整行。 */
-.tree { padding: 4px 10px 8px; }
+.tree { padding: 4px 10px 8px; --directory-indent: 18px; }
+.tree.inline-directory { --directory-indent: 10px; overflow: visible; padding: var(--wao-space-1) 0 var(--wao-space-1) var(--wao-space-2); }
+.inline-empty { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-1); padding-inline: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .directory-row {
   position: relative;
   box-sizing: border-box;
@@ -2875,7 +2933,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   width: 100%;
   height: 38px;
   margin: 0;
-  padding: 0 4px 0 calc(4px + var(--node-depth) * 18px);
+  padding: 0 4px 0 calc(4px + var(--node-depth) * var(--directory-indent));
   border-radius: 7px;
   cursor: grab;
 }
@@ -2922,7 +2980,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
   content: '';
   position: absolute;
   z-index: 2;
-  left: calc(4px + var(--node-depth) * 18px);
+  left: calc(4px + var(--node-depth) * var(--directory-indent));
   right: 4px;
   height: 2px;
   border-radius: 2px;
@@ -2937,6 +2995,7 @@ onBeforeUnmount(() => { workspaceGeneration++ })
 .tree-search label:focus-within { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .directory-row [data-node]:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .directory-row .doc-node { gap: 6px; }
+.inline-directory .folder-btn { gap: var(--wao-space-1); }
 .home-documents.home-directory-index { padding-left: 0; }
 .home-directory-index :deep(.tree-node) { gap: var(--wao-space-1); }
 .home-directory-index :deep(.node-title) { flex: 0 1 auto; }
