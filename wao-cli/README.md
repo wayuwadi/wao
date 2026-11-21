@@ -8,7 +8,29 @@
 
 在 WAO 能力中心 → 我的连接（`/capabilities?area=connections`）创建 CLI/MCP 新授权，逐项选择需要的操作及项目 / 知识库范围，复制生成的**工作区**令牌。运行 `wao auth login`，按提示粘贴以 `wao_workspace_` 开头的令牌；CLI 先验证服务端，再将令牌存入本机安全凭据库（Windows 使用当前用户 DPAPI，macOS 使用系统钥匙串）。也可粘贴包含唯一工作区令牌的完整连接说明。自动化脚本可设置 `WAO_TOKEN` 环境变量；该变量优先于本机凭据。不要把令牌写进命令参数、Git 或脚本文件。已有令牌固定原操作授权，升级 CLI、重新登录或新工具部署都不会扩权；使用新增能力须在能力中心创建包含相应操作的新授权。`wao auth status` 可验证连接，`wao auth logout` 仅删除本机凭据，不会吊销服务端令牌；吊销请在能力中心完成。
 
-默认连接 `https://wao.wayuwa.cn/api/mcp/workspace`。自建环境可设置 `WAO_URL` 或对单次命令使用 `--url`。远程地址必须是 HTTPS，本机测试允许 HTTP。
+默认连接 `http://localhost:9000/api/mcp/workspace`。连接线上 WAO 可将 `WAO_URL` 设为 `https://wao.wayuwa.cn/api/mcp/workspace`，也可对单次命令使用 `--url`。远程地址必须是 HTTPS，本机测试允许 HTTP。
+
+## 开发服务授权与密码本
+
+在 WAO「能力中心 → 我的连接」创建 CLI 授权，按需勾选「密码本」下的查找和保存，并用 `wao auth login` 写入系统凭据库。取一个能区分服务、环境和账号用途的条目名。同名多账号用 `--account` 精确匹配。
+
+```sh
+wao vault find 'Codeup 工作账号' --output json
+wao vault save '开发平台 Test' --account '测试账号'
+wao vault save 'Codeup 工作账号' --from-codeup-keychain
+```
+
+默认由本人在终端隐藏输入。已有 macOS `codeup-cli` 钥匙串条目时，第三条命令显示 WAO 目标地址并由本人确认，然后直接保存该授权，不用再次输入。支持安全导出凭据的受信任程序也可以将 UTF-8 凭据原样通过管道传给 `--secret-stdin`（最多 8192 字节，换行也属于输入）。使用 `WAO_URL` 或 `--url` 指定自己的 WAO 工作区，保存授权以目标实例为准。
+
+查找和保存回执只包含条目标识、名称及凭据状态。重复保存会保留已有凭据，替换或删除可打开 WAO 密码本处理。WAO 用 HTTPS 和服务端加密保护凭据。密码本条目仍受外部平台的凭据有效期、设备限制和撤销策略约束。对于仅发浏览器 Cookie 或一次性验证码的平台，在原客户端完成授权。
+
+`wao connections codeup status PR编号` 使用已配置的本机 `codeup-cli status` 和它的系统授权，返回 PR 编号、状态、目标分支和合并提交。默认寻找 `~/.local/bin/codeup-cli`，也可在本机环境配置 `WAO_CODEUP_CLI` 为可执行文件的绝对路径。Codex 可通过本机 stdio MCP 使用同一查询：
+
+```sh
+codex mcp add wao-local-connections -- wao connections mcp
+```
+
+Codex 进程找不到 `wao` 时，用其安装后的绝对路径。MCP 提供 `codeup_pr_status`。Codeup 的日常查询继续使用本机 CLI 管理的有效授权，密码本可留存用户主动备份的授权。查询遇到授权失效时，由本人更新 Codeup 的本机授权后重试。
 
 ## 使用
 

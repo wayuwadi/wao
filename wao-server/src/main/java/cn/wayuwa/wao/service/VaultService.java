@@ -1,9 +1,13 @@
 package cn.wayuwa.wao.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
+import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.VaultGroupEntity;
@@ -17,8 +21,9 @@ import cn.wayuwa.wao.dto.VaultItemDto;
 import cn.wayuwa.wao.mapper.VaultGroupMapper;
 import cn.wayuwa.wao.mapper.VaultItemMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import org.springframework.dao.DuplicateKeyException;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -35,6 +40,10 @@ public class VaultService {
 
     /** 每个成员默认分组的初始名字；建出来之后可以随便改名，身份由 is_default 标记维持。 */
     public static final String DEFAULT_GROUP_NAME = "未分组";
+    private static final int MAX_CLI_SECRET_BYTES = 8192;
+
+    public record CliItem(String id, String name, boolean hasSecret) {}
+    public record CliSave(CliItem item, boolean saved) {}
 
     private final VaultGroupMapper groupMapper;
     private final VaultItemMapper itemMapper;
@@ -155,7 +164,7 @@ public class VaultService {
                 ? ensureDefaultGroup(ownerId).getId() : req.groupId();
         requireGroup(groupId, ownerId);
         VaultItemEntity e = new VaultItemEntity();
-        e.setId("vi" + System.currentTimeMillis());
+        e.setId("vi" + UUID.randomUUID().toString().replace("-", "").substring(0, 30));
         e.setGroupId(groupId);
         e.setName(req.name().trim());
         e.setIcon(blankOr(req.icon(), "ri-key-2-line"));
@@ -168,6 +177,61 @@ public class VaultService {
                 new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, groupId))));
         itemMapper.insert(e);
         return toDto(e);
+    }
+
+    public List<CliItem> findForCli(String ownerId, String name, String account) {
+        return matchingItems(ownerId, cliLabel(name), account == null ? null : cliLabel(account))
+                .stream().map(VaultService::toCliItem).toList();
+    }
+
+    /** Serializes CLI creation per owner and fills an existing empty item only if it is still empty. */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public CliSave saveForCli(String ownerId, String name, String account, String secret) {
+        name = cliLabel(name);
+        account = account == null ? null : cliLabel(account);
+        if (secret == null || secret.isBlank() || secret.getBytes(StandardCharsets.UTF_8).length > MAX_CLI_SECRET_BYTES) {
+            throw new BadRequestException("请输入有效凭据，最多 8192 个 UTF-8 字节");
+        }
+        String groupId = ensureDefaultGroup(ownerId).getId();
+        groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, groupId).last("FOR UPDATE"));
+        List<VaultItemEntity> items = matchingItems(ownerId, name, account);
+        if (items.size() > 1) throw new ConflictException("有多个同名条目，请用账号区分或在密码本整理条目");
+        if (items.isEmpty()) {
+            VaultItemDto created = createItem(new CreateVaultItemRequest(groupId, name, null, account, null, null, secret), ownerId);
+            return new CliSave(new CliItem(created.id(), created.name(), true), true);
+        }
+
+        VaultItemEntity existing = items.get(0);
+        if (toCliItem(existing).hasSecret()) return new CliSave(toCliItem(existing), false);
+        VaultCryptoService.Encrypted encrypted = crypto.encrypt(secret);
+        int updated = itemMapper.update(null, new LambdaUpdateWrapper<VaultItemEntity>()
+                .eq(VaultItemEntity::getId, existing.getId()).eq(VaultItemEntity::getGroupId, existing.getGroupId())
+                .isNull(VaultItemEntity::getSecretCiphertext)
+                .set(VaultItemEntity::getSecretCiphertext, encrypted.ciphertext())
+                .set(VaultItemEntity::getSecretNonce, encrypted.nonce())
+                .set(VaultItemEntity::getUpdatedLabel, "刚刚"));
+        if (updated != 1) throw new ConflictException("密码本条目已变更，请重新查找");
+        return new CliSave(new CliItem(existing.getId(), existing.getName(), true), true);
+    }
+
+    private List<VaultItemEntity> matchingItems(String ownerId, String name, String account) {
+        List<String> groupIds = groupMapper.selectList(ownedGroups(ownerId)).stream().map(VaultGroupEntity::getId).toList();
+        if (groupIds.isEmpty()) return List.of();
+        return itemMapper.selectList(new LambdaQueryWrapper<VaultItemEntity>().in(VaultItemEntity::getGroupId, groupIds)
+                        .eq(VaultItemEntity::getName, name).eq(account != null, VaultItemEntity::getUserName, account))
+                .stream().filter(item -> name.equals(item.getName()) && (account == null || account.equals(item.getUserName())))
+                .toList();
+    }
+
+    private static CliItem toCliItem(VaultItemEntity item) {
+        return new CliItem(item.getId(), item.getName(), item.getSecretCiphertext() != null);
+    }
+
+    private static String cliLabel(String value) {
+        if (value == null || value.isBlank() || value.strip().length() > 128 || value.chars().anyMatch(Character::isISOControl)) {
+            throw new BadRequestException("条目名或账号须为 1 至 128 字符，且不能含控制字符");
+        }
+        return value.strip();
     }
 
     /**
@@ -301,31 +365,29 @@ public class VaultService {
         group.setOwnerMemberId(ownerId);
         group.setIsDefault(true);
         group.setOrd(0);
-        try {
-            groupMapper.insert(group);
-        } catch (DuplicateKeyException e) {
-            // 同一成员的两个请求撞在一起：另一个已经建好了，直接用它，不要把读列表拖成 409。
-            VaultGroupEntity winner = findDefaultGroup(ownerId);
-            if (winner == null) throw e;
-            return winner;
+        groupMapper.ensureDefault(group);
+        VaultGroupEntity saved = groupMapper.selectById(group.getId());
+        if (saved == null || !isDefault(saved) || !owns(saved, ownerId)) {
+            throw new ConflictException("默认分组已变更，请重新打开密码本");
         }
-        return group;
+        return saved;
     }
 
     private VaultGroupEntity findDefaultGroup(String ownerId) {
         return groupMapper.selectList(ownedGroups(ownerId)
-                        .eq(VaultGroupEntity::getIsDefault, true).orderByAsc(VaultGroupEntity::getOrd))
+                        .eq(VaultGroupEntity::getIsDefault, true).orderByAsc(VaultGroupEntity::getOrd, VaultGroupEntity::getId))
                 .stream().findFirst().orElse(null);
     }
 
-    /**
-     * 默认分组的 id 仍优先取可读的 {@code vg-default-<memberId>}；被占用或超出 32 字符时退回时间戳 id。
-     * 主键是否好看不重要，重要的是插入不能撞。
-     */
+    /** Repeated initializations for the same member compete on one deterministic primary key. */
     private String freeDefaultGroupId(String ownerId) {
         String readable = "vg-default-" + ownerId;
-        if (readable.length() <= 32 && groupMapper.selectById(readable) == null) return readable;
-        return "vg" + System.currentTimeMillis();
+        if (readable.length() <= 32) {
+            VaultGroupEntity occupied = groupMapper.selectById(readable);
+            if (occupied == null || (isDefault(occupied) && owns(occupied, ownerId))) return readable;
+        }
+        UUID fallback = UUID.nameUUIDFromBytes(("wao:vault-default:" + ownerId).getBytes(StandardCharsets.UTF_8));
+        return "vg" + fallback.toString().replace("-", "").substring(0, 30);
     }
 
     private static String blankOr(String value, String fallback) {

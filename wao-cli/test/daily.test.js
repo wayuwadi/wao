@@ -182,7 +182,7 @@ test('doctor 与 auth status 查询身份权限版本，旧服务兼容且不推
   assert.equal(old.calls.length, 0)
   const version = fixture()
   await run(['--version'], { ...version.options, tokenProvider: async () => { throw new Error('不应读取认证') } })
-  assert.equal(version.stdout.text.trim(), '0.3.0')
+  assert.match(version.stdout.text.trim(), /^\d+\.\d+\.\d+$/)
 })
 
 test('分页表格渲染 items 和数量，JSON 输出保留分页对象', () => {

@@ -1,5 +1,7 @@
 # WAO CLI 规格与能力台账
 
+开发服务授权接续使用 `wao connections codeup status PR编号` 与本机 stdio 工具 `codeup_pr_status`，复用已配置的 Codeup CLI 授权。密码本的 `wao vault find` 和 `wao vault save` 分别要求显式 `vault_lookup`、`vault_save` CLI 授权，由服务端识别条目归属。已有工作区令牌保持原范围，密码本操作使用专用 HTTP 路由，工作区 MCP 工具目录与本机 stdio MCP 均无凭据读取或保存工具。见 [密码本 CLI API](../api.md#密码本-cli) 和 [CLI 使用说明](../../wao-cli/README.md#开发服务授权与密码本)。
+
 2026-11-20：[拍照转草图](drawings.md#拍照转草图)和 [AI 整理](drawings.md#ai-整理已有画板)使用成员浏览器会话和人工预览确认；没有新增 CLI 命令、MCP 工具或旧令牌授权。未来提供 Agent 批量转换时，可先支持结构化节点与连线生成本地草图，再按需授予独立的草图读取、创建副本和整理预览权限，保留确认应用与版本检查。
 
 2026-11-06：[任务重复与站内提醒](task-time-rules-2026-11-06.md)仅增加浏览器会话能力，不新增 CLI 命令、MCP 工具或旧令牌授权；既有完成操作遵循负责人此前主动保存的重复规则。
@@ -30,7 +32,7 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 
 ## 命令与契约
 
-- Node.js 22+；仓库内 `wao-cli` 包通过 `npm link` 提供 `wao` 命令。默认远程地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。
+- Node.js 22+；仓库内 `wao-cli` 包通过 `npm link` 提供 `wao` 命令。默认本机地址为 `http://localhost:9000/api/mcp/workspace`，线上地址为 `https://wao.wayuwa.cn/api/mcp/workspace`，可用 `WAO_URL` 指定。
 - 能力中心 → 我的连接 → CLI/MCP 新授权，选择需要的具体操作及项目 / 知识库范围后复制工作区令牌；交互登录接受 `wao_workspace_` 令牌或包含唯一该令牌的连接说明，验证后在 Windows 使用当前用户 DPAPI、在 macOS 使用系统钥匙串保存。记忆 MCP 令牌及没有工作区令牌的文本在发出网络请求前拒绝。`WAO_TOKEN` 供自动化或其他系统使用并覆盖本机安全凭据。CLI 不将令牌写入本地明文配置或日志，不能通过登录或升级 CLI 给已有令牌增加工具授权。
 - `wao tools list` 使用实时 `tools/list`。`wao tools call NAME --input-file FILE` 提供未封装工具的通用入口；调用前按令牌可见工具校验。常用子命令使用同一 schema，字段以 `--kebab-case` 输入。
 - `wao tools describe NAME` 和业务命令 `--help` 返回当前工具 schema；字段类型、枚举和必填条件来自服务端。`wao --version` 无需连接，`wao doctor` / `auth status` 检查连接并在可用时读取身份、权限及版本；身份工具未授权或旧服务器未提供时说明连接成功但身份不可查询，给出当前可用工具和能力中心授权入口，不假设当前成员或写权限，也不绕过快照探测未授权工具。

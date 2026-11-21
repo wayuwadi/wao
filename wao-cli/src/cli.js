@@ -8,10 +8,14 @@ import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken }
 import { COMMANDS } from './commands.js'
 import { readUtf8, exportDocument } from './content.js'
 import { runPets, confirmPetShare } from './pets.js'
+import { codeupStatus } from './codeup.js'
+import { serveConnections } from './connections-mcp.js'
+import { runVault } from './vault.js'
+import packageInfo from '../package.json' with { type: 'json' }
 export { COMMANDS } from './commands.js'
 
 // 子命令是人类友好的别名；参数定义和权限始终来自服务端 tools/list。
-export const VERSION = '0.3.0'
+export const VERSION = packageInfo.version
 
 const HELP = `WAO 工作区 CLI
 
@@ -54,6 +58,12 @@ const HELP = `WAO 工作区 CLI
   wao tools call NAME --input '{"field":"value"}'
   wao tools call NAME --input-file payload.json
 
+本机开发连接：
+  wao connections codeup status PR编号  使用本机 Codeup CLI 查询合并请求
+  wao connections mcp                  启动供 Codex 连接的本机 stdio MCP
+  wao vault find 条目名 [--account 账号] 查找密码本条目
+  wao vault save 条目名 [--account 账号] 保存一次输入的凭据
+
 例子：
   wao projects create --name "新项目"           不指定截止日期即未排期
   wao projects update PROJECT_ID --due 2026-12-31
@@ -72,7 +82,7 @@ const HELP = `WAO 工作区 CLI
 托管页发布：只接受 UTF-8 单文件 HTML，最大 10 MB；会公开生成公网链接。
 每次交互发布前均需确认；自动化须显式添加 --yes。请在能力中心“我的连接”CLI/MCP 新授权中选择发布 HTML。
 
-配置：WAO_TOKEN（优先于本机安全凭据）；WAO_URL（默认 https://wao.wayuwa.cn/api/mcp/workspace）。
+配置：WAO_TOKEN（优先于本机安全凭据）；WAO_URL（默认 http://localhost:9000/api/mcp/workspace）。
       --url 可指定本次地址，仅 HTTPS 和本机 HTTP；--output json 提供脚本可读结果。
 字段名与 WAO MCP tools/list 一致，命令行使用连字符（如 --project-id）。
 --input 和 --input-file 接受 JSON 对象，适用于复杂字段或标准输入（--input-file -）。
@@ -359,8 +369,26 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
   if (!rest.length || rest[0] === 'help' || rest[0] === '--help' || rest[0] === '-h') {
     stdout.write(`${HELP}\n`); return
   }
+  if (rest[0] === 'connections') {
+    const help = '用法：wao connections codeup status PR编号 | wao connections mcp'
+    if (rest.length === 1 || rest[1] === '--help') { stdout.write(help + '\n'); return }
+    if (globals.url !== undefined) throw new Error('本机开发连接不接受 --url。')
+    if (rest.length === 2 && rest[1] === 'mcp' && globals.output === 'auto') {
+      await serveConnections({ stdin, stdout, version: VERSION })
+      return
+    }
+    if (rest.length === 4 && rest[1] === 'codeup' && rest[2] === 'status' && /^\d+$/.test(rest[3])) {
+      stdout.write(`${formatOutput(await codeupStatus(Number(rest[3])), globals.output)}\n`)
+      return
+    }
+    throw new Error(help)
+  }
   if (path === 'auth logout') { await removeToken(); stdout.write('已移除本机安全凭据库中的 WAO 令牌。\n'); return }
   const url = endpoint(globals.url)
+  if (rest[0] === 'vault') {
+    await runVault(rest.slice(1), { url, stdout, stderr, stdin, tokenProvider, formatOutput, output: globals.output })
+    return
+  }
   if (rest[0] === 'pets') {
     await runPets(rest, { url, stdout, stderr, stdin, tokenProvider, clientFactory, receiptDirectory, confirmShare, formatOutput, output: globals.output })
     return

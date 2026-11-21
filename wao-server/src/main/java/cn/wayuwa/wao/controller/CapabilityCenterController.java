@@ -79,6 +79,12 @@ public class CapabilityCenterController {
                 .put("description", "仅管理本人宠物的公开状态；公开前确认素材分享权，公开内容可由任何人下载。")
                 .put("group", "pets").put("cli", "wao pets share ID / wao pets unshare ID")
                 .putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "vault_lookup").put("title", "查找密码本条目")
+                .put("description", "按准确条目名查找本人条目，只返回名称、条目标识和是否已保存凭据。")
+                .put("group", "vault").put("cli", "wao vault find").putNull("mcp").put("readOnly", true));
+        capabilities.add(json.createObjectNode().put("name", "vault_save").put("title", "保存密码本凭据")
+                .put("description", "新建本人条目或补填空凭据，已保存的凭据由本人在密码本管理。")
+                .put("group", "vault").put("cli", "wao vault save").putNull("mcp").put("readOnly", false));
         return ApiResponse.ok(json.createObjectNode().set("capabilities", capabilities));
     }
 
