@@ -22,7 +22,6 @@ import cn.wayuwa.wao.mapper.VaultGroupMapper;
 import cn.wayuwa.wao.mapper.VaultItemMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -366,31 +365,29 @@ public class VaultService {
         group.setOwnerMemberId(ownerId);
         group.setIsDefault(true);
         group.setOrd(0);
-        try {
-            groupMapper.insert(group);
-        } catch (DuplicateKeyException e) {
-            // 同一成员的两个请求撞在一起：另一个已经建好了，直接用它，不要把读列表拖成 409。
-            VaultGroupEntity winner = findDefaultGroup(ownerId);
-            if (winner == null) throw e;
-            return winner;
+        groupMapper.ensureDefault(group);
+        VaultGroupEntity saved = groupMapper.selectById(group.getId());
+        if (saved == null || !isDefault(saved) || !owns(saved, ownerId)) {
+            throw new ConflictException("默认分组已变更，请重新打开密码本");
         }
-        return group;
+        return saved;
     }
 
     private VaultGroupEntity findDefaultGroup(String ownerId) {
         return groupMapper.selectList(ownedGroups(ownerId)
-                        .eq(VaultGroupEntity::getIsDefault, true).orderByAsc(VaultGroupEntity::getOrd))
+                        .eq(VaultGroupEntity::getIsDefault, true).orderByAsc(VaultGroupEntity::getOrd, VaultGroupEntity::getId))
                 .stream().findFirst().orElse(null);
     }
 
-    /**
-     * 默认分组的 id 仍优先取可读的 {@code vg-default-<memberId>}；被占用或超出 32 字符时退回时间戳 id。
-     * 主键是否好看不重要，重要的是插入不能撞。
-     */
+    /** Repeated initializations for the same member compete on one deterministic primary key. */
     private String freeDefaultGroupId(String ownerId) {
         String readable = "vg-default-" + ownerId;
-        if (readable.length() <= 32 && groupMapper.selectById(readable) == null) return readable;
-        return "vg" + System.currentTimeMillis();
+        if (readable.length() <= 32) {
+            VaultGroupEntity occupied = groupMapper.selectById(readable);
+            if (occupied == null || (isDefault(occupied) && owns(occupied, ownerId))) return readable;
+        }
+        UUID fallback = UUID.nameUUIDFromBytes(("wao:vault-default:" + ownerId).getBytes(StandardCharsets.UTF_8));
+        return "vg" + fallback.toString().replace("-", "").substring(0, 30);
     }
 
     private static String blankOr(String value, String fallback) {

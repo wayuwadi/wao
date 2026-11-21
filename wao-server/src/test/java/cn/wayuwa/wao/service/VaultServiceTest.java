@@ -200,7 +200,7 @@ class VaultServiceTest {
 
         var groups = service.listGroups(OWNER);
 
-        verify(groupMapper, never()).insert(any(VaultGroupEntity.class));
+        verify(groupMapper, never()).ensureDefault(any(VaultGroupEntity.class));
         assertThat(groups).singleElement()
                 .satisfies(g -> {
                     assertThat(g.id()).isEqualTo("vg-default-wg");
@@ -214,11 +214,16 @@ class VaultServiceTest {
     void listGroupsCreatesTheDefaultGroupForANewMember() {
         when(groupMapper.selectList(any())).thenReturn(java.util.List.of());
         when(itemMapper.selectList(any())).thenReturn(java.util.List.of());
+        when(groupMapper.ensureDefault(any())).thenAnswer(call -> {
+            VaultGroupEntity created = call.getArgument(0);
+            when(groupMapper.selectById(created.getId())).thenReturn(created);
+            return 1;
+        });
 
         service.listGroups("m-new");
 
         var captor = org.mockito.ArgumentCaptor.forClass(VaultGroupEntity.class);
-        verify(groupMapper).insert(captor.capture());
+        verify(groupMapper).ensureDefault(captor.capture());
         VaultGroupEntity created = captor.getValue();
         assertThat(created.getId()).isEqualTo("vg-default-m-new");
         assertThat(created.getName()).isEqualTo(VaultService.DEFAULT_GROUP_NAME);
