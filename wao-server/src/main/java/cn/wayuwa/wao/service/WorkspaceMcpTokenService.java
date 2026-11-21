@@ -52,6 +52,9 @@ public class WorkspaceMcpTokenService {
         }
         WorkspaceCapabilityPolicy policy = new WorkspaceCapabilityPolicy(request.permissions(), request.projectIds(), request.knowledgeBaseIds());
         if (request.clientType() == null || !List.of("CLI", "MCP").contains(request.clientType())) throw new BadRequestException("连接类型必须为 CLI 或 MCP");
+        if (!"CLI".equals(request.clientType()) && (policy.permits("vault_lookup") || policy.permits("vault_save"))) {
+            throw new BadRequestException("密码本查找和保存权限仅用于 CLI 连接");
+        }
         AuthenticatedToken member = new AuthenticatedToken("scope-validation", memberId, false);
         if (policy.projectIds() != null) for (String id : policy.projectIds()) {
             tools.call("get_project", JSON.createObjectNode().put("project_id", id), member);

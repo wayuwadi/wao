@@ -173,6 +173,29 @@ describe('能力中心真实目录与区域', () => {
     expect(view.wrapper.get('.cap-capability-group').text()).toContain('读取任务')
     view.wrapper.unmount()
   })
+  it('目录加载后密码本授权仍需在 CLI 连接中逐项勾选', async () => {
+    api.fetchWorkspaceCapabilities.mockResolvedValue({ capabilities: [
+      { name: 'vault_lookup', title: '查找密码本条目', description: '条目状态', group: 'vault',
+        readOnly: true, cli: 'wao vault find', mcp: null },
+      { name: 'vault_save', title: '保存密码本凭据', description: '保存缺少的凭据', group: 'vault',
+        readOnly: false, cli: 'wao vault save', mcp: null },
+    ] })
+    const { wrapper } = await render('/capabilities?area=connections')
+    await wrapper.findAll('.cap-group-picker button').find((button) => button.text().includes('密码本'))!.trigger('click')
+    const lookup = wrapper.get<HTMLInputElement>('input[aria-label="允许查找密码本条目"]')
+    const save = wrapper.get<HTMLInputElement>('input[aria-label="允许保存密码本凭据"]')
+    expect(lookup.element.checked).toBe(false)
+    expect(save.element.checked).toBe(false)
+    const type = wrapper.get('select')
+    await type.setValue('MCP')
+    expect(lookup.element.disabled).toBe(true)
+    await type.setValue('CLI')
+    expect(lookup.element.disabled).toBe(false)
+    await lookup.setValue(true)
+    expect(lookup.element.checked).toBe(true)
+    expect(save.element.checked).toBe(false)
+    wrapper.unmount()
+  })
   it('Skill 文件与输入在切换区域、刷新后恢复，目录路径仍完整', async () => {
     const { wrapper, router } = await render('/capabilities/publish/skill')
     await vi.waitFor(() => expect(wrapper.find('input[webkitdirectory]').exists()).toBe(true))

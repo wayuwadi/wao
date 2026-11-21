@@ -122,6 +122,16 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 跨成员返回不存在，过期版本返回 409；详情与日期/连续统计定义见 [倒数日与习惯打卡](specs/countdowns-habits.md)。
 
+## 密码本 CLI
+
+以下接口使用显式授予当前 CLI 设备的 `Authorization: Bearer <工作区令牌>`，从令牌推导成员身份，响应标记 `Cache-Control: no-store`。
+
+- `POST /api/vault/cli/find` 需要 `vault_lookup`，body 为 `{name, account?}`。按准确名称及可选账号匹配本人条目，返回 `{id, name, hasSecret}[]`。`hasSecret` 表示已保存凭据。
+- `GET /api/vault/cli/save-access` 预先验证 `vault_save`，成功返回 `true`。CLI 在通过后才读取凭据。
+- `POST /api/vault/cli/save` 需要 `vault_save`，body 为 `{name, account?, secret}`。凭据最多 8192 个 UTF-8 字节，服务端加密后存储。返回 `{item: {id, name, hasSecret}, saved}`。没有匹配条目时在默认分组创建，唯一匹配的空条目可补填。条目已有凭据时返回 `saved: false`。多个匹配项或并发变更返回 409。
+
+在浏览器密码本查看和管理已保存凭据。查找、保存和导入命令均只返回元数据。原工作区令牌和预设授权保持原范围。
+
 ## Moka 考勤连接恢复（2026-10-29）
 
 日历的「19:30 前下班」额度按显示月份的整月工作日数 × 20% 向下取整，保证 19:30 出勤率至少 80%。工作日沿用个人应工作日安排，并扣除中国法定放假、计入调休上班；请假、缺卡和未来日期不缩减月度基数。19:30 整及次日下班不占提前下班额度。切换日／周视图仍读取整月节假日；节假日读取失败时暂不显示额度。

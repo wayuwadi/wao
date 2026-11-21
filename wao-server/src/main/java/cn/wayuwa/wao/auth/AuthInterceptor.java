@@ -70,6 +70,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         // CLI preflight validates the dedicated publishing scope and optional project visibility.
         if ("GET".equals(request.getMethod()) && path.equals("/api/hosted-pages/publish-access")
                 && request.getHeader("Authorization") != null) return true;
+        if (request.getHeader("Authorization") != null
+                && (("GET".equals(request.getMethod()) && path.equals("/api/vault/cli/save-access"))
+                    || ("POST".equals(request.getMethod()) && (path.equals("/api/vault/cli/find") || path.equals("/api/vault/cli/save"))))) return true;
         // Only Pet CLI operations may delegate authentication to the scoped bearer controller.
         if (request.getHeader("Authorization") != null
                 && (("GET".equals(request.getMethod()) && (path.equals("/api/pets/cli-access") || path.equals("/api/pets/mine")))

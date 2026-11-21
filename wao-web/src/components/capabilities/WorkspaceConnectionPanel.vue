@@ -51,6 +51,7 @@ const groupNames: Record<string, string> = {
   documents: '文档',
   pages: 'HTML 发布',
   pets: 'Pet 仓库',
+  vault: '密码本',
 }
 const key = computed(() => `wao:capability-connection-draft:v1:${session.userId}`)
 const groupCapabilities = computed(() => props.capabilities.filter((c) => c.group === group.value))
@@ -130,7 +131,7 @@ function restoreDraft() {
   draft.value = {
     name: '',
     clientType: props.clientType ?? 'MCP',
-    permissions: props.capabilities.filter((c) => c.readOnly && c.group !== 'pets').map((c) => c.name),
+    permissions: presetPermissions('read', props.capabilities),
     projectIds: null,
     knowledgeBaseIds: null,
   }
@@ -170,6 +171,7 @@ function message(cause: unknown, fallback: string) {
 }
 function togglePermission(name: string, checked: boolean) {
   if (readonly.value) return
+  if (checked && draft.value.clientType !== 'CLI' && props.capabilities.some((c) => c.name === name && c.group === 'vault')) return
   selectedPreset.value = ''
   draft.value.permissions = checked
     ? [...new Set([...draft.value.permissions, name])]
@@ -210,6 +212,10 @@ async function create() {
   }
   if (draft.value.permissions.some((p) => !props.capabilities.some((c) => c.name === p))) {
     error.value = '草稿包含当前目录未提供的操作，请核对后重新选择。'
+    return
+  }
+  if (draft.value.clientType !== 'CLI' && props.capabilities.some((c) => c.group === 'vault' && draft.value.permissions.includes(c.name))) {
+    error.value = '密码本操作需要 CLI 连接，请切换客户端类型或取消密码本操作。'
     return
   }
   busy.value = true
@@ -263,7 +269,7 @@ watch(
   (caps) => {
     try {
       if (!draft.value.permissions.length && !localStorage.getItem(key.value))
-        draft.value.permissions = caps.filter((c) => c.readOnly && c.group !== 'pets').map((c) => c.name)
+        draft.value.permissions = presetPermissions('read', caps)
     } catch {
       storageError.value = '本机草稿存储不可用，请保持页面打开。'
     }
@@ -455,6 +461,9 @@ onBeforeUnmount(() => {
         {{ name }} <small>{{ capabilities.filter((c) => c.group === id).length }}</small>
       </button>
     </div>
+    <p v-if="group === 'vault' && !readonly && draft.clientType !== 'CLI'" class="cap-muted">
+      选择 CLI 客户端类型后可授权密码本操作。
+    </p>
     <label v-if="mode === 'direct'" class="cap-field"
       >选择单项能力<select v-model="operation">
         <option v-for="item in groupCapabilities" :key="item.name" :value="item.name">
@@ -482,7 +491,7 @@ onBeforeUnmount(() => {
               type="checkbox"
               :aria-label="`允许${item.title}`"
               :checked="permissions.includes(item.name)"
-              :disabled="readonly || busy"
+              :disabled="readonly || busy || (group === 'vault' && draft.clientType !== 'CLI' && !permissions.includes(item.name))"
               @change="togglePermission(item.name, ($event.target as HTMLInputElement).checked)"
             />
           </td>
@@ -495,7 +504,7 @@ onBeforeUnmount(() => {
           ><input
             type="checkbox"
             :checked="permissions.includes(item.name)"
-            :disabled="readonly || busy"
+            :disabled="readonly || busy || (group === 'vault' && draft.clientType !== 'CLI' && !permissions.includes(item.name))"
             :aria-label="`允许${item.title}`"
             @change="togglePermission(item.name, ($event.target as HTMLInputElement).checked)"
           /><strong>{{ item.title }}</strong
@@ -519,7 +528,7 @@ onBeforeUnmount(() => {
         </details>
       </article>
     </div>
-    <div v-if="!['pages', 'pets'].includes(group)" ref="scopeSection" class="cap-resource-scope">
+    <div v-if="!['pages', 'pets', 'vault'].includes(group)" ref="scopeSection" class="cap-resource-scope">
       <h3>数据范围 · {{ scopeLabel }}</h3>
       <p v-if="resourcesLoading" role="status">正在读取可选范围…</p>
       <div v-if="resourcesError" class="cap-error" role="alert">
