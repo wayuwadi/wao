@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,13 +36,24 @@ class VaultServiceTest {
     private final VaultCryptoService crypto = new VaultCryptoService(KEY);
     private final VaultService service = new VaultService(groupMapper, itemMapper, crypto);
 
-    /** 造一个归属给 owner 的分组，并让 mapper 按 id 查得到。 */
-    private VaultGroupEntity groupOwnedBy(String id, String owner) {
+    private static VaultGroupEntity groupFixture(String id, String owner) {
         VaultGroupEntity group = new VaultGroupEntity();
         group.setId(id);
         group.setName("常用");
         group.setOwnerMemberId(owner);
+        return group;
+    }
+
+    /** 造一个归属给 owner 的分组，并让 mapper 按 id 查得到。 */
+    private VaultGroupEntity groupOwnedBy(String id, String owner) {
+        VaultGroupEntity group = groupFixture(id, owner);
         when(groupMapper.selectById(id)).thenReturn(group);
+        return group;
+    }
+
+    private VaultGroupEntity lockedOwnerGroup(String id) {
+        VaultGroupEntity group = groupFixture(id, OWNER);
+        when(groupMapper.selectOne(any())).thenReturn(group);
         return group;
     }
 
@@ -148,36 +160,41 @@ class VaultServiceTest {
 
     @Test
     void deleteGroupRefusesTheOwnersDefaultGroup() {
-        VaultGroupEntity group = groupOwnedBy("vg-default-wg", OWNER);
+        VaultGroupEntity group = lockedOwnerGroup("vg-default-wg");
         group.setIsDefault(true);
 
         assertThatThrownBy(() -> service.deleteGroup("vg-default-wg", OWNER))
                 .isInstanceOf(IllegalArgumentException.class);
+        verify(itemMapper, never()).delete(any());
         verify(groupMapper, never()).deleteById(anyString());
     }
 
     /** 改过名的默认分组依然是默认分组：靠 is_default 标记，不靠名字。 */
     @Test
     void deleteGroupRefusesTheDefaultGroupEvenAfterRename() {
-        VaultGroupEntity group = groupOwnedBy("vg-default-wg", OWNER);
+        VaultGroupEntity group = lockedOwnerGroup("vg-default-wg");
         group.setIsDefault(true);
         group.setName("我的常用");
 
         assertThatThrownBy(() -> service.deleteGroup("vg-default-wg", OWNER))
                 .isInstanceOf(IllegalArgumentException.class);
+        verify(itemMapper, never()).delete(any());
         verify(groupMapper, never()).deleteById(anyString());
     }
 
     /** 名叫「未分组」但不带标记的普通分组可以删——名字是用户的，不再有特殊含义。 */
     @Test
     void deleteGroupAllowsAnOrdinaryGroupNamedLikeTheDefaultOne() {
-        VaultGroupEntity group = groupOwnedBy("vg9", OWNER);
+        VaultGroupEntity group = lockedOwnerGroup("vg9");
         group.setName(VaultService.DEFAULT_GROUP_NAME);
         group.setIsDefault(false);
 
         service.deleteGroup("vg9", OWNER);
 
-        verify(groupMapper).deleteById("vg9");
+        var deletion = inOrder(groupMapper, itemMapper);
+        deletion.verify(groupMapper).selectOne(any());
+        deletion.verify(itemMapper).delete(any());
+        deletion.verify(groupMapper).deleteById("vg9");
     }
 
     /**
