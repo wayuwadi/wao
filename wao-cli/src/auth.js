@@ -62,13 +62,29 @@ export function normalizeWorkspaceToken(input) {
 
 export async function tokenFromKeychain() {
   if (process.platform !== 'darwin') return null
+  return readMacCredential(SERVICE, ACCOUNT)
+}
+
+export async function readMacCredential(service, account) {
   try {
-    const { stdout } = await exec('security', ['find-generic-password', '-a', ACCOUNT, '-s', SERVICE, '-w'])
+    const { stdout } = await exec('/usr/bin/security', ['find-generic-password', '-a', account, '-s', service, '-w'], { timeout: 25000 })
     return stdout.trim() || null
   } catch (error) {
     if (error.code === 44) return null
     throw new Error('无法读取 macOS 钥匙串；请检查钥匙串权限或改用 WAO_TOKEN')
   }
+}
+
+export async function writeMacCredential(service, account, secret, { replace = false } = {}) {
+  await new Promise((resolve, reject) => {
+    const options = ['add-generic-password', '-a', account, '-s', service, ...(replace ? ['-U'] : []), '-w']
+    const child = execFile('/usr/bin/security', options, { timeout: 25000 }, error => {
+      if (error) reject(new Error('无法写入 macOS 钥匙串'))
+      else resolve()
+    })
+    child.stdin.on('error', () => {})
+    child.stdin.end(secret + '\n' + secret + '\n')
+  })
 }
 
 export async function tokenFromWindowsCredentialStore(windowsRunner = runPowerShell) {
@@ -93,13 +109,7 @@ export async function storeToken(token, { platform = process.platform,
   token = normalizeWorkspaceToken(token)
   if (platform === 'darwin') {
     // -w 位于最后且不带参数，security 从 stdin 读取两次确认；令牌不会出现在进程参数中。
-    await new Promise((resolve, reject) => {
-      const child = execFile('security', ['add-generic-password', '-a', ACCOUNT, '-s', SERVICE, '-U', '-w'], error => {
-        if (error) reject(new Error('无法写入 macOS 钥匙串'))
-        else resolve()
-      })
-      child.stdin.end(token + '\n' + token + '\n')
-    })
+    await writeMacCredential(SERVICE, ACCOUNT, token, { replace: true })
     return
   }
   if (platform === 'win32') {

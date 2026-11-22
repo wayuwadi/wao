@@ -11,8 +11,15 @@ const CODEUP_STATUS = {
   },
   annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
 }
+const DEVOPS_ENVIRONMENTS = {
+  name: 'devops_environments',
+  description: '优先使用 WAO 密码本中的设备授权，只读查询星狮 DevOps 的可访问环境。',
+  inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+}
 
-export async function serveConnections({ stdin, stdout, version, query = codeupStatus }) {
+export async function serveConnections({ stdin, stdout, version, query = codeupStatus, queryEnvironments }) {
+  const tools = queryEnvironments ? [CODEUP_STATUS, DEVOPS_ENVIRONMENTS] : [CODEUP_STATUS]
   const lines = createInterface({ input: stdin, crlfDelay: Infinity, terminal: false })
   let initialized = false
   let ready = false
@@ -40,17 +47,21 @@ export async function serveConnections({ stdin, stdout, version, query = codeupS
       continue
     }
     if (!ready) { fail(id, -32000, '本机连接尚未初始化'); continue }
-    if (method === 'tools/list') { send({ id, result: { tools: [CODEUP_STATUS] } }); continue }
+    if (method === 'tools/list') { send({ id, result: { tools } }); continue }
     if (method !== 'tools/call') { fail(id, -32601, '不支持的方法'); continue }
-    if (params?.name !== CODEUP_STATUS.name) { fail(id, -32602, '不支持的工具'); continue }
-
-    const args = params.arguments
-    if (!args || Object.keys(args).length !== 1 || !Number.isSafeInteger(args.number) || args.number < 1) {
+    if (!tools.some(tool => tool.name === params?.name)) { fail(id, -32602, '不支持的工具'); continue }
+    const args = params.arguments ?? {}
+    const codeup = params.name === CODEUP_STATUS.name
+    if (codeup && (Object.keys(args).length !== 1 || !Number.isSafeInteger(args.number) || args.number < 1)) {
       fail(id, -32602, '请提供一个正整数合并请求编号 number')
       continue
     }
+    if (!codeup && (typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length !== 0)) {
+      fail(id, -32602, '环境查询无需参数')
+      continue
+    }
     try {
-      const result = await query(args.number)
+      const result = codeup ? await query(args.number) : await queryEnvironments()
       send({ id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result } })
     } catch (error) {
       send({ id, result: { isError: true, content: [{ type: 'text', text: error.message }] } })

@@ -32,6 +32,21 @@ codex mcp add wao-local-connections -- wao connections mcp
 
 Codex 进程找不到 `wao` 时，用其安装后的绝对路径。MCP 提供 `codeup_pr_status`。Codeup 的日常查询继续使用本机 CLI 管理的有效授权，密码本可留存用户主动备份的授权。查询遇到授权失效时，由本人更新 Codeup 的本机授权后重试。
 
+### 星狮 DevOps
+
+安装团队的星狮 DevOps CLI（macOS 版）。在能力中心为当前 CLI 单独选择「使用星狮 DevOps 设备授权」，用 `wao auth login` 配置 WAO 令牌。设定 `WAO_URL` 后运行：
+
+```sh
+wao connections devops status
+wao connections devops environments
+wao connections devops sync
+wao connections devops restore
+```
+
+查询先从 WAO 密码本获取当前设备的加密记录并向星狮验证，记录缺失或过期时再验证团队 CLI 的本机授权。仅两个来源都缺失或被星狮拒绝认证时返回 `AUTH_REQUIRED`。通过团队 CLI 的 `--json auth login` 完成一次扫码，再用 `sync` 保存新的授权。`restore` 可把有效的 WAO 设备授权恢复到团队 CLI 的本机钥匙串，已有有效本机授权时予以保留。密钥由 macOS 钥匙串保存，授权可在同一设备上由后续 Codex 任务直接复用。
+
+使用已安装的 `~/.local/bin/cli-anything-devops`，可由本机配置 `WAO_DEVOPS_CLI` 指定等效安装路径。Codex 本机 MCP 可调用 `devops_environments`，工作区地址可通过 MCP 配置的 `WAO_URL` 或启动参数 `--url` 指定。MCP 查询只回报可访问的环境代码和状态。密码本可删除该设备的备份，能力中心可撤销设备访问。
+
 ## 使用
 
 ```bash
