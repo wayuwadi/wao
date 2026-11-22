@@ -79,6 +79,8 @@ const scopeIds = computed(() =>
 const viewName = computed(() => props.token?.name ?? '新建连接')
 const activeToken = computed(() => props.token ?? issued.value?.token)
 const selectedPreset = ref('')
+const availablePresets = computed(() => grantPresets.filter((preset) => preset.id !== 'devops'
+  || (draft.value.clientType === 'CLI' && props.capabilities.some((item) => item.name === 'vault_devops'))))
 const scopeSection = ref<HTMLElement | null>(null)
 const summary = computed(() => {
   const selected = props.capabilities.filter((c) => permissions.value.includes(c.name))
@@ -103,6 +105,7 @@ function applyPreset(id: string) {
   selectedPreset.value = id
   if (id === 'notes') group.value = 'documents'
   if (id === 'projects') group.value = 'tasks'
+  if (id === 'devops') group.value = 'vault'
   notice.value = '方案已填入草稿，数据范围保留。请核对后签发。'
 }
 async function editScope(key: 'projectIds' | 'knowledgeBaseIds') {
@@ -373,7 +376,7 @@ onBeforeUnmount(() => {
       <span class="cap-muted">快捷方案 · 可继续逐项调整</span>
       <div class="cap-actions">
         <button
-          v-for="preset in grantPresets"
+          v-for="preset in availablePresets"
           :key="preset.id"
           type="button"
           class="cap-button"

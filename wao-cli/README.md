@@ -34,7 +34,7 @@ Codex 进程找不到 `wao` 时，用其安装后的绝对路径。MCP 提供 `c
 
 ### 星狮 DevOps
 
-安装团队的星狮 DevOps CLI（macOS 版）。在能力中心为当前 CLI 单独选择「使用星狮 DevOps 设备授权」，用 `wao auth login` 配置 WAO 令牌。设定 `WAO_URL` 后运行：
+安装团队的星狮 DevOps CLI（macOS 版）。在能力中心新建 CLI，选择「仅星狮授权」快捷方案，用 `wao auth login` 配置 WAO 令牌。设定 `WAO_URL` 后运行：
 
 ```sh
 wao connections devops status

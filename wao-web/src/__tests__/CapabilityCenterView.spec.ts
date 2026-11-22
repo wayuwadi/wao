@@ -196,6 +196,24 @@ describe('能力中心真实目录与区域', () => {
     expect(save.element.checked).toBe(false)
     wrapper.unmount()
   })
+  it('仅星狮授权快捷方案只选择星狮的 CLI 权限', async () => {
+    api.fetchWorkspaceCapabilities.mockResolvedValue({ capabilities: [
+      { name: 'get_task', title: '读取任务', description: '', group: 'tasks',
+        readOnly: true, cli: 'wao tasks get ID', mcp: 'get_task' },
+      { name: 'vault_devops', title: '使用星狮 DevOps 设备授权', description: '', group: 'vault',
+        readOnly: false, cli: 'wao connections devops status', mcp: null },
+    ] })
+    const { wrapper } = await render('/capabilities?area=connections')
+    const type = wrapper.get('select')
+    await type.setValue('MCP')
+    expect(wrapper.text()).not.toContain('仅星狮授权')
+    await type.setValue('CLI')
+    await wrapper.findAll('.cap-presets button').find((button) => button.text() === '仅星狮授权')!.trigger('click')
+    expect(wrapper.get('input[aria-label="允许使用星狮 DevOps 设备授权"]').element).toHaveProperty('checked', true)
+    await wrapper.findAll('.cap-group-picker button').find((button) => button.text().includes('任务与子任务'))!.trigger('click')
+    expect(wrapper.get('input[aria-label="允许读取任务"]').element).toHaveProperty('checked', false)
+    wrapper.unmount()
+  })
   it('Skill 文件与输入在切换区域、刷新后恢复，目录路径仍完整', async () => {
     const { wrapper, router } = await render('/capabilities/publish/skill')
     await vi.waitFor(() => expect(wrapper.find('input[webkitdirectory]').exists()).toBe(true))
