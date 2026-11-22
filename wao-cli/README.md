@@ -61,6 +61,26 @@ codex mcp add mysql-wao-test --env WAO_URL="$WAO_URL" --env WAO_MYSQL_DBHUB_ENTR
 
 如需撤销仍持有的一枚 WAO 工作区令牌，可通过交互隐藏输入或 `--token-stdin` 使用 `wao auth revoke-self`。WAO 只撤销本次输入的令牌。
 
+### 小程序 Auth
+
+在 macOS 的 `~/.config/wao/applets/配置名.json` 配置原小程序的 Passport 来源、客户端标识和 App ID。可用 `WAO_APPLET_PROFILE_DIR` 指定本机配置目录，WAO 连接需设置 `WAO_URL`。以下是配置格式示例，实际字段值从相应原小程序的 Test 配置获取。
+
+```json
+{
+  "origin": "https://passport.example.test",
+  "clientType": "example-user-applet",
+  "appId": "wx0123456789abcdef",
+  "group": "工作账号",
+  "name": "示例小程序 · Test Auth"
+}
+```
+
+`group` 和 `name` 可选，分别指定新建条目的现有目标分组及名称。更新会话时保留条目在密码本中的自定义分组和名称。普通密码本使用 `wao vault find|save … --group 分组`。`WAO_VAULT_GROUP` 可为一次命令指定默认分组；显式分组优先。
+
+在能力中心签发「仅小程序 Auth 授权」CLI 令牌，用 `wao connections applet authorize` 隐藏输入并存入本机钥匙串。接着运行 `wao connections applet status 配置名`，也可通过本机 stdio 工具 `applet_status` 查询。有效授权经 Passport 的用户信息接口回验后直接复用。仅有 `missing` 或 `expired` 时才需要首次绑定或更换会话，网络和接口错误单独报告。
+
+绑定时用 `wao connections applet import 配置名` 隐藏输入原客户端授权的会话，也可由原客户端的受信任工具直接管道传给 `--session-stdin`。原客户端提供本次微信登录临时代码时可用 `wao connections applet login 配置名` 隐藏输入，或用 `--code-stdin` 接收，CLI 通过正式 Passport 登录接口交换并回验会话。每次先检查已有设备授权，有效时无需输入。普通密码本条目可由本人在密码本中选择后通过 `import` 完成一次设备绑定。后续会话更新须匹配已绑定的账号，同一应用的不同账号使用各自的配置名。
+
 ## 使用
 
 ```bash

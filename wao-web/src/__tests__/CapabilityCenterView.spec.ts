@@ -202,16 +202,22 @@ describe('能力中心真实目录与区域', () => {
         readOnly: true, cli: 'wao tasks get ID', mcp: 'get_task' },
       { name: 'vault_devops', title: '使用星狮 DevOps 设备授权', description: '', group: 'vault',
         readOnly: false, cli: 'wao connections devops status', mcp: null },
+      { name: 'vault_applet', title: '使用小程序 Auth 设备授权', description: '', group: 'vault',
+        readOnly: false, cli: 'wao connections applet status', mcp: null },
     ] })
     const { wrapper } = await render('/capabilities?area=connections')
     const type = wrapper.get('select')
     await type.setValue('MCP')
     expect(wrapper.text()).not.toContain('仅星狮授权')
+    expect(wrapper.text()).not.toContain('仅小程序 Auth 授权')
     await type.setValue('CLI')
     await wrapper.findAll('.cap-presets button').find((button) => button.text() === '仅星狮授权')!.trigger('click')
     expect(wrapper.get('input[aria-label="允许使用星狮 DevOps 设备授权"]').element).toHaveProperty('checked', true)
     await wrapper.findAll('.cap-group-picker button').find((button) => button.text().includes('任务与子任务'))!.trigger('click')
     expect(wrapper.get('input[aria-label="允许读取任务"]').element).toHaveProperty('checked', false)
+    await wrapper.findAll('.cap-presets button').find((button) => button.text() === '仅小程序 Auth 授权')!.trigger('click')
+    expect(wrapper.get('input[aria-label="允许使用小程序 Auth 设备授权"]').element).toHaveProperty('checked', true)
+    expect(wrapper.get('input[aria-label="允许使用星狮 DevOps 设备授权"]').element).toHaveProperty('checked', false)
     wrapper.unmount()
   })
   it('Skill 文件与输入在切换区域、刷新后恢复，目录路径仍完整', async () => {

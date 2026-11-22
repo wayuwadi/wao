@@ -4,6 +4,8 @@
 
 MySQL 只读 MCP 使用 `wao connections mysql authorize` 和 `wao connections mysql status|sync|serve 实例名`。需要显式 `vault_mysql` CLI 授权。`serve` 为本机 stdio 入口，先用只读探针验证 WAO 优先的实例授权，再启动只读 DBHub；工作区 MCP 不新增 MySQL 查询工具。`wao auth revoke-self` 通过隐藏输入吊销当次指定的令牌。见 [MySQL CLI 使用说明](../../wao-cli/README.md#mysql-mcp)。
 
+小程序会话使用 `wao connections applet authorize` 及 `status|import|login 配置名`，需要显式 `vault_applet` CLI 授权。本机 stdio 工具 `applet_status` 验证当前 WAO 中的会话，仅返回状态。首次绑定可以通过原客户端已授权的会话或一次微信临时代码，在真实 Passport 校验成功后加密保存。见 [小程序 Auth CLI 使用说明](../../wao-cli/README.md#小程序-auth)。
+
 开发服务授权接续使用 `wao connections codeup status PR编号` 与本机 stdio 工具 `codeup_pr_status`，复用已配置的 Codeup CLI 授权。密码本的 `wao vault find` 和 `wao vault save` 分别要求显式 `vault_lookup`、`vault_save` CLI 授权，由服务端识别条目归属。已有工作区令牌保持原范围，密码本操作使用专用 HTTP 路由，工作区 MCP 工具目录与本机 stdio MCP 均无凭据读取或保存工具。见 [密码本 CLI API](../api.md#密码本-cli) 和 [CLI 使用说明](../../wao-cli/README.md#开发服务授权与密码本)。
 
 2026-11-20：[拍照转草图](drawings.md#拍照转草图)和 [AI 整理](drawings.md#ai-整理已有画板)使用成员浏览器会话和人工预览确认；没有新增 CLI 命令、MCP 工具或旧令牌授权。未来提供 Agent 批量转换时，可先支持结构化节点与连线生成本地草图，再按需授予独立的草图读取、创建副本和整理预览权限，保留确认应用与版本检查。

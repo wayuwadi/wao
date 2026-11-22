@@ -47,7 +47,7 @@ export function workspaceApiUrl(workspaceUrl, suffix) {
 }
 
 export async function openDeviceVault(kind, label, { url, tokenProvider, fetchImpl = fetch,
-  slot = '', getDeviceKey = (create) => deviceKey(kind, create) }) {
+  slot = '', group = process.env.WAO_VAULT_GROUP, name, getDeviceKey = (create) => deviceKey(kind, create) }) {
   const workspace = endpoint(url).replace(/\/+$/, '')
   const token = await tokenProvider()
   if (!token) throw new Error(`需要先将具备「使用${label}设备授权」的 WAO CLI 令牌存入本机。`)
@@ -67,8 +67,13 @@ export async function openDeviceVault(kind, label, { url, tokenProvider, fetchIm
       })
     } catch { throw new Error('无法访问 WAO 密码本，请检查网络后重试。') }
     if (response.status === 401 || response.status === 403) throw new Error(`当前 WAO CLI 令牌需要「使用${label}设备授权」权限。`)
-    if (response.status === 409) throw new Error('WAO 设备授权已变更，请重新检查状态。')
+    if (response.status === 409) throw new Error(group
+      ? 'WAO 设备授权有冲突，请确认目标分组存在且唯一，再检查当前授权状态。'
+      : 'WAO 设备授权已变更，请重新检查状态。')
     if (!response.ok) throw new Error(`WAO 设备授权暂不可用（HTTP ${response.status}）。`)
+    if ((group || name) && response.headers.get('X-WAO-Vault-Group-Supported') !== '1') {
+      throw new Error('当前 WAO 服务尚不支持指定设备授权分组或名称。')
+    }
     const result = await response.json().catch(() => null)
     if (result?.code !== 0 || !Object.hasOwn(result, 'data')) throw new Error('WAO 设备授权响应格式无效。')
     return result.data
@@ -105,7 +110,8 @@ export async function openDeviceVault(kind, label, { url, tokenProvider, fetchIm
       cipher.setAAD(audience)
       const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
       const envelope = [version, nonce.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.')
-      const revision = await request({ envelope, expectedRevision: record?.revision ?? null })
+      const revision = await request({ envelope, expectedRevision: record?.revision ?? null,
+        ...(group ? { group } : {}), ...(name ? { name } : {}) })
       if (typeof revision !== 'string' || !/^[a-f0-9]{24}$/.test(revision)) throw new Error('WAO 未确认设备授权已保存。')
       record = { envelope, revision }
       return true

@@ -26,10 +26,11 @@ class VaultCliControllerTest {
         when(tokens.authenticate("save")).thenReturn(grant("vault_save"));
         when(tokens.authenticate("devops")).thenReturn(grant("vault_devops"));
         when(tokens.authenticate("mysql")).thenReturn(grant("vault_mysql"));
+        when(tokens.authenticate("applet")).thenReturn(grant("vault_applet"));
     }
 
     @Test void lookupIsScopedToMemberAndReturnsOnlyMetadata() throws Exception {
-        when(vault.findForCli("alice", "Dev", null)).thenReturn(List.of(new VaultService.CliItem("vi1", "Dev", true)));
+        when(vault.findForCli("alice", "Dev", null, null)).thenReturn(List.of(new VaultService.CliItem("vi1", "Dev", true)));
         mvc.perform(post("/api/vault/cli/find").header("Authorization", "Bearer find").contentType("application/json")
                         .content("{\"name\":\"Dev\",\"memberId\":\"bob\"}"))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
@@ -47,7 +48,7 @@ class VaultCliControllerTest {
     }
 
     @Test void savedCredentialIsNeverEchoed() throws Exception {
-        when(vault.saveForCli("alice", "Dev", "fixture-user", "synthetic")).thenReturn(
+        when(vault.saveForCli("alice", "Dev", "fixture-user", "synthetic", null)).thenReturn(
                 new VaultService.CliSave(new VaultService.CliItem("vi1", "Dev", true), true));
         mvc.perform(post("/api/vault/cli/save").header("Authorization", "Bearer save").contentType("application/json")
                         .content("{\"name\":\"Dev\",\"account\":\"fixture-user\",\"secret\":\"synthetic\"}"))
@@ -69,7 +70,7 @@ class VaultCliControllerTest {
         mvc.perform(put("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer devops")
                         .contentType("application/json").content("{\"envelope\":\"sealed-mysql-fixture\"}"))
                 .andExpect(status().isForbidden());
-        when(vault.saveDeviceEnvelope(VaultService.DeviceService.MYSQL, "alice", device, "sealed-mysql-fixture", null))
+        when(vault.saveDeviceEnvelope(VaultService.DeviceService.MYSQL, "alice", device, "sealed-mysql-fixture", null, null, null))
                 .thenReturn("new-revision");
         mvc.perform(put("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer mysql")
                         .contentType("application/json").content("{\"envelope\":\"sealed-mysql-fixture\"}"))
@@ -79,5 +80,28 @@ class VaultCliControllerTest {
     private static WorkspaceMcpTokenService.AuthenticatedToken grant(String operation) {
         return new WorkspaceMcpTokenService.AuthenticatedToken(operation, "alice", false, false,
                 new WorkspaceCapabilityPolicy(List.of(operation), null, null));
+    }
+
+    @Test void appletGrantIsRequiredAndScopedToTheMember() throws Exception {
+        String device = "b".repeat(32);
+        for (String token : List.of("legacy", "find", "save", "devops", "mysql")) {
+            mvc.perform(get("/api/vault/cli/applet/{device}", device).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isForbidden());
+        }
+        when(vault.deviceEnvelope(VaultService.DeviceService.APPLET, "alice", device))
+                .thenReturn(new VaultService.DeviceEnvelope("sealed-applet-fixture", "revision"));
+        mvc.perform(get("/api/vault/cli/applet/{device}", device).header("Authorization", "Bearer applet"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.envelope").value("sealed-applet-fixture"));
+        mvc.perform(get("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer applet"))
+                .andExpect(status().isForbidden());
+        verify(vault).deviceEnvelope(VaultService.DeviceService.APPLET, "alice", device);
+        verifyNoMoreInteractions(vault);
+    }
+
+    @Test void groupSelectionIsCheckedForTheAuthenticatedOwner() throws Exception {
+        mvc.perform(get("/api/vault/cli/save-access").header("Authorization", "Bearer save").param("group", "Example group"))
+                .andExpect(status().isOk()).andExpect(header().string("X-WAO-Vault-Group-Supported", "1"));
+        verify(vault).checkCliGroup("alice", "Example group");
     }
 }

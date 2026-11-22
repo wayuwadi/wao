@@ -52,7 +52,7 @@ public class WorkspaceMcpTokenService {
         }
         WorkspaceCapabilityPolicy policy = new WorkspaceCapabilityPolicy(request.permissions(), request.projectIds(), request.knowledgeBaseIds());
         if (request.clientType() == null || !List.of("CLI", "MCP").contains(request.clientType())) throw new BadRequestException("连接类型必须为 CLI 或 MCP");
-        if (!"CLI".equals(request.clientType()) && List.of("vault_lookup", "vault_save", "vault_devops", "vault_mysql").stream().anyMatch(policy::permits)) {
+        if (!"CLI".equals(request.clientType()) && List.of("vault_lookup", "vault_save", "vault_devops", "vault_mysql", "vault_applet").stream().anyMatch(policy::permits)) {
             throw new BadRequestException("密码本操作权限仅用于 CLI 连接");
         }
         AuthenticatedToken member = new AuthenticatedToken("scope-validation", memberId, false);

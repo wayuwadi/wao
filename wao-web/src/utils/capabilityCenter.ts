@@ -80,12 +80,15 @@ export const grantPresets = [
   { id: 'daily', title: '日常完整', description: '当前全部工作区操作，包含写入；不含 HTML 发布。' },
   { id: 'devops', title: '仅星狮授权', description: '保存和复用本机的星狮 DevOps 设备授权。' },
   { id: 'mysql', title: '仅 MySQL 授权', description: '保存和复用本机的只读 MySQL 设备授权。' },
+  { id: 'applet', title: '仅小程序 Auth 授权', description: '保存和复用本机已授权的小程序会话。' },
 ] as const
+
+export const deviceGrantTypes = ['devops', 'mysql', 'applet']
 
 export function presetPermissions(id: string, capabilities: WorkspaceCapability[]) {
   return capabilities
     .filter((capability) => {
-      if (id === 'devops' || id === 'mysql') return capability.name === `vault_${id}`
+      if (deviceGrantTypes.includes(id)) return capability.name === `vault_${id}`
       if (capability.name === 'publish_html' || ['pets', 'vault'].includes(capability.group)) return false
       if (id === 'read') return capability.readOnly
       if (id === 'notes')
