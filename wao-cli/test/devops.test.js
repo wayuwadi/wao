@@ -64,3 +64,9 @@ test('absent credentials signal auth required, but lookup errors and integrity f
   await assert.rejects(devopsConnection('status', { ...options, fetchImpl: async () => new Response('', { status: 403 }) }), /需要.*设备授权/)
   assert.deepEqual(events, [])
 })
+
+test('authorize only validates the WAO permission and never contacts the provider', async () => {
+  const { options, events } = fixture()
+  assert.deepEqual(await devopsConnection('authorize', options), { authorized: true })
+  assert.deepEqual(events, ['GET'])
+})

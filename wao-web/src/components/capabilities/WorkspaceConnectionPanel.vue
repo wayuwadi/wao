@@ -119,7 +119,9 @@ const instruction = computed(() =>
   !issued.value
     ? ''
     : draft.value.clientType === 'CLI'
-      ? `运行 wao auth login，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao auth status 与 wao tools list 验证连接。`
+      ? draft.value.permissions.length === 1 && draft.value.permissions.includes('vault_devops')
+        ? `运行 wao --url ${endpoint} connections devops authorize，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao --url ${endpoint} connections devops status 验证连接。`
+        : `运行 wao auth login，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao auth status 与 wao tools list 验证连接。`
       : `请连接 WAO 的 Streamable HTTP MCP。\n地址：${endpoint}\nToken：${issued.value.secret}\n认证：Authorization: Bearer <Token>\n安全保存令牌，验证 initialize 与 tools/list；只调用实际可见的工具。`,
 )
 let generation = 0

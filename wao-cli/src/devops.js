@@ -14,6 +14,25 @@ const KEY_SERVICE = 'cn.wayuwa.wao.cli.devops'
 const KEY_ACCOUNT = 'device-key-v1'
 const AUTH_REQUIRED = 'AUTH_REQUIRED：星狮 DevOps 授权缺失或已失效，请通过团队 CLI 扫码后运行 wao connections devops sync。'
 
+function grantAccount(url) {
+  const workspace = endpoint(url).replace(/\/+$/, '')
+  return 'workspace-grant-v1-' + createHash('sha256').update(workspace).digest('hex').slice(0, 32)
+}
+
+export async function devopsWorkspaceToken(url, fallback) {
+  if (process.env.WAO_TOKEN?.trim()) return fallback()
+  if (process.platform === 'darwin') {
+    const stored = await readMacCredential(KEY_SERVICE, grantAccount(url))
+    if (stored) return stored
+  }
+  return fallback()
+}
+
+export async function authorizeDevops(url, token) {
+  await devopsConnection('authorize', { url, tokenProvider: async () => token })
+  await writeMacCredential(KEY_SERVICE, grantAccount(url), token, { replace: true })
+}
+
 async function deviceKey(create) {
   if (process.platform !== 'darwin') throw new Error('星狮 DevOps 密码本连接当前使用 macOS 钥匙串。')
   let raw = await readMacCredential(KEY_SERVICE, KEY_ACCOUNT)
@@ -109,7 +128,9 @@ async function nativeCredential(action, input) {
 
 export async function devopsConnection(action, { url, tokenProvider, fetchImpl = fetch,
   getDeviceKey = deviceKey, queryProvider = provider, credential = nativeCredential }) {
-  if (!['status', 'environments', 'sync', 'restore'].includes(action)) throw new Error('用法：wao connections devops status|environments|sync|restore')
+  if (!['authorize', 'status', 'environments', 'sync', 'restore'].includes(action)) {
+    throw new Error('用法：wao connections devops authorize|status|environments|sync|restore')
+  }
   const target = new URL(endpoint(url))
   const workspacePath = target.pathname.replace(/\/+$/, '')
   const suffix = '/api/mcp/workspace'
@@ -139,6 +160,7 @@ export async function devopsConnection(action, { url, tokenProvider, fetchImpl =
   }
 
   let stored = await request()
+  if (action === 'authorize') return { authorized: true }
   if (action === 'sync') {
     const native = await credential('read')
     if (!native || !(await queryProvider('status', native))) throw new Error(AUTH_REQUIRED)
