@@ -6,8 +6,8 @@ import { endpoint } from './client.js'
 const runExecutable = promisify(execFile)
 const MAX_SECRET_BYTES = 8192
 const HELP = `用法：
-  wao vault find 条目名 [--account 账号]
-  wao vault save 条目名 [--account 账号] [--secret-stdin | --from-codeup-keychain]
+  wao vault find 条目名 [--account 账号] [--group 分组]
+  wao vault save 条目名 [--account 账号] [--group 分组] [--secret-stdin | --from-codeup-keychain]
 默认由本人在终端隐藏输入。--secret-stdin 从可信程序接收原样 UTF-8。`
 
 async function readLine(stdin, output) {
@@ -65,23 +65,30 @@ export async function runVault(args, { url, stdin, stdout, stderr, tokenProvider
   const name = title?.trim()
   if (!['find', 'save'].includes(action) || !name || name.startsWith('--') || name.length > 128 || /\p{Cc}/u.test(name)) throw new Error(HELP)
   let account
+  let group
   let source
   for (let index = 0; index < flags.length; index++) {
     const flag = flags[index]
     if (flag === '--account' && account === undefined) {
       account = flags[++index]?.trim()
       if (!account || account.startsWith('--') || account.length > 128 || /\p{Cc}/u.test(account)) throw new Error('请输入有效账号。')
+    } else if (flag === '--group' && group === undefined) {
+      group = flags[++index]?.trim()
+      if (!group || group.startsWith('--')) throw new Error('请输入有效分组名。')
     } else if (action === 'save' && !source && ['--secret-stdin', '--from-codeup-keychain'].includes(flag)) {
       source = flag
     } else {
       throw new Error(HELP)
     }
   }
+  group ??= process.env.WAO_VAULT_GROUP?.trim() || undefined
+  if (group && (group.length > 64 || /\p{Cc}/u.test(group))) throw new Error('请输入有效分组名。')
   const token = await tokenProvider()
   if (!token) throw new Error('未找到工作区令牌。请为 CLI 签发密码本权限并运行 wao auth login。')
 
   async function request(route, body) {
     const target = vaultUrl(url, route)
+    if (group && route === 'save-access') target.searchParams.set('group', group)
     let response
     try {
       response = await fetchImpl(target, {
@@ -94,6 +101,7 @@ export async function runVault(args, { url, stdin, stdout, stderr, tokenProvider
     if (response.status === 403) throw new Error('当前令牌未获此密码本操作授权，请在能力中心新建 CLI 授权。')
     if (response.status === 409) throw new Error('密码本条目存在冲突，请查询或在密码本中选择正确条目。')
     if (!response.ok) throw new Error(`WAO 密码本请求失败（HTTP ${response.status}）。`)
+    if (group && response.headers.get('X-WAO-Vault-Group-Supported') !== '1') throw new Error('当前 WAO 服务尚不支持指定密码本分组。')
     try {
       const payload = await response.json()
       if (payload.code === 0 && Object.hasOwn(payload, 'data')) return payload.data
@@ -109,12 +117,12 @@ export async function runVault(args, { url, stdin, stdout, stderr, tokenProvider
   }
 
   if (action === 'find') {
-    const rows = await request('find', { name, account })
+    const rows = await request('find', { name, account, group })
     if (!Array.isArray(rows)) throw new Error('WAO 密码本查询结果格式无效。')
     stdout.write(formatOutput(rows.map(itemMetadata), output) + '\n')
     return
   }
-  if (stdin.isTTY) stderr.write(`保存到 ${vaultUrl(url, 'save').origin} 的密码本条目「${name}」\n`)
+  if (stdin.isTTY) stderr.write(`保存到 ${vaultUrl(url, 'save').origin} 的密码本条目「${name}」${group ? ` · 分组「${group}」` : ''}\n`)
   if (source === '--from-codeup-keychain') {
     if (!stdin.isTTY) throw new Error('导入 Codeup 钥匙串凭据需要本人在交互终端确认。')
     stderr.write('将本机 Codeup 授权复制到上述 WAO 密码本，输入 yes 确认：')
@@ -123,7 +131,7 @@ export async function runVault(args, { url, stdin, stdout, stderr, tokenProvider
   if (await request('save-access') !== true) throw new Error('WAO 未确认当前令牌具有密码本保存权限。')
   const secret = await readSecret(stdin, stderr, source)
   if (!secret.trim() || Buffer.byteLength(secret) > MAX_SECRET_BYTES) throw new Error('请输入有效凭据，最多 8192 个 UTF-8 字节。')
-  const receipt = await request('save', { name, account, secret })
+  const receipt = await request('save', { name, account, secret, group })
   if (typeof receipt?.saved !== 'boolean') throw new Error('WAO 密码本保存结果格式无效。')
   stdout.write(formatOutput({ ...itemMetadata(receipt.item), saved: receipt.saved }, output) + '\n')
 }

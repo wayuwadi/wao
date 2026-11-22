@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { appletConnection } from '../src/applet.js'
 
-const profile = { origin: 'https://passport.example.test', clientType: 'test-user-applet', appId: 'wx0123456789abcdef' }
+const profile = { origin: 'https://passport.example.test', clientType: 'test-user-applet', appId: 'wx0123456789abcdef',
+  group: 'Example group', name: 'Example miniapp' }
 const originalSession = 'synthetic.applet.session'
 const secondSession = 'synthetic.another.session'
 const loginCode = 'synthetic_code'
@@ -23,14 +24,17 @@ function fixture() {
       assert.match(url.pathname, /^\/api\/vault\/cli\/applet\/[0-9a-f]{32}$/)
       assert.equal(request.redirect, 'error')
       const record = records.get(url.pathname)
-      if (request.method === 'GET') return Response.json({ code: 0, data: record ?? null })
+      const responseOptions = { headers: { 'X-WAO-Vault-Group-Supported': '1' } }
+      if (request.method === 'GET') return Response.json({ code: 0, data: record ?? null }, responseOptions)
       assert.ok(![originalSession, secondSession, loginCode, passportUser].some(value => request.body.includes(value)))
       const body = JSON.parse(request.body)
       assert.equal(body.expectedRevision, record?.revision ?? null)
+      assert.equal(body.group, profile.group)
+      assert.equal(body.name, profile.name)
       assert.match(body.envelope, /^wao-applet-v1\./)
       const revision = '0'.repeat(24)
       records.set(url.pathname, { envelope: body.envelope, revision })
-      return Response.json({ code: 0, data: revision })
+      return Response.json({ code: 0, data: revision }, responseOptions)
     },
     async providerFetch(url, request) {
       requests.push([url.pathname, request.method])

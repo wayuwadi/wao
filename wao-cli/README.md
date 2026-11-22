@@ -69,9 +69,13 @@ codex mcp add mysql-wao-test --env WAO_URL="$WAO_URL" --env WAO_MYSQL_DBHUB_ENTR
 {
   "origin": "https://passport.example.test",
   "clientType": "example-user-applet",
-  "appId": "wx0123456789abcdef"
+  "appId": "wx0123456789abcdef",
+  "group": "工作账号",
+  "name": "示例小程序 · Test Auth"
 }
 ```
+
+`group` 和 `name` 可选，分别指定新建条目的现有目标分组及名称。更新会话时保留条目在密码本中的自定义分组和名称。普通密码本使用 `wao vault find|save … --group 分组`。`WAO_VAULT_GROUP` 可为一次命令指定默认分组；显式分组优先。
 
 在能力中心签发「仅小程序 Auth 授权」CLI 令牌，用 `wao connections applet authorize` 隐藏输入并存入本机钥匙串。接着运行 `wao connections applet status 配置名`，也可通过本机 stdio 工具 `applet_status` 查询。有效授权经 Passport 的用户信息接口回验后直接复用。仅有 `missing` 或 `expired` 时才需要首次绑定或更换会话，网络和接口错误单独报告。
 

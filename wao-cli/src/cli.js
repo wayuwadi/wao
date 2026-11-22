@@ -69,8 +69,8 @@ const HELP = `WAO 工作区 CLI
   wao connections mysql authorize | status|sync|serve 实例名  保存和复用只读 MySQL 授权
   wao connections applet authorize | status|import|login 配置名  保存和复用小程序会话
   wao connections mcp                  启动供 Codex 连接的本机 stdio MCP
-  wao vault find 条目名 [--account 账号] 查找密码本条目
-  wao vault save 条目名 [--account 账号] 保存一次输入的凭据
+  wao vault find 条目名 [--account 账号] [--group 分组] 查找密码本条目
+  wao vault save 条目名 [--account 账号] [--group 分组] 保存一次输入的凭据
 
 例子：
   wao projects create --name "新项目"           不指定截止日期即未排期

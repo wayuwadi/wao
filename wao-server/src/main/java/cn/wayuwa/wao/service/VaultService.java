@@ -168,7 +168,8 @@ public class VaultService {
      */
     @Transactional
     public void deleteGroup(String id, String ownerId) {
-        VaultGroupEntity group = requireGroup(id, ownerId);
+        VaultGroupEntity group = groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, id).last("FOR UPDATE"));
+        if (group == null) throw new NotFoundException("密钥库分组不存在：" + id);
         if (isDefault(group)) {
             throw new IllegalArgumentException("默认分组不能删除");
         }
@@ -203,8 +204,9 @@ public class VaultService {
         return toDto(e);
     }
 
-    public List<CliItem> findForCli(String ownerId, String name, String account) {
-        return matchingItems(ownerId, cliLabel(name), account == null ? null : cliLabel(account))
+    public List<CliItem> findForCli(String ownerId, String name, String account, String group) {
+        String groupId = group == null ? null : cliGroupId(ownerId, group, false);
+        return matchingItems(ownerId, cliLabel(name), account == null ? null : cliLabel(account), groupId)
                 .stream().map(VaultService::toCliItem).toList();
     }
 
@@ -218,20 +220,21 @@ public class VaultService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public String saveDeviceEnvelope(DeviceService service, String ownerId, String device, String envelope, String expectedRevision) {
+    public String saveDeviceEnvelope(DeviceService service, String ownerId, String device, String envelope, String expectedRevision,
+            String group, String name) {
         String id = deviceId(service, ownerId, device);
         if (envelope == null || envelope.length() > MAX_CLI_SECRET_BYTES || !service.envelope.matcher(envelope).matches()) {
             throw new BadRequestException("设备授权必须为受支持的加密格式");
         }
-        String groupId = ensureDefaultGroup(ownerId).getId();
-        groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, groupId).last("FOR UPDATE"));
+        String groupId = lockDefaultCliGroup(ownerId);
         VaultItemEntity item = deviceItem(ownerId, id);
         if (item == null) {
             if (expectedRevision != null) throw new ConflictException("授权条目已移除，请刷新后重试");
+            if (group != null) groupId = cliGroupId(ownerId, group, true);
             item = new VaultItemEntity();
             item.setId(id);
             item.setGroupId(groupId);
-            item.setName(service.name);
+            item.setName(name == null ? service.name : cliLabel(name));
             item.setIcon("ri-key-2-line");
             item.setSite(service.site);
             item.setNote("设备密钥由本机钥匙串管理。删除此条目会解除该设备的密码本备份。");
@@ -275,18 +278,19 @@ public class VaultService {
 
     /** Serializes CLI creation per owner and fills an existing empty item only if it is still empty. */
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public CliSave saveForCli(String ownerId, String name, String account, String secret) {
+    public CliSave saveForCli(String ownerId, String name, String account, String secret, String group) {
         name = cliLabel(name);
         account = account == null ? null : cliLabel(account);
         if (secret == null || secret.isBlank() || secret.getBytes(StandardCharsets.UTF_8).length > MAX_CLI_SECRET_BYTES) {
             throw new BadRequestException("请输入有效凭据，最多 8192 个 UTF-8 字节");
         }
-        String groupId = ensureDefaultGroup(ownerId).getId();
-        groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, groupId).last("FOR UPDATE"));
-        List<VaultItemEntity> items = matchingItems(ownerId, name, account);
+        String defaultId = lockDefaultCliGroup(ownerId);
+        String groupId = group == null ? null : cliGroupId(ownerId, group, true);
+        List<VaultItemEntity> items = matchingItems(ownerId, name, account, groupId);
         if (items.size() > 1) throw new ConflictException("有多个同名条目，请用账号区分或在密码本整理条目");
         if (items.isEmpty()) {
-            VaultItemDto created = createItem(new CreateVaultItemRequest(groupId, name, null, account, null, null, secret), ownerId);
+            VaultItemDto created = createItem(new CreateVaultItemRequest(groupId == null ? defaultId : groupId,
+                    name, null, account, null, null, secret), ownerId);
             return new CliSave(new CliItem(created.id(), created.name(), true), true);
         }
 
@@ -303,8 +307,31 @@ public class VaultService {
         return new CliSave(new CliItem(existing.getId(), existing.getName(), true), true);
     }
 
-    private List<VaultItemEntity> matchingItems(String ownerId, String name, String account) {
-        List<String> groupIds = groupMapper.selectList(ownedGroups(ownerId)).stream().map(VaultGroupEntity::getId).toList();
+    private String lockDefaultCliGroup(String ownerId) {
+        String id = ensureDefaultGroup(ownerId).getId();
+        groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, id).last("FOR UPDATE"));
+        return id;
+    }
+
+    public void checkCliGroup(String ownerId, String name) {
+        cliGroupId(ownerId, name, false);
+    }
+
+    private String cliGroupId(String ownerId, String name, boolean lock) {
+        String exactName = cliLabel(name);
+        if (exactName.length() > 64) throw new BadRequestException("分组名最多 64 字符");
+        var query = ownedGroups(ownerId).eq(VaultGroupEntity::getName, exactName);
+        if (lock) query.last("FOR UPDATE");
+        List<VaultGroupEntity> matches = groupMapper.selectList(query).stream()
+                .filter(group -> exactName.equals(group.getName())).toList();
+        if (matches.size() != 1) throw new ConflictException("本人密码本中须有唯一同名分组");
+        return matches.get(0).getId();
+    }
+
+    private List<VaultItemEntity> matchingItems(String ownerId, String name, String account, String groupId) {
+        List<String> groupIds = groupId == null
+                ? groupMapper.selectList(ownedGroups(ownerId)).stream().map(VaultGroupEntity::getId).toList()
+                : List.of(groupId);
         if (groupIds.isEmpty()) return List.of();
         return itemMapper.selectList(new LambdaQueryWrapper<VaultItemEntity>().in(VaultItemEntity::getGroupId, groupIds)
                         .eq(VaultItemEntity::getName, name).eq(account != null, VaultItemEntity::getUserName, account))
@@ -318,7 +345,7 @@ public class VaultService {
 
     private static String cliLabel(String value) {
         if (value == null || value.isBlank() || value.strip().length() > 128 || value.chars().anyMatch(Character::isISOControl)) {
-            throw new BadRequestException("条目名或账号须为 1 至 128 字符，且不能含控制字符");
+            throw new BadRequestException("条目名、账号或分组名须为 1 至 128 字符，且不能含控制字符");
         }
         return value.strip();
     }

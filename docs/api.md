@@ -138,6 +138,8 @@ MySQL 设备授权使用 `GET|PUT /api/vault/cli/mysql/{device}` 和独立 `vaul
 
 小程序设备授权使用 `GET|PUT /api/vault/cli/applet/{device}` 和独立 `vault_applet` CLI 授权。密文前缀为 `wao-applet-v1`，本机配置名、服务端来源、客户端标识及微信 App ID 参与设备标识及加密受众。WAO 沿用设备密文与版本校验，各客户端在本机验证并使用已有会话。
 
+设备授权 `PUT` 可携带 `group` 和 `name` 以指定首次创建的目的分组和显示名称；更新时保留现有分组及名称。普通条目查找和保存可传 `group`，`GET /api/vault/cli/save-access` 可通过同名查询参数先验证分组。分组要求是当前成员唯一的同名分组。支持该行为的服务返回 `X-WAO-Vault-Group-Supported: 1`。
+
 `POST /api/workspace-mcp/tokens/revoke-self` 用当前 `Authorization: Bearer …` 吊销该令牌，无需请求体。成功返回 `ApiResponse<Void>`，无效或已吊销的令牌返回 HTTP 401。
 
 ## Moka 考勤连接恢复（2026-10-29）

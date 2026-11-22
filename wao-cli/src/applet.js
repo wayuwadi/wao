@@ -30,12 +30,17 @@ function validateProfile(profile) {
       origin = url.origin
     }
   } catch { /* Report invalid configuration without echoing it. */ }
-  const { clientType, appId } = profile ?? {}
+  const { clientType, appId, group, name } = profile ?? {}
   if (!origin || typeof clientType !== 'string' || !/^[a-z][a-z0-9-]{0,48}-applet$/.test(clientType)
     || typeof appId !== 'string' || !/^wx[0-9a-f]{16}$/.test(appId)) {
     throw new Error('小程序配置须包含准确的 HTTPS 网关、微信 App ID 和小程序客户端标识。')
   }
-  return { origin, clientType, appId }
+  for (const [value, max] of [[group, 64], [name, 128]]) {
+    if (value !== undefined && (typeof value !== 'string' || !value.trim() || value.trim().length > max || /\p{Cc}/u.test(value))) {
+      throw new Error('小程序配置中的分组名或条目名无效。')
+    }
+  }
+  return { origin, clientType, appId, group: group?.trim(), name: name?.trim() }
 }
 
 function userId(value) {
@@ -85,7 +90,7 @@ export async function appletConnection(action, alias, { url, tokenProvider, fetc
   if (!['status', 'import', 'login'].includes(action) || !APPLET_PROFILE.test(alias ?? '')) throw new Error('请指定小程序本机配置名。')
   const profile = validateProfile(await getProfile(alias))
   const slot = JSON.stringify([alias, profile.origin, profile.appId, profile.clientType])
-  const vault = await openVault({ url, tokenProvider, fetchImpl, getDeviceKey, slot })
+  const vault = await openVault({ url, tokenProvider, fetchImpl, getDeviceKey, slot, group: profile.group, name: profile.name })
   const prior = unpack(vault.read())
   if (prior) {
     const id = await verifyPassport(providerFetch, profile, prior.session)
