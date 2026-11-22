@@ -290,3 +290,46 @@ describe('密码本快速录入', () => {
     expect(data.vault[1]!.items[0]!.name).toBe('新名称')
   })
 })
+
+describe('密码条目拖拽换组', () => {
+  beforeEach(() => { setActivePinia(createPinia()); vi.mocked(apiPatchVaultItem).mockReset() })
+
+  it('拖到目标分组后只提交分组并更新计数，原分组和全部不是有效目标', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group({ items: [item()] }), group({ id: 'work', group: '工作', isDefault: false })]
+    vi.mocked(apiPatchVaultItem).mockResolvedValue(item())
+    const view = mount(VaultView)
+    await view.get('.item-btn').trigger('dragstart')
+    await view.findAll('.group-btn')[0]!.trigger('dragover')
+    await view.findAll('.group-btn')[1]!.trigger('dragover')
+    expect(view.find('.drop-target').exists()).toBe(false)
+    await view.findAll('.group-btn')[2]!.trigger('dragover')
+    expect(view.findAll('.group-btn')[2]!.classes()).toContain('drop-target')
+    await view.findAll('.group-btn')[2]!.trigger('drop')
+    await flushPromises()
+    expect(apiPatchVaultItem).toHaveBeenCalledExactlyOnceWith('vi1', { groupId: 'work' })
+    expect(data.vault[0]!.items).toHaveLength(0)
+    expect(data.vault[1]!.items[0]!.id).toBe('vi1')
+    expect(view.findAll('.gb-count').map((count) => count.text())).toEqual(['1', '0', '1'])
+    view.unmount()
+  })
+
+  it('保存失败保留原分组并允许重试', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group({ items: [item()] }), group({ id: 'work', group: '工作', isDefault: false })]
+    vi.mocked(apiPatchVaultItem).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(item())
+    const view = mount(VaultView)
+    await view.get('.item-btn').trigger('dragstart')
+    await view.findAll('.group-btn')[2]!.trigger('drop')
+    await flushPromises()
+    expect(view.get('[role="alert"]').text()).toContain('条目仍在原分组')
+    expect(data.vault[0]!.items).toHaveLength(1)
+    await view.get('[role="alert"] .retry').trigger('click')
+    await flushPromises()
+    expect(data.vault[1]!.items[0]!.id).toBe('vi1')
+    expect(view.find('[role="alert"]').exists()).toBe(false)
+    view.unmount()
+  })
+})

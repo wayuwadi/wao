@@ -24,6 +24,10 @@ const newGroupName = ref('')
 const managingGroups = ref(false)
 const renamingGroupId = ref<string | null>(null)
 const draggedGroupId = ref<string | null>(null)
+const draggedItemId = ref<string | null>(null)
+const dropTargetId = ref<string | null>(null)
+const movingItem = ref(false)
+const failedMove = ref<{ itemId: string; targetId: string } | null>(null)
 
 interface FlatItem extends VaultItem {
   groupId: string
@@ -111,6 +115,41 @@ async function dropGroup(targetId: string) {
   ids.splice(sourceIndex, 1)
   ids.splice(targetIndex, 0, sourceId)
   await data.reorderVaultGroups(ids)
+}
+function startItemDrag(event: DragEvent, id: string) {
+  if (movingItem.value || managingGroups.value) { event.preventDefault(); return }
+  draggedItemId.value = id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', 'wao-vault-item')
+  }
+}
+function endItemDrag() {
+  draggedItemId.value = null
+  dropTargetId.value = null
+}
+function overItemGroup(event: DragEvent, targetId: string) {
+  const item = items.value.find((entry) => entry.id === draggedItemId.value)
+  if (!item || targetId === 'all' || item.groupId === targetId || movingItem.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTargetId.value = targetId
+}
+async function moveItem(itemId: string, targetId: string) {
+  const item = items.value.find((entry) => entry.id === itemId)
+  if (movingItem.value || !item || item.groupId === targetId || !data.vault.some((group) => group.id === targetId)) return
+  movingItem.value = true
+  failedMove.value = null
+  try {
+    const ok = await data.updateVaultItem(itemId, { groupId: targetId })
+    if (!ok) failedMove.value = { itemId, targetId }
+    else toast('已移动到目标分组')
+  } finally { movingItem.value = false }
+}
+function dropItem(targetId: string) {
+  const itemId = draggedItemId.value
+  endItemDrag()
+  if (itemId && targetId !== 'all') void moveItem(itemId, targetId)
 }
 const savingGroup = ref(false), groupError = ref('')
 async function createGroup() {
@@ -266,7 +305,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
         <div class="vault-heading"><div class="vtitle">密码库</div><button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups"><i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}</button></div>
         <div class="col-label">分组</div>
         <template v-for="g in groups" :key="g.id">
-          <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
+          <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on, 'drop-target': dropTargetId === g.id }" @click="pickGroup(g.id)" @dragover="overItemGroup($event, g.id)" @dragleave="dropTargetId = null" @drop.prevent="dropItem(g.id)">
             <span class="gb-label">{{ g.label }}</span><span class="gb-count wao-tabular">{{ g.count }}</span>
           </button>
           <div
@@ -306,11 +345,16 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
       <span>{{ data.vault.length ? '密码库读取失败，以下为上次读取结果。请重试获取最新内容。' : '密码库读取失败，请检查连接后重试。' }}</span>
       <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
     </div>
+    <div v-if="failedMove" class="banner error" role="alert">
+      <span>移动失败，条目仍在原分组。</span>
+      <button class="retry" :disabled="movingItem" @click="moveItem(failedMove.itemId, failedMove.targetId)">重试</button>
+      <button class="retry" @click="failedMove = null">关闭</button>
+    </div>
 
     <div class="cols">
 
       <div class="item-col">
-        <button v-for="it in visibleItems" :key="it.id" class="item-btn" :class="{ on: sel?.id === it.id }" @click="selId = it.id">
+        <button v-for="it in visibleItems" :key="it.id" class="item-btn" :class="{ on: sel?.id === it.id, dragging: draggedItemId === it.id }" :draggable="!managingGroups && !movingItem" title="拖到左侧分组可移动条目" @dragstart="startItemDrag($event, it.id)" @dragend="endItemDrag" @click="selId = it.id">
           <div class="item-icon"><i :class="it.icon"></i></div>
           <div class="item-main">
             <div class="item-name">{{ it.name }}</div>
@@ -572,6 +616,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
   color: var(--wao-primary-text);
   font-weight: 600;
 }
+.group-btn.drop-target { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
 .group-edit-row {
   min-height: 32px;
   display: flex;
@@ -641,6 +686,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 .item-btn.on {
   background: var(--wao-primary-soft);
 }
+.item-btn.dragging { opacity: .5; }
 .item-icon {
   width: 30px;
   height: 30px;
