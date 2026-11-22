@@ -88,6 +88,9 @@ public class CapabilityCenterController {
         capabilities.add(json.createObjectNode().put("name", "vault_devops").put("title", "使用星狮 DevOps 设备授权")
                 .put("description", "当前设备可以保存和复用自己的星狮 DevOps 授权。解密密钥保存在本机钥匙串。")
                 .put("group", "vault").put("cli", "wao connections devops status").putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "vault_mysql").put("title", "使用 MySQL 设备授权")
+                .put("description", "当前设备可以保存和复用自己的 MySQL MCP 只读连接凭据。解密密钥保存在本机钥匙串。")
+                .put("group", "vault").put("cli", "wao connections mysql status").putNull("mcp").put("readOnly", false));
         return ApiResponse.ok(json.createObjectNode().set("capabilities", capabilities));
     }
 

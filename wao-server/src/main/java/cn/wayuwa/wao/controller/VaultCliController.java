@@ -4,8 +4,10 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.ForbiddenException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.service.VaultService;
+import cn.wayuwa.wao.service.VaultService.DeviceService;
 import cn.wayuwa.wao.service.WorkspaceMcpTokenService;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -34,8 +36,8 @@ public class VaultCliController {
     public record Deposit(String name, String account, String secret) {
         @Override public String toString() { return "VaultCliDeposit"; }
     }
-    public record DevopsDeposit(String envelope, String expectedRevision) {
-        @Override public String toString() { return "VaultCliDevopsDeposit"; }
+    public record DeviceDeposit(String envelope, String expectedRevision) {
+        @Override public String toString() { return "VaultCliDeviceDeposit"; }
     }
 
     @PostMapping("/find")
@@ -58,16 +60,18 @@ public class VaultCliController {
         return noStore(vault.saveForCli(member, request.name(), request.account(), request.secret()));
     }
 
-    @GetMapping("/devops/{device}")
-    public ResponseEntity<ApiResponse<VaultService.DevopsEnvelope>> devops(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
-            @PathVariable String device) {
-        return noStore(vault.devopsEnvelope(member(authorization, "vault_devops"), device));
+    @GetMapping("/{service:devops|mysql}/{device}")
+    public ResponseEntity<ApiResponse<VaultService.DeviceEnvelope>> device(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @PathVariable String service, @PathVariable String device) {
+        DeviceService kind = DeviceService.valueOf(service.toUpperCase(Locale.ROOT));
+        return noStore(vault.deviceEnvelope(kind, member(authorization, kind.permission()), device));
     }
 
-    @PutMapping("/devops/{device}")
-    public ResponseEntity<ApiResponse<String>> saveDevops(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
-            @PathVariable String device, @RequestBody DevopsDeposit request) {
-        return noStore(vault.saveDevopsEnvelope(member(authorization, "vault_devops"), device, request.envelope(), request.expectedRevision()));
+    @PutMapping("/{service:devops|mysql}/{device}")
+    public ResponseEntity<ApiResponse<String>> saveDevice(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @PathVariable String service, @PathVariable String device, @RequestBody DeviceDeposit request) {
+        DeviceService kind = DeviceService.valueOf(service.toUpperCase(Locale.ROOT));
+        return noStore(vault.saveDeviceEnvelope(kind, member(authorization, kind.permission()), device, request.envelope(), request.expectedRevision()));
     }
 
     private String member(String authorization, String operation) {

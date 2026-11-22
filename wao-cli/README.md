@@ -47,6 +47,20 @@ wao connections devops restore
 
 使用已安装的 `~/.local/bin/cli-anything-devops`，可由本机配置 `WAO_DEVOPS_CLI` 指定等效安装路径。Codex 本机 MCP 可调用 `devops_environments`，工作区地址可通过 MCP 配置的 `WAO_URL` 或启动参数 `--url` 指定。MCP 查询只回报可访问的环境代码和状态。密码本可删除该设备的备份，能力中心可撤销设备访问。
 
+### MySQL MCP
+
+macOS 客户端复用 Codex 已配置的 MySQL 实例和 `codex.mysql-instance` 钥匙串。实例配置默认位于 `~/.codex/config/mysql-instances`，可用 `WAO_MYSQL_INSTANCE_DIR` 指定。把 `WAO_MYSQL_DBHUB_ENTRY` 指向已安装的 DBHub `dist/index.js` 绝对路径，在 WAO 能力中心签发「仅 MySQL 授权」CLI 令牌，用 `wao connections mysql authorize` 存入本机钥匙串。每条命令和 MCP 启动都使用同一 `WAO_URL`。
+
+```sh
+wao connections mysql status mysql-test
+wao connections mysql sync mysql-test
+codex mcp add mysql-wao-test --env WAO_URL="$WAO_URL" --env WAO_MYSQL_DBHUB_ENTRY="$WAO_MYSQL_DBHUB_ENTRY" -- wao connections mysql serve mysql-test
+```
+
+`status` 先验证密码本授权，再检查本机钥匙串。`sync` 可直接保存通过真实只读探针的本机密码。MCP 启动时优先使用密码本。密码本缺记录或凭据被 MySQL 拒绝时，MCP 可验证本机凭据并加密保存后启动。网络、TLS 或默认库权限错误需要排查连接。两个来源都缺失或无法通过认证时，由本人通过原有 MySQL 配置工具更新指定实例。只读 MCP 提供 `execute_sql` 和 `search_objects`，查询上限为 200 行。
+
+如需撤销仍持有的一枚 WAO 工作区令牌，可通过交互隐藏输入或 `--token-stdin` 使用 `wao auth revoke-self`。WAO 只撤销本次输入的令牌。
+
 ## 使用
 
 ```bash

@@ -25,6 +25,7 @@ class VaultCliControllerTest {
         when(tokens.authenticate("find")).thenReturn(grant("vault_lookup"));
         when(tokens.authenticate("save")).thenReturn(grant("vault_save"));
         when(tokens.authenticate("devops")).thenReturn(grant("vault_devops"));
+        when(tokens.authenticate("mysql")).thenReturn(grant("vault_mysql"));
     }
 
     @Test void lookupIsScopedToMemberAndReturnsOnlyMetadata() throws Exception {
@@ -56,14 +57,23 @@ class VaultCliControllerTest {
 
     @Test void managedDeviceAuthorizationUsesItsOwnGrantAndMember() throws Exception {
         String device = "a".repeat(32);
-        for (String token : List.of("legacy", "find", "save")) {
+        for (String token : List.of("legacy", "find", "save", "mysql")) {
             mvc.perform(get("/api/vault/cli/devops/{device}", device).header("Authorization", "Bearer " + token))
                     .andExpect(status().isForbidden());
         }
-        when(vault.devopsEnvelope("alice", device)).thenReturn(new VaultService.DevopsEnvelope("sealed-fixture", "revision"));
+        when(vault.deviceEnvelope(VaultService.DeviceService.DEVOPS, "alice", device))
+                .thenReturn(new VaultService.DeviceEnvelope("sealed-devops-fixture", "revision"));
         mvc.perform(get("/api/vault/cli/devops/{device}", device).header("Authorization", "Bearer devops"))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.data.envelope").value("sealed-fixture"));
+                .andExpect(jsonPath("$.data.envelope").value("sealed-devops-fixture"));
+        mvc.perform(put("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer devops")
+                        .contentType("application/json").content("{\"envelope\":\"sealed-mysql-fixture\"}"))
+                .andExpect(status().isForbidden());
+        when(vault.saveDeviceEnvelope(VaultService.DeviceService.MYSQL, "alice", device, "sealed-mysql-fixture", null))
+                .thenReturn("new-revision");
+        mvc.perform(put("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer mysql")
+                        .contentType("application/json").content("{\"envelope\":\"sealed-mysql-fixture\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").value("new-revision"));
     }
 
     private static WorkspaceMcpTokenService.AuthenticatedToken grant(String operation) {

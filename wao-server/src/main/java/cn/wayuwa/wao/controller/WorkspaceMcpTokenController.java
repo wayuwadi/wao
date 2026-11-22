@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,6 +53,19 @@ public class WorkspaceMcpTokenController {
     @DeleteMapping("/{id}")
     public ApiResponse<Void> revoke(@PathVariable String id, HttpServletRequest request) {
         tokens.revoke(member(request), id); return ApiResponse.ok(null);
+    }
+
+    /** A client holding a token can invalidate that exact token without a browser session. */
+    @PostMapping("/revoke-self")
+    public ResponseEntity<ApiResponse<Void>> revokeSelf(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            throw new UnauthorizedException("工作区令牌无效或已吊销");
+        }
+        var token = tokens.authenticate(authorization.substring(7).trim());
+        if (token == null) throw new UnauthorizedException("工作区令牌无效或已吊销");
+        tokens.revoke(token.memberId(), token.tokenId());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.ok(null));
     }
 
     private String member(HttpServletRequest request) {
