@@ -65,10 +65,10 @@ export async function tokenFromKeychain() {
   return readMacCredential(SERVICE, ACCOUNT)
 }
 
-export async function readMacCredential(service, account) {
+export async function readMacCredential(service, account, { trim = true } = {}) {
   try {
     const { stdout } = await exec('/usr/bin/security', ['find-generic-password', '-a', account, '-s', service, '-w'], { timeout: 25000 })
-    return stdout.trim() || null
+    return (trim ? stdout.trim() : stdout.replace(/\r?\n$/, '')) || null
   } catch (error) {
     if (error.code === 44) return null
     throw new Error('无法读取 macOS 钥匙串；请检查钥匙串权限或改用 WAO_TOKEN')

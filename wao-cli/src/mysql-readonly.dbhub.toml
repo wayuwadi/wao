@@ -1,0 +1,17 @@
+[[sources]]
+id = "mysql"
+description = "MySQL instance with read-only queries"
+dsn = "${CODEX_MYSQL_INSTANCE_DSN}"
+lazy = true
+connection_timeout = 10
+query_timeout = 20
+
+[[tools]]
+name = "execute_sql"
+source = "mysql"
+readonly = true
+max_rows = 200
+
+[[tools]]
+name = "search_objects"
+source = "mysql"

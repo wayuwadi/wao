@@ -11,6 +11,8 @@ import { runPets, confirmPetShare } from './pets.js'
 import { codeupStatus } from './codeup.js'
 import { serveConnections } from './connections-mcp.js'
 import { authorizeDevops, devopsConnection, devopsWorkspaceToken } from './devops.js'
+import { workspaceApiUrl } from './device-vault.js'
+import { authorizeMysql, mysqlConnection, mysqlWorkspaceToken } from './mysql.js'
 import { runVault } from './vault.js'
 import packageInfo from '../package.json' with { type: 'json' }
 export { COMMANDS } from './commands.js'
@@ -26,6 +28,7 @@ const HELP = `WAO 工作区 CLI
   wao auth login                 安全输入令牌，存入 Windows DPAPI 或 macOS 钥匙串
   wao auth login --token-stdin   从标准输入读取令牌（不会出现在命令参数中）
   wao auth status                检查令牌及可用工具数
+  wao auth revoke-self           吊销这次安全输入的工作区令牌
   wao auth logout                删除本机安全凭据
 
 常用命令：
@@ -62,6 +65,7 @@ const HELP = `WAO 工作区 CLI
 本机开发连接：
   wao connections codeup status PR编号  使用本机 Codeup CLI 查询合并请求
   wao connections devops authorize|status|environments|sync|restore  保存和复用星狮 DevOps 授权
+  wao connections mysql authorize | status|sync|serve 实例名  保存和复用只读 MySQL 授权
   wao connections mcp                  启动供 Codex 连接的本机 stdio MCP
   wao vault find 条目名 [--account 账号] 查找密码本条目
   wao vault save 条目名 [--account 账号] 保存一次输入的凭据
@@ -372,7 +376,7 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
     stdout.write(`${HELP}\n`); return
   }
   if (rest[0] === 'connections') {
-    const help = '用法：wao connections codeup status PR编号 | wao connections devops authorize|status|environments|sync|restore | wao connections mcp'
+    const help = '用法：wao connections codeup status PR编号 | wao connections devops authorize|status|environments|sync|restore | wao connections mysql authorize 或 status|sync|serve 实例名 | wao connections mcp'
     if (rest.length === 1 || rest[1] === '--help') { stdout.write(help + '\n'); return }
     const devopsOptions = { url: globals.url, tokenProvider: () => devopsWorkspaceToken(globals.url, tokenProvider) }
     if (rest.length === 2 && rest[1] === 'mcp' && globals.output === 'auto') {
@@ -380,10 +384,17 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
         queryEnvironments: () => devopsConnection('environments', devopsOptions) })
       return
     }
-    if (rest[1] === 'devops' && rest[2] === 'authorize' && (rest.length === 3 || (rest.length === 4 && rest[3] === '--token-stdin'))) {
+    if (['devops', 'mysql'].includes(rest[1]) && rest[2] === 'authorize' && (rest.length === 3 || (rest.length === 4 && rest[3] === '--token-stdin'))) {
       const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[3] === '--token-stdin' }))
-      await authorizeDevops(globals.url, token)
-      stdout.write('星狮 DevOps 的 WAO 设备授权已验证并存入本机钥匙串。\n')
+      const isMysql = rest[1] === 'mysql'
+      await (isMysql ? authorizeMysql : authorizeDevops)(globals.url, token)
+      stdout.write(`${isMysql ? 'MySQL' : '星狮 DevOps'} 的 WAO 设备授权已验证并存入本机钥匙串。\n`)
+      return
+    }
+    if (rest.length === 4 && rest[1] === 'mysql' && (rest[2] !== 'serve' || globals.output === 'auto')) {
+      const result = await mysqlConnection(rest[2], rest[3], { url: globals.url,
+        tokenProvider: () => mysqlWorkspaceToken(globals.url, tokenProvider) })
+      if (rest[2] !== 'serve') stdout.write(`${formatOutput(result, globals.output)}\n`)
       return
     }
     if (rest.length === 3 && rest[1] === 'devops') {
@@ -413,6 +424,21 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
     await clientFactory({ url, token }).listTools()
     await tokenStore(token)
     stdout.write('工作区令牌已验证并存入本机安全凭据库。\n')
+    return
+  }
+  if (path === 'auth revoke-self') {
+    if (rest.length > 3 || (rest[2] && rest[2] !== '--token-stdin')) throw new Error('用法：wao auth revoke-self [--token-stdin]')
+    const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[2] === '--token-stdin' }))
+    const target = workspaceApiUrl(url, '/api/workspace-mcp/tokens/revoke-self')
+    let result
+    try {
+      const response = await fetch(target, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+        headers: { Authorization: 'Bearer ' + token } })
+      if (!response.ok) throw new Error()
+      result = await response.json()
+    } catch { throw new Error('WAO 未确认令牌已吊销，请在能力中心检查。') }
+    if (result?.code !== 0) throw new Error('WAO 未确认令牌已吊销，请在能力中心检查。')
+    stdout.write('WAO 已吊销本次输入的令牌。\n')
     return
   }
   if (path === 'pages publish') {
