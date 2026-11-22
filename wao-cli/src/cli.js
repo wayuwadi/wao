@@ -13,7 +13,8 @@ import { serveConnections } from './connections-mcp.js'
 import { authorizeDevops, devopsConnection, devopsWorkspaceToken } from './devops.js'
 import { workspaceApiUrl } from './device-vault.js'
 import { authorizeMysql, mysqlConnection, mysqlWorkspaceToken } from './mysql.js'
-import { runVault } from './vault.js'
+import { appletConnection, appletWorkspaceToken, authorizeApplet } from './applet.js'
+import { readSecret, runVault } from './vault.js'
 import packageInfo from '../package.json' with { type: 'json' }
 export { COMMANDS } from './commands.js'
 
@@ -66,6 +67,7 @@ const HELP = `WAO 工作区 CLI
   wao connections codeup status PR编号  使用本机 Codeup CLI 查询合并请求
   wao connections devops authorize|status|environments|sync|restore  保存和复用星狮 DevOps 授权
   wao connections mysql authorize | status|sync|serve 实例名  保存和复用只读 MySQL 授权
+  wao connections applet authorize | status|import|login 配置名  保存和复用小程序会话
   wao connections mcp                  启动供 Codex 连接的本机 stdio MCP
   wao vault find 条目名 [--account 账号] 查找密码本条目
   wao vault save 条目名 [--account 账号] 保存一次输入的凭据
@@ -376,19 +378,38 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
     stdout.write(`${HELP}\n`); return
   }
   if (rest[0] === 'connections') {
-    const help = '用法：wao connections codeup status PR编号 | wao connections devops authorize|status|environments|sync|restore | wao connections mysql authorize 或 status|sync|serve 实例名 | wao connections mcp'
+    const help = '用法：wao connections codeup status PR编号 | wao connections devops authorize|status|environments|sync|restore | wao connections mysql authorize 或 status|sync|serve 实例名 | wao connections applet authorize 或 status|import|login 配置名 | wao connections mcp'
     if (rest.length === 1 || rest[1] === '--help') { stdout.write(help + '\n'); return }
     const devopsOptions = { url: globals.url, tokenProvider: () => devopsWorkspaceToken(globals.url, tokenProvider) }
+    const appletOptions = { url: globals.url, tokenProvider: () => appletWorkspaceToken(globals.url, tokenProvider) }
     if (rest.length === 2 && rest[1] === 'mcp' && globals.output === 'auto') {
       await serveConnections({ stdin, stdout, version: VERSION,
-        queryEnvironments: () => devopsConnection('environments', devopsOptions) })
+        queryEnvironments: () => devopsConnection('environments', devopsOptions),
+        queryApplet: (profile) => appletConnection('status', profile, appletOptions) })
       return
     }
-    if (['devops', 'mysql'].includes(rest[1]) && rest[2] === 'authorize' && (rest.length === 3 || (rest.length === 4 && rest[3] === '--token-stdin'))) {
+    const deviceGrants = {
+      devops: { authorize: authorizeDevops, name: '星狮 DevOps' },
+      mysql: { authorize: authorizeMysql, name: 'MySQL' },
+      applet: { authorize: authorizeApplet, name: '小程序 Auth' },
+    }
+    if (Object.hasOwn(deviceGrants, rest[1]) && rest[2] === 'authorize' && (rest.length === 3 || (rest.length === 4 && rest[3] === '--token-stdin'))) {
+      const { authorize, name } = deviceGrants[rest[1]]
       const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[3] === '--token-stdin' }))
-      const isMysql = rest[1] === 'mysql'
-      await (isMysql ? authorizeMysql : authorizeDevops)(globals.url, token)
-      stdout.write(`${isMysql ? 'MySQL' : '星狮 DevOps'} 的 WAO 设备授权已验证并存入本机钥匙串。\n`)
+      await authorize(globals.url, token)
+      stdout.write(`${name} 的 WAO 设备授权已验证并存入本机钥匙串。\n`)
+      return
+    }
+    if (rest[1] === 'applet') {
+      const [, , action, profile, flag, ...extra] = rest
+      const allowed = { status: [undefined], import: [undefined, '--session-stdin'], login: [undefined, '--code-stdin'] }
+      if (!profile || extra.length || !Object.hasOwn(allowed, action) || !allowed[action].includes(flag)) throw new Error(help)
+      const result = await appletConnection(action, profile, { ...appletOptions, readInput: async ({ origin, clientType, appId }) => {
+        if (!flag && !stdin.isTTY) throw new Error('请在终端隐藏输入授权，或用可信程序通过标准输入提供本次授权。')
+        if (stdin.isTTY) stderr.write(`小程序配置 ${profile} · ${origin} · ${clientType} · ${appId}\n`)
+        return readSecret(stdin, stderr, flag ? '--secret-stdin' : undefined)
+      } })
+      stdout.write(`${formatOutput(result, globals.output)}\n`)
       return
     }
     if (rest.length === 4 && rest[1] === 'mysql' && (rest[2] !== 'serve' || globals.output === 'auto')) {

@@ -26,6 +26,7 @@ class VaultCliControllerTest {
         when(tokens.authenticate("save")).thenReturn(grant("vault_save"));
         when(tokens.authenticate("devops")).thenReturn(grant("vault_devops"));
         when(tokens.authenticate("mysql")).thenReturn(grant("vault_mysql"));
+        when(tokens.authenticate("applet")).thenReturn(grant("vault_applet"));
     }
 
     @Test void lookupIsScopedToMemberAndReturnsOnlyMetadata() throws Exception {
@@ -79,5 +80,22 @@ class VaultCliControllerTest {
     private static WorkspaceMcpTokenService.AuthenticatedToken grant(String operation) {
         return new WorkspaceMcpTokenService.AuthenticatedToken(operation, "alice", false, false,
                 new WorkspaceCapabilityPolicy(List.of(operation), null, null));
+    }
+
+    @Test void appletGrantIsRequiredAndScopedToTheMember() throws Exception {
+        String device = "b".repeat(32);
+        for (String token : List.of("legacy", "find", "save", "devops", "mysql")) {
+            mvc.perform(get("/api/vault/cli/applet/{device}", device).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isForbidden());
+        }
+        when(vault.deviceEnvelope(VaultService.DeviceService.APPLET, "alice", device))
+                .thenReturn(new VaultService.DeviceEnvelope("sealed-applet-fixture", "revision"));
+        mvc.perform(get("/api/vault/cli/applet/{device}", device).header("Authorization", "Bearer applet"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.envelope").value("sealed-applet-fixture"));
+        mvc.perform(get("/api/vault/cli/mysql/{device}", device).header("Authorization", "Bearer applet"))
+                .andExpect(status().isForbidden());
+        verify(vault).deviceEnvelope(VaultService.DeviceService.APPLET, "alice", device);
+        verifyNoMoreInteractions(vault);
     }
 }

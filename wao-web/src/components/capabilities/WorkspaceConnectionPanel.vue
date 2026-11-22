@@ -4,7 +4,7 @@ import { useSessionStore } from '@/stores/session'
 import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
 import { selectCompanion } from '@/utils/companionIdentity'
 import ConnectionSetup from './ConnectionSetup.vue'
-import { grantPresets, presetPermissions, grantedPermissions } from '@/utils/capabilityCenter'
+import { deviceGrantTypes, grantPresets, presetPermissions, grantedPermissions } from '@/utils/capabilityCenter'
 import {
   createGranularWorkspaceToken,
   fetchWorkspaceResources,
@@ -79,9 +79,8 @@ const scopeIds = computed(() =>
 const viewName = computed(() => props.token?.name ?? '新建连接')
 const activeToken = computed(() => props.token ?? issued.value?.token)
 const selectedPreset = ref('')
-const availablePresets = computed(() => grantPresets.filter(({ id }) => (
-  id !== 'devops' && id !== 'mysql'
-) || (draft.value.clientType === 'CLI' && props.capabilities.some((item) => item.name === `vault_${id}`))))
+const availablePresets = computed(() => grantPresets.filter(({ id }) => !deviceGrantTypes.includes(id)
+  || (draft.value.clientType === 'CLI' && props.capabilities.some((item) => item.name === `vault_${id}`))))
 const scopeSection = ref<HTMLElement | null>(null)
 const summary = computed(() => {
   const selected = props.capabilities.filter((c) => permissions.value.includes(c.name))
@@ -106,7 +105,7 @@ function applyPreset(id: string) {
   selectedPreset.value = id
   if (id === 'notes') group.value = 'documents'
   if (id === 'projects') group.value = 'tasks'
-  if (id === 'devops' || id === 'mysql') group.value = 'vault'
+  if (deviceGrantTypes.includes(id)) group.value = 'vault'
   notice.value = '方案已填入草稿，数据范围保留。请核对后签发。'
 }
 async function editScope(key: 'projectIds' | 'knowledgeBaseIds') {
@@ -122,12 +121,12 @@ const instruction = computed(() => {
   if (draft.value.clientType !== 'CLI') {
     return `请连接 WAO 的 Streamable HTTP MCP。\n地址：${endpoint}\nToken：${secret}\n认证：Authorization: Bearer <Token>\n安全保存令牌，验证 initialize 与 tools/list；只调用实际可见的工具。`
   }
-  const connection = ['devops', 'mysql'].find((kind) => (
+  const connection = deviceGrantTypes.find((kind) => (
     draft.value.permissions.length === 1 && draft.value.permissions.includes(`vault_${kind}`)
   ))
   if (connection) {
     const command = `wao --url ${endpoint} connections ${connection}`
-    const instance = connection === 'mysql' ? ' 实例名' : ''
+    const instance = connection === 'devops' ? '' : connection === 'mysql' ? ' 实例名' : ' 配置名'
     return `运行 ${command} authorize，按提示输入本次令牌。\nToken：${secret}\n再运行 ${command} status${instance} 验证连接。`
   }
   return `运行 wao auth login，按提示输入本次令牌。\nToken：${secret}\n再运行 wao auth status 与 wao tools list 验证连接。`

@@ -91,6 +91,9 @@ public class CapabilityCenterController {
         capabilities.add(json.createObjectNode().put("name", "vault_mysql").put("title", "使用 MySQL 设备授权")
                 .put("description", "当前设备可以保存和复用自己的 MySQL MCP 只读连接凭据。解密密钥保存在本机钥匙串。")
                 .put("group", "vault").put("cli", "wao connections mysql status").putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "vault_applet").put("title", "使用小程序 Auth 设备授权")
+                .put("description", "当前设备可以保存和复用本人已授权的小程序会话。解密密钥保存在本机钥匙串。")
+                .put("group", "vault").put("cli", "wao connections applet status").putNull("mcp").put("readOnly", false));
         return ApiResponse.ok(json.createObjectNode().set("capabilities", capabilities));
     }
 

@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline'
+import { APPLET_PROFILE } from './applet.js'
 import { codeupStatus } from './codeup.js'
 
 const PROTOCOL_VERSION = '2025-06-18'
@@ -18,8 +19,20 @@ const DEVOPS_ENVIRONMENTS = {
   annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
 }
 
-export async function serveConnections({ stdin, stdout, version, query = codeupStatus, queryEnvironments }) {
-  const tools = queryEnvironments ? [CODEUP_STATUS, DEVOPS_ENVIRONMENTS] : [CODEUP_STATUS]
+const APPLET_STATUS = {
+  name: 'applet_status',
+  description: '使用 WAO 密码本中的设备授权，通过原 Test Passport 检查本机指定配置的小程序登录状态。',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['profile'],
+    properties: { profile: { type: 'string', pattern: APPLET_PROFILE.source, description: '已配置的小程序本机配置名' } },
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+}
+
+export async function serveConnections({ stdin, stdout, version, query = codeupStatus, queryEnvironments, queryApplet }) {
+  const tools = [CODEUP_STATUS]
+  if (queryEnvironments) tools.push(DEVOPS_ENVIRONMENTS)
+  if (queryApplet) tools.push(APPLET_STATUS)
   const lines = createInterface({ input: stdin, crlfDelay: Infinity, terminal: false })
   let initialized = false
   let ready = false
@@ -52,16 +65,21 @@ export async function serveConnections({ stdin, stdout, version, query = codeupS
     if (!tools.some(tool => tool.name === params?.name)) { fail(id, -32602, '不支持的工具'); continue }
     const args = params.arguments ?? {}
     const codeup = params.name === CODEUP_STATUS.name
+    const applet = params.name === APPLET_STATUS.name
     if (codeup && (Object.keys(args).length !== 1 || !Number.isSafeInteger(args.number) || args.number < 1)) {
       fail(id, -32602, '请提供一个正整数合并请求编号 number')
       continue
     }
-    if (!codeup && (typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length !== 0)) {
+    if (applet && (Object.keys(args).length !== 1 || typeof args.profile !== 'string' || !APPLET_PROFILE.test(args.profile))) {
+      fail(id, -32602, '请提供一个本机小程序配置名 profile')
+      continue
+    }
+    if (!codeup && !applet && (typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length !== 0)) {
       fail(id, -32602, '环境查询无需参数')
       continue
     }
     try {
-      const result = codeup ? await query(args.number) : await queryEnvironments()
+      const result = codeup ? await query(args.number) : applet ? await queryApplet(args.profile) : await queryEnvironments()
       send({ id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result } })
     } catch (error) {
       send({ id, result: { isError: true, content: [{ type: 'text', text: error.message }] } })

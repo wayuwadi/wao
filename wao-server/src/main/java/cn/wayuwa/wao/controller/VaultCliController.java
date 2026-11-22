@@ -60,14 +60,14 @@ public class VaultCliController {
         return noStore(vault.saveForCli(member, request.name(), request.account(), request.secret()));
     }
 
-    @GetMapping("/{service:devops|mysql}/{device}")
+    @GetMapping("/{service:devops|mysql|applet}/{device}")
     public ResponseEntity<ApiResponse<VaultService.DeviceEnvelope>> device(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             @PathVariable String service, @PathVariable String device) {
         DeviceService kind = DeviceService.valueOf(service.toUpperCase(Locale.ROOT));
         return noStore(vault.deviceEnvelope(kind, member(authorization, kind.permission()), device));
     }
 
-    @PutMapping("/{service:devops|mysql}/{device}")
+    @PutMapping("/{service:devops|mysql|applet}/{device}")
     public ResponseEntity<ApiResponse<String>> saveDevice(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             @PathVariable String service, @PathVariable String device, @RequestBody DeviceDeposit request) {
         DeviceService kind = DeviceService.valueOf(service.toUpperCase(Locale.ROOT));

@@ -45,7 +45,8 @@ public class VaultService {
     private static final int MAX_CLI_SECRET_BYTES = 8192;
     public enum DeviceService {
         DEVOPS("devops", "星狮 DevOps · 设备授权", "https://devops.xingshiapp.cn"),
-        MYSQL("mysql", "MySQL MCP · 设备授权", null);
+        MYSQL("mysql", "MySQL MCP · 设备授权", null),
+        APPLET("applet", "小程序 Auth · 设备授权", null);
 
         private final String path;
         private final String name;

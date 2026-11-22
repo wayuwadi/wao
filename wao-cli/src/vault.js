@@ -23,7 +23,7 @@ async function readLine(stdin, output) {
   }
 }
 
-async function readSecret(stdin, stderr, source) {
+export async function readSecret(stdin, stderr, source) {
   if (source === '--from-codeup-keychain') {
     if (process.platform !== 'darwin') throw new Error('Codeup 钥匙串导入适用于 macOS。')
     try {

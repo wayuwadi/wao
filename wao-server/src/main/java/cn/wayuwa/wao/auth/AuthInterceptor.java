@@ -73,7 +73,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (request.getHeader("Authorization") != null
                 && (("GET".equals(request.getMethod()) && path.equals("/api/vault/cli/save-access"))
                     || ("POST".equals(request.getMethod()) && (path.equals("/api/vault/cli/find") || path.equals("/api/vault/cli/save"))))) return true;
-        if (request.getHeader("Authorization") != null && path.matches("/api/vault/cli/(devops|mysql)/[a-f0-9]{32}")
+        if (request.getHeader("Authorization") != null && path.matches("/api/vault/cli/(devops|mysql|applet)/[a-f0-9]{32}")
                 && ("GET".equals(request.getMethod()) || "PUT".equals(request.getMethod()))) return true;
         if ("POST".equals(request.getMethod()) && path.equals("/api/workspace-mcp/tokens/revoke-self")) return true;
         // Only Pet CLI operations may delegate authentication to the scoped bearer controller.

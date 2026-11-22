@@ -136,6 +136,8 @@ CLI 位于 `wao-cli/`，能力说明见 [CLI](specs/wao-cli.md)。新增接口�
 
 MySQL 设备授权使用 `GET|PUT /api/vault/cli/mysql/{device}` 和独立 `vault_mysql` CLI 授权。请求及响应沿用设备授权格式，密文前缀为 `wao-mysql-v1`，设备标识及密文同时绑定本机密钥、目标主机、端口、默认库、账号及 TLS 模式。密文载荷由本机 CLI 处理。
 
+小程序设备授权使用 `GET|PUT /api/vault/cli/applet/{device}` 和独立 `vault_applet` CLI 授权。密文前缀为 `wao-applet-v1`，本机配置名、服务端来源、客户端标识及微信 App ID 参与设备标识及加密受众。WAO 沿用设备密文与版本校验，各客户端在本机验证并使用已有会话。
+
 `POST /api/workspace-mcp/tokens/revoke-self` 用当前 `Authorization: Bearer …` 吊销该令牌，无需请求体。成功返回 `ApiResponse<Void>`，无效或已吊销的令牌返回 HTTP 401。
 
 ## Moka 考勤连接恢复（2026-10-29）
