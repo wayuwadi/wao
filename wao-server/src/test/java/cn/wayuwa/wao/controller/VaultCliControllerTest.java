@@ -24,6 +24,7 @@ class VaultCliControllerTest {
         when(tokens.authenticate("legacy")).thenReturn(new WorkspaceMcpTokenService.AuthenticatedToken("legacy", "alice", true));
         when(tokens.authenticate("find")).thenReturn(grant("vault_lookup"));
         when(tokens.authenticate("save")).thenReturn(grant("vault_save"));
+        when(tokens.authenticate("devops")).thenReturn(grant("vault_devops"));
     }
 
     @Test void lookupIsScopedToMemberAndReturnsOnlyMetadata() throws Exception {
@@ -51,6 +52,18 @@ class VaultCliControllerTest {
                         .content("{\"name\":\"Dev\",\"account\":\"fixture-user\",\"secret\":\"synthetic\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.saved").value(true))
                 .andExpect(jsonPath("$.data.item.secret").doesNotExist()).andExpect(jsonPath("$.data.item.account").doesNotExist());
+    }
+
+    @Test void managedDeviceAuthorizationUsesItsOwnGrantAndMember() throws Exception {
+        String device = "a".repeat(32);
+        for (String token : List.of("legacy", "find", "save")) {
+            mvc.perform(get("/api/vault/cli/devops/{device}", device).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isForbidden());
+        }
+        when(vault.devopsEnvelope("alice", device)).thenReturn(new VaultService.DevopsEnvelope("sealed-fixture", "revision"));
+        mvc.perform(get("/api/vault/cli/devops/{device}", device).header("Authorization", "Bearer devops"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.envelope").value("sealed-fixture"));
     }
 
     private static WorkspaceMcpTokenService.AuthenticatedToken grant(String operation) {

@@ -1,9 +1,11 @@
 package cn.wayuwa.wao.service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.common.BadRequestException;
@@ -41,9 +43,13 @@ public class VaultService {
     /** 每个成员默认分组的初始名字；建出来之后可以随便改名，身份由 is_default 标记维持。 */
     public static final String DEFAULT_GROUP_NAME = "未分组";
     private static final int MAX_CLI_SECRET_BYTES = 8192;
+    private static final Pattern DEVOPS_ENVELOPE = Pattern.compile("wao-devops-v1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{16,8000}");
 
     public record CliItem(String id, String name, boolean hasSecret) {}
     public record CliSave(CliItem item, boolean saved) {}
+    public record DevopsEnvelope(String envelope, String revision) {
+        @Override public String toString() { return "VaultDevopsEnvelope"; }
+    }
 
     private final VaultGroupMapper groupMapper;
     private final VaultItemMapper itemMapper;
@@ -184,6 +190,71 @@ public class VaultService {
                 .stream().map(VaultService::toCliItem).toList();
     }
 
+    /** Looks up the member's single managed entry for this device and returns only an encrypted envelope. */
+    public DevopsEnvelope devopsEnvelope(String ownerId, String device) {
+        VaultItemEntity item = devopsItem(ownerId, devopsId(ownerId, device));
+        if (item == null) return null;
+        String envelope = crypto.decrypt(item.getSecretCiphertext(), item.getSecretNonce());
+        if (!DEVOPS_ENVELOPE.matcher(envelope).matches()) throw new ConflictException("设备授权条目已被修改，请检查密码本");
+        return new DevopsEnvelope(envelope, revision(item));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public String saveDevopsEnvelope(String ownerId, String device, String envelope, String expectedRevision) {
+        String id = devopsId(ownerId, device);
+        if (envelope == null || envelope.length() > MAX_CLI_SECRET_BYTES || !DEVOPS_ENVELOPE.matcher(envelope).matches()) {
+            throw new BadRequestException("设备授权必须为受支持的加密格式");
+        }
+        String groupId = ensureDefaultGroup(ownerId).getId();
+        groupMapper.selectOne(ownedGroups(ownerId).eq(VaultGroupEntity::getId, groupId).last("FOR UPDATE"));
+        VaultItemEntity item = devopsItem(ownerId, id);
+        if (item == null) {
+            if (expectedRevision != null) throw new ConflictException("授权条目已移除，请刷新后重试");
+            item = new VaultItemEntity();
+            item.setId(id);
+            item.setGroupId(groupId);
+            item.setName("星狮 DevOps · 设备授权");
+            item.setIcon("ri-key-2-line");
+            item.setSite("https://devops.xingshiapp.cn");
+            item.setNote("设备密钥由本机钥匙串管理。删除此条目会解除该设备的密码本备份。");
+            item.setUpdatedLabel("刚刚");
+            item.setOrd(nextOrd(itemMapper.selectCount(new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, groupId))));
+            applySecret(item, envelope);
+            itemMapper.insert(item);
+            return revision(item);
+        }
+        if (!revision(item).equals(expectedRevision)) throw new ConflictException("授权条目已变更，请刷新后重试");
+        byte[] previous = item.getSecretCiphertext();
+        applySecret(item, envelope);
+        if (itemMapper.update(null, new LambdaUpdateWrapper<VaultItemEntity>()
+                .eq(VaultItemEntity::getId, id).eq(VaultItemEntity::getGroupId, item.getGroupId())
+                .eq(VaultItemEntity::getSecretCiphertext, previous)
+                .set(VaultItemEntity::getSecretCiphertext, item.getSecretCiphertext())
+                .set(VaultItemEntity::getSecretNonce, item.getSecretNonce())
+                .set(VaultItemEntity::getUpdatedLabel, "刚刚")) != 1) {
+            throw new ConflictException("授权条目已变更，请刷新后重试");
+        }
+        return revision(item);
+    }
+
+    private VaultItemEntity devopsItem(String ownerId, String id) {
+        VaultItemEntity item = itemMapper.selectById(id);
+        if (item == null) return null;
+        requireGroup(item.getGroupId(), ownerId);
+        if (item.getSecretCiphertext() == null || item.getSecretNonce() == null) throw new ConflictException("设备授权条目缺少密文");
+        return item;
+    }
+
+    private static String devopsId(String ownerId, String device) {
+        if (device == null || !device.matches("[a-f0-9]{32}")) throw new BadRequestException("设备标识无效");
+        return "vc" + UUID.nameUUIDFromBytes(("wao:vault-devops:" + ownerId + ":" + device).getBytes(StandardCharsets.UTF_8))
+                .toString().replace("-", "").substring(0, 30);
+    }
+
+    private static String revision(VaultItemEntity item) {
+        return HexFormat.of().formatHex(item.getSecretNonce());
+    }
+
     /** Serializes CLI creation per owner and fills an existing empty item only if it is still empty. */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public CliSave saveForCli(String ownerId, String name, String account, String secret) {
@@ -244,6 +315,9 @@ public class VaultService {
      */
     public VaultItemDto updateItem(String id, PatchVaultItemRequest req, String ownerId) {
         VaultItemEntity e = requireItem(id, ownerId);
+        if (id.startsWith("vc") && req.secret() != null && !req.secret().isBlank()) {
+            throw new BadRequestException("设备授权请通过 WAO CLI 更新");
+        }
         if (req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
         }

@@ -79,6 +79,8 @@ const scopeIds = computed(() =>
 const viewName = computed(() => props.token?.name ?? '新建连接')
 const activeToken = computed(() => props.token ?? issued.value?.token)
 const selectedPreset = ref('')
+const availablePresets = computed(() => grantPresets.filter((preset) => preset.id !== 'devops'
+  || (draft.value.clientType === 'CLI' && props.capabilities.some((item) => item.name === 'vault_devops'))))
 const scopeSection = ref<HTMLElement | null>(null)
 const summary = computed(() => {
   const selected = props.capabilities.filter((c) => permissions.value.includes(c.name))
@@ -103,6 +105,7 @@ function applyPreset(id: string) {
   selectedPreset.value = id
   if (id === 'notes') group.value = 'documents'
   if (id === 'projects') group.value = 'tasks'
+  if (id === 'devops') group.value = 'vault'
   notice.value = '方案已填入草稿，数据范围保留。请核对后签发。'
 }
 async function editScope(key: 'projectIds' | 'knowledgeBaseIds') {
@@ -116,7 +119,9 @@ const instruction = computed(() =>
   !issued.value
     ? ''
     : draft.value.clientType === 'CLI'
-      ? `运行 wao auth login，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao auth status 与 wao tools list 验证连接。`
+      ? draft.value.permissions.length === 1 && draft.value.permissions.includes('vault_devops')
+        ? `运行 wao --url ${endpoint} connections devops authorize，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao --url ${endpoint} connections devops status 验证连接。`
+        : `运行 wao auth login，按提示输入本次令牌。\nToken：${issued.value.secret}\n再运行 wao auth status 与 wao tools list 验证连接。`
       : `请连接 WAO 的 Streamable HTTP MCP。\n地址：${endpoint}\nToken：${issued.value.secret}\n认证：Authorization: Bearer <Token>\n安全保存令牌，验证 initialize 与 tools/list；只调用实际可见的工具。`,
 )
 let generation = 0
@@ -373,7 +378,7 @@ onBeforeUnmount(() => {
       <span class="cap-muted">快捷方案 · 可继续逐项调整</span>
       <div class="cap-actions">
         <button
-          v-for="preset in grantPresets"
+          v-for="preset in availablePresets"
           :key="preset.id"
           type="button"
           class="cap-button"

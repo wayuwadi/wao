@@ -78,11 +78,13 @@ export const grantPresets = [
   { id: 'notes', title: '记录小记', description: '查询、创建小记与维护标签。' },
   { id: 'projects', title: '维护项目', description: '管理项目、任务与子任务。' },
   { id: 'daily', title: '日常完整', description: '当前全部工作区操作，包含写入；不含 HTML 发布。' },
+  { id: 'devops', title: '仅星狮授权', description: '保存和复用本机的星狮 DevOps 设备授权。' },
 ] as const
 
 export function presetPermissions(id: string, capabilities: WorkspaceCapability[]) {
   return capabilities
     .filter((capability) => {
+      if (id === 'devops') return capability.name === 'vault_devops'
       if (capability.name === 'publish_html' || ['pets', 'vault'].includes(capability.group)) return false
       if (id === 'read') return capability.readOnly
       if (id === 'notes')

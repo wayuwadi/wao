@@ -10,6 +10,7 @@ import { readUtf8, exportDocument } from './content.js'
 import { runPets, confirmPetShare } from './pets.js'
 import { codeupStatus } from './codeup.js'
 import { serveConnections } from './connections-mcp.js'
+import { authorizeDevops, devopsConnection, devopsWorkspaceToken } from './devops.js'
 import { runVault } from './vault.js'
 import packageInfo from '../package.json' with { type: 'json' }
 export { COMMANDS } from './commands.js'
@@ -60,6 +61,7 @@ const HELP = `WAO 工作区 CLI
 
 本机开发连接：
   wao connections codeup status PR编号  使用本机 Codeup CLI 查询合并请求
+  wao connections devops authorize|status|environments|sync|restore  保存和复用星狮 DevOps 授权
   wao connections mcp                  启动供 Codex 连接的本机 stdio MCP
   wao vault find 条目名 [--account 账号] 查找密码本条目
   wao vault save 条目名 [--account 账号] 保存一次输入的凭据
@@ -370,14 +372,26 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
     stdout.write(`${HELP}\n`); return
   }
   if (rest[0] === 'connections') {
-    const help = '用法：wao connections codeup status PR编号 | wao connections mcp'
+    const help = '用法：wao connections codeup status PR编号 | wao connections devops authorize|status|environments|sync|restore | wao connections mcp'
     if (rest.length === 1 || rest[1] === '--help') { stdout.write(help + '\n'); return }
-    if (globals.url !== undefined) throw new Error('本机开发连接不接受 --url。')
+    const devopsOptions = { url: globals.url, tokenProvider: () => devopsWorkspaceToken(globals.url, tokenProvider) }
     if (rest.length === 2 && rest[1] === 'mcp' && globals.output === 'auto') {
-      await serveConnections({ stdin, stdout, version: VERSION })
+      await serveConnections({ stdin, stdout, version: VERSION,
+        queryEnvironments: () => devopsConnection('environments', devopsOptions) })
+      return
+    }
+    if (rest[1] === 'devops' && rest[2] === 'authorize' && (rest.length === 3 || (rest.length === 4 && rest[3] === '--token-stdin'))) {
+      const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[3] === '--token-stdin' }))
+      await authorizeDevops(globals.url, token)
+      stdout.write('星狮 DevOps 的 WAO 设备授权已验证并存入本机钥匙串。\n')
+      return
+    }
+    if (rest.length === 3 && rest[1] === 'devops') {
+      stdout.write(`${formatOutput(await devopsConnection(rest[2], devopsOptions), globals.output)}\n`)
       return
     }
     if (rest.length === 4 && rest[1] === 'codeup' && rest[2] === 'status' && /^\d+$/.test(rest[3])) {
+      if (globals.url !== undefined) throw new Error('本机 Codeup 查询不接受 --url。')
       stdout.write(`${formatOutput(await codeupStatus(Number(rest[3])), globals.output)}\n`)
       return
     }
