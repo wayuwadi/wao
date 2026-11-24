@@ -151,6 +151,26 @@ class DrawingPublicShareHttpTest {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM drawing_public_share", Integer.class)).isZero();
     }
 
+    @Test void onlyValidTextDisplayStylesSurviveSharing() throws Exception {
+        db.update("UPDATE drawing_file SET scene_json=? WHERE id='personal'", """
+                {"elements":[
+                  {"type":"text","text":"库存预警","originalText":"库存预警","customData":{"private":"secret","waoTextStyle":{
+                    "background":"#243a70","source":"库存预警","runs":[{"start":2,"end":4,"color":"#ffffff","private":"secret"},
+                    {"start":4,"end":200,"color":"url(example)"}]}}},
+                  {"type":"text","text":"新标题","originalText":"新标题","customData":{"waoTextStyle":{
+                    "background":"#fff0a8","source":"private old text","runs":[{"start":0,"end":3,"color":"#ffffff"}]}}}
+                ]}
+                """);
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, create("7d").path("token").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scene.elements[0].customData.private").doesNotExist())
+                .andExpect(jsonPath("$.data.scene.elements[0].customData.waoTextStyle.background").value("#243a70"))
+                .andExpect(jsonPath("$.data.scene.elements[0].customData.waoTextStyle.runs.length()").value(1))
+                .andExpect(jsonPath("$.data.scene.elements[0].customData.waoTextStyle.runs[0].private").doesNotExist())
+                .andExpect(jsonPath("$.data.scene.elements[1].customData.waoTextStyle.source").doesNotExist())
+                .andExpect(jsonPath("$.data.scene.elements[1].customData.waoTextStyle.runs").doesNotExist());
+    }
+
     @Test void digestOnlyLinksStillOpenAndCanBeRevokedWithoutReturningAnAddress() throws Exception {
         var created = create("permanent");
         var id = created.path("id").asText();

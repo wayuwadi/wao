@@ -6,6 +6,7 @@ import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.mapper.DrawingPublicShareMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +32,7 @@ public class DrawingPublicShareService {
     private static final Logger LOG = LoggerFactory.getLogger(DrawingPublicShareService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Pattern TOKEN = Pattern.compile("ds_[A-Za-z0-9_-]{43}");
+    private static final Pattern TEXT_COLOR = Pattern.compile("#[a-fA-F0-9]{6}");
     private static final Pattern INLINE_IMAGE = Pattern.compile(
             "^data:image/(?:png|jpeg|gif|webp|svg\\+xml|bmp|avif|x-icon);base64,");
     private final DrawingPublicShareMapper mapper;
@@ -115,7 +117,8 @@ public class DrawingPublicShareService {
                 String type = element.path("type").asText();
                 if ("embeddable".equals(type) || "iframe".equals(type)) continue;
                 element.remove("link");
-                element.remove("customData");
+                JsonNode custom = element.remove("customData");
+                if ("text".equals(type) && custom != null) addPublicTextStyle(element, custom.path("waoTextStyle"));
                 if ("image".equals(type)) {
                     String id = element.path("fileId").asText();
                     var image = sourceFiles.path(id);
@@ -135,6 +138,35 @@ public class DrawingPublicShareService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("无法读取已保存的草图");
         }
+    }
+
+    /** Only expose checked display fields. An older text snapshot may contain private edits. */
+    private void addPublicTextStyle(ObjectNode element, JsonNode style) {
+        if (!style.isObject()) return;
+        var safe = json.createObjectNode();
+        String background = style.path("background").asText();
+        if (TEXT_COLOR.matcher(background).matches()) safe.put("background", background);
+        String text = element.path("originalText").asText(element.path("text").asText()).replace("\r\n", "\n").replace('\r', '\n');
+        var runs = style.path("runs");
+        if (runs.isArray() && runs.size() <= 256 && text.equals(style.path("source").asText())) {
+            var safeRuns = json.createArrayNode();
+            int lastEnd = 0;
+            for (var run : runs) {
+                var start = run.path("start");
+                var end = run.path("end");
+                String color = run.path("color").asText();
+                if (!start.isIntegralNumber() || !end.isIntegralNumber() || !start.canConvertToInt() || !end.canConvertToInt()
+                        || start.intValue() < lastEnd || end.intValue() <= start.intValue() || end.intValue() > text.length()
+                        || !TEXT_COLOR.matcher(color).matches()) continue;
+                safeRuns.addObject().put("start", start.intValue()).put("end", end.intValue()).put("color", color);
+                lastEnd = end.intValue();
+            }
+            if (!safeRuns.isEmpty()) {
+                safe.put("source", text);
+                safe.set("runs", safeRuns);
+            }
+        }
+        if (!safe.isEmpty()) element.putObject("customData").set("waoTextStyle", safe);
     }
 
     private void requirePersonalDrawing(String drawingId, String ownerId) {

@@ -8,16 +8,20 @@ import type {
   ExcalidrawInitialDataState,
   LibraryItems,
 } from '@excalidraw/excalidraw/types'
-import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import type { ExcalidrawTextElement, OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import { createElement } from 'react'
+import type { UIAppState } from '@excalidraw/excalidraw/types'
 import { createRoot, type Root } from 'react-dom/client'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTheme } from '@/composables/theme'
+import { toast } from '@/composables/toast'
 import { usePageVisibility } from '@/composables/pageVisibility'
 import type { DrawingSnapMode } from '@/composables/drawingSnapMode'
 import { calculateDrawingTidy, type DrawingTidyCanvas } from '@/utils/drawingTidyClient'
 import type { DrawingTidyRequest } from '@/utils/drawingTidy'
 import { sameLibraryItem } from '@/stores/drawingLibrary'
+import { readTextStyle, textSource, textStyleKey, type DrawingTextStyle } from '@/utils/drawingTextStyle.mjs'
+import DrawingTextStyleDialog from './DrawingTextStyleDialog.vue'
 
 const props = defineProps<{
   sceneJson: string
@@ -37,6 +41,7 @@ const emit = defineEmits<{
 }>()
 
 const host = ref<HTMLElement | null>(null)
+const textStyleEditor = ref<{ element: ExcalidrawTextElement; value: DrawingTextStyle; version: number; nonce: number }>()
 const { effective } = useTheme()
 const pageVisible = usePageVisibility()
 let root: Root | null = null
@@ -98,7 +103,11 @@ function changed(
 ) {
   const mode = appState.gridModeEnabled ? 'grid' : appState.objectsSnapModeEnabled ? 'objects' : 'off'
   // Excalidraw exports its grid flag. Retain the file's original value so preferences stay local.
-  const sceneJson = serializeAsJSON(elements, { ...appState, gridModeEnabled: sceneGridModeEnabled }, files, 'local')
+  const snapshot = elements.map(element => {
+    if (element.type !== 'text' || !element.customData?.[textStyleKey]) return element
+    return { ...element, customData: { ...element.customData, [textStyleKey]: readTextStyle(element) } }
+  })
+  const sceneJson = serializeAsJSON(snapshot, { ...appState, gridModeEnabled: sceneGridModeEnabled }, files, 'local')
   if (!ready) {
     // Excalidraw calls onChange after loading and normalizing initialData.
     // Its API callback runs earlier, before that normalization has completed.
@@ -167,6 +176,71 @@ function editableCanvas() {
 
 function selectedIds(api: ExcalidrawImperativeAPI | null) {
   return Object.entries(api?.getAppState().selectedElementIds ?? {}).filter(([, selected]) => selected).map(([id]) => id)
+}
+
+function selectedElements(ids: AppState['selectedElementIds']) {
+  return canvasApi?.getSceneElementsIncludingDeleted().filter(element => ids[element.id] && !element.isDeleted) ?? []
+}
+
+function selectedText(ids: AppState['selectedElementIds']) {
+  const selection = selectedElements(ids)
+  const selected = selection[0]
+  if (!canvasApi || selection.length !== 1 || !selected || selected.locked) return
+  const elements = canvasApi.getSceneElementsIncludingDeleted()
+  const text = selected.type === 'text' ? selected : elements.find(element => element.type === 'text' && element.containerId === selected.id && !element.isDeleted && !element.locked)
+  if (text?.type === 'text' && textSource(text).trim()) return text
+}
+
+type CenterAction = 'alignHorizontallyCentered' | 'alignVerticallyCentered'
+
+function canAlign(state: Pick<AppState, 'selectedElementIds'>) {
+  const elements = selectedElements(state.selectedElementIds)
+  if (elements.length < 2 || elements.some(element => element.locked || element.type === 'frame' || element.type === 'magicframe')) return false
+  const groups = new Set(elements.map(({ id, groupIds }) => groupIds[groupIds.length - 1] ?? id))
+  return groups.size > 1
+}
+
+function renderSelectionTools(_mobile: boolean, state: UIAppState, execute?: (name: CenterAction) => void) {
+  if (state.viewModeEnabled || state.editingTextElement) return null
+  const button = (label: string, icon: string, title: string, onClick: () => void) =>
+    createElement('button', { type: 'button', className: 'wao-drawing-text-format', title, onClick },
+      createElement('i', { className: icon, 'aria-hidden': 'true' }), label)
+  if (selectedText(state.selectedElementIds)) return button('文字高亮', 'ri-mark-pen-line', '文字高亮', openTextStyle)
+  if (!execute || !canAlign(state)) return null
+  const align = (action: CenterAction) => {
+    const api = editableCanvas()
+    if (api && canAlign(api.getAppState())) execute(action)
+  }
+  return createElement('div', { role: 'group', 'aria-label': '选区对齐', className: 'wao-drawing-selection-tools' },
+    button('列居中', 'ri-align-center', '列居中（对齐到同一竖线）', () => align('alignHorizontallyCentered')),
+    button('行居中', 'ri-align-vertically', '行居中（对齐到同一横线）', () => align('alignVerticallyCentered')))
+}
+
+function openTextStyle() {
+  const api = editableCanvas()
+  const element = api && selectedText(api.getAppState().selectedElementIds)
+  if (element) textStyleEditor.value = { element, value: readTextStyle(element), version: element.version, nonce: element.versionNonce }
+}
+
+function applyTextStyle(style: DrawingTextStyle) {
+  const pending = textStyleEditor.value
+  const api = editableCanvas()
+  const elements = api?.getSceneElementsIncludingDeleted()
+  const current = elements?.find(element => element.id === pending?.element.id)
+  if (!api || !elements || !pending || current?.type !== 'text' || current.isDeleted || current.locked ||
+      current.version !== pending.version || current.versionNonce !== pending.nonce) {
+    textStyleEditor.value = undefined
+    toast('文字已发生变化，请重新选中后设置高亮。', 'ri-information-line')
+    return
+  }
+  const customData = { ...current.customData }
+  if (style.background || style.runs.length) customData[textStyleKey] = style
+  else delete customData[textStyleKey]
+  api.updateScene({
+    elements: elements.map(element => element === current ? newElementWith(current, { customData }) : element),
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  })
+  textStyleEditor.value = undefined
 }
 
 async function prepareTidy(request: DrawingTidyRequest, signal: AbortSignal) {
@@ -280,6 +354,7 @@ function render() {
     mountedKey = props.sceneKey
     ready = false
     lastScene = props.sceneJson
+    textStyleEditor.value = undefined
   }
   const key = mountedKey
   root.render(
@@ -292,6 +367,7 @@ function render() {
       autoFocus: true,
       excalidrawAPI: setCanvasApi,
       onChange: changed,
+      renderTopRightUI: renderSelectionTools,
       onLibraryChange: (items: LibraryItems) => {
         if (canvasApi && mountedKey === key) libraryChanged(items)
       },
@@ -304,6 +380,7 @@ watch(() => [props.sceneKey, props.name, effective.value], render)
 watch(() => props.snapMode, applySnapMode)
 watch(() => props.libraryItems, () => syncCanvasLibrary())
 watch(pageVisible, (visible) => { if (visible) syncCanvasLibrary(true) })
+watch(pageVisible, (visible) => { if (!visible) textStyleEditor.value = undefined })
 function preventBrowserSave(event: KeyboardEvent) {
   if (!pageVisible.value || host.value?.closest('[inert]')) return
   if (event.target instanceof Element && host.value && !host.value.closest('.drawings-page')?.contains(event.target)) return
@@ -327,19 +404,30 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    ref="host"
     class="drawing-canvas"
     @pointerdown.capture="startAdditiveSelection"
     @pointerup.capture="finishAdditiveSelection"
     @pointercancel.capture="finishAdditiveSelection"
-  ></div>
+  >
+    <div ref="host" class="drawing-host" />
+    <DrawingTextStyleDialog v-if="textStyleEditor" :value="textStyleEditor.value" :stroke-color="textStyleEditor.element.strokeColor"
+      @close="textStyleEditor = undefined" @apply="applyTextStyle" />
+  </div>
 </template>
 
 <style scoped>
-.drawing-canvas {
+.drawing-canvas, .drawing-host {
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
 }
+.drawing-host :deep(.wao-drawing-text-format) {
+  display: inline-flex; align-items: center; gap: var(--wao-space-1); min-height: 44px;
+  padding: 0 var(--wao-space-2); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control);
+  background: var(--wao-bg-card); color: var(--wao-primary-text); font: inherit; white-space: nowrap; cursor: pointer;
+}
+.drawing-host :deep(.wao-drawing-text-format:hover) { background: var(--wao-primary-soft); }
+.drawing-host :deep(.wao-drawing-text-format:focus-visible) { outline: 2px solid var(--wao-primary); }
+.drawing-host :deep(.wao-drawing-selection-tools) { display: flex; align-items: center; gap: var(--wao-space-1); }
 </style>
