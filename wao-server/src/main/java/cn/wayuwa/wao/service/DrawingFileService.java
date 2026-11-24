@@ -11,7 +11,9 @@ import cn.wayuwa.wao.dto.DrawingFileSummaryDto;
 import cn.wayuwa.wao.dto.DrawingFileVersionDto;
 import cn.wayuwa.wao.dto.RenameDrawingFileRequest;
 import cn.wayuwa.wao.dto.SaveDrawingFileRequest;
+import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DrawingFileMapper;
+import cn.wayuwa.wao.mapper.DrawingPublicShareMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +33,9 @@ public class DrawingFileService {
 
     @org.springframework.beans.factory.annotation.Autowired
     private cn.wayuwa.wao.mapper.DrawingGroupMapper groups;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private DrawingPublicShareMapper publicShares;
 
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
@@ -154,11 +159,33 @@ public class DrawingFileService {
         return summary(required(id, memberId));
     }
 
-    /** 删除当前成员的草图文件。 */
+    /** 将当前成员的独立草图移入回收站，保留画布、版本和分组。 */
+    @Transactional
     public void delete(String id, String memberId) {
         required(id, memberId);
         if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中移入回收站");
-        if (mapper.deleteOwned(id, memberId) == 0) throw notFound();
+        LocalDateTime now = LocalDateTime.now();
+        if (mapper.moveToTrash(id, memberId, now) != 1) throw notFound();
+        publicShares.revokeForDrawing(id, memberId, now);
+    }
+
+    public List<TrashEntryDto> listTrash(String memberId) {
+        return mapper.listTrash(memberId, LocalDateTime.now().minusDays(KnowledgeService.TRASH_DAYS)).stream()
+                .map(row -> new TrashEntryDto("drawing", row.id(), row.title(),
+                        row.groupName() == null ? "未分组" : row.groupName(),
+                        KnowledgeService.iso(row.deletedAt()), memberId,
+                        KnowledgeService.iso(row.deletedAt().plusDays(KnowledgeService.TRASH_DAYS))))
+                .toList();
+    }
+
+    public void restoreTrash(String id, String memberId) {
+        if (mapper.restoreTrash(id, memberId, LocalDateTime.now().minusDays(KnowledgeService.TRASH_DAYS)) != 1) {
+            throw notFound();
+        }
+    }
+
+    public int purgeExpiredTrash(LocalDateTime now) {
+        return mapper.purgeTrash(now.minusDays(KnowledgeService.TRASH_DAYS));
     }
 
     /** 原子复制已授权的云端场景，副本属于当前成员，不关联原知识库文档。 */

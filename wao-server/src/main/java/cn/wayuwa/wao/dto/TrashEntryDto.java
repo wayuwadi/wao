@@ -3,7 +3,7 @@ package cn.wayuwa.wao.dto;
 /**
  * 回收站条目。
  *
- * @param type      条目类型：kb / folder / doc
+ * @param type      条目类型：kb / folder / doc / drawing
  * @param id        条目 id
  * @param name      展示名（文档用标题，未命名时给占位）
  * @param parent    归属描述，如「知识库 · 个人成长 / 学习笔记」，方便判断该不该恢复

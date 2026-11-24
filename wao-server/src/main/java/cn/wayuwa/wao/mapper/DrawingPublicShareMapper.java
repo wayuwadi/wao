@@ -14,7 +14,7 @@ public interface DrawingPublicShareMapper {
 
     @Select("""
             SELECT id FROM drawing_file
-            WHERE id = #{drawingId} AND owner_member_id = #{ownerId} AND knowledge_doc_id IS NULL
+            WHERE id = #{drawingId} AND owner_member_id = #{ownerId} AND knowledge_doc_id IS NULL AND deleted_at IS NULL
             FOR UPDATE
             """)
     String lockPersonalDrawing(String drawingId, String ownerId);
@@ -24,7 +24,7 @@ public interface DrawingPublicShareMapper {
             FROM drawing_public_share s
             JOIN drawing_file f ON f.id = s.drawing_id AND f.owner_member_id = s.owner_member_id
             WHERE s.drawing_id = #{drawingId} AND s.owner_member_id = #{ownerId}
-                AND f.knowledge_doc_id IS NULL AND s.revoked_at IS NULL
+                AND f.knowledge_doc_id IS NULL AND f.deleted_at IS NULL AND s.revoked_at IS NULL
                 AND (s.expires_at IS NULL OR s.expires_at > #{now})
             ORDER BY s.created_at DESC, s.id
             LIMIT 20
@@ -46,12 +46,18 @@ public interface DrawingPublicShareMapper {
             """)
     int revoke(String id, String drawingId, String ownerId, LocalDateTime now);
 
+    @Update("""
+            UPDATE drawing_public_share SET revoked_at = #{now}, token_ciphertext = NULL, token_nonce = NULL
+            WHERE drawing_id = #{drawingId} AND owner_member_id = #{ownerId} AND revoked_at IS NULL
+            """)
+    int revokeForDrawing(String drawingId, String ownerId, LocalDateTime now);
+
     @Select("""
             SELECT f.title, f.revision, f.updated_at, s.expires_at,
                    CASE WHEN f.revision = #{knownRevision} THEN NULL ELSE f.scene_json END AS scene_json
             FROM drawing_public_share s
             JOIN drawing_file f ON f.id = s.drawing_id AND f.owner_member_id = s.owner_member_id
-            WHERE s.token_hash = #{tokenHash} AND f.knowledge_doc_id IS NULL AND s.revoked_at IS NULL
+            WHERE s.token_hash = #{tokenHash} AND f.knowledge_doc_id IS NULL AND f.deleted_at IS NULL AND s.revoked_at IS NULL
               AND (s.expires_at IS NULL OR s.expires_at > #{now})
             """)
     Scene read(String tokenHash, int knownRevision, LocalDateTime now);

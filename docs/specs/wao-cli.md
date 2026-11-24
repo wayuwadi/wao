@@ -8,6 +8,8 @@ MySQL 只读 MCP 使用 `wao connections mysql authorize` 和 `wao connections m
 
 开发服务授权接续使用 `wao connections codeup status PR编号` 与本机 stdio 工具 `codeup_pr_status`，复用已配置的 Codeup CLI 授权。密码本的 `wao vault find` 和 `wao vault save` 分别要求显式 `vault_lookup`、`vault_save` CLI 授权，由服务端识别条目归属。已有工作区令牌保持原范围，密码本操作使用专用 HTTP 路由，工作区 MCP 工具目录与本机 stdio MCP 均无凭据读取或保存工具。见 [密码本 CLI API](../api.md#密码本-cli) 和 [CLI 使用说明](../../wao-cli/README.md#开发服务授权与密码本)。
 
+2026-11-24：[独立草图回收站](drawings.md) 沿用草图浏览器会话和成员权限。工作区 MCP 尚无独立草图读写范围，CLI 不增加草图删除或恢复命令。增加草图成员级授权时再评估终端操作。
+
 2026-11-20：[拍照转草图](drawings.md#拍照转草图)和 [AI 整理](drawings.md#ai-整理已有画板)使用成员浏览器会话和人工预览确认；没有新增 CLI 命令、MCP 工具或旧令牌授权。未来提供 Agent 批量转换时，可先支持结构化节点与连线生成本地草图，再按需授予独立的草图读取、创建副本和整理预览权限，保留确认应用与版本检查。
 
 2026-11-06：[任务重复与站内提醒](task-time-rules-2026-11-06.md)仅增加浏览器会话能力，不新增 CLI 命令、MCP 工具或旧令牌授权；既有完成操作遵循负责人此前主动保存的重复规则。

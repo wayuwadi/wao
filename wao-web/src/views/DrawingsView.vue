@@ -24,6 +24,7 @@ import { useDrawingLibraryStore } from '@/stores/drawingLibrary'
 import { useConfirmAction } from '@/composables/confirmAction'
 import { loadOfficialDrawingLibrary, officialDrawingLibraryUrl } from '@/utils/drawingLibraryCatalog'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import KnowledgeTrashDialog from '@/components/knowledge/KnowledgeTrashDialog.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
@@ -90,6 +91,7 @@ const lastDrawingKey = `wao:last-drawing:${owner}`
 function readLastDrawing() { try { return localStorage.getItem(lastDrawingKey) || '' } catch { return '' } }
 function rememberDrawing(id: string) { try { if (id) localStorage.setItem(lastDrawingKey, id); else localStorage.removeItem(lastDrawingKey) } catch { /* 本机偏好不可用时仍可使用草图。 */ } }
 const search = ref('')
+const trashOpen = ref(false)
 const listError = ref('')
 const versionsError = ref('')
 const draftError = ref('')
@@ -927,8 +929,8 @@ function confirmRemoveFile(file: DrawingFileSummary) {
     title: '删除草图',
     description: file.docId
       ? `将知识库中的「${file.title}」移入回收站？7 天内可恢复。`
-      : `删除「${file.title}」吗？该操作无法撤销。`,
-    confirmLabel: file.docId ? '移入回收站' : '确认删除',
+      : `将「${file.title}」移入回收站？7 天内可恢复，原有分享链接将失效。`,
+    confirmLabel: '移入回收站',
     run: () => removeFile(file),
   })
 }
@@ -938,8 +940,7 @@ async function removeFile(file: DrawingFileSummary) {
   deletingId.value = file.id
   try {
     if (activeId.value === file.id) {
-      if (savePromise) await savePromise
-      if (file.docId && !(await settleEdits())) throw new Error(error.value || '草图尚未保存，请重试。')
+      if (!(await settleEdits())) throw new Error(error.value || '草图尚未保存，请重试。')
       clearTimeout(saveTimer)
       clearTimeout(draftTimer)
     }
@@ -947,7 +948,7 @@ async function removeFile(file: DrawingFileSummary) {
     if (file.docId) await data.deleteDoc(file.docId, { requirePersisted: true })
     else await deleteDrawing(file.id)
     if (!sameOwner()) return
-    await clearDraft(file.id)
+    if (file.docId) await clearDraft(file.id)
     if (!sameOwner()) return
     files.value = files.value.filter((item) => item.id !== file.id)
     if (!props.embedded && readLastDrawing() === file.id) rememberDrawing('')
@@ -1135,6 +1136,7 @@ watch(
     groups.value = []
     assignments.value = {}
     dialogMode.value = null
+    trashOpen.value = false
     sharing.value = undefined
     contextMenu.value?.close()
     exportError.value = ''
@@ -1291,6 +1293,9 @@ defineExpose({ flush: flushEmbedded })
                 : `${files.length} 个文件 · 拖动排序`
           }}</span>
         </div>
+        <button v-if="owner && !embedded" type="button" title="草图回收站" aria-label="草图回收站" @click="trashOpen = true">
+          <i class="ri-delete-bin-line" aria-hidden="true"></i>
+        </button>
         <button title="收起文件列表" aria-label="收起文件列表" @click="sidebarOpen = false">
           <i class="ri-side-bar-line"></i>
         </button>
@@ -1536,6 +1541,7 @@ defineExpose({ flush: flushEmbedded })
         <button type="button" @click="exportError = ''">关闭</button>
       </div>
       <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
+      <KnowledgeTrashDialog v-if="trashOpen" drawings @close="trashOpen = false" @restored="loadDirectory()" />
       <div v-if="library.error" class="error-banner" role="alert">
         <span>{{ library.error }}</span>
         <button type="button" @click="library.sync()">重试同步素材</button>

@@ -2032,7 +2032,7 @@ public class KnowledgeService {
         return at != null ? iso(at) : legacyLabel;
     }
 
-    private static String iso(LocalDateTime at) {
+    static String iso(LocalDateTime at) {
         return at == null ? null : at.atZone(java.time.ZoneId.of("Asia/Shanghai"))
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }

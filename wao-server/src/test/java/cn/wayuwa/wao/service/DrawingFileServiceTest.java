@@ -16,9 +16,11 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DrawingFileEntity;
 import cn.wayuwa.wao.domain.DrawingFileVersionEntity;
 import cn.wayuwa.wao.dto.CreateDrawingFileRequest;
+import cn.wayuwa.wao.dto.DrawingTrashRow;
 import cn.wayuwa.wao.dto.RenameDrawingFileRequest;
 import cn.wayuwa.wao.dto.SaveDrawingFileRequest;
 import cn.wayuwa.wao.mapper.DrawingFileMapper;
+import cn.wayuwa.wao.mapper.DrawingPublicShareMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -241,13 +243,43 @@ class DrawingFileServiceTest {
     @Test
     void renameAndDeleteCannotTouchAnotherMembersFile() {
         when(mapper.renameOwned(eq("dr1"), eq(OTHER), any(), any())).thenReturn(0);
-        when(mapper.deleteOwned("dr1", OTHER)).thenReturn(0);
-
         assertThatThrownBy(() -> service.rename(
                 "dr1", new RenameDrawingFileRequest("别人的草图"), OTHER))
                 .isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> service.delete("dr1", OTHER))
                 .isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).moveToTrash(eq("dr1"), eq(OTHER), any());
+    }
+
+    @Test
+    void movesPersonalDrawingToTrashAndRevokesPublicLinksAtTheSameTime() {
+        var shares = mock(DrawingPublicShareMapper.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "publicShares", shares);
+        when(mapper.findOwned("dr1", OWNER)).thenReturn(file("dr1", OWNER, 3));
+        when(mapper.moveToTrash(eq("dr1"), eq(OWNER), any())).thenReturn(1);
+
+        service.delete("dr1", OWNER);
+
+        var deletedAt = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(mapper).moveToTrash(eq("dr1"), eq(OWNER), deletedAt.capture());
+        verify(shares).revokeForDrawing("dr1", OWNER, deletedAt.getValue());
+    }
+
+    @Test
+    void trashListsOwnerMetadataAndExpiresExactlyAfterSevenDays() {
+        var deletedAt = LocalDateTime.of(2026, 11, 23, 12, 0);
+        when(mapper.listTrash(eq(OWNER), any())).thenReturn(List.of(new DrawingTrashRow("dr1", "临时草图", "临时分组", deletedAt)));
+        assertThat(service.listTrash(OWNER)).singleElement().satisfies(entry -> {
+            assertThat(entry.type()).isEqualTo("drawing");
+            assertThat(entry.parent()).isEqualTo("临时分组");
+            assertThat(entry.expiresAt()).isEqualTo("2026-11-30T12:00:00+08:00");
+        });
+        assertThatThrownBy(() -> service.restoreTrash("dr1", OTHER)).isInstanceOf(NotFoundException.class);
+        when(mapper.restoreTrash(eq("dr1"), eq(OWNER), any())).thenReturn(1, 0);
+        service.restoreTrash("dr1", OWNER);
+        assertThatThrownBy(() -> service.restoreTrash("dr1", OWNER)).isInstanceOf(NotFoundException.class);
+        service.purgeExpiredTrash(deletedAt.plusDays(7));
+        verify(mapper).purgeTrash(deletedAt);
     }
 
     private DrawingFileEntity file(String id, String owner, int revision) {
@@ -277,7 +309,7 @@ class DrawingFileServiceTest {
         when(mapper.linkedDocumentCount("dr1")).thenReturn(1);
         assertThatThrownBy(() -> service.delete("dr1", OWNER)).isInstanceOf(BadRequestException.class).hasMessageContaining("知识库");
 
-        verify(mapper, never()).deleteOwned("dr1", OWNER);
+        verify(mapper, never()).moveToTrash(eq("dr1"), eq(OWNER), any());
     }
 
     @Test

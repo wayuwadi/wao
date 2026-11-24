@@ -32,7 +32,7 @@ public class WeKnoraSourceService {
         d("reviews", "人生回顾", OWN, "id,CONCAT(period_type,' · ',period_key) AS title,report_json AS 回顾", "life_review", "member_id=?", "/life-review?id=", true),
         d("polish", "文字润色", OWN, "id,CONCAT('文字润色 · ',created_at) AS title,original_text AS 原文,polished_text AS 润色结果", "text_polish_record", "member_id=?", "/text-polish?id=", true),
         d("dates", "家庭重要日期", OWN, "id,name AS title,event_date AS 日期,calendar_type AS 历法,note AS 备注", "family_important_date", "member_id=?", "/family-dates?id=", true),
-        d("drawings", "画图中的文本", OWN, "id,title,scene_json AS 内容", "drawing_file", "owner_member_id=?", "/drawings/", true),
+        d("drawings", "画图中的文本", OWN, "id,title,scene_json AS 内容", "drawing_file", "owner_member_id=? AND deleted_at IS NULL", "/drawings/", true),
         d("iterations", "点子迭代与结果", SHARED, "i.id,CONCAT(d.title,' · 迭代') AS title,i.objective AS 目标,i.acceptance_criteria AS 验收条件,i.feedback AS 反馈,i.result_summary AS 结果", "idea_iteration i JOIN idea d ON d.id=i.idea_id", "1=1", "/ideas?iteration=", false),
         d("skills", "已发布 Skill 正文", SHARED, "s.id,s.display_name AS title,v.skill_md AS 正文,v.changelog AS 变更记录", "skill s JOIN skill_version v ON v.id=s.published_version_id", "v.state='PUBLISHED' AND s.status='PUBLISHED'", "/wao/skills?id=", false),
         d("tianren", "天人日课记录", OWN, "id,CONCAT('天人日课 · ',reading_date) AS title,lines_json AS 日课,primary_number AS 本卦,relating_number AS 变卦", "tianren_daily_reading", "member_id=?", "/tianren?id=", true),
