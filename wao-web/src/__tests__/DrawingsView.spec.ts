@@ -9,6 +9,7 @@ import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
+  deleteDrawing,
   fetchDrawingGroups, createDrawingGroup, moveDrawing, copyDrawing, createDrawing, saveDrawingOrder,
   fetchDrawings,
   fetchDrawingVersions,
@@ -354,6 +355,40 @@ describe('个人草图优化', () => {
     expect(moveDrawing).toHaveBeenCalledWith('dr1', 'g1')
     expect(wrapper.findAll('.drawing-group')[0]!.text()).toContain('测试草图')
     wrapper.unmount()
+  })
+
+  it('从列表确认删除所点的个人草图，保留正在打开的画布与知识库删除权限', async () => {
+    const target = drawing({ id: 'dr2', title: '待删除草图' })
+    const linked = drawing({ id: 'dr3', title: '知识库草图', docId: 'doc1' })
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), target, linked])
+    vi.mocked(deleteDrawing).mockResolvedValue(null)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    const deleteAction = () => document.querySelector<HTMLButtonElement>('[role=menuitem][aria-label="删除"]')
+    try {
+      await flushPromises()
+      await wrapper.get('button[title="待删除草图"]').trigger('contextmenu')
+      await flushPromises()
+      expect(deleteAction()?.classList.contains('danger')).toBe(true)
+      deleteAction()!.click()
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('待删除草图'))
+      expect(deleteDrawing).not.toHaveBeenCalled()
+
+      await wrapper.get('button[aria-label="待删除草图的操作"]').trigger('click')
+      await flushPromises()
+      deleteAction()!.click()
+      await flushPromises()
+      expect(deleteDrawing).toHaveBeenCalledExactlyOnceWith('dr2')
+      expect(wrapper.find('button[title="待删除草图"]').exists()).toBe(false)
+      expect(wrapper.get('.title-trigger').text()).toBe('测试草图')
+
+      await wrapper.get('button[title="知识库草图"]').trigger('contextmenu')
+      await flushPromises()
+      expect(deleteAction()).toBeNull()
+    } finally {
+      wrapper.unmount()
+      confirm.mockRestore()
+    }
   })
 
   it('复制已保存草图并保留分组', async () => {

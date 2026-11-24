@@ -311,6 +311,9 @@ function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummar
       { id: 'ungroup', label: '移至未分组', icon: 'ri-folder-transfer-line', disabled: !assignments.value[file.id], separatorBefore: true, run: () => { void changeGroup(file, null) } },
       ...groups.value.map(group => ({ id: `move:${group.id}`, label: `移至 ${group.name}`, icon: 'ri-folder-transfer-line', disabled: assignments.value[file.id] === group.id, run: () => { void changeGroup(file, group.id) } })),
     ] : []),
+    ...(!file.docId && !props.embedded ? [
+      { id: 'delete', label: '删除', icon: 'ri-delete-bin-line', danger: true, separatorBefore: true, disabled, run: () => removeFile(file) },
+    ] : []),
   ], anchor)
 }
 function openGroupMenu(event: MouseEvent | KeyboardEvent, group: DrawingGroup, anchor?: HTMLElement) {
