@@ -1371,9 +1371,9 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
-  async function deleteDoc(id: string) {
+  async function deleteDoc(id: string, options?: { requirePersisted?: boolean }) {
     const generation = docMemberGeneration
-    if (apiLive.value) await apiDeleteDoc(id)
+    if (apiLive.value || options?.requirePersisted) await apiDeleteDoc(id)
     if (generation !== docMemberGeneration) return
     kbs.value.forEach((k) => k.folders.forEach((f) => (f.docs = f.docs.filter((d) => d !== id))))
     archivedDocIds.value = Object.fromEntries(Object.entries(archivedDocIds.value)
