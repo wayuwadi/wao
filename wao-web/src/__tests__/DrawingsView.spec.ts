@@ -6,6 +6,7 @@ import { routeLocationKey } from 'vue-router'
 import { pageVisibleKey } from '@/composables/pageVisibility'
 import DrawingsView from '@/views/DrawingsView.vue'
 import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
+import { apiDeleteDoc } from '@/api/board'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
   fetchDrawing,
@@ -18,6 +19,11 @@ import {
   saveDrawing,
   type DrawingFile,
 } from '@/api/drawings'
+
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/board')>(),
+  apiDeleteDoc: vi.fn(),
+}))
 
 vi.mock('@/api/drawings', () => ({
   createDrawing: vi.fn(),
@@ -357,37 +363,69 @@ describe('个人草图优化', () => {
     wrapper.unmount()
   })
 
-  it('从列表确认删除所点的个人草图，保留正在打开的画布与知识库删除权限', async () => {
+  it('从列表确认删除所点的个人草图，保留正在打开的画布', async () => {
     const target = drawing({ id: 'dr2', title: '待删除草图' })
-    const linked = drawing({ id: 'dr3', title: '知识库草图', docId: 'doc1' })
-    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), target, linked])
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), target])
     vi.mocked(deleteDrawing).mockResolvedValue(null)
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
     const wrapper = mount(DrawingsView, { attachTo: document.body })
     const deleteAction = () => document.querySelector<HTMLButtonElement>('[role=menuitem][aria-label="删除"]')
+    const dialogButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[role=dialog] button')]
+      .find(button => button.textContent?.trim() === label)!
     try {
       await flushPromises()
       await wrapper.get('button[title="待删除草图"]').trigger('contextmenu')
       await flushPromises()
       expect(deleteAction()?.classList.contains('danger')).toBe(true)
       deleteAction()!.click()
-      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('待删除草图'))
+      await flushPromises()
+      expect(document.querySelector('[role=dialog]')?.textContent).toContain('待删除草图')
+      dialogButton('取消').click()
+      await flushPromises()
       expect(deleteDrawing).not.toHaveBeenCalled()
 
       await wrapper.get('button[aria-label="待删除草图的操作"]').trigger('click')
       await flushPromises()
       deleteAction()!.click()
       await flushPromises()
+      dialogButton('确认删除').click()
+      await flushPromises()
       expect(deleteDrawing).toHaveBeenCalledExactlyOnceWith('dr2')
       expect(wrapper.find('button[title="待删除草图"]').exists()).toBe(false)
       expect(wrapper.get('.title-trigger').text()).toBe('测试草图')
-
-      await wrapper.get('button[title="知识库草图"]').trigger('contextmenu')
-      await flushPromises()
-      expect(deleteAction()).toBeNull()
     } finally {
       wrapper.unmount()
-      confirm.mockRestore()
+    }
+  })
+
+  it('知识库草图通过文档回收站删除，失败保留行并允许重试', async () => {
+    const linked = drawing({ id: 'dr3', title: '知识库草图', kbId: 'kb1', docId: 'doc1' })
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), linked])
+    vi.mocked(apiDeleteDoc).mockRejectedValueOnce(new Error('文档删除失败')).mockResolvedValueOnce(undefined)
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    const dialogButton = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[role=dialog] button')]
+      .find(button => button.textContent?.trim() === label)!
+    try {
+      await flushPromises()
+      await wrapper.get('button[title="知识库草图"]').trigger('contextmenu')
+      await flushPromises()
+      document.querySelector<HTMLButtonElement>('[role=menuitem][aria-label="删除"]')!.click()
+      await flushPromises()
+      expect(document.querySelector('[role=dialog]')?.textContent).toContain('7 天内可恢复')
+      expect(apiDeleteDoc).not.toHaveBeenCalled()
+      dialogButton('移入回收站').click()
+      await flushPromises()
+      expect(apiDeleteDoc).toHaveBeenCalledExactlyOnceWith('doc1')
+      expect(document.querySelector('[role=dialog] [role=alert]')?.textContent).toContain('文档删除失败')
+      expect(wrapper.find('button[title="知识库草图"]').exists()).toBe(true)
+
+      dialogButton('重试').click()
+      await flushPromises()
+      expect(apiDeleteDoc).toHaveBeenNthCalledWith(2, 'doc1')
+      expect(deleteDrawing).not.toHaveBeenCalled()
+      expect(wrapper.find('button[title="知识库草图"]').exists()).toBe(false)
+      expect(wrapper.get('.title-trigger').text()).toBe('测试草图')
+    } finally {
+      wrapper.unmount()
     }
   })
 

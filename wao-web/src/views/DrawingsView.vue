@@ -19,6 +19,7 @@ import { toast } from '@/composables/toast'
 import type { DrawingTidyCanvas } from '@/utils/drawingTidyClient'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useSessionStore } from '@/stores/session'
+import { useDataStore } from '@/stores/data'
 import { useDrawingLibraryStore } from '@/stores/drawingLibrary'
 import { useConfirmAction } from '@/composables/confirmAction'
 import { loadOfficialDrawingLibrary, officialDrawingLibraryUrl } from '@/utils/drawingLibraryCatalog'
@@ -79,8 +80,9 @@ type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
 
 const props = defineProps<{ drawingId?: string; embedded?: boolean }>()
 const session = useSessionStore()
+const data = useDataStore()
 const library = useDrawingLibraryStore()
-const { confirmation: libraryConfirmation, confirmAction: confirmLibrary, dismissConfirmation: dismissLibraryConfirmation } = useConfirmAction()
+const { confirmation, confirmAction, dismissConfirmation } = useConfirmAction()
 const libraryRequests = new AbortController()
 const owner = session.userId
 const snapMode = useDrawingSnapMode(owner)
@@ -311,8 +313,8 @@ function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummar
       { id: 'ungroup', label: '移至未分组', icon: 'ri-folder-transfer-line', disabled: !assignments.value[file.id], separatorBefore: true, run: () => { void changeGroup(file, null) } },
       ...groups.value.map(group => ({ id: `move:${group.id}`, label: `移至 ${group.name}`, icon: 'ri-folder-transfer-line', disabled: assignments.value[file.id] === group.id, run: () => { void changeGroup(file, group.id) } })),
     ] : []),
-    ...(!file.docId && !props.embedded ? [
-      { id: 'delete', label: '删除', icon: 'ri-delete-bin-line', danger: true, separatorBefore: true, disabled, run: () => removeFile(file) },
+    ...(!props.embedded ? [
+      { id: 'delete', label: '删除', icon: 'ri-delete-bin-line', danger: true, separatorBefore: true, disabled, run: () => confirmRemoveFile(file) },
     ] : []),
   ], anchor)
 }
@@ -645,7 +647,7 @@ function persistDraft() {
 }
 
 async function clearDraft(id: string) {
-  clearTimeout(draftTimer)
+  if (activeId.value === id) clearTimeout(draftTimer)
   const operation = draftQueue.then(() => removeDrawingDraft(owner, id)).catch(() => undefined)
   draftQueue = operation
   await operation
@@ -920,19 +922,33 @@ function fullscreenChanged() {
   isFullscreen.value = document.fullscreenElement === page.value
 }
 
+function confirmRemoveFile(file: DrawingFileSummary) {
+  confirmAction({
+    title: '删除草图',
+    description: file.docId
+      ? `将知识库中的「${file.title}」移入回收站？7 天内可恢复。`
+      : `删除「${file.title}」吗？该操作无法撤销。`,
+    confirmLabel: file.docId ? '移入回收站' : '确认删除',
+    run: () => removeFile(file),
+  })
+}
+
 async function removeFile(file: DrawingFileSummary) {
-  if (transitioning.value || deletingId.value || restoringVersion.value !== null) return
-  if (!window.confirm(`删除「${file.title}」吗？该操作无法撤销。`)) return
+  if (!sameOwner() || transitioning.value || deletingId.value || restoringVersion.value !== null) return
   deletingId.value = file.id
   try {
     if (activeId.value === file.id) {
       if (savePromise) await savePromise
+      if (file.docId && !(await settleEdits())) throw new Error(error.value || '草图尚未保存，请重试。')
       clearTimeout(saveTimer)
       clearTimeout(draftTimer)
     }
-    await deleteDrawing(file.id)
+    if (!sameOwner()) return
+    if (file.docId) await data.deleteDoc(file.docId, { requirePersisted: true })
+    else await deleteDrawing(file.id)
     if (!sameOwner()) return
     await clearDraft(file.id)
+    if (!sameOwner()) return
     files.value = files.value.filter((item) => item.id !== file.id)
     if (!props.embedded && readLastDrawing() === file.id) rememberDrawing('')
     if (activeId.value === file.id) {
@@ -947,7 +963,7 @@ async function removeFile(file: DrawingFileSummary) {
       draftError.value = ''
     }
   } catch (cause) {
-    error.value = message(cause, '草图删除失败')
+    throw new Error(message(cause, '草图删除失败'))
   } finally {
     deletingId.value = ''
   }
@@ -1036,7 +1052,7 @@ function checkLibraryInstallLink() {
     toast('此素材链接不在 Excalidraw 官方素材库中。', 'ri-error-warning-line')
     return
   }
-  confirmLibrary({
+  confirmAction({
     title: '添加在线素材',
     description: '将这套 Excalidraw 官方素材添加到当前账号，在其他设备上也能使用。',
     confirmLabel: '添加到素材库',
@@ -1422,7 +1438,7 @@ defineExpose({ flush: flushEmbedded })
         <div v-if="current" class="drawing-meta">
           <span class="edited-at">编辑于 {{ new Date(current.updatedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) }}</span>
           <button class="icon-button" :aria-label="`重命名 ${current.title}`" title="重命名" :disabled="renaming || transitioning || !!deletingId" @click="startTitleEdit"><i class="ri-pencil-line" aria-hidden="true" /></button>
-          <button v-if="!current.docId && !embedded" class="icon-button" :aria-label="`删除 ${current.title}`" title="删除" :disabled="transitioning || !!deletingId" @click="removeFile(current)"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
+          <button v-if="!current.docId && !embedded" class="icon-button" :aria-label="`删除 ${current.title}`" title="删除" :disabled="transitioning || !!deletingId" @click="confirmRemoveFile(current)"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
           <a v-if="current.docId && current.kbId && !embedded" :href="`/kb/${current.kbId}?doc=${current.docId}`" title="在知识库查看" aria-label="在知识库查看"><i class="ri-book-open-line" aria-hidden="true" /></a>
         </div>
         <details v-if="current" :key="current.id" ref="versionMenu" class="version-menu" @toggle="loadVersions()">
@@ -1519,7 +1535,7 @@ defineExpose({ flush: flushEmbedded })
         <span>{{ exportError }}</span>
         <button type="button" @click="exportError = ''">关闭</button>
       </div>
-      <ConfirmActionDialog v-if="libraryConfirmation" :action="libraryConfirmation" @close="dismissLibraryConfirmation" />
+      <ConfirmActionDialog v-if="confirmation" :action="confirmation" @close="dismissConfirmation" />
       <div v-if="library.error" class="error-banner" role="alert">
         <span>{{ library.error }}</span>
         <button type="button" @click="library.sync()">重试同步素材</button>
