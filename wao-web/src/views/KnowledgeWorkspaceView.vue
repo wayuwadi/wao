@@ -16,6 +16,7 @@ import WaoField from '@/components/ui/WaoField.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import KnowledgeDirectoryTree from '@/components/knowledge/KnowledgeDirectoryTree.vue'
+import KnowledgeTrashDialog from '@/components/knowledge/KnowledgeTrashDialog.vue'
 import PaneResizeHandle from '@/components/ui/PaneResizeHandle.vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { usePageVisibility } from '@/composables/pageVisibility'
@@ -36,6 +37,7 @@ const defaultLibraryWidth = 208
 const libraryWidth = ref(defaultLibraryWidth)
 const directoryWidth = ref(262)
 const documentFocus = ref(false)
+const trashOpen = ref(false)
 const folderOpen = ref<Record<string, Record<string, boolean>>>({})
 const inlineCollapsed = ref(false)
 const inlineHosts = shallowReactive(new Map<string, HTMLElement>())
@@ -181,6 +183,7 @@ watch(selected, () => { inlineCollapsed.value = false; documentFocus.value = fal
 watch(() => data.kbById(selected.value), kb => { if (!kb) documentFocus.value = false }, { flush: 'sync' })
 let createGeneration = 0
 watch(() => `${session.account?.accountId ?? ''}:${session.userId}`, () => {
+  trashOpen.value = false
   folderOpen.value = {}; inlineCollapsed.value = false; rowLimit.value = {}; recentLimit.value = 30; documentFocus.value = false; closeMobile()
   createGeneration++
   creating.value = false; saving.value = false; name.value = ''; description.value = ''; icon.value = 'wao-kb-icon-notebook'; error.value = ''
@@ -213,12 +216,14 @@ async function create() {
       <button ref="mobileLibraryButton" type="button" aria-label="选择知识库" :aria-controls="`${paneId}-libraries`" :aria-expanded="mobileLibrary" @click="toggleLibraries"><i class="ri-book-2-line" aria-hidden="true" /><span>{{ selectedName }}</span><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
       <button v-if="!selected" ref="mobileDirectoryButton" type="button" aria-label="查看全部目录" :aria-controls="`${paneId}-directory`" :aria-expanded="mobileDirectory" @click="toggleDirectory"><i class="ri-list-check" aria-hidden="true" />目录</button>
       <button type="button" class="mobile-add" aria-label="新增知识库" @click="startCreate"><i class="ri-add-line" aria-hidden="true" /></button>
+      <button type="button" aria-label="知识库回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
     </div>
     <button v-if="mobileNavigationOpen && !documentFocus" type="button" class="mobile-backdrop navigation-mask" aria-label="关闭知识库导航" tabindex="-1" @click="navigationDismiss.isTopmost() && closeMobile(true)" />
     <aside v-show="!documentFocus && (!narrow || mobileLibrary)" :id="`${paneId}-libraries`" ref="librariesPanel" class="libraries" :class="{ collapsed: !librariesExpanded }" :style="{ '--library-width': `${libraryWidth}px` }" :role="narrow ? 'dialog' : undefined" :aria-modal="narrow ? true : undefined" aria-label="知识库清单" @keydown="trapNavigation">
       <header>
         <strong v-if="librariesExpanded">知识库</strong>
         <button v-if="librariesExpanded && !narrow" class="library-add icon-button" type="button" aria-label="新增知识库" title="新增知识库" @click="startCreate"><i class="ri-add-line" aria-hidden="true" /></button>
+        <button v-if="librariesExpanded && !narrow" class="icon-button" type="button" aria-label="知识库回收站" title="知识库回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true" /></button>
         <button type="button" class="pane-toggle icon-button" :aria-label="librariesExpanded ? '收起知识库清单' : '展开知识库清单'" :aria-expanded="librariesExpanded" @click="toggleLibraries"><i class="ri-side-bar-line" aria-hidden="true" /></button>
       </header>
       <nav v-show="librariesExpanded" class="library-list" aria-label="选择知识库">
@@ -284,6 +289,7 @@ async function create() {
         </div>
       </section>
     </main>
+    <KnowledgeTrashDialog v-if="trashOpen" @close="trashOpen = false" @restored="data.refreshKnowledge()" />
     <SettingsDialogShell v-if="creating" title="新增知识库" width="520px" height="auto" :close-disabled="saving" @close="creating = false">
       <form class="create-form" @submit.prevent="create"><WaoField label="名称" required v-slot="field"><input :id="field.id" v-model="name" :disabled="saving" required autofocus /></WaoField><WaoField label="简介" v-slot="field"><textarea :id="field.id" v-model="description" :disabled="saving" rows="2" /></WaoField><KnowledgeIconPicker v-model="icon" :disabled="saving" /><p v-if="error" role="alert">{{ error }}</p><WaoButton type="submit" :loading="saving" :disabled="!name.trim()">{{ saving ? '创建中…' : '创建' }}</WaoButton></form>
     </SettingsDialogShell>
