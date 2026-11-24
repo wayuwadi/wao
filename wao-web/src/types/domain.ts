@@ -447,7 +447,7 @@ export interface DocPeer {
 
 /** 回收站条目：删除的知识库 / 文件夹 / 文档，保留 7 天。 */
 export interface TrashEntry {
-  type: 'kb' | 'folder' | 'doc'
+  type: 'kb' | 'folder' | 'doc' | 'drawing'
   id: string
   name: string
   parent: string

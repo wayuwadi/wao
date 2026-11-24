@@ -50,3 +50,18 @@ it('知识库回收站按条目类型原位恢复关联画板', async () => {
   expect(dialog.querySelectorAll('li')).toHaveLength(1)
   wrapper.unmount()
 })
+
+it('草图回收站查询个人草图并按草图类型恢复', async () => {
+  vi.mocked(fetchTrash).mockResolvedValue([{ ...item, id: 'dr1', type: 'drawing', name: '临时草图', parent: '临时分组' }])
+  vi.mocked(apiRestoreTrash).mockResolvedValue(undefined)
+  const wrapper = mount(KnowledgeTrashDialog, { props: { drawings: true }, attachTo: document.body })
+  await flushPromises()
+  const dialog = document.querySelector('[role="dialog"][aria-label="草图回收站"]')!
+  expect(fetchTrash).toHaveBeenCalledExactlyOnceWith('drawing')
+  expect(dialog.textContent).toContain('临时分组')
+  dialog.querySelector<HTMLButtonElement>('[aria-label="恢复：临时草图"]')!.click()
+  await flushPromises()
+  expect(apiRestoreTrash).toHaveBeenCalledExactlyOnceWith('drawing', 'dr1')
+  expect(wrapper.emitted('restored')).toEqual([['dr1']])
+  wrapper.unmount()
+})

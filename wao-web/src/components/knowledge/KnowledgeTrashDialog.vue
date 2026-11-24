@@ -5,12 +5,12 @@ import type { TrashEntry } from '@/types'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 
-const props = defineProps<{ kbName?: string }>()
+const props = defineProps<{ kbName?: string; drawings?: boolean }>()
 const emit = defineEmits<{ close: []; restored: [id: string] }>()
 const items = ref<TrashEntry[]>([])
 const notesOnly = computed(() => props.kbName !== undefined)
-const scopeName = computed(() => notesOnly.value ? '小记' : '知识库')
-const entryDescription = computed(() => notesOnly.value ? '小记' : '知识库内容')
+const scopeName = computed(() => props.drawings ? '草图' : notesOnly.value ? '小记' : '知识库')
+const entryDescription = computed(() => props.drawings ? '独立草图' : notesOnly.value ? '小记' : '知识库内容')
 const entries = computed(() => {
   if (!notesOnly.value) return items.value
   const notesParent = `文档 · ${props.kbName}`
@@ -24,7 +24,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const result = await fetchTrash()
+    const result = props.drawings ? await fetchTrash('drawing') : await fetchTrash()
     if (!disposed) items.value = result
   } catch (cause) {
     if (!disposed) error.value = cause instanceof Error ? cause.message : '回收站读取失败，请重试'

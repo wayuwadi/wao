@@ -62,7 +62,7 @@ class DrawingPublicShareHttpTest {
                 CREATE TABLE drawing_file (
                   id VARCHAR(32) PRIMARY KEY, owner_member_id VARCHAR(32) NOT NULL,
                   knowledge_doc_id VARCHAR(32), title VARCHAR(128) NOT NULL, revision INT NOT NULL,
-                  updated_at TIMESTAMP NOT NULL, scene_json LONGTEXT NOT NULL
+                  updated_at TIMESTAMP NOT NULL, scene_json LONGTEXT NOT NULL, deleted_at TIMESTAMP
                 )
                 """);
         db.execute("""
@@ -73,8 +73,8 @@ class DrawingPublicShareHttpTest {
                   FOREIGN KEY (drawing_id) REFERENCES drawing_file(id) ON DELETE CASCADE
                 )
                 """);
-        db.update("INSERT INTO drawing_file VALUES ('personal','owner',NULL,'Old title',1,CURRENT_TIMESTAMP,?)", SCENE);
-        db.update("INSERT INTO drawing_file VALUES ('linked','owner','doc','Knowledge',1,CURRENT_TIMESTAMP,?)", SCENE);
+        db.update("INSERT INTO drawing_file VALUES ('personal','owner',NULL,'Old title',1,CURRENT_TIMESTAMP,?,NULL)", SCENE);
+        db.update("INSERT INTO drawing_file VALUES ('linked','owner','doc','Knowledge',1,CURRENT_TIMESTAMP,?,NULL)", SCENE);
         var sessions = mock(AuthSessionManager.class);
         var member = mock(CurrentMember.class);
         when(sessions.currentAccountId(any())).thenAnswer(call -> ((HttpServletRequest) call.getArgument(0)).getHeader(SESSION));

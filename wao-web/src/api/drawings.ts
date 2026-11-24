@@ -80,7 +80,7 @@ export const renameDrawing = (id: string, title: string) =>
   data(http.patch<ApiResponse<DrawingFileSummary>>(`/api/drawings/${id}`, { title }))
 
 export const deleteDrawing = (id: string) =>
-  data(http.delete<ApiResponse<null>>(`/api/drawings/${id}`))
+  data(http.post<ApiResponse<null>>(`/api/drawings/${id}/trash`))
 
 export interface DrawingGroup { id: string; name: string }
 export interface DrawingGroupIndex { groups: DrawingGroup[]; assignments: { fileId: string; groupId: string }[]; order?: string[]; revision?: number }

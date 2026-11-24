@@ -90,6 +90,15 @@ public class DrawingFileController {
         return ApiResponse.ok(null);
     }
 
+    /** 客户端使用专用动作，确保旧版服务不会把此请求解释为永久删除。 */
+    @PostMapping("/{id}/trash")
+    public ApiResponse<Void> trash(@PathVariable String id, HttpServletRequest http) {
+        String memberId = currentMember.id(http);
+        if (memberId == null) throw new UnauthorizedException("请登录后再移入回收站");
+        drawings.delete(id, memberId);
+        return ApiResponse.ok(null);
+    }
+
     public record GroupRequest(String name) {}
     public record MoveRequest(String groupId) {}
     public record GroupIndex(List<cn.wayuwa.wao.mapper.DrawingGroupMapper.Group> groups,

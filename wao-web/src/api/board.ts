@@ -470,7 +470,7 @@ export const apiLeaveDoc = (id: string) => del(`/api/docs/${id}/presence`)
 
 // ---------------- 回收站 ----------------
 
-export const fetchTrash = () => get<TrashEntry[]>('/api/trash')
+export const fetchTrash = (type?: 'drawing') => get<TrashEntry[]>(type ? '/api/trash?type=drawing' : '/api/trash')
 export const apiRestoreTrash = (type: string, id: string) =>
   post<void>(`/api/trash/${type}/${id}/restore`)
 export const apiPurgeTrash = (type: string, id: string) => del(`/api/trash/${type}/${id}`)

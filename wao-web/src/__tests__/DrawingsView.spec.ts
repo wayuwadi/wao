@@ -387,7 +387,7 @@ describe('个人草图优化', () => {
       await flushPromises()
       deleteAction()!.click()
       await flushPromises()
-      dialogButton('确认删除').click()
+      dialogButton('移入回收站').click()
       await flushPromises()
       expect(deleteDrawing).toHaveBeenCalledExactlyOnceWith('dr2')
       expect(wrapper.find('button[title="待删除草图"]').exists()).toBe(false)
