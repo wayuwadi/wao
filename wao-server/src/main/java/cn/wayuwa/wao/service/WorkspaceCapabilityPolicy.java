@@ -15,12 +15,12 @@ public record WorkspaceCapabilityPolicy(List<String> permissions, List<String> p
             "rename_folder", "move_knowledge_node", "create_document", "update_document");
     public static final List<String> READ = java.util.stream.Stream.concat(LEGACY_READ.stream(), java.util.stream.Stream.of(
             "get_workspace_info", "list_members", "list_tasks", "list_notes", "list_note_tags", "list_doc_templates",
-            "list_archived_documents", "search_workspace", "get_todo_day", "list_todo_days", "get_daily_operation")).toList();
+            "list_archived_documents", "search_workspace", "get_todo_day", "list_todo_days", "get_daily_operation", "search_agent_memories")).toList();
     public static final List<String> WRITE = java.util.stream.Stream.concat(LEGACY_WRITE.stream(), java.util.stream.Stream.of(
             "create_note_tag", "create_note", "update_note_tags", "create_doc_template", "update_doc_template",
             "archive_document", "unarchive_document", "create_subtask", "update_subtask", "reorder_subtasks",
             "move_subtask", "promote_subtask", "move_task", "add_task_comment", "update_task_comment", "link_task_document",
-            "schedule_task", "record_daily_note")).toList();
+            "schedule_task", "record_daily_note", "propose_agent_memory")).toList();
     public static final List<String> ALL = java.util.stream.Stream.concat(
             java.util.stream.Stream.concat(READ.stream(), WRITE.stream()),
             java.util.stream.Stream.of("publish_html", "list_my_pets", "upload_pet", "share_pet", "vault_lookup", "vault_save", "vault_devops", "vault_mysql", "vault_applet", "report_agy_quota")).toList();

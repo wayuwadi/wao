@@ -1,5 +1,7 @@
 // 本地仅定义可发现的命令路径，参数和可用权限取自实时 tools/list。
 export const COMMANDS = new Map([
+  ['memories search', ['search_agent_memories']],
+  ['memories propose', ['propose_agent_memory']],
   ['workspace info', ['get_workspace_info']],
   ['members list', ['list_members']],
   ['projects list', ['list_projects']],

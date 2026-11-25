@@ -17,6 +17,7 @@ export const SETTINGS_ENTRIES = {
   ],
   personal: [
     ['profile', '个人资料', '名称与头像文字', 'ri-user-smile-line'],
+    ['agent-memories', 'Agent 记忆', 'Codex 与 Agy 的习惯、经验和换机恢复', 'ri-brain-line'],
     ['account', '账号与登录', '登录方式、邮箱与密码', 'ri-shield-user-line'],
   ],
   management: [
@@ -58,6 +59,7 @@ export interface SettingsSearchResult {
 const searchKeywords: Record<string, string> = {
   common: '首页 日期 提醒 庆祝 动画', appearance: '主题 深色 浅色 明暗 陪伴 每周 起始日 周一 周日 日历 本周 快捷键 界面 控件 风格 布局',
   notes: '润色 提示词 标签 配图 发现 小记 AI', account: '密码 邮箱 登录 飞书',
+  'agent-memories': '记忆 迁移 换机 同步 恢复 Codex Agy',
   'notification-policy': '消息 免打扰 通知', 'ai-accounts': '模型 Codex AI',
 }
 

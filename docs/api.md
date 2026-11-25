@@ -192,3 +192,7 @@ V200 为远端明细新增独立可空列。远端同步替换明细，包括清
 - `POST /api/agy-quota/report`：接收 `{source, accountLabel, groups}` 脱敏快照并立即更新对应来源、触发飞书刷新检测（仅在 Gemini 或 Claude/GPT 任一窗口剩余百分比上升时向现有默认飞书群发送绿色卡片 `Agy 额度已刷新`）。鉴权仅接受具备显式 `report_agy_quota` 权限的工作区 CLI `Bearer` 令牌或管理员/超级管理员浏览器会话，不自动授予旧令牌。
 - 服务端本机采集配置：`wao.agy-quota.enabled`（环境变量 `WAO_AGY_QUOTA_ENABLED`，默认 `false`）、`wao.agy-quota.executable`（默认 `agy`）、`wao.agy-quota.source`（默认 `local`）、`wao.agy-quota.account-label`（默认 `Agy`）。开启后在全局调度关闭时也会注册独立的 `local-agy-quota-` 单线程调度每分钟只读执行 `agy --print /usage --output-format json`。
 - 本机脚本上报：可通过 `python3 scripts/sync-agy-quota.py`（使用 `WAO_API_TOKEN` 或 `--token-stdin`）把本机 `agy` 额度同步至服务端。
+
+## 个人 Agent 记忆
+
+个人记忆的列表、候选、审核及历史 HTTP 接口由当前登录成员访问，见[个人 Agent 记忆](specs/personal-agent-memories.md)。工作区设备令牌使用显式授权的 MCP 工具。

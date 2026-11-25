@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
@@ -46,6 +47,8 @@ public class CapabilityCenterController {
             Map.entry("list_doc_templates", "wao templates list"), Map.entry("create_doc_template", "wao templates create"),
             Map.entry("update_doc_template", "wao templates update ID"), Map.entry("search_workspace", "wao search"),
             Map.entry("get_todo_day", "wao todo day DATE"), Map.entry("list_todo_days", "wao todo days"),
+            Map.entry("search_agent_memories", "wao memories search"),
+            Map.entry("propose_agent_memory", "wao memories propose"),
             Map.entry("record_daily_note", "wao daily record"), Map.entry("get_daily_operation", "wao daily operation ID"));
     private final WorkspaceMcpTools tools;
     private final CurrentMember members;
@@ -113,6 +116,7 @@ public class CapabilityCenterController {
     }
 
     private static String group(String name) {
+        if (Set.of("search_agent_memories", "propose_agent_memory").contains(name)) return "memories";
         if (name.contains("project")) return "projects";
         if (name.contains("task") || name.contains("todo") || name.contains("daily")) return "tasks";
         if (name.contains("document") || name.contains("note") || name.contains("template")) return "documents";
