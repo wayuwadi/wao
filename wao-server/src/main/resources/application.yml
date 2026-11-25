@@ -70,6 +70,11 @@ wao:
     enabled: ${WAO_CODEX_QUOTA_ENABLED:false}
     executable: ${WAO_CODEX_QUOTA_EXECUTABLE:codex}
     source: ${WAO_CODEX_QUOTA_SOURCE:local}
+  agy-quota:
+    enabled: ${WAO_AGY_QUOTA_ENABLED:false}
+    executable: ${WAO_AGY_QUOTA_EXECUTABLE:agy}
+    source: ${WAO_AGY_QUOTA_SOURCE:local}
+    account-label: ${WAO_AGY_QUOTA_ACCOUNT_LABEL:Agy}
   storage:
     mode: ${WAO_STORAGE_MODE:mysql}
     retain-mysql: ${WAO_STORAGE_RETAIN_MYSQL:true}

@@ -256,6 +256,7 @@ const groupNames: Record<string, string> = {
   pages: 'HTML 发布',
   pets: 'Pet 仓库',
   vault: '密码本',
+  ai: 'AI 与额度',
 }
 const selectedCapabilities = computed(() =>
   capabilities.value.filter((c) => selected.value !== 'mcp' || !!c.mcp),

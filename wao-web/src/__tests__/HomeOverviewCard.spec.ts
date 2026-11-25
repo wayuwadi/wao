@@ -4,19 +4,50 @@ import { createPinia, setActivePinia } from 'pinia'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import { useSessionStore } from '@/stores/session'
 import { fetchCodexMemberships } from '@/api/codexMemberships'
+import { fetchAgyQuotas, type AgyQuotaAccount } from '@/api/agyQuota'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import type { CodexQuotaAccount } from '@/api/ai'
 
 vi.mock('@/api/codexMemberships', () => ({ fetchCodexMemberships: vi.fn() }))
+vi.mock('@/api/agyQuota', () => ({ fetchAgyQuotas: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
-vi.mock('@/api/tianren', () => ({ fetchTodayTianrenReading: vi.fn().mockResolvedValue({ primary: { name: '巽', symbol: '☴' } }) }))
+vi.mock('@/api/tianren', () => ({
+  fetchTodayTianrenReading: vi.fn().mockResolvedValue({ primary: { name: '巽', symbol: '☴' } }),
+  fetchSharedTodayTianrenReading: vi.fn().mockResolvedValue({ date: '2026-10-02', primary: { name: '巽', symbol: '☴' } }),
+}))
 const wrappers: ReturnType<typeof mount>[] = []
 const account = (key = 'a', fresh = true): CodexQuotaAccount => ({ key, accountEmail: `${key}@example.test`, plan: 'pro', credits: null, runnerNames: [],
   lastSyncedAt: '2026-10-02T12:00:00+08:00', fresh, resetCredits: { availableCount: 0, credits: [] },
   limits: [{ id: 'codex', label: '通用', windows: [{ usedPercent: 32, windowDurationMinutes: 10080, resetsAt: 1791200000 }] }],
 })
+const agyAccount = (key = 'agy', fresh = true): AgyQuotaAccount => ({
+  key,
+  accountLabel: key === 'agy' ? 'Agy' : `Agy-${key}`,
+  sources: ['mac'],
+  lastSyncedAt: '2026-10-02T12:00:00+08:00',
+  fresh,
+  groups: [
+    {
+      name: 'Gemini Models',
+      buckets: [
+        { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remainingPercent: 79, resetsAt: 1791200000 },
+        { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h', remainingPercent: 91, resetsAt: 1791100000 },
+      ],
+    },
+    {
+      name: 'Claude and GPT models',
+      buckets: [
+        { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remainingPercent: 100, resetsAt: null },
+        { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remainingPercent: 100, resetsAt: null },
+      ],
+    },
+  ],
+})
 function respond(accounts: CodexQuotaAccount[]) {
   vi.mocked(fetchCodexMemberships).mockResolvedValue(accounts.map(account => ({ account, membership: { accountKey: account.key, purchasedAt: null, proExpiresAt: null, revision: '' } })))
+}
+function respondAgy(accounts: AgyQuotaAccount[]) {
+  vi.mocked(fetchAgyQuotas).mockResolvedValue(accounts)
 }
 function setup() {
   const pinia = createPinia()
@@ -32,7 +63,9 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-02T12:00:00+08:00'))
   localStorage.clear()
   vi.mocked(fetchCodexMemberships).mockReset()
+  vi.mocked(fetchAgyQuotas).mockReset()
   respond([account()])
+  respondAgy([agyAccount()])
   vi.mocked(fetchPreference).mockReset().mockResolvedValue(JSON.stringify({ resetCards: 3, proExpiresOn: '2026-10-20' }))
   vi.mocked(savePreference).mockReset().mockResolvedValue()
 })
@@ -132,5 +165,59 @@ describe('首页四等分信息卡片', () => {
     const { wrapper } = setup()
     await flushPromises()
     expect(wrapper.get('.overview-metric').text()).toContain('历史快照')
+  })
+  it('展示 Agy Gemini 周剩余与重置时间，展开查看两组全部窗口且与 Codex 互斥', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+    const agyTrigger = wrapper.get('[aria-controls="home-agy-details"]')
+    expect(agyTrigger.text()).toContain('Agy 周剩余')
+    expect(agyTrigger.text()).toContain('79%')
+    expect(agyTrigger.text()).toContain('重置')
+
+    await wrapper.get('[aria-controls="home-codex-details"]').trigger('click')
+    expect(wrapper.get('#home-codex-details').isVisible()).toBe(true)
+    expect(wrapper.get('#home-agy-details').isVisible()).toBe(false)
+
+    await agyTrigger.trigger('click')
+    expect(wrapper.get('#home-codex-details').isVisible()).toBe(false)
+    expect(wrapper.get('#home-agy-details').isVisible()).toBe(true)
+    const details = wrapper.get('#home-agy-details').text()
+    expect(details).toContain('Gemini · 周额度 · 剩余 79%')
+    expect(details).toContain('Gemini · 5 小时 · 剩余 91%')
+    expect(details).toContain('Claude / GPT · 周额度 · 剩余 100%')
+    expect(details).toContain('满额待用')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.get('#home-agy-details').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(agyTrigger.element)
+  })
+  it('Agy 多账号分别展示不合计，刷新失败保留旧快照且不影响 Codex', async () => {
+    respondAgy([agyAccount('a', true), agyAccount('b', false)])
+    const { wrapper } = setup()
+    await flushPromises()
+    const agyTrigger = wrapper.get('[aria-controls="home-agy-details"]')
+    expect(agyTrigger.text()).toContain('2 个账号')
+    expect(agyTrigger.text()).toContain('历史快照')
+    await agyTrigger.trigger('click')
+    expect(wrapper.findAll('#home-agy-details .agy-quota-account')).toHaveLength(2)
+
+    vi.mocked(fetchAgyQuotas).mockRejectedValueOnce(new Error('Agy 不可用'))
+    await wrapper.get('#home-agy-details > button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('#home-agy-details [role="alert"]').text()).toContain('已有快照仅供参考')
+    expect(wrapper.findAll('#home-agy-details .agy-quota-account')).toHaveLength(2)
+    expect(wrapper.get('.overview-metric').text()).toContain('68%')
+  })
+  it('切换成员后不接受上个成员迟到的 Agy 响应', async () => {
+    let finish!: (value: AgyQuotaAccount[]) => void
+    vi.mocked(fetchAgyQuotas).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const { wrapper, session } = setup()
+    respondAgy([])
+    session.$patch({ account: { member: { id: 'other' } } } as never)
+    await flushPromises()
+    finish([agyAccount()])
+    await flushPromises()
+    expect(wrapper.get('[aria-controls="home-agy-details"]').text()).toContain('暂无快照')
   })
 })

@@ -52,6 +52,7 @@ const groupNames: Record<string, string> = {
   pages: 'HTML 发布',
   pets: 'Pet 仓库',
   vault: '密码本',
+  ai: 'AI 与额度',
 }
 const key = computed(() => `wao:capability-connection-draft:v1:${session.userId}`)
 const groupCapabilities = computed(() => props.capabilities.filter((c) => c.group === group.value))
@@ -540,7 +541,7 @@ onBeforeUnmount(() => {
         </details>
       </article>
     </div>
-    <div v-if="!['pages', 'pets', 'vault'].includes(group)" ref="scopeSection" class="cap-resource-scope">
+    <div v-if="!['pages', 'pets', 'vault', 'ai'].includes(group)" ref="scopeSection" class="cap-resource-scope">
       <h3>数据范围 · {{ scopeLabel }}</h3>
       <p v-if="resourcesLoading" role="status">正在读取可选范围…</p>
       <div v-if="resourcesError" class="cap-error" role="alert">
@@ -583,6 +584,7 @@ onBeforeUnmount(() => {
       </p>
     </div>
     <p v-else-if="group === 'pets'" class="cap-info">仅管理自己的宠物。上传先私人保存，公开分享需单独授权并确认素材分享权；项目和知识库范围不适用于宠物。</p>
+    <p v-else-if="group === 'ai'" class="cap-info">仅用于向 WAO 上报本机 Agy 额度快照，需使用 CLI 连接；项目和知识库范围不适用于此能力。</p>
     <p v-else class="cap-info">HTML 发布会生成公开页面，不获得已有页面的读取、修改或删除权限。</p>
     <p v-if="storageError" class="cap-error" role="alert">{{ storageError }}</p>
     <div v-if="issued" class="cap-issued">

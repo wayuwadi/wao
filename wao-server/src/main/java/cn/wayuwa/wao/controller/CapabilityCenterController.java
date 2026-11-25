@@ -94,6 +94,9 @@ public class CapabilityCenterController {
         capabilities.add(json.createObjectNode().put("name", "vault_applet").put("title", "使用小程序 Auth 设备授权")
                 .put("description", "当前设备可以保存和复用本人已授权的小程序会话。解密密钥保存在本机钥匙串。")
                 .put("group", "vault").put("cli", "wao connections applet status").putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "report_agy_quota").put("title", "上报 Agy 额度快照")
+                .put("description", "将本机 agy /usage 输出的脱敏模型额度上报至 WAO 首页并触发刷新通知（配套脚本 scripts/sync-agy-quota.py）。")
+                .put("group", "ai").put("cli", "wao agy-quota sync").putNull("mcp").put("readOnly", false));
         return ApiResponse.ok(json.createObjectNode().set("capabilities", capabilities));
     }
 

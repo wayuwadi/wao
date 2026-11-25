@@ -55,6 +55,9 @@ public class WorkspaceMcpTokenService {
         if (!"CLI".equals(request.clientType()) && List.of("vault_lookup", "vault_save", "vault_devops", "vault_mysql", "vault_applet").stream().anyMatch(policy::permits)) {
             throw new BadRequestException("密码本操作权限仅用于 CLI 连接");
         }
+        if (!"CLI".equals(request.clientType()) && policy.permits("report_agy_quota")) {
+            throw new BadRequestException("Agy 额度上报权限仅用于 CLI 连接");
+        }
         AuthenticatedToken member = new AuthenticatedToken("scope-validation", memberId, false);
         if (policy.projectIds() != null) for (String id : policy.projectIds()) {
             tools.call("get_project", JSON.createObjectNode().put("project_id", id), member);

@@ -185,3 +185,10 @@ V200 为远端明细新增独立可空列。远端同步替换明细，包括清
 - `GET /api/routines/calendar-dates?from=YYYY-MM-DD&to=YYYY-MM-DD` 返回本人日期记录在最多 366 天内的实例。
 - `POST /api/tasks/{id}/comments/images` 以 multipart `file` 上传任务评论图片；图片与任务绑定，原图和缩略图读取时校验当前任务访问权限。
 - `GET /api/tianren/readings/shared-today` 返回共享的当日卦象或 null；服务按上海时间 8 点后生成并保存，同日多实例只保存一份。全局调度关闭时不会生成，恢复调度后当日补生成。原成员私有历史仍保留。
+
+## Agy（Antigravity）额度采样与通知
+
+- `GET /api/agy-quota`：需已登录浏览器会话，返回按账号归一去重的 Agy 额度列表 `[{key, accountLabel, groups: [{name, buckets: [{id, name, window, remainingPercent, resetsAt}]}], sources, lastSyncedAt, fresh}]`。超过 15 分钟未更新或最近一次采集失败时，`fresh` 为 `false`。
+- `POST /api/agy-quota/report`：接收 `{source, accountLabel, groups}` 脱敏快照并立即更新对应来源、触发飞书刷新检测（仅在 Gemini 或 Claude/GPT 任一窗口剩余百分比上升时向现有默认飞书群发送绿色卡片 `Agy 额度已刷新`）。鉴权仅接受具备显式 `report_agy_quota` 权限的工作区 CLI `Bearer` 令牌或管理员/超级管理员浏览器会话，不自动授予旧令牌。
+- 服务端本机采集配置：`wao.agy-quota.enabled`（环境变量 `WAO_AGY_QUOTA_ENABLED`，默认 `false`）、`wao.agy-quota.executable`（默认 `agy`）、`wao.agy-quota.source`（默认 `local`）、`wao.agy-quota.account-label`（默认 `Agy`）。开启后在全局调度关闭时也会注册独立的 `local-agy-quota-` 单线程调度每分钟只读执行 `agy --print /usage --output-format json`。
+- 本机脚本上报：可通过 `python3 scripts/sync-agy-quota.py`（使用 `WAO_API_TOKEN` 或 `--token-stdin`）把本机 `agy` 额度同步至服务端。

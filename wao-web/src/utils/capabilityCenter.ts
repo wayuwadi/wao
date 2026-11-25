@@ -89,7 +89,11 @@ export function presetPermissions(id: string, capabilities: WorkspaceCapability[
   return capabilities
     .filter((capability) => {
       if (deviceGrantTypes.includes(id)) return capability.name === `vault_${id}`
-      if (capability.name === 'publish_html' || ['pets', 'vault'].includes(capability.group)) return false
+      if (
+        ['publish_html', 'report_agy_quota'].includes(capability.name) ||
+        ['pets', 'vault'].includes(capability.group)
+      )
+        return false
       if (id === 'read') return capability.readOnly
       if (id === 'notes')
         return [
