@@ -53,6 +53,7 @@ const groupNames: Record<string, string> = {
   pets: 'Pet 仓库',
   vault: '密码本',
   ai: 'AI 与额度',
+  memories: 'Agent 记忆',
 }
 const key = computed(() => `wao:capability-connection-draft:v1:${session.userId}`)
 const groupCapabilities = computed(() => props.capabilities.filter((c) => c.group === group.value))
@@ -80,7 +81,7 @@ const scopeIds = computed(() =>
 const viewName = computed(() => props.token?.name ?? '新建连接')
 const activeToken = computed(() => props.token ?? issued.value?.token)
 const selectedPreset = ref('')
-const availablePresets = computed(() => grantPresets.filter(({ id }) => !deviceGrantTypes.includes(id)
+const availablePresets = computed(() => grantPresets.filter(({ id }) => id !== 'memories' || props.capabilities.some((item) => item.group === id)).filter(({ id }) => !deviceGrantTypes.includes(id)
   || (draft.value.clientType === 'CLI' && props.capabilities.some((item) => item.name === `vault_${id}`))))
 const scopeSection = ref<HTMLElement | null>(null)
 const summary = computed(() => {
@@ -104,6 +105,7 @@ function applyPreset(id: string) {
   if (readonly.value || busy.value) return
   draft.value.permissions = presetPermissions(id, props.capabilities)
   selectedPreset.value = id
+  if (id === 'memories') group.value = 'memories'
   if (id === 'notes') group.value = 'documents'
   if (id === 'projects') group.value = 'tasks'
   if (deviceGrantTypes.includes(id)) group.value = 'vault'
@@ -121,6 +123,9 @@ const instruction = computed(() => {
   const secret = issued.value.secret
   if (draft.value.clientType !== 'CLI') {
     return `请连接 WAO 的 Streamable HTTP MCP。\n地址：${endpoint}\nToken：${secret}\n认证：Authorization: Bearer <Token>\n安全保存令牌，验证 initialize 与 tools/list；只调用实际可见的工具。`
+  }
+  if (draft.value.permissions.length && draft.value.permissions.every((name) => props.capabilities.some((item) => item.name === name && item.group === 'memories'))) {
+    return `运行 wao memories authorize --url ${endpoint}，按提示输入本次令牌。\nToken：${secret}\n读取权限可用 wao memories search --url ${endpoint} 验证。`
   }
   const connection = deviceGrantTypes.find((kind) => (
     draft.value.permissions.length === 1 && draft.value.permissions.includes(`vault_${kind}`)
@@ -541,7 +546,7 @@ onBeforeUnmount(() => {
         </details>
       </article>
     </div>
-    <div v-if="!['pages', 'pets', 'vault', 'ai'].includes(group)" ref="scopeSection" class="cap-resource-scope">
+    <div v-if="!['pages', 'pets', 'vault', 'ai', 'memories'].includes(group)" ref="scopeSection" class="cap-resource-scope">
       <h3>数据范围 · {{ scopeLabel }}</h3>
       <p v-if="resourcesLoading" role="status">正在读取可选范围…</p>
       <div v-if="resourcesError" class="cap-error" role="alert">
@@ -584,6 +589,7 @@ onBeforeUnmount(() => {
       </p>
     </div>
     <p v-else-if="group === 'pets'" class="cap-info">仅管理自己的宠物。上传先私人保存，公开分享需单独授权并确认素材分享权；项目和知识库范围不适用于宠物。</p>
+    <p v-else-if="group === 'memories'" class="cap-info">这项授权只访问本人 Agent 记忆。项目标识是个人记忆的适用范围，与工作区项目授权分开。</p>
     <p v-else-if="group === 'ai'" class="cap-info">仅用于向 WAO 上报本机 Agy 额度快照，需使用 CLI 连接；项目和知识库范围不适用于此能力。</p>
     <p v-else class="cap-info">HTML 发布会生成公开页面，不获得已有页面的读取、修改或删除权限。</p>
     <p v-if="storageError" class="cap-error" role="alert">{{ storageError }}</p>

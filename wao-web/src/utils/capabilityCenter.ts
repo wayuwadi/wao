@@ -74,6 +74,7 @@ export function connectionState(token: WorkspaceMcpToken) {
 }
 
 export const grantPresets = [
+  { id: 'memories', title: '仅 Agent 记忆', description: '读取本人的已确认记忆、提交待确认候选。' },
   { id: 'read', title: '只选读取', description: '查询当前可访问内容。' },
   { id: 'notes', title: '记录小记', description: '查询、创建小记与维护标签。' },
   { id: 'projects', title: '维护项目', description: '管理项目、任务与子任务。' },
@@ -88,10 +89,11 @@ export const deviceGrantTypes = ['devops', 'mysql', 'applet']
 export function presetPermissions(id: string, capabilities: WorkspaceCapability[]) {
   return capabilities
     .filter((capability) => {
+      if (id === 'memories') return capability.group === 'memories'
       if (deviceGrantTypes.includes(id)) return capability.name === `vault_${id}`
       if (
         ['publish_html', 'report_agy_quota'].includes(capability.name) ||
-        ['pets', 'vault'].includes(capability.group)
+        ['pets', 'vault', 'memories'].includes(capability.group)
       )
         return false
       if (id === 'read') return capability.readOnly

@@ -249,6 +249,7 @@ const detailKind = computed(() => (route.params.handle ? 'skill' : route.params.
 const token = computed(() => entry.value?.token)
 const requiresLogin = computed(() => !session.authed && area.value !== 'discover')
 const groupNames: Record<string, string> = {
+  memories: 'Agent 记忆',
   projects: '项目',
   tasks: '任务与子任务',
   knowledge: '知识库与目录',

@@ -62,3 +62,7 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [当前架构](../architecture.md)。
 
 2026-10-29 任务标签与自定义象限仅开放浏览器会话接口，不新增 Workspace MCP 标签工具，不扩大旧令牌能力。个人收集箱的浏览器可见性不替代 MCP 原有项目范围校验。
+
+## 个人 Agent 记忆
+
+`search_agent_memories` 和 `propose_agent_memory` 使用各自的逐项授权，旧令牌无此范围。搜索按连接所属成员查询已确认记录，未指定 `project` 时仅返回通用记忆；`startup_only` 只读取选中的通用偏好。候选包含类型、适用范围、正文和来源摘要，同一成员对相同内容的重试返回原记录。设备权限不允许确认、编辑或归档。详见[个人 Agent 记忆](personal-agent-memories.md)。

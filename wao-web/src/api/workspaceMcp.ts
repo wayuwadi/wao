@@ -46,7 +46,7 @@ export interface WorkspaceCapability {
   name: string
   title: string
   description: string
-  group: 'projects' | 'tasks' | 'knowledge' | 'documents' | 'pages' | 'pets' | 'vault'
+  group: 'projects' | 'tasks' | 'knowledge' | 'documents' | 'pages' | 'pets' | 'vault' | 'ai' | 'memories'
   cli: string
   mcp: string | null
   readOnly: boolean

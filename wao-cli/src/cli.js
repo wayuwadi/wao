@@ -11,9 +11,11 @@ import { runPets, confirmPetShare } from './pets.js'
 import { codeupStatus } from './codeup.js'
 import { serveConnections } from './connections-mcp.js'
 import { authorizeDevops, devopsConnection, devopsWorkspaceToken } from './devops.js'
-import { workspaceApiUrl } from './device-vault.js'
+import { deviceWorkspaceToken, storeDeviceGrant, workspaceApiUrl } from './device-vault.js'
 import { authorizeMysql, mysqlConnection, mysqlWorkspaceToken } from './mysql.js'
 import { appletConnection, appletWorkspaceToken, authorizeApplet } from './applet.js'
+import { IMPORT_HELP, importAgentMemories } from './agent-memory-import.js'
+import { RESTORE_HELP, restoreAgentMemory } from './agent-memory-restore.js'
 import { readSecret, runVault } from './vault.js'
 import packageInfo from '../package.json' with { type: 'json' }
 export { COMMANDS } from './commands.js'
@@ -58,6 +60,7 @@ const HELP = `WAO 工作区 CLI
   wao pets list
   wao pets upload --file PET.zip --source 素材来源 [--license ALL-RIGHTS-RESERVED]
   wao pets share ID [--yes] | unshare ID
+  wao memories authorize|search|propose|import|restore  查阅、沉淀、导入或恢复 Agent 记忆
   wao tools list                 查看当前令牌实际可用的工具
   wao tools describe NAME        查看动态输入字段和必填条件
   wao tools call NAME --input '{"field":"value"}'
@@ -98,6 +101,26 @@ const HELP = `WAO 工作区 CLI
 每个业务命令可用 --help 查看实时 schema；wao doctor 检查连接；wao --version 查看版本。
 小记创建及日操作自动生成稳定标识，并在写入前持久保存回执；--receipt-file 可指定新回执文件。
 排程必须显式提供全部安排字段；可空字段使用 null。冲突后重读版本，CLI 不自动重试写入。`
+
+function memoryCommandOutput(result, output) {
+  if (output === 'json') return JSON.stringify(result, null, 2)
+  if (result.status === 'catalog') return result.entries.map(entry => `${entry.id}  ${entry.title}`).join('\n')
+  if (result.status === 'preview' && result.entries) {
+    const entries = result.entries.map(entry => [
+      `# ${entry.title} · ${entry.project || '通用'} · ${entry.kind}`, entry.content, entry.source_summary,
+    ].join('\n'))
+    return [...entries, `核对后用相同参数加 --apply ${result.reviewId} 提交待确认候选。`].join('\n\n')
+  }
+  if (result.submissions) return result.submissions.map(({ id, state }) => `${id}  ${state}`).join('\n')
+  const lines = result.files.flatMap(({ path, action, before, after }) => [
+    `${action}  ${path}`,
+    ...(result.status === 'preview' && before !== after && after ? [
+      ...(before ? ['当前 WAO 区块', before.trimEnd()] : []), '恢复后的 WAO 区块', after.trimEnd(),
+    ] : []),
+  ])
+  if (result.status === 'preview') lines.push('核对后用相同参数加 --apply 写入本机。')
+  return lines.join('\n')
+}
 
 const MAX_HTML_BYTES = 10 * 1024 * 1024
 const HOSTED_PAGE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/
@@ -370,7 +393,9 @@ async function prepareReceipt(toolName, args, receiptFile, receiptDirectory, std
 
 export async function run(argv, { stdout = process.stdout, stderr = process.stderr, stdin = process.stdin,
   tokenProvider = getToken, clientFactory = createClient, tokenStore = storeToken,
-  confirmHostedPage = confirmHostedHtml, confirmShare = confirmPetShare, receiptDirectory = defaultReceiptDirectory() } = {}) {
+  confirmHostedPage = confirmHostedHtml, confirmShare = confirmPetShare, receiptDirectory = defaultReceiptDirectory(),
+  memoryTokenProvider = (url) => deviceWorkspaceToken('agent-memory', url, tokenProvider),
+  memoryTokenStore = (url, token) => storeDeviceGrant('agent-memory', url, token) } = {}) {
   const { rest, globals } = removeGlobalOptions(argv)
   const path = rest.slice(0, 2).join(' ')
   if (rest.length === 1 && (rest[0] === '--version' || rest[0] === '-v')) { stdout.write(VERSION + '\n'); return }
@@ -431,6 +456,34 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
   }
   if (path === 'auth logout') { await removeToken(); stdout.write('已移除本机安全凭据库中的 WAO 令牌。\n'); return }
   const url = endpoint(globals.url)
+  if (path === 'memories authorize') {
+    const help = '用法：wao memories authorize [--token-stdin]，在 macOS 钥匙串保存本工作区的 Agent 记忆专用令牌。'
+    if (rest[2] === '--help' && rest.length === 3) { stdout.write(help + '\n'); return }
+    if (rest.length > 3 || (rest[2] && rest[2] !== '--token-stdin')) throw new Error(help)
+    if (process.platform !== 'darwin') throw new Error('此命令使用 macOS 钥匙串，其他系统可用 WAO_TOKEN')
+    const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[2] === '--token-stdin' }))
+    const tools = await clientFactory({ url, token }).listTools()
+    if (!tools.some(({ name }) => ['search_agent_memories', 'propose_agent_memory'].includes(name))) {
+      throw new Error('该设备令牌未获得 Agent 记忆授权')
+    }
+    await memoryTokenStore(url, token)
+    stdout.write('Agent 记忆授权已存入 macOS 钥匙串。\n')
+    return
+  }
+  if (rest[0] === 'memories' && ['restore', 'import'].includes(rest[1])) {
+    const words = rest.slice(2)
+    const restoring = rest[1] === 'restore'
+    if (words.includes('--help') || words.includes('-h')) {
+      stdout.write((restoring ? RESTORE_HELP : IMPORT_HELP) + '\n')
+      return
+    }
+    const connect = async () => clientFactory({ url, token: await memoryTokenProvider(url) })
+    const result = restoring
+      ? await restoreAgentMemory(words, { client: connect, url })
+      : await importAgentMemories(words, connect)
+    stdout.write(memoryCommandOutput(result, globals.output) + '\n')
+    return
+  }
   if (rest[0] === 'vault') {
     await runVault(rest.slice(1), { url, stdout, stderr, stdin, tokenProvider, formatOutput, output: globals.output })
     return
@@ -486,7 +539,7 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
       verification.bytes + ' 字节。\n')
     return
   }
-  const token = await tokenProvider()
+  const token = rest[0] === 'memories' ? await memoryTokenProvider(url) : await tokenProvider()
   const client = clientFactory({ url, token })
   if (path === 'auth status' || rest[0] === 'doctor') {
     if ((rest[0] === 'doctor' && rest.length !== 1) || (path === 'auth status' && rest.length !== 2)) throw new Error('用法：wao doctor 或 wao auth status')

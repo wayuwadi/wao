@@ -54,6 +54,7 @@ public class UnifiedMemoryService {
     public static final int MAX_SEARCH_CHARS = 10_000;
     public static final Set<String> SCOPES = Set.of("personal", "project");
     private static final Map<String, Set<String>> CATEGORIES = Map.of(
+            "agent", Set.of("preference", "experience"),
             "personal", Set.of("decision"),
             "project", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"));
     private static final Pattern WORD = Pattern.compile("[\\p{IsHan}]{2,}|[A-Za-z0-9_./-]{2,}");
@@ -404,6 +405,18 @@ public class UnifiedMemoryService {
         return result;
     }
 
+    /** Internal entry for private Agent memories. The caller owns and locks the document. */
+    String appendAgentRevision(MemoryDocumentEntity document, SaveMemoryRequest request, String source, boolean confirmed) {
+        Normalized input = normalize("agent", request);
+        rejectSensitive(input.changeSummary());
+        LocalDateTime now = LocalDateTime.now();
+        MemoryRevisionEntity revision = buildRevision(document, nextVersion(document.getId()),
+                document.getCurrentPublishedRevisionId(), input, document.getScopeId(), source, now);
+        if (confirmed) publishRevision(document, revision, document.getScopeId(), now);
+        else revisions.insert(revision);
+        return revision.getId();
+    }
+
     private void publishRevision(MemoryDocumentEntity document, MemoryRevisionEntity revision,
             String publisher, LocalDateTime now) {
         if (StringUtils.hasText(document.getCurrentPublishedRevisionId())) {
@@ -628,10 +641,13 @@ public class UnifiedMemoryService {
     }
 
     public static String contentFingerprint(String value) {
+        return sha256(text(value).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim());
+    }
+
+    static String sha256(String value) {
         try {
-            String normalized = text(value).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(normalized.getBytes(StandardCharsets.UTF_8)));
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 

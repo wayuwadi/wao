@@ -182,3 +182,7 @@ ADR-307 通过服务主机已有 ChatGPT 登录只读采样，沿用 `/api/codex
 图文生成和原文快照由本人浏览器会话授权，本次不向 CLI 或旧 MCP 令牌开放；需要独立模型调用权限后再提供终端命令。HTTP 见 docs/api.md。
 
 2026-10-29 浏览器待办工作台新增任务标签、个人收集箱及象限配置；本轮不新增 CLI 命令，不改变现有工作区令牌授权。
+
+## 个人 Agent 记忆
+
+`wao memories search` 与 `wao memories propose` 分别调用实时目录中的 `search_agent_memories` 和 `propose_agent_memory`。按需授权，候选由本人在 Web 确认。macOS 可用 `wao memories authorize` 保存独立的记忆设备令牌。本地恢复使用 `wao memories restore`（默认预览，`--apply` 安装，`--undo` 撤销上一次）。历史迁移包用 `wao memories import` 列出、选择并按预览编号提交。详见[个人 Agent 记忆](personal-agent-memories.md)。

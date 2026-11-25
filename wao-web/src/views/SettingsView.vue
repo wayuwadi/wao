@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AgentMemoryPanel from '@/components/settings/AgentMemoryPanel.vue'
 import DigitalProfileFacts from '@/components/settings/DigitalProfileFacts.vue'
 import SettingsSearch from '@/components/settings/SettingsSearch.vue'
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
@@ -46,6 +47,7 @@ const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const discoveryPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const agentMemoryPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const homeDateSettings = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const tab = ref(normalizeSettingsTab(route.query.tab, route.hash))
@@ -83,6 +85,7 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   return confirmCurrentSettings()
 })
 function confirmCurrentSettings(): boolean {
+  if (tab.value === 'agent-memories' && agentMemoryPanel.value && !agentMemoryPanel.value.confirmLeave()) return false
   if (['common','appearance'].includes(tab.value) && homeDateSettings.value && !homeDateSettings.value.confirmLeave()) return false
   if (tab.value === 'tianren-notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
   if (tab.value === 'notification-policy' && notificationSettingsPanel.value
@@ -479,6 +482,7 @@ async function bindFeishu() {
         </template>
 
         <!-- 个人资料 -->
+        <AgentMemoryPanel v-else-if="tab === 'agent-memories' && session.userId" :key="session.userId" :member-id="session.userId" ref="agentMemoryPanel" />
         <template v-else-if="tab === 'profile'">
           <div class="s-h1">个人资料</div>
           <div class="card">
