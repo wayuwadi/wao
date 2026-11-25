@@ -255,6 +255,69 @@ class QuotaRefreshNotificationServiceTest {
         assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":100");
     }
 
+    @Test
+    void agySameCycleSmallJitterDoesNotSendFeishuNotification() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSourceKey("agy-account:agy");
+        state.setSnapshotJson("[{\"key\":\"gemini-weekly\",\"label\":\"Gemini · 周额度\",\"remainingPercent\":64,\"resetsAt\":\"2026-12-01T03:53:02Z\"}]");
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+
+        long baseReset = java.time.Instant.parse("2026-12-01T03:53:02Z").getEpochSecond();
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-weekly", "Weekly Limit Remaining", "weekly", 65, baseReset))))));
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-weekly", "Weekly Limit Remaining", "weekly", 64, baseReset + 30))))));
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-weekly", "Weekly Limit Remaining", "weekly", 66, baseReset + 30))))));
+
+        verify(notifier, never()).notifyAgyQuotaRefresh(any());
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":66");
+    }
+
+    @Test
+    void agyNewResetCycleNotifiesEvenForSmallRecovery() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSourceKey("agy-account:agy");
+        state.setSnapshotJson("[{\"key\":\"gemini-5h\",\"label\":\"Gemini · 5 小时\",\"remainingPercent\":95,\"resetsAt\":\"2026-11-25T07:28:05Z\"}]");
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyAgyQuotaRefresh(any())).thenReturn(true);
+
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-5h", "Five Hour Limit Remaining", "5h", 100, null))))));
+        verify(notifier, org.mockito.Mockito.times(1)).notifyAgyQuotaRefresh(any());
+
+        long nextCycleReset = java.time.Instant.parse("2026-11-25T07:28:05Z").plusSeconds(18_000).getEpochSecond();
+        state.setSnapshotJson("[{\"key\":\"gemini-5h\",\"label\":\"Gemini · 5 小时\",\"remainingPercent\":92,\"resetsAt\":\"2026-11-25T07:28:05Z\"}]");
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-5h", "Five Hour Limit Remaining", "5h", 98, nextCycleReset))))));
+        verify(notifier, org.mockito.Mockito.times(2)).notifyAgyQuotaRefresh(any());
+    }
+
+    @Test
+    void agySubstantialIncreaseWithoutResetShiftStillNotifies() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSourceKey("agy-account:agy");
+        state.setSnapshotJson("[{\"key\":\"gemini-weekly\",\"label\":\"Gemini · 周额度\",\"remainingPercent\":50,\"resetsAt\":\"2026-12-01T03:53:02Z\"}]");
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyAgyQuotaRefresh(any())).thenReturn(true);
+
+        long baseReset = java.time.Instant.parse("2026-12-01T03:53:02Z").getEpochSecond();
+        service.observeAgy("mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-weekly", "Weekly Limit Remaining", "weekly", 100, baseReset))))));
+
+        verify(notifier).notifyAgyQuotaRefresh(any());
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":100");
+    }
+
     private AgyQuotaReport agyReport(int geminiWeekly, int gemini5h, int claudeWeekly, int claude5h) {
         return new AgyQuotaReport("Agy", List.of(
                 new AgyQuotaGroupDto("Gemini Models", List.of(
