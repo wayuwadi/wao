@@ -39,6 +39,8 @@ public class QuotaRefreshNotificationService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter RESET_TIME = DateTimeFormatter.ofPattern("M月d日 HH:mm");
     private static final TypeReference<List<QuotaPoint>> POINT_LIST = new TypeReference<>() { };
+    private static final int AGY_SAME_CYCLE_MIN_INCREASE = 15;
+    private static final long RESET_CYCLE_ADVANCE_SECONDS = 300L;
 
     private final QuotaRefreshNotificationStateMapper mapper;
     private final FeishuWebhookNotifier notifier;
@@ -162,7 +164,12 @@ public class QuotaRefreshNotificationService {
         previous.forEach(point -> oldByKey.put(point.key(), point));
         List<Increase> increases = current.stream()
                 .filter(point -> oldByKey.containsKey(point.key()))
-                .filter(point -> point.remainingPercent() > oldByKey.get(point.key()).remainingPercent())
+                .filter(point -> {
+                    QuotaPoint old = oldByKey.get(point.key());
+                    return route == DeliveryRoute.AGY_FEISHU
+                            ? isAgyQuotaIncrease(old, point)
+                            : point.remainingPercent() > old.remainingPercent();
+                })
                 .map(point -> new Increase(oldByKey.get(point.key()), point))
                 .toList();
         if (increases.isEmpty()) {
@@ -308,6 +315,28 @@ public class QuotaRefreshNotificationService {
 
     private static int clamp(int value) {
         return Math.max(0, Math.min(100, value));
+    }
+
+    private static boolean isAgyQuotaIncrease(QuotaPoint previous, QuotaPoint current) {
+        int delta = current.remainingPercent() - previous.remainingPercent();
+        if (delta <= 0) return false;
+        return delta >= AGY_SAME_CYCLE_MIN_INCREASE || isNewResetCycle(previous.resetsAt(), current.resetsAt());
+    }
+
+    private static boolean isNewResetCycle(String previousResetsAt, String currentResetsAt) {
+        if (StringUtils.hasText(previousResetsAt) && !StringUtils.hasText(currentResetsAt)) {
+            return true;
+        }
+        if (!StringUtils.hasText(previousResetsAt) || !StringUtils.hasText(currentResetsAt)) {
+            return false;
+        }
+        try {
+            Instant previous = Instant.parse(previousResetsAt);
+            Instant current = Instant.parse(currentResetsAt);
+            return current.isAfter(previous.plusSeconds(RESET_CYCLE_ADVANCE_SECONDS));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private enum DeliveryRoute { STATION, CODEX_FEISHU, AGY_FEISHU }
