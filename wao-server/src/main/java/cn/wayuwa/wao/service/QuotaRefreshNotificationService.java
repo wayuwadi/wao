@@ -187,13 +187,18 @@ public class QuotaRefreshNotificationService {
                         + increase.previous.remainingPercent() + unit + " → " + increase.current.remainingPercent() + unit
                         + resetSuffix(increase.current.resetsAt()))
                 .collect(java.util.stream.Collectors.joining("\n"));
-        String title = switch (route) {
-            case AGY_FEISHU -> "Agy 额度已刷新";
-            case CODEX_FEISHU -> resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新";
-            case STATION -> "AI 额度已刷新";
+        String source = switch (route) {
+            case AGY_FEISHU -> "Agy";
+            case CODEX_FEISHU -> "Codex";
+            case STATION -> "AI";
         };
+        String title = route == DeliveryRoute.CODEX_FEISHU && resetCards
+                ? "Codex 重置卡已增加" : source + " 额度已刷新";
+        List<String> account = List.of("账号", safeLabel(accountLabel));
+        List<List<String>> fields = route == DeliveryRoute.STATION
+                ? List.of(account) : List.of(List.of("额度来源", source), account);
         FeishuWebhookNotifier.Card card = new FeishuWebhookNotifier.Card(
-                title, "green", List.of(List.of("账号", safeLabel(accountLabel))),
+                title, "green", fields,
                 changes + "\n\n额度来自最新真实采样，可以继续安排需要消耗额度的任务。",
                 homeUrl == null ? null : "查看首页额度", homeUrl);
         boolean delivered = switch (route) {
