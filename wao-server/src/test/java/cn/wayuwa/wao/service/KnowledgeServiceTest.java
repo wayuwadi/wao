@@ -1276,6 +1276,20 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void sendsLinkedDrawingSharesToRevocationWhenTrashingTheDocument() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        DocEntity d = doc("d1", "k1", "f1");
+        d.setDrawingId("dr1");
+        when(docMapper.selectById("d1")).thenReturn(d);
+        DrawingFileService drawings = mock(DrawingFileService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "drawingFiles", drawings);
+
+        service.deleteDoc("d1", "m1");
+
+        verify(drawings).revokeShares("dr1", d.getDeletedAt());
+    }
+
+    @Test
     void chatRecallDeletesOnlyNotesAndRecordsTheirAuthor() {
         DocEntity note = doc("fn123", KnowledgeService.NOTES_KB_ID, "f1");
         note.setAuthorId("wd");

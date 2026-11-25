@@ -38,6 +38,7 @@ import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
 import { docOriginalUrl } from '@/utils/share'
 import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
+import DrawingShareDialog from '@/components/drawings/DrawingShareDialog.vue'
 const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
@@ -51,7 +52,7 @@ import {
   apiPatchDocTemplate,
   fetchDocTemplates,
 } from '@/api/board'
-import type { DocLink, DocTemplate, FileItem, RichDocContent } from '@/types'
+import type { Doc, DocLink, DocTemplate, FileItem, RichDocContent } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const KnowledgeDrawing = defineAsyncComponent(() => import('@/views/DrawingsView.vue'))
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
@@ -1370,6 +1371,7 @@ const kbSettingsError = ref('')
 const moveDocId = ref<string | null>(null)
 const moveFolderId = ref('')
 const directoryContext = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const drawingShare = ref<{ id: string; title: string }>()
 const createItems = computed(() => [
   { id: 'doc', label: '新建文档', icon: 'ri-file-text-line' },
   { id: 'spreadsheet', label: '新建表格', icon: 'ri-table-line' },
@@ -1402,8 +1404,16 @@ const docItems = [
   { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
 ]
 function directoryNodeItems(node: DirectoryNode) {
-  return node.kind === 'folder' ? folderItems
-    : docItems.filter(item => item.id !== 'template' || (data.docById(node.id)?.pageType ?? 'document') === 'document')
+  if (node.kind === 'folder') return folderItems
+  const document = data.docById(node.id)
+  const items = docItems.filter(item => item.id !== 'template' || (document?.pageType ?? 'document') === 'document')
+  if (shareableDrawing(document)) items.splice(1, 0, { id: 'share-drawing', label: '分享草图', icon: 'ri-share-forward-line' })
+  return items
+}
+function shareableDrawing(document: Doc | undefined) {
+  return data.apiLive && document?.pageType === 'drawing' && document.drawingId && document.author === session.userId
+    ? { id: document.drawingId, title: document.title }
+    : undefined
 }
 function runDirectoryAction(node: DirectoryNode, action: string) {
   if (treeSaveState.value === 'saving') return
@@ -1460,6 +1470,7 @@ function folderAction(action: string, id: string) {
 }
 async function docAction(action: string, id: string) {
   const generation = workspaceGeneration
+  if (action === 'share-drawing') { drawingShare.value = shareableDrawing(data.docById(id)); return }
   if (action === 'delete') { await removeDoc(id); return }
   if (action === 'archive') { await archiveDoc(id); return }
   if (action === 'move') {
@@ -1522,6 +1533,7 @@ watch([kbId, currentIdentity], () => {
   renamingFolder.value = null; folderNameDraft.value = ''; folderRenameSaving.value = false; folderRenameError.value = ''
   newDocFolderId.value = null; newDocParent.value = null; creatingDoc.value = false; templatePickerOpen.value = false
   saveTemplateOpen.value = false; shareNoteId.value = ''; shareMenu.value = false; moreMenuOpen.value = false; shortcutsOpen.value = false
+  drawingShare.value = undefined
   focused.value = false; reading.value = false; mobileDirectoryOpen.value = false
   directoryContext.value?.close?.(); dismissConfirmation()
 }, { flush: 'sync' })
@@ -1531,6 +1543,7 @@ onBeforeUnmount(() => { workspaceGeneration++; emit('directory-pane-change', fal
 
 <template>
   <ContextActionMenu ref="directoryContext" />
+  <DrawingShareDialog v-if="drawingShare" :key="drawingShare.id" :drawing-id="drawingShare.id" :title="drawingShare.title" @close="drawingShare = undefined" />
   <div v-if="!kb" class="missing" role="status">
     <template v-if="data.loadStates.knowledge === 'loaded'">知识库不存在。</template>
     <template v-else-if="data.recoveringDomains?.has('knowledge')">连接暂时不稳定，正在自动重新读取知识库…</template>

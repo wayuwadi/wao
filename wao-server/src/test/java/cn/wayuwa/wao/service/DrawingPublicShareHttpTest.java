@@ -29,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:drawing_share_http;MODE=MySQL;DB_CLOSE_DELAY=-1")
 class DrawingPublicShareHttpTest {
     private static final String MANAGE = "/api/drawings/personal/public-shares";
+    private static final String LINKED = "/api/drawings/linked/public-shares";
     private static final String PUBLIC = "/api/share/drawings/current";
     private static final String TOKEN_HEADER = "X-Drawing-Share-Token";
     private static final String SESSION = "X-Test-Session";
@@ -58,6 +59,14 @@ class DrawingPublicShareHttpTest {
     @BeforeEach void setup() {
         db.execute("DROP TABLE IF EXISTS drawing_public_share");
         db.execute("DROP TABLE IF EXISTS drawing_file");
+        db.execute("DROP TABLE IF EXISTS doc");
+        db.execute("DROP TABLE IF EXISTS kb");
+        db.execute("""
+                CREATE TABLE kb(id VARCHAR(32) PRIMARY KEY, name VARCHAR(255), icon VARCHAR(255), color VARCHAR(40),
+                  project_id VARCHAR(32), auto BOOLEAN, description TEXT, group_id VARCHAR(32), perm VARCHAR(40),
+                  owner_id VARCHAR(32), ord INT, notes BOOLEAN, deleted_at TIMESTAMP, deleted_by VARCHAR(32), directory_json TEXT)
+                """);
+        db.execute("CREATE TABLE doc(id VARCHAR(32) PRIMARY KEY, kb_id VARCHAR(32), title VARCHAR(255), deleted_at TIMESTAMP)");
         db.execute("""
                 CREATE TABLE drawing_file (
                   id VARCHAR(32) PRIMARY KEY, owner_member_id VARCHAR(32) NOT NULL,
@@ -75,6 +84,8 @@ class DrawingPublicShareHttpTest {
                 """);
         db.update("INSERT INTO drawing_file VALUES ('personal','owner',NULL,'Old title',1,CURRENT_TIMESTAMP,?,NULL)", SCENE);
         db.update("INSERT INTO drawing_file VALUES ('linked','owner','doc','Knowledge',1,CURRENT_TIMESTAMP,?,NULL)", SCENE);
+        db.update("INSERT INTO kb(id,owner_id,perm) VALUES ('kb','library-owner','成员可编辑')");
+        db.update("INSERT INTO doc(id,kb_id,title) VALUES ('doc','kb','Library title')");
         var sessions = mock(AuthSessionManager.class);
         var member = mock(CurrentMember.class);
         when(sessions.currentAccountId(any())).thenAnswer(call -> ((HttpServletRequest) call.getArgument(0)).getHeader(SESSION));
@@ -120,8 +131,6 @@ class DrawingPublicShareHttpTest {
         mvc.perform(get(MANAGE)).andExpect(status().isUnauthorized());
         mvc.perform(post(MANAGE).header(SESSION, "other").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isNotFound());
-        mvc.perform(post("/api/drawings/linked/public-shares").header(SESSION, "owner")
-                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isNotFound());
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, "personal")).andExpect(status().isNotFound());
 
         var limited = create("1h");
@@ -149,6 +158,42 @@ class DrawingPublicShareHttpTest {
         db.update("DELETE FROM drawing_file WHERE id='personal'");
         mvc.perform(get(PUBLIC).header(TOKEN_HEADER, afterRevoke.path("token").asText())).andExpect(status().isNotFound());
         assertThat(db.queryForObject("SELECT COUNT(*) FROM drawing_public_share", Integer.class)).isZero();
+    }
+
+    @Test void linkedDrawingOwnerCanShareCurrentCanvasWhileKnowledgeAccessRemainsValid() throws Exception {
+        for (String other : new String[]{"other", "library-owner"}) {
+            mvc.perform(post(LINKED).header(SESSION, other).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isNotFound());
+            mvc.perform(get(LINKED).header(SESSION, other)).andExpect(status().isNotFound());
+        }
+
+        var link = create(LINKED, "permanent");
+        String token = link.path("token").asText();
+        mvc.perform(get(LINKED).header(SESSION, "owner")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].token").value(token));
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("Library title"))
+                .andExpect(jsonPath("$.data.scene.elements[0].link").doesNotExist());
+
+        db.update("UPDATE doc SET title='Renamed library drawing' WHERE id='doc'");
+        db.update("UPDATE drawing_file SET revision=2, scene_json=? WHERE id='linked'", SCENE.replace("shape", "new"));
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token).param("knownRevision", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.title").value("Renamed library drawing"))
+                .andExpect(jsonPath("$.data.scene.elements[0].id").value("new"));
+
+        db.update("UPDATE kb SET perm='仅自己' WHERE id='kb'");
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token)).andExpect(status().isNotFound());
+        mvc.perform(get(LINKED).header(SESSION, "owner")).andExpect(status().isNotFound());
+        db.update("UPDATE kb SET owner_id='owner', deleted_at=CURRENT_TIMESTAMP WHERE id='kb'");
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token)).andExpect(status().isNotFound());
+        db.update("UPDATE kb SET deleted_at=NULL WHERE id='kb'");
+        db.update("UPDATE doc SET deleted_at=CURRENT_TIMESTAMP WHERE id='doc'");
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token)).andExpect(status().isNotFound());
+        mvc.perform(get(LINKED).header(SESSION, "owner")).andExpect(status().isNotFound());
+        db.update("UPDATE doc SET deleted_at=NULL WHERE id='doc'");
+        mvc.perform(delete(LINKED + "/" + link.path("id").asText()).header(SESSION, "owner"))
+                .andExpect(status().isOk());
+        mvc.perform(get(PUBLIC).header(TOKEN_HEADER, token)).andExpect(status().isNotFound());
     }
 
     @Test void onlyValidTextDisplayStylesSurviveSharing() throws Exception {
@@ -183,7 +228,11 @@ class DrawingPublicShareHttpTest {
     }
 
     private JsonNode create(String validity) throws Exception {
-        String body = mvc.perform(post(MANAGE).header(SESSION, "owner")
+        return create(MANAGE, validity);
+    }
+
+    private JsonNode create(String path, String validity) throws Exception {
+        String body = mvc.perform(post(path).header(SESSION, "owner")
                 .contentType(MediaType.APPLICATION_JSON).content(json.createObjectNode().put("validity", validity).toString()))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "private, no-store"))

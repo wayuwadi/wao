@@ -304,9 +304,7 @@ function openFileMenu(event: MouseEvent | KeyboardEvent, file: DrawingFileSummar
   void contextMenu.value?.openAt(event, file.title, [
     { id: 'new-group', label: '新建分组', icon: 'ri-folder-add-line', disabled: groupLoading.value || !!groupError.value, run: () => showDialog('new-group') },
     { id: 'rename', label: '重命名', icon: 'ri-edit-line', disabled, run: () => showDialog('rename-file', file.id, file.title) },
-    ...(!file.docId ? [
-      { id: 'share', label: '分享草图', icon: 'ri-share-forward-line', disabled, run: () => { sharing.value = file } },
-    ] : []),
+    { id: 'share', label: '分享草图', icon: 'ri-share-forward-line', disabled, run: () => { sharing.value = file } },
     ...exportActions(file, disabled),
     { id: 'copy', label: '复制当前文件', icon: 'ri-file-copy-line', disabled, run: () => duplicateFile(file) },
     { id: 'up', label: '上移', icon: 'ri-arrow-up-line', disabled: disabled || !!search.value.trim(), run: () => shiftItem('file', file.id, -1) },
@@ -1252,7 +1250,7 @@ defineExpose({ flush: flushEmbedded })
       @close="tidyDialog = undefined"
     />
     <DrawingShareDialog
-      v-if="sharing"
+      v-if="sharing && sameOwner()"
       :key="sharing.id"
       :drawing-id="sharing.id"
       :title="sharing.title"
@@ -1301,24 +1299,22 @@ defineExpose({ flush: flushEmbedded })
         </button>
       </div>
 
-      <WaoButton
-        class="new-file"
-        variant="primary"
-        :loading="creating"
-        :disabled="transitioning || !!deletingId"
-        @click="newFile()"
-      >
-        <i v-if="!creating" class="ri-add-line"></i>
-        {{ creating ? '正在新建' : '新建草图' }}
-      </WaoButton>
-
-      <WaoButton
-        v-if="!embedded && owner"
-        class="new-file"
-        variant="secondary"
-        :disabled="creating || transitioning"
-        @click="photoOpen = true"
-      ><i class="ri-camera-line" aria-hidden="true"></i>拍照转草图</WaoButton>
+      <div class="sidebar-create">
+        <WaoButton
+          variant="primary"
+          :loading="creating"
+          :disabled="transitioning || !!deletingId"
+          @click="newFile()"
+        >
+          <i v-if="!creating" class="ri-add-line create-icon" aria-hidden="true"></i>
+          {{ creating ? '正在新建' : '新建草图' }}
+        </WaoButton>
+        <WaoButton
+          v-if="owner"
+          :disabled="creating || transitioning"
+          @click="photoOpen = true"
+        ><i class="ri-camera-line create-icon" aria-hidden="true"></i>拍照转草图</WaoButton>
+      </div>
 
       <label class="file-search"
         ><i class="ri-search-line" aria-hidden="true"></i
@@ -1501,7 +1497,7 @@ defineExpose({ flush: flushEmbedded })
           <i class="ri-save-3-line"></i>立即保存
         </button>
         <button
-          v-if="current && !current.docId && !embedded"
+          v-if="current && owner && sameOwner() && (current.canShare ?? !current.docId)"
           type="button"
           class="icon-button"
           title="分享草图"
@@ -1736,9 +1732,21 @@ defineExpose({ flush: flushEmbedded })
 .icon-button:hover {
   background: var(--wao-bg-hover);
 }
-.new-file {
-  width: 100%;
+.sidebar-create {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--wao-space-1);
+  container-type: inline-size;
   flex-shrink: 0;
+}
+.sidebar-create button {
+  padding-inline: var(--wao-space-1);
+  white-space: nowrap;
+}
+@container (max-width: 220px) {
+  .sidebar-create button { padding-inline: 4px; gap: 4px; }
+  .sidebar-create .create-icon { display: none; }
 }
 .file-search {
   display: flex;

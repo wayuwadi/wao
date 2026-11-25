@@ -1650,6 +1650,7 @@ public class KnowledgeService {
         d.setDeletedBy(memberId);
         d.setCascadeDel(cascade);
         docMapper.markDeleted(d.getId(), now, memberId, cascade);
+        if (d.getDrawingId() != null) drawingFiles.revokeShares(d.getDrawingId(), now);
         discoverySaved(d, "REMOVED");
     }
 

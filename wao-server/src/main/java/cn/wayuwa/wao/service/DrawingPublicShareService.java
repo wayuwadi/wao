@@ -38,19 +38,22 @@ public class DrawingPublicShareService {
     private final DrawingPublicShareMapper mapper;
     private final ObjectMapper json;
     private final VaultCryptoService crypto;
+    private final KnowledgeAccessService knowledgeAccess;
 
     public record Entry(String id, Instant createdAt, Instant expiresAt, String token) {}
     public record PublicScene(String title, int revision, Instant updatedAt, Instant expiresAt, ObjectNode scene) {}
 
-    public DrawingPublicShareService(DrawingPublicShareMapper mapper, ObjectMapper json, VaultCryptoService crypto) {
+    public DrawingPublicShareService(DrawingPublicShareMapper mapper, ObjectMapper json, VaultCryptoService crypto,
+                                     KnowledgeAccessService knowledgeAccess) {
         this.mapper = mapper;
         this.json = json;
         this.crypto = crypto;
+        this.knowledgeAccess = knowledgeAccess;
     }
 
     @Transactional
     public List<Entry> list(String ownerId, String drawingId) {
-        requirePersonalDrawing(drawingId, ownerId);
+        requireOwnedDrawing(drawingId, ownerId);
         return mapper.list(drawingId, ownerId, now()).stream()
                 .map(link -> new Entry(link.id(), utc(link.createdAt()), utc(link.expiresAt()), recoverToken(link)))
                 .toList();
@@ -58,7 +61,7 @@ public class DrawingPublicShareService {
 
     @Transactional
     public Entry create(String ownerId, String drawingId, String validity) {
-        requirePersonalDrawing(drawingId, ownerId);
+        requireOwnedDrawing(drawingId, ownerId);
         LocalDateTime now = now();
         LocalDateTime expiresAt = switch (validity == null ? "7d" : validity) {
             case "1h" -> now.plusHours(1);
@@ -92,14 +95,14 @@ public class DrawingPublicShareService {
 
     @Transactional
     public void revoke(String ownerId, String drawingId, String id) {
-        requirePersonalDrawing(drawingId, ownerId);
+        requireOwnedDrawing(drawingId, ownerId);
         if (mapper.revoke(id, drawingId, ownerId, now()) == 0) throw unavailable();
     }
 
     public PublicScene read(String token, int knownRevision) {
         if (token == null || !TOKEN.matcher(token).matches()) throw unavailable();
         var saved = mapper.read(hash(token), Math.max(knownRevision, 0), now());
-        if (saved == null) throw unavailable();
+        if (saved == null || !canAccessKnowledge(saved.kbId(), saved.ownerId())) throw unavailable();
         return new PublicScene(saved.title(), saved.revision(),
                 saved.updatedAt().atZone(ZoneId.systemDefault()).toInstant(), utc(saved.expiresAt()),
                 saved.sceneJson() == null ? null : readOnlyScene(saved.sceneJson()));
@@ -169,11 +172,16 @@ public class DrawingPublicShareService {
         if (!safe.isEmpty()) element.putObject("customData").set("waoTextStyle", safe);
     }
 
-    private void requirePersonalDrawing(String drawingId, String ownerId) {
+    private void requireOwnedDrawing(String drawingId, String ownerId) {
         if (ownerId == null) throw new UnauthorizedException("请先登录");
-        if (mapper.lockPersonalDrawing(drawingId, ownerId) == null) {
-            throw new NotFoundException("个人草图不存在或无权访问");
+        var drawing = mapper.lockOwnedDrawing(drawingId, ownerId);
+        if (drawing == null || !canAccessKnowledge(drawing.kbId(), ownerId)) {
+            throw new NotFoundException("草图不存在或无权分享");
         }
+    }
+
+    private boolean canAccessKnowledge(String kbId, String ownerId) {
+        return kbId == null || knowledgeAccess.visible(kbId, ownerId);
     }
 
     private static LocalDateTime now() {
