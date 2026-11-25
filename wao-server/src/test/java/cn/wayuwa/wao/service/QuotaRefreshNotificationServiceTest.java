@@ -48,6 +48,7 @@ class QuotaRefreshNotificationServiceTest {
         verify(notifier, never()).notifyCard(any());
         verify(notifier, never()).notifyCodexQuotaRefresh(any());
         assertThat(card.getValue().title()).isEqualTo("Codex 重置卡已增加");
+        assertThat(card.getValue().fields()).contains(List.of("额度来源", "Codex"));
         assertThat(card.getValue().body()).contains("123 张 → 125 张").doesNotContain("125%");
     }
 
@@ -97,7 +98,9 @@ class QuotaRefreshNotificationServiceTest {
 
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
         verify(notifier).notifyCodexQuotaRefresh(card.capture());
-        assertThat(card.getValue().title()).isEqualTo("AI 额度已刷新");
+        assertThat(card.getValue().title()).isEqualTo("Codex 额度已刷新");
+        assertThat(card.getValue().fields()).containsExactly(
+                List.of("额度来源", "Codex"), List.of("账号", "wage@example.com"));
         assertThat(card.getValue().body()).contains("80% → 100%").contains("周额度");
         assertThat(card.getValue().linkUrl()).isEqualTo("https://wao.example");
         verify(mapper).updateById(baseline);
@@ -187,8 +190,11 @@ class QuotaRefreshNotificationServiceTest {
         var claude = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
         verify(notifier).notifyCodexQuotaRefresh(codex.capture());
         verify(notifier).notifyCard(claude.capture());
-        assertThat(codex.getValue().fields()).contains(List.of("账号", "codex"));
-        assertThat(claude.getValue().fields()).contains(List.of("账号", "claude"));
+        assertThat(codex.getValue().title()).isEqualTo("Codex 额度已刷新");
+        assertThat(codex.getValue().fields()).containsExactly(
+                List.of("额度来源", "Codex"), List.of("账号", "codex"));
+        assertThat(claude.getValue().title()).isEqualTo("AI 额度已刷新");
+        assertThat(claude.getValue().fields()).containsExactly(List.of("账号", "claude"));
     }
 
     @Test
@@ -212,7 +218,7 @@ class QuotaRefreshNotificationServiceTest {
         verify(notifier, never()).notifyCodexQuotaRefresh(any());
         verify(notifier, never()).notifyCard(any());
         assertThat(card.getValue().title()).isEqualTo("Agy 额度已刷新");
-        assertThat(card.getValue().fields()).contains(List.of("账号", "Agy"));
+        assertThat(card.getValue().fields()).containsExactly(List.of("额度来源", "Agy"), List.of("账号", "Agy"));
         assertThat(card.getValue().body())
                 .contains("Gemini · 周额度", "79% → 100%")
                 .contains("Claude / GPT · 周额度", "60% → 100%")

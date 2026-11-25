@@ -20,6 +20,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 
 import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -74,11 +75,14 @@ class FeishuWebhookNotifierTest {
         var builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://open.feishu.test/hook")).andExpect(method(POST))
+                .andExpect(jsonPath("$.card.header.title.content").value("Codex 额度已刷新"))
+                .andExpect(jsonPath("$.card.elements[0].text.content").value("**额度来源**：Codex"))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("80% → 100%")))
                 .andRespond(withSuccess(response, org.springframework.http.MediaType.APPLICATION_JSON));
         var sender = new FeishuWebhookNotifier(mock(SettingService.class), webhooks, policy, builder, "", null);
-        assertThat(sender.notifyCodexQuotaRefresh(FeishuWebhookNotifier.Card.simple(
-                "AI 额度已刷新", "green", "周额度：80% → 100%"))).isEqualTo(accepted);
+        assertThat(sender.notifyCodexQuotaRefresh(new FeishuWebhookNotifier.Card(
+                "Codex 额度已刷新", "green", List.of(List.of("额度来源", "Codex")),
+                "周额度：80% → 100%", null, null))).isEqualTo(accepted);
         server.verify();
     }
 
@@ -93,11 +97,14 @@ class FeishuWebhookNotifierTest {
         var builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://open.feishu.test/hook")).andExpect(method(POST))
+                .andExpect(jsonPath("$.card.header.title.content").value("Agy 额度已刷新"))
+                .andExpect(jsonPath("$.card.elements[0].text.content").value("**额度来源**：Agy"))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("79% → 100%")))
                 .andRespond(withSuccess(response, org.springframework.http.MediaType.APPLICATION_JSON));
         var sender = new FeishuWebhookNotifier(mock(SettingService.class), webhooks, policy, builder, "", null);
-        assertThat(sender.notifyAgyQuotaRefresh(FeishuWebhookNotifier.Card.simple(
-                "Agy 额度已刷新", "green", "Gemini · 周额度：79% → 100%"))).isEqualTo(accepted);
+        assertThat(sender.notifyAgyQuotaRefresh(new FeishuWebhookNotifier.Card(
+                "Agy 额度已刷新", "green", List.of(List.of("额度来源", "Agy")),
+                "Gemini · 周额度：79% → 100%", null, null))).isEqualTo(accepted);
         server.verify();
     }
 
