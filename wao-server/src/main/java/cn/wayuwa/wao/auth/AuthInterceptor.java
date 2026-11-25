@@ -81,6 +81,9 @@ public class AuthInterceptor implements HandlerInterceptor {
                 && (("GET".equals(request.getMethod()) && (path.equals("/api/pets/cli-access") || path.equals("/api/pets/mine")))
                     || ("POST".equals(request.getMethod()) && path.equals("/api/pets"))
                     || ("PUT".equals(request.getMethod()) && path.matches("/api/pets/[^/]+/visibility")))) return true;
+        // Agy 额度上报接受受控工作区 Bearer 令牌，由 AgyQuotaController 校验 report_agy_quota 权限。
+        if ("POST".equals(request.getMethod()) && path.equals("/api/agy-quota/report")
+                && request.getHeader("Authorization") != null) return true;
         if ("GET".equals(request.getMethod()) && path.equals("/api/edge/ready")) return true;
         // 飞书事件订阅与卡片交互回调没有 WAO 会话，真实性由 Verification Token / Encrypt Key 保证
         if (path.equals("/api/hello") || path.startsWith("/api/auth/") || ("GET".equals(request.getMethod()) && path.startsWith("/api/share/"))
