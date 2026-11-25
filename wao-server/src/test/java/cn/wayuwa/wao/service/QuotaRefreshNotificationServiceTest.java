@@ -10,6 +10,9 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import cn.wayuwa.wao.domain.QuotaRefreshNotificationStateEntity;
+import cn.wayuwa.wao.dto.AgyQuotaBucketDto;
+import cn.wayuwa.wao.dto.AgyQuotaGroupDto;
+import cn.wayuwa.wao.dto.AgyQuotaReport;
 import cn.wayuwa.wao.dto.CodexQuotaCreditsDto;
 import cn.wayuwa.wao.dto.CodexQuotaLimitDto;
 import cn.wayuwa.wao.dto.CodexQuotaWindowDto;
@@ -186,6 +189,80 @@ class QuotaRefreshNotificationServiceTest {
         verify(notifier).notifyCard(claude.capture());
         assertThat(codex.getValue().fields()).contains(List.of("账号", "codex"));
         assertThat(claude.getValue().fields()).contains(List.of("账号", "claude"));
+    }
+
+    @Test
+    void agyFirstSnapshotBuildsBaselineAndIncreaseSendsFeishuCardAcrossGroups() {
+        service.observeAgy("local:mac", agyReport(79, 91, 60, 100));
+        var saved = ArgumentCaptor.forClass(QuotaRefreshNotificationStateEntity.class);
+        verify(mapper).insert(saved.capture());
+        var state = saved.getValue();
+        assertThat(state.getSourceKey()).isEqualTo("agy-account:agy");
+        verify(notifier, never()).notifyAgyQuotaRefresh(any());
+
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyAgyQuotaRefresh(any())).thenReturn(true);
+
+        service.observeAgy("report:win", agyReport(100, 91, 100, 100));
+        service.observeAgy("local:mac", agyReport(100, 91, 100, 100));
+
+        var card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(notifier).notifyAgyQuotaRefresh(card.capture());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
+        verify(notifier, never()).notifyCard(any());
+        assertThat(card.getValue().title()).isEqualTo("Agy 额度已刷新");
+        assertThat(card.getValue().fields()).contains(List.of("账号", "Agy"));
+        assertThat(card.getValue().body())
+                .contains("Gemini · 周额度", "79% → 100%")
+                .contains("Claude / GPT · 周额度", "60% → 100%")
+                .doesNotContain("1970");
+    }
+
+    @Test
+    void agyFailedFeishuDeliveryKeepsBaselineForRetry() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSourceKey("agy-account:agy");
+        state.setSnapshotJson("[{\"key\":\"gemini-5h\",\"label\":\"Gemini · 5 小时\",\"remainingPercent\":50,\"resetsAt\":null}]");
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyAgyQuotaRefresh(any())).thenReturn(false, true);
+
+        service.observeAgy("local:mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-5h", "Five Hour Limit Remaining", "5h", 100, null))))));
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":50");
+
+        service.observeAgy("local:mac", new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-5h", "Five Hour Limit Remaining", "5h", 100, null))))));
+        verify(notifier, org.mockito.Mockito.times(2)).notifyAgyQuotaRefresh(any());
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":100");
+    }
+
+    @Test
+    void agyQuietPolicyConsumesEventWithoutSendingLateFeishuNotification() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSourceKey("agy-account:agy");
+        state.setSnapshotJson("[{\"key\":\"gemini-weekly\",\"label\":\"Gemini · 周额度\",\"remainingPercent\":40,\"resetsAt\":null}]");
+        when(mapper.selectForUpdate("agy-account:agy")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(false);
+
+        service.observeAgy("local:mac", agyReport(100, 100, 100, 100));
+
+        verify(notifier, never()).notifyAgyQuotaRefresh(any());
+        verify(mapper).updateById(state);
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":100");
+    }
+
+    private AgyQuotaReport agyReport(int geminiWeekly, int gemini5h, int claudeWeekly, int claude5h) {
+        return new AgyQuotaReport("Agy", List.of(
+                new AgyQuotaGroupDto("Gemini Models", List.of(
+                        new AgyQuotaBucketDto("gemini-weekly", "Weekly Limit Remaining", "weekly", geminiWeekly, 1_788_192_000L),
+                        new AgyQuotaBucketDto("gemini-5h", "Five Hour Limit Remaining", "5h", gemini5h, 1_788_000_000L))),
+                new AgyQuotaGroupDto("Claude and GPT models", List.of(
+                        new AgyQuotaBucketDto("3p-weekly", "Weekly Limit Remaining", "weekly", claudeWeekly, null),
+                        new AgyQuotaBucketDto("3p-5h", "Five Hour Limit Remaining", "5h", claude5h, null)))));
     }
 
     private cn.wayuwa.wao.dto.AiSessionQuotaDto central(String provider, int used) {

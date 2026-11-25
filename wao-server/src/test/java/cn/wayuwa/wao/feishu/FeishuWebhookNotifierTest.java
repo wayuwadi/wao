@@ -82,6 +82,25 @@ class FeishuWebhookNotifierTest {
         server.verify();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"'{\"code\":0}',true", "'{\"StatusCode\":0}',true", "'{}',false", "'{\"code\":19001}',false"})
+    void agyQuotaRefreshUsesDefaultGroupAndRequiresFeishuConfirmation(String response, boolean accepted) {
+        var webhooks = mock(FeishuWebhookConfigService.class);
+        var policy = mock(NotificationSettingsService.class);
+        when(policy.allows(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(webhooks.defaultTarget()).thenReturn(Optional.of(
+                new FeishuWebhookConfigService.NotificationTarget("fw1", "默认群", "https://open.feishu.test/hook", true)));
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://open.feishu.test/hook")).andExpect(method(POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("79% → 100%")))
+                .andRespond(withSuccess(response, org.springframework.http.MediaType.APPLICATION_JSON));
+        var sender = new FeishuWebhookNotifier(mock(SettingService.class), webhooks, policy, builder, "", null);
+        assertThat(sender.notifyAgyQuotaRefresh(FeishuWebhookNotifier.Card.simple(
+                "Agy 额度已刷新", "green", "Gemini · 周额度：79% → 100%"))).isEqualTo(accepted);
+        server.verify();
+    }
+
     @Test
     void rawCardRequiresExplicitSuccessNotEmptyBody() throws Exception {
         RestClient.Builder builder = RestClient.builder();

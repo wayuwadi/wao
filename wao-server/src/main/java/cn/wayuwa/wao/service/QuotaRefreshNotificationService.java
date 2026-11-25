@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 
 import cn.wayuwa.wao.domain.QuotaRefreshNotificationStateEntity;
+import cn.wayuwa.wao.dto.AgyQuotaBucketDto;
+import cn.wayuwa.wao.dto.AgyQuotaGroupDto;
+import cn.wayuwa.wao.dto.AgyQuotaReport;
 import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.CodexQuotaLimitDto;
@@ -71,7 +74,31 @@ public class QuotaRefreshNotificationService {
                                     quota.resetsAt())));
         }
         accounts.forEach((sourceKey, snapshot) -> safelyObserve(sourceKey, snapshot.label, snapshot.points,
-                "codex".equals(snapshot.provider)));
+                "codex".equals(snapshot.provider) ? DeliveryRoute.CODEX_FEISHU : DeliveryRoute.STATION));
+    }
+
+    /** 处理本机或远程上报的脱敏真实 Agy 额度，覆盖 Gemini 与 Claude/GPT 全部窗口。 */
+    @Transactional
+    public void observeAgy(String source, AgyQuotaReport report) {
+        if (report == null || report.groups() == null) return;
+        String accountLabel = safeAgyLabel(report.accountLabel());
+        String sourceKey = "agy-account:" + accountLabel.toLowerCase(java.util.Locale.ROOT);
+        Map<String, QuotaPoint> deduplicated = new LinkedHashMap<>();
+        for (AgyQuotaGroupDto group : report.groups()) {
+            if (group == null || group.buckets() == null) continue;
+            String groupTitle = agyGroupLabel(group.name());
+            for (AgyQuotaBucketDto bucket : group.buckets()) {
+                if (bucket == null) continue;
+                String key = agyBucketKey(group.name(), bucket);
+                if (!StringUtils.hasText(key)) continue;
+                deduplicated.putIfAbsent(key, new QuotaPoint(
+                        key,
+                        groupTitle + " · " + agyWindowLabel(bucket),
+                        clamp(bucket.remainingPercent()),
+                        resetText(bucket.resetsAt())));
+            }
+        }
+        safelyObserve(sourceKey, accountLabel, List.copyOf(deduplicated.values()), DeliveryRoute.AGY_FEISHU);
     }
 
     /** 处理本机采集器或兼容 Runner 上报的一次脱敏真实 Codex 额度。 */
@@ -94,24 +121,24 @@ public class QuotaRefreshNotificationService {
                         100 - clamp(window.usedPercent()), resetText(window.resetsAt())));
             }
         }
-        safelyObserve(sourceKey, label, points, true);
+        safelyObserve(sourceKey, label, points, DeliveryRoute.CODEX_FEISHU);
         if (report.resetCredits() != null && report.resetCredits().availableCount() != null) {
             safelyObserve(sourceKey + ":reset-cards", label, List.of(new QuotaPoint("reset-cards",
-                    "可用重置卡", report.resetCredits().availableCount(), null)), true);
+                    "可用重置卡", report.resetCredits().availableCount(), null)), DeliveryRoute.CODEX_FEISHU);
         }
     }
 
-    private void safelyObserve(String sourceKey, String accountLabel, List<QuotaPoint> points, boolean codex) {
+    private void safelyObserve(String sourceKey, String accountLabel, List<QuotaPoint> points, DeliveryRoute route) {
         if (points == null || points.isEmpty()) return;
         try {
-            observe(sourceKey, accountLabel, points, codex);
+            observe(sourceKey, accountLabel, points, route);
         } catch (RuntimeException ex) {
             // 通知观测不能阻断额度保存、Runner 心跳或自主调度。
             log.warn("额度刷新通知处理失败，不影响额度业务链路：{}", ex.getClass().getSimpleName());
         }
     }
 
-    private void observe(String sourceKey, String accountLabel, List<QuotaPoint> points, boolean codex) {
+    private void observe(String sourceKey, String accountLabel, List<QuotaPoint> points, DeliveryRoute route) {
         List<QuotaPoint> current = points.stream()
                 .filter(point -> point != null && StringUtils.hasText(point.key()))
                 .map(point -> new QuotaPoint(point.key(), point.label(), "reset-cards".equals(point.key())
@@ -153,12 +180,21 @@ public class QuotaRefreshNotificationService {
                         + increase.previous.remainingPercent() + unit + " → " + increase.current.remainingPercent() + unit
                         + resetSuffix(increase.current.resetsAt()))
                 .collect(java.util.stream.Collectors.joining("\n"));
+        String title = switch (route) {
+            case AGY_FEISHU -> "Agy 额度已刷新";
+            case CODEX_FEISHU -> resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新";
+            case STATION -> "AI 额度已刷新";
+        };
         FeishuWebhookNotifier.Card card = new FeishuWebhookNotifier.Card(
-                resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新", "green", List.of(List.of("账号", safeLabel(accountLabel))),
+                title, "green", List.of(List.of("账号", safeLabel(accountLabel))),
                 changes + "\n\n额度来自最新真实采样，可以继续安排需要消耗额度的任务。",
                 homeUrl == null ? null : "查看首页额度", homeUrl);
-        boolean delivered = resetCards ? notifier.notifyResetCardIncrease(card)
-                : codex ? notifier.notifyCodexQuotaRefresh(card) : notifier.notifyCard(card);
+        boolean delivered = switch (route) {
+            case AGY_FEISHU -> notifier.notifyAgyQuotaRefresh(card);
+            case CODEX_FEISHU -> resetCards ? notifier.notifyResetCardIncrease(card)
+                    : notifier.notifyCodexQuotaRefresh(card);
+            case STATION -> notifier.notifyCard(card);
+        };
         if (delivered) updateBaseline(state, accountLabel, current);
     }
 
@@ -241,10 +277,40 @@ public class QuotaRefreshNotificationService {
         return label.length() <= 255 ? label : label.substring(0, 255);
     }
 
+    private static String safeAgyLabel(String value) {
+        String label = StringUtils.hasText(value) ? value.strip() : "Agy";
+        return label.length() <= 255 ? label : label.substring(0, 255);
+    }
+
+    private static String agyBucketKey(String groupName, AgyQuotaBucketDto bucket) {
+        if (StringUtils.hasText(bucket.id())) return bucket.id().strip().toLowerCase(java.util.Locale.ROOT);
+        String group = StringUtils.hasText(groupName) ? groupName.strip().toLowerCase(java.util.Locale.ROOT) : "agy";
+        String window = StringUtils.hasText(bucket.window()) ? bucket.window().strip().toLowerCase(java.util.Locale.ROOT) : "";
+        return window.isEmpty() ? null : group + ":" + window;
+    }
+
+    private static String agyGroupLabel(String groupName) {
+        if (!StringUtils.hasText(groupName)) return "Agy";
+        String trimmed = groupName.strip();
+        String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+        if ("gemini models".equals(lower)) return "Gemini";
+        if (lower.contains("claude") && lower.contains("gpt")) return "Claude / GPT";
+        return trimmed;
+    }
+
+    private static String agyWindowLabel(AgyQuotaBucketDto bucket) {
+        String window = StringUtils.hasText(bucket.window()) ? bucket.window().strip().toLowerCase(java.util.Locale.ROOT) : "";
+        if ("weekly".equals(window)) return "周额度";
+        if ("5h".equals(window)) return "5 小时";
+        if (StringUtils.hasText(bucket.name())) return bucket.name().strip();
+        return window.isEmpty() ? "额度" : window;
+    }
+
     private static int clamp(int value) {
         return Math.max(0, Math.min(100, value));
     }
 
+    private enum DeliveryRoute { STATION, CODEX_FEISHU, AGY_FEISHU }
     private record AccountSnapshot(String label, String provider, List<QuotaPoint> points) { }
     private record Increase(QuotaPoint previous, QuotaPoint current) { }
     private record QuotaPoint(String key, String label, int remainingPercent, String resetsAt) { }

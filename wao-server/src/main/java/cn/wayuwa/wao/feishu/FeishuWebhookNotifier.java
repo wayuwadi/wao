@@ -113,6 +113,19 @@ public class FeishuWebhookNotifier {
      * @return 飞书明确接收时为 true；关闭、缺少配置或失败时为 false
      */
     public boolean notifyCodexQuotaRefresh(Card card) {
+        return deliverQuotaRefresh(card, "Codex 额度增加");
+    }
+
+    /**
+     * 将真实 Agy 额度回升投递到现有默认飞书群，沿用 Codex 额度刷新的确认与失败重试规则。
+     * @param card 已由连续真实采样确认的 Agy 额度回升通知
+     * @return 飞书明确确认接收时为 true；关闭、缺少配置或失败时为 false
+     */
+    public boolean notifyAgyQuotaRefresh(Card card) {
+        return deliverQuotaRefresh(card, "Agy 额度刷新");
+    }
+
+    private boolean deliverQuotaRefresh(Card card, String label) {
         if (!notificationSettings.allows(policy -> policy.automation())) return false;
         String actualUrl = null;
         boolean success = false;
@@ -125,12 +138,12 @@ public class FeishuWebhookNotifier {
                     .retrieve().body(JsonNode.class);
             boolean accepted = response != null && (response.has("code") || response.has("StatusCode"))
                     && response.path("code").asInt(response.path("StatusCode").asInt(-1)) == 0;
-            if (!accepted) log.warn("Codex 额度增加通知未获飞书确认，保留基线等待重试");
+            if (!accepted) log.warn("{}通知未获飞书确认，保留基线等待重试", label);
             success = accepted;
             return accepted;
         } catch (RuntimeException ex) {
             // 不记录异常正文，避免 HTTP 错误包含 Webhook 凭据。
-            log.warn("Codex 额度增加通知投递失败，保留基线等待重试：{}", ex.getClass().getSimpleName());
+            log.warn("{}通知投递失败，保留基线等待重试：{}", label, ex.getClass().getSimpleName());
             return false;
         } finally { if (actualUrl != null) recordResult(actualUrl, "SEND", success); }
     }
