@@ -262,7 +262,7 @@ class DrawingFileServiceTest {
 
         var deletedAt = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(mapper).moveToTrash(eq("dr1"), eq(OWNER), deletedAt.capture());
-        verify(shares).revokeForDrawing("dr1", OWNER, deletedAt.getValue());
+        verify(shares).revokeForDrawing("dr1", deletedAt.getValue());
     }
 
     @Test

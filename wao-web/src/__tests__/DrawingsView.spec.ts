@@ -6,6 +6,7 @@ import { routeLocationKey } from 'vue-router'
 import { pageVisibleKey } from '@/composables/pageVisibility'
 import DrawingsView from '@/views/DrawingsView.vue'
 import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
+import DrawingShareDialog from '@/components/drawings/DrawingShareDialog.vue'
 import { apiDeleteDoc } from '@/api/board'
 vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'member-a' }) }))
 import {
@@ -392,6 +393,45 @@ describe('个人草图优化', () => {
       expect(deleteDrawing).toHaveBeenCalledExactlyOnceWith('dr2')
       expect(wrapper.find('button[title="待删除草图"]').exists()).toBe(false)
       expect(wrapper.get('.title-trigger').text()).toBe('测试草图')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('个人草图和知识库草图都可从目录行右侧打开同一分享弹窗', async () => {
+    const linked = drawing({ id: 'dr3', title: '知识库草图', kbId: 'kb1', docId: 'doc1', canShare: true })
+    vi.mocked(fetchDrawings).mockResolvedValue([drawing(), linked])
+    const wrapper = mount(DrawingsView, { attachTo: document.body, global: { stubs: { DrawingShareDialog: true } } })
+    try {
+      await flushPromises()
+      for (const file of [drawing(), linked]) {
+        await wrapper.get(`[aria-label="${file.title}的操作"]`).trigger('click')
+        await flushPromises()
+        document.querySelector<HTMLButtonElement>('[role=menuitem][aria-label="分享草图"]')!.click()
+        await flushPromises()
+        expect(wrapper.getComponent(DrawingShareDialog).props()).toEqual({ drawingId: file.id, title: file.title })
+        wrapper.getComponent(DrawingShareDialog).vm.$emit('close')
+        await flushPromises()
+      }
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it.each([true, false])('知识库画板的工具栏根据分享权限显示入口（%s）', async (canShare) => {
+    vi.mocked(fetchDrawing).mockResolvedValue(drawing({ docId: 'doc1', kbId: 'kb1', canShare }))
+    const wrapper = mount(DrawingsView, {
+      props: { drawingId: 'dr1', embedded: true },
+      global: { stubs: { DrawingShareDialog: true } },
+    })
+    try {
+      await flushPromises()
+      const share = wrapper.find('[aria-label="分享草图"]')
+      expect(share.exists()).toBe(canShare)
+      if (canShare) {
+        await share.trigger('click')
+        expect(wrapper.getComponent(DrawingShareDialog).props('drawingId')).toBe('dr1')
+      }
     } finally {
       wrapper.unmount()
     }

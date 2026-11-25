@@ -14,6 +14,8 @@ import { useSessionStore } from '@/stores/session'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import ConfirmActionDialog from '@/components/ui/ConfirmActionDialog.vue'
+import DrawingShareDialog from '@/components/drawings/DrawingShareDialog.vue'
+import { listDrawingShares } from '@/api/drawingShare'
 import { apiCreateDocTemplate, apiMoveKnowledgeNode, apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => {
@@ -33,6 +35,10 @@ vi.mock('@/api/board', async (importOriginal) => {
     apiLeaveDoc: vi.fn<typeof actual.apiLeaveDoc>().mockResolvedValue(undefined),
   }
 })
+vi.mock('@/api/drawingShare', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/drawingShare')>(),
+  listDrawingShares: vi.fn().mockResolvedValue([]),
+}))
 
 const MarkdownEditorStub = defineComponent({
   name: 'MarkdownEditor',
@@ -134,6 +140,20 @@ describe('知识库详情目录体验', () => {
     await wrapper.get('.library-star').trigger('click')
     expect(wrapper.get('select option[value="仅自己"]').text()).toContain('只有我')
     expect(wrapper.get('select option[value="成员可编辑"]').text()).toContain('组织内成员')
+  })
+
+  it('可从知识库目录行右侧直接分享自己创建的画板', async () => {
+    const data = useDataStore()
+    const doc = data.docs.d7!
+    Object.assign(doc, { pageType: 'drawing', drawingId: 'dr7', author: 'm1' })
+    const wrapper = await mountView('/kb/k3', true)
+    await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
+    const row = wrapper.get('[data-node="d:d7"]').element.closest('.directory-row')!
+    await wrapper.get(`[aria-label="${doc.title}的更多操作"]`).trigger('click')
+    await wrapper.get(`[role="menu"][aria-label="${doc.title}的更多操作"]`).get('button:has(.ri-share-forward-line)').trigger('click')
+    expect(wrapper.getComponent(DrawingShareDialog).props()).toEqual({ drawingId: 'dr7', title: doc.title })
+    expect(listDrawingShares).toHaveBeenCalledWith('dr7', expect.any(AbortSignal))
+    expect(row.querySelector('[aria-selected="true"]')).toBeNull()
   })
 
   it('目录自动恢复期间不要求手动重试', async () => {

@@ -13,6 +13,7 @@ export interface DrawingFileSummary {
 
 export interface DrawingFile extends DrawingFileSummary {
   sceneJson: string
+  canShare?: boolean
 }
 
 export interface DrawingFileVersion {

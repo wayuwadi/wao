@@ -88,7 +88,7 @@ public class DrawingFileService {
         }
         if (groupId != null && !groupId.isBlank()) groups.assign(memberId, entity.getId(), groupId);
         if (initialScene != null) recordVersion(entity);
-        return dto(entity);
+        return dto(entity, memberId);
     }
 
     public void linkDocument(String id, String docId, String memberId) {
@@ -97,7 +97,7 @@ public class DrawingFileService {
 
     /** 读取当前成员的一份草图；他人文件按不存在处理。 */
     public DrawingFileDto get(String id, String memberId) {
-        return dto(required(id, memberId));
+        return dto(required(id, memberId), memberId);
     }
 
     /**
@@ -109,18 +109,18 @@ public class DrawingFileService {
     public DrawingFileDto save(String id, SaveDrawingFileRequest request, String memberId) {
         DrawingFileEntity before = required(id, memberId);
         validateScene(request.sceneJson());
-        if (sameScene(before.getSceneJson(), request.sceneJson())) return dto(before);
+        if (sameScene(before.getSceneJson(), request.sceneJson())) return dto(before, memberId);
         LocalDateTime now = LocalDateTime.now();
         int changed = mapper.saveScene(id, before.getOwnerMemberId(), request.sceneJson(), request.revision(), now);
         if (changed == 0) {
             DrawingFileEntity latest = required(id, memberId);
             if (latest == null) throw notFound();
-            if (sameScene(latest.getSceneJson(), request.sceneJson())) return dto(latest);
+            if (sameScene(latest.getSceneJson(), request.sceneJson())) return dto(latest, memberId);
             throw new ConflictException("草图已在其它页面被修改，当前草稿已保留，请重新加载后处理");
         }
         DrawingFileEntity saved = required(id, memberId);
         recordVersion(saved);
-        return dto(saved);
+        return dto(saved, memberId);
     }
 
     /** 列出当前成员可恢复的最近三个真实内容版本。 */
@@ -166,7 +166,11 @@ public class DrawingFileService {
         if (mapper.linkedDocumentCount(id) > 0) throw new BadRequestException("此画板由知识库管理，请在知识库中移入回收站");
         LocalDateTime now = LocalDateTime.now();
         if (mapper.moveToTrash(id, memberId, now) != 1) throw notFound();
-        publicShares.revokeForDrawing(id, memberId, now);
+        revokeShares(id, now);
+    }
+
+    void revokeShares(String id, LocalDateTime now) {
+        publicShares.revokeForDrawing(id, now);
     }
 
     public List<TrashEntryDto> listTrash(String memberId) {
@@ -206,7 +210,7 @@ public class DrawingFileService {
             String group = groups.groupOf(memberId, id);
             if (group != null) groups.assign(memberId, copy.getId(), group);
         }
-        return dto(copy);
+        return dto(copy, memberId);
     }
 
     private DrawingFileEntity required(String id, String memberId) {
@@ -271,9 +275,10 @@ public class DrawingFileService {
                 entity.getCreatedAt(), entity.getUpdatedAt(), entity.getKbId(), entity.getDocId());
     }
 
-    private DrawingFileDto dto(DrawingFileEntity entity) {
+    private DrawingFileDto dto(DrawingFileEntity entity, String memberId) {
         return new DrawingFileDto(entity.getId(), entity.getTitle(), entity.getSceneJson(), entity.getRevision(),
-                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getKbId(), entity.getDocId());
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getKbId(), entity.getDocId(),
+                memberId.equals(entity.getOwnerMemberId()));
     }
 
     private NotFoundException notFound() {
