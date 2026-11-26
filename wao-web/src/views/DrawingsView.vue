@@ -2172,6 +2172,7 @@ defineExpose({ flush: flushEmbedded })
 }
 .parked-canvas {
   visibility: hidden;
+  opacity: 0;
 }
 .canvas-switch-status {
   position: absolute;
