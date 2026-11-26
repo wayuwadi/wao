@@ -1,12 +1,13 @@
 package cn.wayuwa.wao.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.LocalDateTime;
 
 /** 草图文件完整快照。 */
 public record DrawingFileDto(
         String id,
         String title,
-        String sceneJson,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String sceneJson,
         int revision,
         LocalDateTime createdAt,
         LocalDateTime updatedAt, String kbId, String docId, boolean canShare) {

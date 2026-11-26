@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 当前登录成员的草图文件接口。 */
@@ -56,8 +57,10 @@ public class DrawingFileController {
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<DrawingFileDto> get(@PathVariable String id, HttpServletRequest http) {
-        return ApiResponse.ok(drawings.get(id, member(http)));
+    public ApiResponse<DrawingFileDto> get(@PathVariable String id,
+            @RequestParam(required = false) Integer knownRevision, HttpServletRequest http) {
+        String member = member(http);
+        return ApiResponse.ok(knownRevision == null ? drawings.get(id, member) : drawings.get(id, member, knownRevision));
     }
 
     @PutMapping("/{id}")

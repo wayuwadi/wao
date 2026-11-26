@@ -25,12 +25,37 @@ public interface DrawingFileMapper extends BaseMapper<DrawingFileEntity> {
             """)
     List<DrawingFileEntity> listOwned(@Param("ownerMemberId") String ownerMemberId);
 
-    @Select("SELECT f.id, f.owner_member_id, COALESCE(d.title, f.title) AS title, d.id AS doc_id, d.kb_id, f.scene_json, f.revision, f.created_at, f.updated_at FROM drawing_file f LEFT JOIN doc d ON d.id = f.knowledge_doc_id WHERE f.id = #{id} AND f.owner_member_id = #{ownerMemberId} AND f.deleted_at IS NULL AND (f.knowledge_doc_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL)) LIMIT 1")
-    DrawingFileEntity findOwned(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId);
+    String SCENE_PROJECTION = "CASE WHEN f.revision = #{knownRevision,jdbcType=INTEGER} THEN NULL ELSE f.scene_json END AS scene_json, ";
+
+    default DrawingFileEntity findOwned(String id, String ownerMemberId) {
+        return findOwnedAtRevision(id, ownerMemberId, null);
+    }
+
+    @Select("""
+            SELECT f.id, f.owner_member_id, COALESCE(d.title, f.title) AS title, d.id AS doc_id, d.kb_id,
+            """ + SCENE_PROJECTION + """
+            f.revision, f.created_at, f.updated_at
+            FROM drawing_file f LEFT JOIN doc d ON d.id = f.knowledge_doc_id
+            WHERE f.id = #{id} AND f.owner_member_id = #{ownerMemberId} AND f.deleted_at IS NULL
+                AND (f.knowledge_doc_id IS NULL OR (d.id IS NOT NULL AND d.deleted_at IS NULL))
+            LIMIT 1
+            """)
+    DrawingFileEntity findOwnedAtRevision(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId,
+            @Param("knownRevision") Integer knownRevision);
+
+    default DrawingFileEntity findKnowledge(String id) {
+        return findKnowledgeAtRevision(id, null);
+    }
 
     /** Service must apply knowledge-base access before returning this linked drawing. */
-    @Select("SELECT f.id, f.owner_member_id, d.title, d.id AS doc_id, d.kb_id, f.scene_json, f.revision, f.created_at, f.updated_at FROM drawing_file f JOIN doc d ON d.id=f.knowledge_doc_id JOIN kb k ON k.id=d.kb_id WHERE f.id=#{id} AND f.deleted_at IS NULL AND d.deleted_at IS NULL AND k.deleted_at IS NULL")
-    DrawingFileEntity findKnowledge(@Param("id") String id);
+    @Select("""
+            SELECT f.id, f.owner_member_id, d.title, d.id AS doc_id, d.kb_id,
+            """ + SCENE_PROJECTION + """
+            f.revision, f.created_at, f.updated_at
+            FROM drawing_file f JOIN doc d ON d.id = f.knowledge_doc_id JOIN kb k ON k.id = d.kb_id
+            WHERE f.id = #{id} AND f.deleted_at IS NULL AND d.deleted_at IS NULL AND k.deleted_at IS NULL
+            """)
+    DrawingFileEntity findKnowledgeAtRevision(@Param("id") String id, @Param("knownRevision") Integer knownRevision);
 
     @Update("""
             UPDATE drawing_file

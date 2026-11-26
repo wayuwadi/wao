@@ -34,8 +34,16 @@ export const fetchDrawingLibrary = (signal?: AbortSignal) =>
 export const updateDrawingLibrary = (upsert: LibraryItems, remove: string[], signal?: AbortSignal) =>
   data(http.patch<ApiResponse<LibraryItems>>('/api/drawings/library', { upsert, remove }, { signal }))
 
-export const fetchDrawing = (id: string, signal?: AbortSignal) =>
-  data(http.get<ApiResponse<DrawingFile>>(`/api/drawings/${id}`, { timeout: 120_000, signal }))
+export async function fetchDrawing(id: string, signal?: AbortSignal, known?: DrawingFile): Promise<DrawingFile> {
+  const file = await data(http.get<ApiResponse<Omit<DrawingFile, 'sceneJson'> & { sceneJson?: string }>>(`/api/drawings/${id}`, {
+    timeout: 120_000, signal, params: known ? { knownRevision: known.revision } : undefined,
+  }))
+  if (typeof file.sceneJson === 'string') return { ...file, sceneJson: file.sceneJson }
+  if (known?.id === id && file.id === id && known.revision === file.revision) {
+    return { ...file, sceneJson: known.sceneJson }
+  }
+  throw new Error('草图文件缺少画布内容，请重试')
+}
 
 export const createDrawing = (
   title?: string, groupId?: string, initial?: { sceneJson: string; requestId: string },

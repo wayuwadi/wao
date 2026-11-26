@@ -26,6 +26,7 @@ import DrawingTextStyleDialog from './DrawingTextStyleDialog.vue'
 const props = defineProps<{
   sceneJson: string
   sceneKey: string
+  inactive?: boolean
   name: string
   snapMode: DrawingSnapMode
   libraryItems?: LibraryItems
@@ -92,7 +93,7 @@ function snapState(mode: DrawingSnapMode) {
 }
 
 function applySnapMode(mode: DrawingSnapMode) {
-  if (!ready || mode === lastSnapMode) return
+  if (!ready || props.inactive || mode === lastSnapMode) return
   canvasApi?.updateScene({ appState: snapState(mode), captureUpdate: CaptureUpdateAction.NEVER })
 }
 
@@ -101,6 +102,7 @@ function changed(
   appState: AppState,
   files: BinaryFiles,
 ) {
+  if (props.inactive) return
   const mode = appState.gridModeEnabled ? 'grid' : appState.objectsSnapModeEnabled ? 'objects' : 'off'
   // Excalidraw exports its grid flag. Retain the file's original value so preferences stay local.
   const snapshot = elements.map(element => {
@@ -150,13 +152,13 @@ function libraryChanged(next: LibraryItems) {
 function syncCanvasLibrary(force = false) {
   const api = canvasApi
   const desired = props.libraryItems
-  if (!api || desired === undefined || !pageVisible.value) return
+  if (!api || desired === undefined || props.inactive || !pageVisible.value) return
   if (!force && canvasLibrary.length === desired.length &&
       canvasLibrary.every((item, index) => sameLibraryItem(item, desired[index]!))) return
   void api.updateLibrary({
     merge: false,
     libraryItems: (current) => {
-      if (canvasApi !== api) return current
+      if (canvasApi !== api || props.inactive) return current
       // Excalidraw batches library notifications. Record edits queued ahead of this load.
       libraryChanged(current)
       canvasLibrary = props.libraryItems ?? desired
@@ -379,6 +381,13 @@ function render() {
 watch(() => [props.sceneKey, props.name, effective.value], render)
 watch(() => props.snapMode, applySnapMode)
 watch(() => props.libraryItems, () => syncCanvasLibrary())
+watch(() => props.inactive, (inactive) => {
+  if (inactive) textStyleEditor.value = undefined
+  else {
+    applySnapMode(props.snapMode)
+    syncCanvasLibrary()
+  }
+})
 watch(pageVisible, (visible) => { if (visible) syncCanvasLibrary(true) })
 watch(pageVisible, (visible) => { if (!visible) textStyleEditor.value = undefined })
 function preventBrowserSave(event: KeyboardEvent) {

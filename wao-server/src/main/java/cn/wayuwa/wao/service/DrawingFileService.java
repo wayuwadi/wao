@@ -100,6 +100,12 @@ public class DrawingFileService {
         return dto(required(id, memberId), memberId);
     }
 
+    public DrawingFileDto get(String id, String memberId, int knownRevision) {
+        DrawingFileEntity file = mapper.findOwnedAtRevision(id, memberId, knownRevision);
+        if (file == null && knowledgeAccess != null) file = mapper.findKnowledgeAtRevision(id, knownRevision);
+        return dto(requireAccessible(file, memberId), memberId);
+    }
+
     /**
      * 使用乐观版本保存画布；旧版本不得覆盖其它页面已保存的新内容。
      *
@@ -216,6 +222,10 @@ public class DrawingFileService {
     private DrawingFileEntity required(String id, String memberId) {
         DrawingFileEntity entity = mapper.findOwned(id, memberId);
         if (entity == null && knowledgeAccess != null) entity = mapper.findKnowledge(id);
+        return requireAccessible(entity, memberId);
+    }
+
+    private DrawingFileEntity requireAccessible(DrawingFileEntity entity, String memberId) {
         if (entity == null) throw notFound();
         if (entity.getKbId() != null && knowledgeAccess != null && !knowledgeAccess.visible(entity.getKbId(), memberId)) throw notFound();
         return entity;
