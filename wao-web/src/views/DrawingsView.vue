@@ -9,7 +9,9 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  shallowReactive,
   shallowRef,
+  useId,
   watch,
 } from 'vue'
 import { onBeforeRouteLeave, routerKey, routeLocationKey } from 'vue-router'
@@ -29,6 +31,7 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import DrawingShareDialog from '@/components/drawings/DrawingShareDialog.vue'
+import DrawingWorkspaceTabs from '@/components/drawings/DrawingWorkspaceTabs.vue'
 import {
   createDrawing,
   createDrawingGroup, copyDrawing, fetchDrawingGroups, moveDrawing, renameDrawingGroup, saveDrawingOrder,
@@ -362,17 +365,19 @@ let readyCanvasKey = ''
 const activeCanvas = computed(() => current.value
   ? { key: canvasKey.value, sceneJson: sceneJson.value, name: current.value.title }
   : undefined)
-const previousDrawing = shallowRef<{
+type CachedDrawing = {
   file: DrawingFile
   canvas?: NonNullable<typeof activeCanvas.value> & { tidy?: DrawingTidyCanvas }
-}>()
-const retainedCanvas = computed(() => previousDrawing.value?.canvas)
-const showRetainedCanvas = ref(false)
-// At most one previous editor, with a budget for the two serialized scenes combined.
-const retainedSceneLimit = 24 * 1024 * 1024
-const canvasLayers = computed(() =>
-  [retainedCanvas.value, activeCanvas.value].filter((layer) => layer !== undefined),
-)
+}
+const drawingTabs = shallowReactive(new Map<string, string>())
+const cachedDrawings = shallowReactive(new Map<string, CachedDrawing>())
+const tabs = computed(() => Array.from(drawingTabs, ([id, title]) => ({ id, title })))
+const tabPanelId = useId()
+const tabsBusy = computed(() => transitioning.value || !!deletingId.value || restoringVersion.value !== null || renaming.value)
+const coverCanvasKey = ref('')
+const canvasLayers = computed(() => [
+  ...Array.from(cachedDrawings.values(), drawing => drawing.canvas), activeCanvas.value,
+].filter(layer => layer !== undefined))
 const tidyCanvas = shallowRef<DrawingTidyCanvas>()
 const tidyDialog = ref<'route' | 'layout' | 'ai'>()
 const tidyBusy = ref(false)
@@ -388,7 +393,7 @@ function cancelTidy() {
 watch(canvasKey, () => {
   cancelTidy()
   tidyCanvas.value = undefined
-  showRetainedCanvas.value = false
+  coverCanvasKey.value = ''
 }, { flush: 'sync' })
 watch(current, (file) => { if (!file) cancelTidy() })
 onBeforeUnmount(cancelTidy)
@@ -455,6 +460,7 @@ const syncMeta = computed(
 
 function updateSummary(file: DrawingFile | DrawingFileSummary) {
   const { id, title, revision, createdAt, updatedAt, kbId, docId } = file
+  if (drawingTabs.has(id)) drawingTabs.set(id, title)
   const summary = { id, title, revision, createdAt, updatedAt, kbId, docId }
   const index = files.value.findIndex((item) => item.id === file.id)
   if (index >= 0) files.value.splice(index, 1, summary)
@@ -519,10 +525,7 @@ async function loadList() {
 async function openFile(id: string, eligible: boolean | Promise<boolean> = true) {
   if (
     !sameOwner() ||
-    transitioning.value ||
-    deletingId.value ||
-    restoringVersion.value !== null ||
-    renaming.value
+    tabsBusy.value
   )
     return
   if (activeId.value === id && current.value && !loadingFile.value) {
@@ -540,7 +543,7 @@ async function openFile(id: string, eligible: boolean | Promise<boolean> = true)
   void loadCanvas().catch(() => undefined)
 
   const settled = settleEdits()
-  const cached = previousDrawing.value?.file.id === id ? previousDrawing.value : undefined
+  const cached = cachedDrawings.get(id)
   const remoteRequest = cached ? fetchDrawing(id, request.signal, cached.file) : fetchDrawing(id, request.signal)
   const mayMigrate = Promise.all([remoteRequest, settled, eligible]).then(
     ([remote, saved, allowed]) => saved && allowed && !remote.docId && sameOwner() && !request.signal.aborted,
@@ -565,13 +568,21 @@ async function openFile(id: string, eligible: boolean | Promise<boolean> = true)
     if (draft && !targetDirty) await clearDraft(id)
     if ((dirty.value || editingTitle.value) && !(await settleEdits())) return
     if (token !== loadToken || !sameOwner()) return
-    const reusable = cached?.canvas && !targetDirty && cached.file.revision === remote.revision &&
-      cached.file.sceneJson === remote.sceneJson && (!draft || draft.sceneJson === cached.canvas.sceneJson)
-      ? cached.canvas : undefined
-    if (current.value && activeCanvas.value?.key === readyCanvasKey) {
-      previousDrawing.value = { file: current.value, canvas: { ...activeCanvas.value, tidy: tidyCanvas.value } }
-    } else if (cached) {
-      previousDrawing.value = undefined
+    const mounted = cachedDrawings.get(id)?.canvas
+    const reusable = cached && mounted && mounted === cached.canvas && !targetDirty &&
+      cached.file.revision === remote.revision && cached.file.sceneJson === remote.sceneJson &&
+      (!draft || draft.sceneJson === mounted.sceneJson) ? mounted : undefined
+    const outgoing = activeCanvas.value?.key === readyCanvasKey ? activeCanvas.value : undefined
+    const cover = outgoing?.key ?? coverCanvasKey.value
+    cachedDrawings.delete(id)
+    if (!props.embedded) {
+      if (current.value) {
+        cachedDrawings.set(current.value.id, {
+          file: current.value,
+          canvas: outgoing && { ...outgoing, tidy: tidyCanvas.value },
+        })
+      }
+      drawingTabs.set(id, remote.title)
     }
     activeId.value = id
     current.value = remote
@@ -590,7 +601,7 @@ async function openFile(id: string, eligible: boolean | Promise<boolean> = true)
     loadingVersions.value = false
     canvasKey.value = reusable?.key ?? `${id}:${++canvasGeneration}`
     if (reusable) canvasReady(reusable.key, reusable.tidy)
-    else showRetainedCanvas.value = !!retainedCanvas.value
+    else if (cover && canvasLayers.value.some(layer => layer.key === cover)) coverCanvasKey.value = cover
     updateSummary(remote)
 
     conflict.value = dirty.value && revision.value !== remote.revision
@@ -605,10 +616,7 @@ async function openFile(id: string, eligible: boolean | Promise<boolean> = true)
   } catch (cause) {
     if (token !== loadToken || !sameOwner()) return
     const status = (cause as { status?: number })?.status
-    if (cached && (status === 401 || status === 403 || status === 404)) {
-      previousDrawing.value = undefined
-      showRetainedCanvas.value = false
-    }
+    if (status === 401 || status === 403 || status === 404) releaseTab(id)
     openFailure.value = { id, message: message(cause, '草图文件读取失败') }
   } finally {
     request.abort()
@@ -617,6 +625,55 @@ async function openFile(id: string, eligible: boolean | Promise<boolean> = true)
       loadingFile.value = false
       transitioning.value = false
     }
+  }
+}
+
+function releaseTab(id: string) {
+  if (cachedDrawings.get(id)?.canvas?.key === coverCanvasKey.value) coverCanvasKey.value = ''
+  cachedDrawings.delete(id)
+  drawingTabs.delete(id)
+}
+
+function adjacentTab(id: string) {
+  const index = tabs.value.findIndex(tab => tab.id === id)
+  return tabs.value[index + 1]?.id ?? tabs.value[index - 1]?.id
+}
+
+function resetActiveDrawing() {
+  ++backgroundRequest
+  activeId.value = ''
+  current.value = null
+  sceneJson.value = ''
+  canvasKey.value = 'empty'
+  syncState.value = 'saved'
+  dirty.value = false
+  conflict.value = false
+  pendingSave = undefined
+  error.value = ''
+  draftScene.value = ''
+  draftError.value = ''
+}
+
+async function closeDrawingTab(id: string) {
+  if (!sameOwner() || tabsBusy.value) return
+  if (id !== activeId.value) {
+    releaseTab(id)
+    if (openFailure.value?.id === id) openFailure.value = undefined
+    return
+  }
+  transitioning.value = true
+  try {
+    if (!(await settleEdits()) || !sameOwner()) return
+    const nextId = adjacentTab(id)
+    releaseTab(id)
+    if (readLastDrawing() === id) rememberDrawing('')
+    openFailure.value = undefined
+    resetActiveDrawing()
+    transitioning.value = false
+    if (nextId) await openFile(nextId)
+    else await nextTick(() => page.value?.querySelector<HTMLButtonElement>('.file-open, button[aria-label="展开文件列表"]')?.focus())
+  } finally {
+    transitioning.value = false
   }
 }
 
@@ -715,12 +772,31 @@ function canvasReady(key: string, canvas?: DrawingTidyCanvas) {
   tidyCanvas.value = canvas
   readyCanvasKey = key
   if (current.value?.id === photoFitId.value) photoFitId.value = undefined
-  showRetainedCanvas.value = false
-  const previous = previousDrawing.value
-  if (previous?.canvas && previous.canvas.sceneJson.length + sceneJson.value.length > retainedSceneLimit) {
-    previousDrawing.value = { file: previous.file }
-  }
+  coverCanvasKey.value = ''
+  trimDrawingCache()
   if (dirty.value && syncState.value === 'dirty') scheduleSave()
+}
+
+function trimDrawingCache() {
+  // Keep at most five editors. Preserve more downloaded scenes without their editors.
+  let editorCount = 1
+  let renderedCharacters = sceneJson.value.length
+  let cachedCharacters = 0
+  for (const [id, drawing] of Array.from(cachedDrawings).reverse()) {
+    const length = drawing.file.sceneJson.length
+    if (cachedCharacters + length > 64 * 1024 * 1024) {
+      cachedDrawings.delete(id)
+      continue
+    }
+    cachedCharacters += length
+    if (!drawing.canvas) continue
+    if (editorCount >= 5 || renderedCharacters + drawing.canvas.sceneJson.length > 24 * 1024 * 1024) {
+      cachedDrawings.set(id, { file: drawing.file })
+    } else {
+      editorCount++
+      renderedCharacters += drawing.canvas.sceneJson.length
+    }
+  }
 }
 
 async function saveNow() {
@@ -967,6 +1043,7 @@ function confirmRemoveFile(file: DrawingFileSummary) {
 async function removeFile(file: DrawingFileSummary) {
   if (!sameOwner() || transitioning.value || deletingId.value || restoringVersion.value !== null) return
   deletingId.value = file.id
+  let nextId: string | undefined
   try {
     if (activeId.value === file.id) {
       if (!(await settleEdits())) throw new Error(error.value || '草图尚未保存，请重试。')
@@ -981,26 +1058,18 @@ async function removeFile(file: DrawingFileSummary) {
     if (!sameOwner()) return
     files.value = files.value.filter((item) => item.id !== file.id)
     if (!props.embedded && readLastDrawing() === file.id) rememberDrawing('')
-    if (activeId.value === file.id || previousDrawing.value?.file.id === file.id) {
-      previousDrawing.value = undefined
-      showRetainedCanvas.value = false
-    }
     if (activeId.value === file.id) {
-      activeId.value = ''
-      current.value = null
-      sceneJson.value = ''
-      syncState.value = 'saved'
-      dirty.value = false
-      conflict.value = false
-      pendingSave = undefined
-      error.value = ''
-      draftError.value = ''
+      nextId = adjacentTab(file.id)
+      resetActiveDrawing()
     }
+    releaseTab(file.id)
+    if (openFailure.value?.id === file.id) openFailure.value = undefined
   } catch (cause) {
     throw new Error(message(cause, '草图删除失败'))
   } finally {
     deletingId.value = ''
   }
+  if (nextId) void openFile(nextId)
 }
 
 function downloadDraft() {
@@ -1162,12 +1231,9 @@ watch(
     loadingFile.value = false
     transitioning.value = false
     openFailure.value = undefined
-    previousDrawing.value = undefined
-    showRetainedCanvas.value = false
-    current.value = null
-    sceneJson.value = ''
-    draftScene.value = ''
-    pendingSave = undefined
+    drawingTabs.clear()
+    cachedDrawings.clear()
+    resetActiveDrawing()
     files.value = []
     groups.value = []
     assignments.value = {}
@@ -1176,7 +1242,6 @@ watch(
     sharing.value = undefined
     contextMenu.value?.close()
     exportError.value = ''
-    dirty.value = false
   },
   { flush: 'sync' },
 )
@@ -1220,9 +1285,10 @@ async function refreshOnReturn() {
     if (sameOwner() && request === backgroundRequest && pageVisible.value && current.value?.id === id) {
       const status = (cause as { status?: number }).status
       if ((status === 403 || status === 404) && !dirty.value && !savePromise) {
-        previousDrawing.value = undefined
-        showRetainedCanvas.value = false
-        current.value = null; sceneJson.value = ''; syncState.value = 'error'
+        if (readLastDrawing() === id) rememberDrawing('')
+        releaseTab(id)
+        resetActiveDrawing()
+        syncState.value = 'error'
         error.value = '草图不存在或当前账号无权访问，请重新读取。'
       } else error.value = message(cause, '后台刷新失败，当前画布已保留')
     }
@@ -1417,6 +1483,8 @@ defineExpose({ flush: flushEmbedded })
     </aside>
 
     <main class="drawing-workspace">
+      <DrawingWorkspaceTabs v-if="tabs.length" :tabs="tabs" :active-id="activeId" :panel-id="tabPanelId"
+        :busy="tabsBusy" @select="openFile" @close="closeDrawingTab" />
       <header class="drawing-toolbar">
         <button
           v-if="!sidebarOpen && !embedded"
@@ -1619,14 +1687,16 @@ defineExpose({ flush: flushEmbedded })
         <button v-else @click="error = ''">关闭提示</button>
       </div>
 
-      <div class="canvas-shell" :aria-busy="loadingFile || showRetainedCanvas">
-        <template v-if="current">
+      <div class="canvas-shell" :id="tabs.length ? tabPanelId : undefined"
+        :role="activeId && tabs.length ? 'tabpanel' : undefined"
+        :aria-labelledby="activeId && tabs.length ? `${tabPanelId}-${activeId}` : undefined"
+        :aria-busy="loadingFile || !!coverCanvasKey">
           <div
             v-for="layer in canvasLayers"
             :key="layer.key"
             class="canvas-layer"
-            :class="{ 'retained-canvas': layer.key !== canvasKey, 'parked-canvas': layer.key !== canvasKey && !showRetainedCanvas }"
-            :inert.attr="loadingFile || layer.key !== canvasKey ? true : undefined"
+            :class="{ 'retained-canvas': layer.key !== canvasKey, 'parked-canvas': layer.key !== canvasKey && layer.key !== coverCanvasKey }"
+            :inert.attr="transitioning || layer.key !== canvasKey ? true : undefined"
           >
             <DrawingCanvas
               v-model:snap-mode="snapMode"
@@ -1635,23 +1705,22 @@ defineExpose({ flush: flushEmbedded })
               :inactive="layer.key !== canvasKey"
               :name="layer.name"
               :library-items="library.items"
-              :fit-on-open="layer.key === canvasKey && !!photoFitId && current.id === photoFitId"
+              :fit-on-open="layer.key === canvasKey && !!photoFitId && current?.id === photoFitId"
               @library-change="(previous, next) => sameOwner() && library.change(previous, next)"
               @change="layer.key === canvasKey && canvasChanged($event)"
               @ready="canvasReady(layer.key, $event)"
               @save="layer.key === canvasKey && saveNow()"
             />
           </div>
-          <div v-if="loadingFile || showRetainedCanvas" class="canvas-switch-status" role="status">
+          <div v-if="current && (loadingFile || coverCanvasKey)" class="canvas-switch-status" role="status">
             <i class="ri-loader-4-line spin" aria-hidden="true"></i>
             <span>正在打开草图</span>
           </div>
-        </template>
-        <div v-else-if="loadingFile" class="canvas-loading" role="status">
+        <div v-else-if="!current && loadingFile" class="canvas-loading" role="status">
           <i class="ri-loader-4-line spin"></i>
           <span>正在打开草图</span>
         </div>
-        <div v-else-if="!embedded && !loadingList && !error && !openFailure && !listError" class="canvas-empty">
+        <div v-else-if="!current && !embedded && !loadingList && !error && !openFailure && !listError" class="canvas-empty">
           <span><i class="ri-draft-line"></i></span>
           <h1>{{ files.length ? '继续你的想法' : '把想法画出来' }}</h1>
           <p>用自由画布整理思路、绘制流程或记录灵感。修改自动保存到账号。</p>
@@ -2144,6 +2213,7 @@ defineExpose({ flush: flushEmbedded })
   background: var(--wao-bg-page);
 }
 .drawings-page:fullscreen .file-sidebar,
+.drawings-page:fullscreen .drawing-tabs,
 .drawings-page:fullscreen .sidebar-backdrop {
   display: none;
 }
