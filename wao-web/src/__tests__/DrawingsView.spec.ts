@@ -47,7 +47,7 @@ vi.mock('@/utils/drawingDrafts', () => ({
 }))
 
 vi.mock('@/components/drawings/DrawingCanvas.vue', () => ({
-  default: { props: ['snapMode'], template: '<div class="drawing-canvas-stub"></div>' },
+  default: { props: ['snapMode', 'inactive'], template: '<div class="drawing-canvas-stub"></div>' },
 }))
 vi.mock('@/utils/drawingImageExport', () => ({ renderDrawingImage: vi.fn() }))
 
@@ -359,6 +359,108 @@ describe('个人草图优化', () => {
     route.query.drawing = 'dr2'; await flushPromises()
     expect(wrapper.get('.title-trigger').text()).toContain('dr2')
     wrapper.unmount()
+  })
+
+  it('多张草图各自保留页签和画布，切回只校验已有快照，关闭才释放', async () => {
+    const files = ['dr1', 'dr2', 'dr3'].map((id, index) => drawing({ id, title: `草图 ${index + 1}` }))
+    vi.mocked(fetchDrawings).mockResolvedValue(files.map(file => ({ ...file })))
+    vi.mocked(fetchDrawing).mockImplementation(async id => files.find(file => file.id === id)!)
+    const wrapper = mount(DrawingsView, { attachTo: document.body })
+    const activeCanvas = () => wrapper.findAllComponents(DrawingCanvas).find(canvas => !canvas.props('inactive'))!
+    try {
+      await flushPromises()
+      const first = activeCanvas()
+      first.vm.$emit('ready')
+      await wrapper.get('.file-open[title="草图 2"]').trigger('click')
+      await flushPromises()
+      const second = activeCanvas()
+      second.vm.$emit('ready')
+      await wrapper.get('.file-open[title="草图 3"]').trigger('click')
+      await flushPromises()
+      activeCanvas().vm.$emit('ready')
+      await wrapper.vm.$nextTick()
+
+      const tab = (id: string) => wrapper.get<HTMLButtonElement>(`[role="tab"][data-drawing-tab="${id}"]`)
+      expect(wrapper.findAll('[role="tab"]')).toHaveLength(3)
+      expect(wrapper.findAll('.parked-canvas[inert]')).toHaveLength(2)
+      tab('dr3').element.focus()
+      await tab('dr3').trigger('keydown', { key: 'Home' })
+      expect(document.activeElement).toBe(tab('dr1').element)
+      await tab('dr1').trigger('click')
+      await flushPromises()
+      expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal), files[0])
+      expect(activeCanvas().element).toBe(first.element)
+      expect(tab('dr1').attributes('aria-selected')).toBe('true')
+
+      await wrapper.get('[aria-label="关闭 草图 3"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('[role="tab"]')).toHaveLength(2)
+      expect(activeCanvas().element).toBe(first.element)
+      await tab('dr1').trigger('keydown', { key: 'Delete' })
+      await flushPromises()
+      expect(fetchDrawing).toHaveBeenLastCalledWith('dr2', expect.any(AbortSignal), files[1])
+      expect(activeCanvas().element).toBe(second.element)
+      expect(wrapper.findAllComponents(DrawingCanvas)).toHaveLength(1)
+
+      await wrapper.get('.file-open[title="草图 1"]').trigger('click')
+      await flushPromises()
+      expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal))
+      expect(activeCanvas().element).not.toBe(first.element)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('关闭当前页签必须先保存，失败时保留编辑器和本机草稿', async () => {
+    const first = drawing()
+    const second = drawing({ id: 'dr2', title: '另一张草图' })
+    vi.mocked(fetchDrawings).mockResolvedValue([first, second])
+    vi.mocked(fetchDrawing).mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    vi.mocked(saveDrawing).mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(DrawingsView)
+    try {
+      await flushPromises()
+      await wrapper.get('.file-open[title="另一张草图"]').trigger('click')
+      await flushPromises()
+      const canvas = wrapper.getComponent(DrawingCanvas)
+      canvas.vm.$emit('change', '{"elements":[{"id":"draft"}],"appState":{}}')
+      await wrapper.get('[aria-label="关闭 另一张草图"]').trigger('click')
+      await flushPromises()
+      expect(saveDrawing).toHaveBeenCalledWith('dr2', expect.stringContaining('draft'), 5)
+      expect(fetchDrawing).toHaveBeenCalledTimes(2)
+      expect(wrapper.findAll('[role="tab"]')).toHaveLength(2)
+      expect(wrapper.getComponent(DrawingCanvas).element).toBe(canvas.element)
+      expect(wrapper.text()).toContain('保存失败')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('超出后台编辑器数量时仍可用已下载场景打开较早的页签', async () => {
+    const files = Array.from({ length: 6 }, (_, i) => drawing({ id: `dr${i + 1}`, title: `草图 ${i + 1}` }))
+    vi.mocked(fetchDrawings).mockResolvedValue(files.map(file => ({ ...file })))
+    vi.mocked(fetchDrawing).mockImplementation(async id => files.find(file => file.id === id)!)
+    const wrapper = mount(DrawingsView)
+    const activeCanvas = () => wrapper.findAllComponents(DrawingCanvas).find(canvas => !canvas.props('inactive'))!
+    try {
+      await flushPromises()
+      const first = activeCanvas().element
+      activeCanvas().vm.$emit('ready')
+      for (const file of files.slice(1)) {
+        await wrapper.get(`.file-open[title="${file.title}"]`).trigger('click')
+        await flushPromises()
+        activeCanvas().vm.$emit('ready')
+        await wrapper.vm.$nextTick()
+      }
+      expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+      expect(wrapper.findAllComponents(DrawingCanvas)).toHaveLength(5)
+      await wrapper.get('[data-drawing-tab="dr1"]').trigger('click')
+      await flushPromises()
+      expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal), files[0])
+      expect(activeCanvas().element).not.toBe(first)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('后台版本变化时刷新画布，权限失效时不继续展示缓存', async () => {
