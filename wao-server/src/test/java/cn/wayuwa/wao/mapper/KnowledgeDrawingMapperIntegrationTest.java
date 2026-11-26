@@ -15,13 +15,16 @@ class KnowledgeDrawingMapperIntegrationTest {
     @BeforeEach void tables() {
         jdbc.execute("DROP TABLE IF EXISTS drawing_file");
         jdbc.execute("DROP TABLE IF EXISTS doc");
+        jdbc.execute("DROP TABLE IF EXISTS kb");
         jdbc.execute("DROP TABLE IF EXISTS drawing_group_assignment");
         jdbc.execute("DROP TABLE IF EXISTS drawing_group");
         jdbc.execute("CREATE TABLE doc(id VARCHAR(32) PRIMARY KEY, kb_id VARCHAR(32), title VARCHAR(256), drawing_id VARCHAR(32), deleted_at TIMESTAMP, archived_at TIMESTAMP)");
+        jdbc.execute("CREATE TABLE kb(id VARCHAR(32) PRIMARY KEY, deleted_at TIMESTAMP)");
         jdbc.execute("CREATE TABLE drawing_file(id VARCHAR(32) PRIMARY KEY, owner_member_id VARCHAR(32), title VARCHAR(128), scene_json TEXT, revision INT, created_at TIMESTAMP, updated_at TIMESTAMP, knowledge_doc_id VARCHAR(32), deleted_at TIMESTAMP, FOREIGN KEY(knowledge_doc_id) REFERENCES doc(id) ON DELETE CASCADE)");
         jdbc.execute("CREATE TABLE drawing_group(id VARCHAR(32), member_id VARCHAR(32), name VARCHAR(128))");
         jdbc.execute("CREATE TABLE drawing_group_assignment(file_id VARCHAR(32), member_id VARCHAR(32), group_id VARCHAR(32))");
         jdbc.update("INSERT INTO doc(id,kb_id,title,drawing_id) VALUES('d1','k1','知识库画板','dr1')");
+        jdbc.update("INSERT INTO kb(id) VALUES('k1')");
         jdbc.update("INSERT INTO drawing_file VALUES('dr1','m1','旧标题','{}',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'d1',NULL)");
         jdbc.update("INSERT INTO drawing_file VALUES('dr2','m2','个人草图','{}',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL)");
     }
@@ -45,6 +48,21 @@ class KnowledgeDrawingMapperIntegrationTest {
         assertThat(drawings.findOwned("dr1", "m1")).isNotNull();
         jdbc.update("DELETE FROM doc WHERE id='d1'");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM drawing_file WHERE id='dr1'", Integer.class)).isZero();
+    }
+
+    @Test void knownRevisionOmitsSceneWhileKeepingCurrentMetadataAndAccessFilters() {
+        assertThat(drawings.findOwnedAtRevision("dr2", "m2", 1).getSceneJson()).isNull();
+        assertThat(drawings.findOwnedAtRevision("dr2", "m1", 1)).isNull();
+        assertThat(drawings.findOwnedAtRevision("dr2", "m2", 2).getSceneJson()).isEqualTo("{}");
+        jdbc.update("UPDATE doc SET title='新标题' WHERE id='d1'");
+        var linked = drawings.findKnowledgeAtRevision("dr1", 1);
+        assertThat(linked.getTitle()).isEqualTo("新标题");
+        assertThat(linked.getSceneJson()).isNull();
+        assertThat(drawings.findOwnedAtRevision("dr1", "m1", 1).getSceneJson()).isNull();
+        assertThat(drawings.findKnowledgeAtRevision("dr1", 0).getSceneJson()).isEqualTo("{}");
+        jdbc.update("UPDATE doc SET deleted_at=CURRENT_TIMESTAMP WHERE id='d1'");
+        assertThat(drawings.findOwnedAtRevision("dr1", "m1", 1)).isNull();
+        assertThat(drawings.findKnowledgeAtRevision("dr1", 1)).isNull();
     }
 
     @Test void independentTrashChecksOwnerAndResolvesRestoreAgainstExactExpiry() {

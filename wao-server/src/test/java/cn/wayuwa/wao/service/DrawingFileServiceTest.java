@@ -48,12 +48,17 @@ class DrawingFileServiceTest {
         var drawing = file("linked", OWNER, 1); drawing.setKbId("library"); drawing.setDocId("doc");
         when(mapper.findOwned("linked", OWNER)).thenReturn(drawing);
         when(mapper.findKnowledge("linked")).thenReturn(drawing);
+        when(mapper.findOwnedAtRevision("linked", OWNER, 1)).thenReturn(drawing);
+        when(mapper.findKnowledgeAtRevision("linked", 1)).thenReturn(drawing);
         when(mapper.listOwned(OWNER)).thenReturn(List.of(drawing));
         assertThatThrownBy(() -> service.get("linked", OWNER)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.get("linked", OWNER, 1)).isInstanceOf(NotFoundException.class);
         assertThat(service.list(OWNER)).isEmpty();
         when(access.visible("library", OTHER)).thenReturn(true);
         assertThat(service.get("linked", OTHER).id()).isEqualTo("linked");
+        assertThat(service.get("linked", OTHER, 1).id()).isEqualTo("linked");
         when(access.visible("library", OTHER)).thenReturn(false);
+        assertThatThrownBy(() -> service.get("linked", OTHER, 1)).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> service.versions("linked", OTHER)).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> service.restore("linked", 1, 1, OTHER)).isInstanceOf(NotFoundException.class);
         verify(mapper, never()).findVersion("linked", 1, OWNER);

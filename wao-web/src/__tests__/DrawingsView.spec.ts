@@ -300,6 +300,55 @@ describe('个人草图优化', () => {
     wrapper.unmount()
   })
 
+  it.each(['unchanged', 'updated', 'denied'])('切回草图时先核对权限和修订，再决定是否复用已加载画布（%s）', async outcome => {
+    const first = drawing({ title: '第一张' })
+    const second = drawing({ id: 'dr2', title: '第二张' })
+    vi.mocked(fetchDrawings).mockResolvedValue([first, second])
+    vi.mocked(fetchDrawing).mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const wrapper = mount(DrawingsView)
+    try {
+      await flushPromises()
+      const firstCanvas = wrapper.getComponent(DrawingCanvas)
+      firstCanvas.vm.$emit('ready')
+      await wrapper.get('button[title="第二张"]').trigger('click')
+      await flushPromises()
+      const secondCanvas = wrapper.findAllComponents(DrawingCanvas)[1]!
+      expect(wrapper.find('.canvas-switch-status').exists()).toBe(true)
+      secondCanvas.vm.$emit('ready')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.parked-canvas').attributes('inert')).toBeDefined()
+      expect(wrapper.get('.parked-canvas').element.contains(firstCanvas.element)).toBe(true)
+      expect(wrapper.find('.canvas-switch-status').exists()).toBe(false)
+
+      let complete!: () => void
+      vi.mocked(fetchDrawing).mockReturnValueOnce(new Promise((resolve, reject) => {
+        complete = () => {
+          if (outcome === 'denied') reject(Object.assign(new Error('无权访问该草图'), { status: 404 }))
+          else resolve(outcome === 'updated' ? { ...first, revision: 6, sceneJson: '{"elements":[{"id":"new"}],"appState":{}}' } : { ...first, title: '已改名' })
+        }
+      }))
+      await wrapper.get('button[title="第一张"]').trigger('click')
+      expect(fetchDrawing).toHaveBeenLastCalledWith('dr1', expect.any(AbortSignal), first)
+      expect(wrapper.get('.title-trigger').text()).toBe('第二张')
+      complete()
+      await flushPromises()
+      if (outcome === 'denied') {
+        expect(wrapper.get('.title-trigger').text()).toBe('第二张')
+        expect(wrapper.text()).toContain('无权访问该草图')
+        expect(wrapper.findComponent(DrawingCanvas).element).toBe(secondCanvas.element)
+      } else if (outcome === 'updated') {
+        expect(wrapper.text()).toContain('版本 6')
+        expect(wrapper.findAllComponents(DrawingCanvas)[1]!.element).not.toBe(firstCanvas.element)
+      } else {
+        expect(wrapper.get('.title-trigger').text()).toBe('已改名')
+        expect(wrapper.findAllComponents(DrawingCanvas)[1]!.element).toBe(firstCanvas.element)
+        expect(wrapper.find('.canvas-switch-status').exists()).toBe(false)
+      }
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('保留实例时显式草图链接仍可切换到目标文件', async () => {
     const route = reactive({ query: { drawing: 'dr1' } })
     vi.mocked(fetchDrawings).mockResolvedValue([drawing(), drawing({ id: 'dr2' })])
